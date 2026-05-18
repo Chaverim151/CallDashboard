@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hatzolah MC – Operations</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy:        #0a1628;
+  --navy-mid:    #122040;
+  --navy-light:  #1c3260;
+  --gold:        #c9a84c;
+  --gold-light:  #e8c96a;
+  --white:       #f4f6fa;
+  --gray:        #8a9ab5;
+  --card-bg:     rgba(255,255,255,0.04);
+  --card-border: rgba(201,168,76,0.2);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--navy);
+  color: var(--white);
+  font-family: 'Source Sans 3', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,168,76,0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 80% 90%, rgba(10,22,40,0.9) 0%, transparent 70%);
+  pointer-events:none; z-index:0;
+}
+
+/* ─── PAGE SYSTEM ─── */
+.page { display:none; position:relative; z-index:1; min-height:100vh; animation: fadeIn 0.3s ease both; }
+.page.active { display:flex; flex-direction:column; }
+
+@keyframes fadeIn  { from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:translateY(0)} }
+@keyframes fadeUp  { from{opacity:0; transform:translateY(16px)} to{opacity:1; transform:translateY(0)} }
+@keyframes fadeDown{ from{opacity:0; transform:translateY(-12px)} to{opacity:1; transform:translateY(0)} }
+
+/* ─── SHARED TOP BAR ─── */
+.topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:14px;
+  padding:18px 24px 16px;
+  border-bottom:1px solid var(--card-border);
+  flex-shrink:0;
+}
+.topbar-logo img { width:54px; height:auto; filter:drop-shadow(0 2px 8px rgba(201,168,76,0.3)); }
+.topbar-text h1 {
+  font-family:'Oswald',sans-serif;
+  font-size:clamp(1rem,3vw,1.3rem);
+  font-weight:700; letter-spacing:0.07em; text-transform:uppercase;
+}
+.topbar-text h1 span { color:var(--gold); }
+.topbar-text p { font-size:0.68rem; color:var(--gray); letter-spacing:0.12em; text-transform:uppercase; margin-top:1px; }
+
+.call-btn {
+  display:inline-flex; align-items:center; gap:7px; flex-shrink:0;
+  background:rgba(76,175,80,0.15);
+  border:1px solid rgba(76,175,80,0.45);
+  border-radius:8px;
+  color:#6ddb72;
+  font-family:'Oswald',sans-serif;
+  font-size:0.75rem; font-weight:600;
+  letter-spacing:0.08em; text-transform:uppercase;
+  padding:8px 14px; cursor:pointer; text-decoration:none;
+  transition:all 0.2s; white-space:nowrap;
+}
+.call-btn:hover { background:rgba(76,175,80,0.28); border-color:rgba(76,175,80,0.7); color:#90ee92; }
+.call-btn .call-icon { font-size:0.95rem; }
+
+/* ─── INNER PAGE HEADER ─── */
+.inner-topbar {
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:16px 24px;
+  border-bottom:1px solid var(--card-border);
+  position:sticky; top:0;
+  background:var(--navy);
+  z-index:10; flex-shrink:0;
+}
+.inner-left { display:flex; align-items:center; gap:14px; }
+.back-btn {
+  background:rgba(255,255,255,0.05);
+  border:1px solid var(--card-border);
+  border-radius:8px;
+  color:var(--gold);
+  font-family:'Oswald',sans-serif;
+  font-size:0.78rem; letter-spacing:0.08em; text-transform:uppercase;
+  padding:8px 16px; cursor:pointer; transition:all 0.18s; flex-shrink:0;
+}
+.back-btn:hover { background:rgba(201,168,76,0.12); border-color:var(--gold); }
+
+.page-title {
+  font-family:'Oswald',sans-serif;
+  font-size:1.15rem; font-weight:700;
+  letter-spacing:0.08em; text-transform:uppercase;
+}
+.page-title .icon { margin-right:8px; }
+
+/* ─── HOME: CONFIRM BANNER ─── */
+.home-banner {
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  background:rgba(204,34,34,0.13);
+  border-bottom:1px solid rgba(204,34,34,0.3);
+  padding:9px 20px;
+  font-size:0.75rem; font-weight:600;
+  color:#ff8a8a; letter-spacing:0.09em; text-transform:uppercase;
+  flex-shrink:0;
+}
+.home-banner::before { content:'⚠'; font-size:0.9rem; }
+
+/* ─── HOME: 4-BUTTON GRID ─── */
+.home-grid-wrap {
+  flex:1;
+  display:flex; flex-direction:column; justify-content:center;
+  padding:32px 24px 40px;
+}
+
+.btn-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:18px;
+  max-width:700px;
+  margin:0 auto;
+  width:100%;
+}
+
+.big-btn {
+  background:var(--card-bg);
+  border:1px solid var(--card-border);
+  border-radius:18px;
+  padding:0;
+  cursor:pointer;
+  transition:all 0.25s;
+  position:relative;
+  overflow:hidden;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  aspect-ratio:1 / 0.95;
+  animation:fadeUp 0.5s ease both;
+  text-align:center;
+}
+
+/* coloured top stripe per section */
+.big-btn[data-sec="buildings"] { --accent:#4a90d9; }
+.big-btn[data-sec="shuls"]     { --accent:#c9a84c; }
+.big-btn[data-sec="hospital"]  { --accent:#e05555; }
+.big-btn[data-sec="shifts"]    { --accent:#8b7cef; }
+.big-btn[data-sec="service"]   { --accent:#4caf80; }
+
+.big-btn::before {
+  content:'';
+  position:absolute; top:0; left:0; right:0; height:4px;
+  background:var(--accent, var(--gold));
+  transition:height 0.2s;
+}
+.big-btn::after {
+  content:'';
+  position:absolute; inset:0;
+  background:linear-gradient(160deg, rgba(255,255,255,0.04) 0%, transparent 60%);
+  opacity:0; transition:opacity 0.2s;
+}
+.big-btn:hover { border-color:rgba(201,168,76,0.45); transform:translateY(-4px); box-shadow:0 16px 44px rgba(0,0,0,0.4); }
+.big-btn:hover::before { height:6px; }
+.big-btn:hover::after  { opacity:1; }
+.big-btn:active { transform:translateY(-1px); }
+
+.btn-inner { position:relative; z-index:1; padding:28px 18px 22px; }
+
+.btn-icon  { font-size:2.6rem; display:block; margin-bottom:14px; line-height:1; }
+.btn-label {
+  font-family:'Oswald',sans-serif;
+  font-size:1.05rem; font-weight:700;
+  letter-spacing:0.07em; text-transform:uppercase;
+  color:var(--white); display:block; margin-bottom:5px;
+}
+.btn-sub { font-size:0.72rem; color:var(--gray); letter-spacing:0.04em; line-height:1.4; }
+
+.big-btn.wide { grid-column:1/-1; aspect-ratio:auto; }
+.big-btn.wide .btn-inner { padding:24px 24px 20px; display:flex; align-items:center; gap:20px; }
+.big-btn.wide .btn-icon  { font-size:2.2rem; margin-bottom:0; flex-shrink:0; }
+.big-btn.wide .btn-text  { text-align:left; }
+.big-btn.wide .btn-label { font-size:1rem; }
+
+/* ─── INNER PAGE CONTENT ─── */
+.inner-scroll { flex:1; overflow-y:auto; }
+.inner-content { max-width:960px; margin:0 auto; padding:28px 22px 60px; }
+
+/* search */
+.search-wrap { margin-bottom:20px; }
+.search-wrap input {
+  width:100%;
+  background:rgba(255,255,255,0.05);
+  border:1px solid var(--card-border);
+  border-radius:8px;
+  padding:12px 18px 12px 44px;
+  color:var(--white);
+  font-family:'Source Sans 3',sans-serif;
+  font-size:0.9rem; outline:none;
+  transition:border-color 0.2s;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 24 24' fill='none' stroke='%238a9ab5' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:14px center;
+}
+.search-wrap input:focus { border-color:var(--gold); }
+.search-wrap input::placeholder { color:var(--gray); }
+
+/* cards */
+.cards-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(268px,1fr));
+  gap:14px;
+}
+.card {
+  background:var(--card-bg);
+  border:1px solid var(--card-border);
+  border-radius:10px;
+  padding:18px 20px;
+  cursor:pointer;
+  transition:all 0.22s;
+  position:relative; overflow:hidden;
+  animation:fadeUp 0.4s ease both;
+}
+.card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, var(--gold), transparent);
+  opacity:0; transition:opacity 0.2s;
+}
+.card:hover { background:rgba(255,255,255,0.07); border-color:rgba(201,168,76,0.5); transform:translateY(-2px); box-shadow:0 8px 28px rgba(0,0,0,0.3); }
+.card:hover::before { opacity:1; }
+
+.card-name  { font-family:'Oswald',sans-serif; font-size:1rem; font-weight:600; color:var(--white); margin-bottom:3px; }
+.card-addr  { font-size:0.75rem; color:var(--gray); margin-bottom:10px; line-height:1.4; }
+.card-note  { font-size:0.72rem; color:var(--gold); margin-bottom:10px; font-style:italic; }
+.code-row   { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.code-lbl   { font-size:0.65rem; text-transform:uppercase; letter-spacing:0.12em; color:var(--gray); }
+.digits     { display:flex; gap:5px; flex-wrap:wrap; }
+.digit {
+  background:var(--navy-mid);
+  border:1px solid var(--card-border);
+  border-radius:5px;
+  width:30px; height:30px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Oswald',sans-serif; font-size:1rem; font-weight:600;
+  color:var(--gold-light); transition:background 0.2s;
+}
+.digit.sp {
+  background:rgba(201,168,76,0.12);
+  border-color:rgba(201,168,76,0.35);
+  font-size:0.67rem; width:auto; padding:0 8px;
+  color:var(--gold); white-space:nowrap;
+}
+.card:hover .digit { background:rgba(201,168,76,0.12); }
+.copy-hint { font-size:0.62rem; color:var(--gray); text-align:right; margin-top:8px; opacity:0.5; }
+
+.no-res { text-align:center; color:var(--gray); padding:50px 20px; font-size:0.9rem; display:none; }
+
+/* info panels */
+.info-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
+.panel {
+  background:var(--card-bg); border:1px solid var(--card-border);
+  border-radius:10px; padding:22px 24px;
+  animation:fadeUp 0.4s ease both;
+}
+.panel h3 {
+  font-family:'Oswald',sans-serif; font-size:0.88rem;
+  letter-spacing:0.1em; text-transform:uppercase; color:var(--gold);
+  margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--card-border);
+}
+.h-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.04); font-size:0.88rem; }
+.h-row:last-of-type { border-bottom:none; }
+.h-name { color:var(--gray); }
+.h-code { font-family:'Oswald',sans-serif; font-size:1.05rem; color:var(--gold-light); letter-spacing:0.05em; }
+
+.storage-box {
+  margin-top:14px; padding:12px 14px;
+  background:rgba(201,168,76,0.06); border-radius:7px;
+  border:1px solid rgba(201,168,76,0.15);
+  font-size:0.82rem; color:var(--gray); line-height:1.8;
+}
+.storage-box strong { color:var(--gold-light); }
+
+.s-row { display:flex; gap:12px; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.04); font-size:0.86rem; }
+.s-row:last-child { border-bottom:none; }
+.s-day { font-family:'Oswald',sans-serif; font-weight:600; color:var(--gold); min-width:110px; font-size:0.86rem; }
+.s-units { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.unit-bubble {
+  background: rgba(201,168,76,0.12);
+  border: 1px solid rgba(201,168,76,0.3);
+  border-radius: 20px;
+  padding: 3px 11px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gold-light);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* service */
+.service-frame-wrap { border-radius:10px; overflow:hidden; border:1px solid var(--card-border); background:#fff; }
+.open-link {
+  display:inline-flex; align-items:center; gap:6px;
+  margin-top:14px;
+  background:rgba(201,168,76,0.1); border:1px solid rgba(201,168,76,0.35);
+  border-radius:7px; padding:10px 18px;
+  color:var(--gold); font-family:'Oswald',sans-serif;
+  font-size:0.8rem; letter-spacing:0.07em; text-transform:uppercase;
+  text-decoration:none; transition:all 0.2s;
+}
+.open-link:hover { background:rgba(201,168,76,0.2); color:var(--gold-light); }
+
+/* toast */
+.toast {
+  position:fixed; bottom:26px; left:50%;
+  transform:translateX(-50%) translateY(80px);
+  background:var(--gold); color:var(--navy);
+  font-family:'Oswald',sans-serif; font-size:0.82rem;
+  letter-spacing:0.1em; text-transform:uppercase;
+  padding:10px 24px; border-radius:7px; font-weight:600;
+  transition:transform 0.3s ease; z-index:9999; pointer-events:none;
+}
+.toast.show { transform:translateX(-50%) translateY(0); }
+
+footer {
+  text-align:center; color:var(--gray);
+  font-size:0.68rem; letter-spacing:0.1em; text-transform:uppercase;
+  padding:16px 20px; border-top:1px solid var(--card-border);
+  flex-shrink:0;
+}
+
+@media(max-width:480px){
+  .btn-grid { gap:12px; }
+  .btn-inner { padding:22px 12px 18px; }
+  .btn-icon  { font-size:2rem; margin-bottom:10px; }
+  .btn-label { font-size:0.9rem; }
+  .big-btn.wide .btn-inner { gap:14px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════
+  PAGE: HOME
+══════════════════════════════════ -->
+<div class="page active" id="pg-home">
+
+  <div class="topbar">
+    <div class="topbar-logo">
+      <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
+    </div>
+    <div class="topbar-text">
+      <h1>Hatzolah <span>Middlesex County</span></h1>
+      <p>Operations Reference</p>
+    </div>
+  </div>
+
+  <div class="home-banner">Always confirm codes with caller before entry</div>
+
+  <div class="home-grid-wrap">
+    <div class="btn-grid">
+
+      <a class="big-btn" data-sec="rma" href="tel:7323481000" style="animation-delay:0.05s; text-decoration:none; --accent:#e05555;">
+        <div class="btn-inner">
+          <span class="btn-icon">📞</span>
+          <span class="btn-label">RMA Hotline</span>
+          <span class="btn-sub">Tap to call<br>(732) 348-1000</span>
+        </div>
+      </a>
+
+      <button class="big-btn" data-sec="hospital" onclick="goTo('hospital')" style="animation-delay:0.1s">
+        <div class="btn-inner">
+          <span class="btn-icon">🏥</span>
+          <span class="btn-label">Hospital Codes</span>
+          <span class="btn-sub">Saint Peters · RWJ NB<br>JFK · Storage</span>
+        </div>
+      </button>
+
+      <button class="big-btn" data-sec="shifts" onclick="goTo('shifts')" style="animation-delay:0.15s">
+        <div class="btn-inner">
+          <span class="btn-icon">🌙</span>
+          <span class="btn-label">Night Shifts</span>
+          <span class="btn-sub">Unit assignments<br>by night</span>
+        </div>
+      </button>
+
+      <button class="big-btn" data-sec="buildings" onclick="goTo('buildings')" style="animation-delay:0.2s">
+        <div class="btn-inner">
+          <span class="btn-icon">🏢</span>
+          <span class="btn-label">Buildings</span>
+          <span class="btn-sub">Residential &amp; institutional<br>access codes</span>
+        </div>
+      </button>
+
+      <button class="big-btn" data-sec="shuls" onclick="goTo('shuls')" style="animation-delay:0.25s">
+        <div class="btn-inner">
+          <span class="btn-icon">🕍</span>
+          <span class="btn-label">Shuls</span>
+          <span class="btn-sub">Synagogue entrance<br>access codes</span>
+        </div>
+      </button>
+
+      <button class="big-btn" data-sec="service" onclick="goTo('service')" style="animation-delay:0.3s">
+        <div class="btn-inner">
+          <span class="btn-icon">🔧</span>
+          <span class="btn-label">Service Report</span>
+          <span class="btn-sub">Submit maintenance<br>&amp; equipment issues</span>
+        </div>
+      </button>
+
+
+    </div>
+  </div>
+
+  <footer>Hatzolah Middlesex County &nbsp;·&nbsp; Internal Reference Only &nbsp;·&nbsp; Handle with Care</footer>
+</div>
+
+
+<!-- ══════════════════════════════════
+  PAGE: BUILDINGS
+══════════════════════════════════ -->
+<div class="page" id="pg-buildings">
+  <div class="inner-topbar">
+    <button class="back-btn" onclick="goHome()">← Home</button>
+    <div class="page-title"><span class="icon">🏢</span>Buildings</div>
+  </div>
+  <div class="inner-scroll">
+    <div class="inner-content">
+      <div class="search-wrap">
+        <input type="text" id="s-buildings" placeholder="Search name, address, or code…" oninput="filter('buildings')">
+      </div>
+      <div class="cards-grid" id="g-buildings"></div>
+      <div class="no-res" id="nr-buildings">No results found.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+  PAGE: SHULS
+══════════════════════════════════ -->
+<div class="page" id="pg-shuls">
+  <div class="inner-topbar">
+    <button class="back-btn" onclick="goHome()">← Home</button>
+    <div class="page-title"><span class="icon">🕍</span>Shuls</div>
+  </div>
+  <div class="inner-scroll">
+    <div class="inner-content">
+      <div class="search-wrap">
+        <input type="text" id="s-shuls" placeholder="Search name or code…" oninput="filter('shuls')">
+      </div>
+      <div class="cards-grid" id="g-shuls"></div>
+      <div class="no-res" id="nr-shuls">No results found.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+  PAGE: HOSPITAL CODES
+══════════════════════════════════ -->
+<div class="page" id="pg-hospital">
+  <div class="inner-topbar">
+    <button class="back-btn" onclick="goHome()">← Home</button>
+    <div class="page-title"><span class="icon">🏥</span>Hospital Codes</div>
+  </div>
+  <div class="inner-scroll">
+    <div class="inner-content">
+      <div class="info-grid">
+        <div class="panel" style="animation-delay:0.05s">
+          <h3>Hospital Codes</h3>
+          <div class="h-row"><span class="h-name">Saint Peters</span><span class="h-code">3693 *</span></div>
+          <div class="h-row"><span class="h-name">RWJ New Brunswick</span><span class="h-code">4596 #</span></div>
+          <div class="h-row"><span class="h-name">JFK</span><span class="h-code">6201 *</span></div>
+        </div>
+        <div class="panel" style="animation-delay:0.1s">
+          <h3>Storage Room</h3>
+          <div class="storage-box">
+            <strong>Room Code:</strong> 4+5, then 2, then 1+3<br>
+            <strong>Lock Box:</strong> 0613
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+  PAGE: NIGHT SHIFTS
+══════════════════════════════════ -->
+<div class="page" id="pg-shifts">
+  <div class="inner-topbar">
+    <button class="back-btn" onclick="goHome()">← Home</button>
+    <div class="page-title"><span class="icon">🌙</span>Night Shifts</div>
+  </div>
+  <div class="inner-scroll">
+    <div class="inner-content">
+      <div class="panel" style="max-width:560px; animation-delay:0.05s">
+        <h3>Night Shift Unit Schedule</h3>
+        <div id="shifts-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════
+  PAGE: SERVICE REPORT
+══════════════════════════════════ -->
+<div class="page" id="pg-service">
+  <div class="inner-topbar">
+    <button class="back-btn" onclick="goHome()">← Home</button>
+    <div class="page-title"><span class="icon">🔧</span>Service Report</div>
+  </div>
+  <div class="inner-scroll">
+    <div class="inner-content" style="max-width:780px;">
+      <div class="service-frame-wrap">
+        <iframe
+          src="https://forms.gle/UvaGUBbPWBVMuyY17"
+          width="100%" height="780" frameborder="0"
+          marginheight="0" marginwidth="0"
+          style="display:block;"
+        >Loading…</iframe>
+      </div>
+      <a class="open-link" href="https://forms.gle/UvaGUBbPWBVMuyY17" target="_blank">↗ Open in new tab</a>
+    </div>
+  </div>
+</div>
+
+
+<div class="toast" id="toast">Code Copied!</div>
+
+<script>
+/* ── SHIFTS DATA & RENDER ── */
+const SHIFTS = [
+  { day:"Sunday",       units:["MC-19","MC-34","MC-11"] },
+  { day:"Monday",       units:["MC-20","MC-30","MC-32"] },
+  { day:"Tuesday",      units:["MC-24","MC-15"] },
+  { day:"Wednesday",    units:["MC-02","MC-25","MC-35"] },
+  { day:"Thursday",     units:["MC-21","MC-22","MC-29"] },
+  { day:"Friday Night", units:["MC-17","MC-03","MC-14"] },
+  { day:"Motzei Shabbos", units:["MC-18","MC-31","Temp MC-01"] },
+];
+
+function renderShifts() {
+  const el = document.getElementById('shifts-list');
+  if (!el) return;
+  el.innerHTML = SHIFTS.map(s => `
+    <div class="s-row">
+      <span class="s-day">${s.day}</span>
+      <span class="s-units">${s.units.map(u => `<span class="unit-bubble">${u}</span>`).join('')}</span>
+    </div>`).join('');
+}
+
+/* ── DATA ── */
+const DATA = {
+  buildings: [
+    { name:"The Highlander",           address:"123 South Adelaide Ave, Highland Park", note:"",                                                    code:"1-5-3",          raw:"153"     },
+    { name:"The Lafayette",            address:"201 S. 2nd Ave., Highland Park",        note:"Benner St. / S 2nd Entrance – use # before code",      code:"#-1-6-0-2",      raw:"#1602"   },
+    { name:"RJJ Main Building",        address:"1 Plainfield Ave, Edison",              note:"HS dorm and offices",                                   code:"1-3",            raw:"13"      },
+    { name:"RJJ Beis Medrash",         address:"2060 Woodbridge Ave, Edison",           note:"Dorm, classrooms, annex, and gym",                      code:"5-3-1-2-4",      raw:"53124"   },
+    { name:"RJJ Beis Medrash & Mikvah",address:"Behind main building, Edison",          note:"",                                                    code:"1-3",            raw:"13"      },
+    { name:"Park Mikveh",              address:"",                                      note:"Press 1 and 4 together, then 2 and 5 together",         code:"[1+4] then [2+5]",raw:"14 25", special:true }
+  ],
+  shuls: [
+    { name:"Agudah",                              address:"", note:"",                                                         code:"1-3",              raw:"13"      },
+    { name:"Ahavas Achim (AA)",                   address:"", note:"Side door, back of building – turn handle to right",       code:"2-4-1",            raw:"241"     },
+    { name:"Ahavas Yisroel (AY)",                 address:"", note:"",                                                         code:"3-2-4-5",          raw:"3245"    },
+    { name:"Ateres Shlomo",                       address:"", note:"",                                                         code:"1-4-5",            raw:"145"     },
+    { name:"Eitz Hachaim",                        address:"", note:"Glass side door in parking lot",                           code:"1-9-4-9-8-2",      raw:"194982"  },
+    { name:"Khal Chassidim (KC / The Shteible)",  address:"", note:"Clear first, then enter code",                             code:"Clear → 1-5-2",    raw:"152",    special:true },
+    { name:"Ohav Emeth (OE)",                     address:"", note:"Back door in parking lot",                                 code:"[4+1] then 5 then 2",raw:"41 5 2",special:true },
+    { name:"Ohr Torah (OT)",                      address:"", note:"",                                                         code:"4-1-3",            raw:"413"     },
+    { name:"Young Israel of East Brunswick",      address:"", note:"",                                                         code:"[5+4] then 3 then 1",raw:"54 3 1",special:true }
+  ]
+};
+
+/* ── NAVIGATION ── */
+function goTo(sec) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('pg-' + sec).classList.add('active');
+  window.scrollTo(0,0);
+  if (sec === 'buildings' || sec === 'shuls') renderCards(sec, DATA[sec]);
+  if (sec === 'shifts') renderShifts();
+}
+
+function goHome() {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('pg-home').classList.add('active');
+  window.scrollTo(0,0);
+}
+
+/* ── RENDER ── */
+function mkDigits(code, special) {
+  if (special) return `<span class="digit sp">${code}</span>`;
+  return code.split('-').map(d => `<span class="digit">${d}</span>`).join('');
+}
+
+function mkCard(item, i) {
+  const r = item.raw.replace(/'/g,"\\'");
+  return `<div class="card" style="animation-delay:${i*40}ms" onclick="copyCode('${r}')">
+    <div class="card-name">${item.name}</div>
+    ${item.address ? `<div class="card-addr">${item.address}</div>` : ''}
+    ${item.note    ? `<div class="card-note">${item.note}</div>`    : ''}
+    <div class="code-row">
+      <span class="code-lbl">Code:</span>
+      <div class="digits">${mkDigits(item.code, item.special)}</div>
+    </div>
+    <div class="copy-hint">tap to copy</div>
+  </div>`;
+}
+
+function renderCards(sec, items) {
+  document.getElementById('g-'+sec).innerHTML = items.map((it,i) => mkCard(it,i)).join('');
+  document.getElementById('nr-'+sec).style.display = 'none';
+}
+
+/* ── SEARCH ── */
+function filter(sec) {
+  const q = document.getElementById('s-'+sec).value.toLowerCase();
+  const list = q
+    ? DATA[sec].filter(d =>
+        d.name.toLowerCase().includes(q) ||
+        (d.address||'').toLowerCase().includes(q) ||
+        d.raw.includes(q) ||
+        (d.note||'').toLowerCase().includes(q))
+    : DATA[sec];
+  document.getElementById('g-'+sec).innerHTML = list.map((it,i) => mkCard(it,i)).join('');
+  document.getElementById('nr-'+sec).style.display = list.length ? 'none' : 'block';
+}
+
+/* ── COPY ── */
+function copyCode(raw) {
+  navigator.clipboard.writeText(raw).catch(()=>{});
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+</script>
+</body>
+</html>
