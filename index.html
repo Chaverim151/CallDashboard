@@ -402,7 +402,7 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
         <label>Unit Number</label>
         <div style="display:flex;align-items:center;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;overflow:hidden;transition:border-color 0.2s" id="unit-wrap">
           <span style="padding:12px 10px 12px 14px;font-family:'Oswald',sans-serif;font-size:1rem;font-weight:600;color:var(--gold);letter-spacing:0.05em;white-space:nowrap;border-right:1px solid var(--card-border);background:rgba(201,168,76,0.06)">MC-</span>
-          <input type="text" id="li-unit" placeholder="16" maxlength="4" inputmode="numeric"
+          <input type="text" id="li-unit" placeholder="00" maxlength="4" inputmode="numeric"
             style="flex:1;background:transparent;border:none;padding:12px 14px;color:var(--white);font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:600;outline:none;width:80px"
             oninput="this.value=this.value.replace(/[^0-9]/g,'')">
         </div>
@@ -1009,9 +1009,9 @@ window.goTo = function(sec) {
   showPage(sec);
   if (["buildings","shuls","hospital","storage"].includes(sec)) {
     injectAdminBar(sec);
-    renderCards(sec, LIVE_DATA[sec]);
+    window.renderCards(sec, window.LIVE_DATA[sec]);
   }
-  if (sec === "shifts")   { injectShiftAdminBar(); renderShifts(); }
+  if (sec === "shifts")   { injectShiftAdminBar(); window.renderShifts(); }
   if (sec === "admin")    loadUsers();
   if (sec === "contacts") loadContacts();
 };
@@ -1166,27 +1166,38 @@ const DEFAULT_SHIFTS = [
 ];
 
 // Live data (loaded from Firestore or defaults)
-let LIVE_DATA   = JSON.parse(JSON.stringify(DEFAULT_DATA));
-let LIVE_SHIFTS = JSON.parse(JSON.stringify(DEFAULT_SHIFTS));
+window.LIVE_DATA   = JSON.parse(JSON.stringify(DEFAULT_DATA));
+window.LIVE_SHIFTS = JSON.parse(JSON.stringify(DEFAULT_SHIFTS));
 let editModeActive = {};
 
 async function loadAppData() {
   try {
     const snap = await getDoc(doc(db, "appdata", "codes"));
-    if (snap.exists()) LIVE_DATA = snap.data().sections || DEFAULT_DATA;
+    if (snap.exists()) window.LIVE_DATA = snap.data().sections || DEFAULT_DATA;
     const ssnap = await getDoc(doc(db, "appdata", "shifts"));
-    if (ssnap.exists()) LIVE_SHIFTS = ssnap.data().shifts || DEFAULT_SHIFTS;
+    if (ssnap.exists()) window.LIVE_SHIFTS = ssnap.data().shifts || DEFAULT_SHIFTS;
   } catch(e) { console.log("Using default data:", e.message); }
 }
 
-async function saveSection(sec) {
-  await setDoc(doc(db, "appdata", "codes"), { sections: LIVE_DATA }, { merge:true });
-  showToast("Saved!");
-}
-async function saveShifts() {
-  await setDoc(doc(db, "appdata", "shifts"), { shifts: LIVE_SHIFTS });
-  showToast("Shifts saved!");
-}
+window.saveSection = async function(sec) {
+  try {
+    await setDoc(doc(db, "appdata", "codes"), { sections: window.LIVE_DATA }, { merge:true });
+    showToast("✓ Saved!");
+  } catch(e) {
+    showToast("Save failed: " + e.message, true);
+    console.error(e);
+  }
+};
+
+window.saveShifts = async function() {
+  try {
+    await setDoc(doc(db, "appdata", "shifts"), { shifts: window.LIVE_SHIFTS });
+    showToast("✓ Shifts saved!");
+  } catch(e) {
+    showToast("Save failed: " + e.message, true);
+    console.error(e);
+  }
+};
 
 /* ── ADMIN EDIT BAR ── */
 function injectAdminBar(sec) {
@@ -1211,8 +1222,8 @@ function injectShiftAdminBar() {
 
 window.toggleEditMode = function(sec) {
   editModeActive[sec] = !editModeActive[sec];
-  if (sec === "shifts") { injectShiftAdminBar(); renderShifts(); }
-  else { injectAdminBar(sec); renderCards(sec, LIVE_DATA[sec]); }
+  if (sec === "shifts") { injectShiftAdminBar(); window.renderShifts(); }
+  else { injectAdminBar(sec); window.window.renderCards(sec, window.LIVE_DATA[sec]); }
 };
 
 /* ── RENDER ── */
@@ -1234,63 +1245,91 @@ function mkCard(item, i, sec) {
     ${editing ? `
     <div class="card-edit-row" style="margin-top:12px;flex-direction:column;gap:6px">
       <input class="card-edit-inp" placeholder="Code (e.g. 1-2-3)" value="${item.code}"
-        onchange="LIVE_DATA['${sec}'][${i}].code=this.value">
+        oninput="window.LIVE_DATA['${sec}'][${i}].code=this.value">
       <input class="card-edit-inp" placeholder="Note (optional)" value="${item.note||''}"
-        onchange="LIVE_DATA['${sec}'][${i}].note=this.value">
+        oninput="window.LIVE_DATA['${sec}'][${i}].note=this.value">
       <input class="card-edit-inp" placeholder="Address (optional)" value="${item.address||''}"
-        onchange="LIVE_DATA['${sec}'][${i}].address=this.value">
-      <button class="card-save-btn" onclick="saveSection('${sec}');renderCards('${sec}',LIVE_DATA['${sec}'])">💾 Save</button>
+        oninput="window.LIVE_DATA['${sec}'][${i}].address=this.value">
+      <button class="card-save-btn" onclick="window.saveSection('${sec}').then(()=>window.renderCards('${sec}',window.LIVE_DATA['${sec}']))">💾 Save Changes</button>
     </div>` : ""}
   </div>`;
 }
 
-function renderCards(sec, items) {
+window.renderCards = function(sec, items) {
   document.getElementById("g-"+sec).innerHTML = (items||[]).map((it,i) => mkCard(it,i,sec)).join("");
-}
+};
 
-function renderShifts() {
+window.renderShifts = function() {
   const el = document.getElementById("shifts-list");
   if (!el) return;
   const editing = editModeActive['shifts'] && currentRole === "admin";
-  el.innerHTML = LIVE_SHIFTS.map((s, si) => `
+  el.innerHTML = window.LIVE_SHIFTS.map((s, si) => `
     <div class="s-row" style="flex-direction:column;align-items:flex-start;gap:6px">
       <span class="s-day">${s.day}</span>
       <span class="s-units">
         ${s.units.map((u,ui) => editing
           ? `<span style="display:inline-flex;align-items:center;gap:3px">
-               <input class="shift-unit-inp" value="${u}"
-                 onchange="LIVE_SHIFTS[${si}].units[${ui}]=this.value">
-               <button class="rm-unit-btn" onclick="LIVE_SHIFTS[${si}].units.splice(${ui},1);renderShifts()">✕</button>
+               <input class="shift-unit-inp" data-si="${si}" data-ui="${ui}" value="${u}">
+               <button class="rm-unit-btn" onclick="window.removeUnit(${si},${ui})">✕</button>
              </span>`
           : `<span class="unit-bubble">${u}</span>`
         ).join("")}
         ${editing ? `
           <span style="display:inline-flex;align-items:center;gap:4px">
-            <input class="shift-add-inp" placeholder="+ add unit" id="add-${si}"
-              onkeydown="if(event.key==='Enter'){addUnit(${si});}"
-              style="margin-left:4px">
-            <button class="card-save-btn" style="padding:5px 10px;font-size:0.72rem" onclick="addUnit(${si})">+</button>
+            <input class="shift-add-inp" placeholder="+ MC-##" id="add-${si}" style="margin-left:4px"
+              onkeydown="if(event.key==='Enter'){window.addUnit(${si});}">
+            <button class="card-save-btn" style="padding:5px 10px;font-size:0.72rem" onclick="window.addUnit(${si})">+</button>
           </span>` : ""}
       </span>
-      ${editing ? `<button class="card-save-btn" style="margin-top:4px" onclick="saveShifts();renderShifts()">💾 Save</button>` : ""}
+      ${editing ? `<button class="card-save-btn" style="margin-top:6px" onclick="window.collectAndSaveShifts()">💾 Save All</button>` : ""}
     </div>`).join("");
-}
+};
+
+// Read all input values from DOM into LIVE_SHIFTS then save
+window.collectAndSaveShifts = async function() {
+  document.querySelectorAll(".shift-unit-inp").forEach(inp => {
+    const si = parseInt(inp.dataset.si);
+    const ui = parseInt(inp.dataset.ui);
+    if (!isNaN(si) && !isNaN(ui)) {
+      window.LIVE_SHIFTS[si].units[ui] = inp.value.trim().toUpperCase();
+    }
+  });
+  await window.saveShifts();
+  window.renderShifts();
+};
+
+window.removeUnit = function(si, ui) {
+  // Collect current DOM values first so we don't lose edits
+  document.querySelectorAll(".shift-unit-inp").forEach(inp => {
+    const s = parseInt(inp.dataset.si);
+    const u = parseInt(inp.dataset.ui);
+    if (!isNaN(s) && !isNaN(u)) window.LIVE_SHIFTS[s].units[u] = inp.value.trim().toUpperCase();
+  });
+  window.LIVE_SHIFTS[si].units.splice(ui, 1);
+  window.renderShifts();
+};
 
 window.addUnit = function(si) {
+  // Collect current DOM values first
+  document.querySelectorAll(".shift-unit-inp").forEach(inp => {
+    const s = parseInt(inp.dataset.si);
+    const u = parseInt(inp.dataset.ui);
+    if (!isNaN(s) && !isNaN(u)) window.LIVE_SHIFTS[s].units[u] = inp.value.trim().toUpperCase();
+  });
   const inp = document.getElementById("add-" + si);
-  const val = inp.value.trim().toUpperCase();
+  let val = inp.value.trim().toUpperCase();
   if (!val) return;
-  if (!val.startsWith("MC-")) { showToast("Format: MC-##", true); return; }
-  LIVE_SHIFTS[si].units.push(val);
-  renderShifts();
+  if (!val.startsWith("MC-")) val = "MC-" + val;
+  window.LIVE_SHIFTS[si].units.push(val);
+  window.renderShifts();
 };
 
 window.filter = function(sec) {
   const q = document.getElementById("s-"+sec).value.toLowerCase();
-  const list = q ? (LIVE_DATA[sec]||[]).filter(d =>
+  const list = q ? (window.LIVE_DATA[sec]||[]).filter(d =>
     (d.name||"").toLowerCase().includes(q) ||
     (d.address||"").toLowerCase().includes(q) ||
-    (d.note||"").toLowerCase().includes(q)) : LIVE_DATA[sec];
+    (d.note||"").toLowerCase().includes(q)) : window.LIVE_DATA[sec];
   document.getElementById("g-"+sec).innerHTML = (list||[]).map((it,i) => mkCard(it,i,sec)).join("");
   document.getElementById("nr-"+sec).style.display = list.length ? "none" : "block";
 };
@@ -1302,7 +1341,11 @@ async function loadContacts() {
   const snap = await getDocs(collection(db, "users"));
   allContacts = [];
   snap.forEach(d => allContacts.push({uid:d.id,...d.data()}));
-  allContacts.sort((a,b)=>(a.lastName||"").localeCompare(b.lastName||""));
+  allContacts.sort((a,b) => {
+    const numA = parseInt((a.unit||"").replace(/\D/g,"")) || 999;
+    const numB = parseInt((b.unit||"").replace(/\D/g,"")) || 999;
+    return numA - numB;
+  });
   renderContacts(allContacts);
 }
 
