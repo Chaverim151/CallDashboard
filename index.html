@@ -317,8 +317,13 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
       <div class="login-title">Hatzolah <span>MC</span></div>
       <div class="login-sub">Operations Portal — Members Only</div>
       <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="li-email" placeholder="your@email.com" autocomplete="email">
+        <label>Unit Number</label>
+        <div style="display:flex;align-items:center;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;overflow:hidden;transition:border-color 0.2s" id="unit-wrap">
+          <span style="padding:12px 10px 12px 14px;font-family:'Oswald',sans-serif;font-size:1rem;font-weight:600;color:var(--gold);letter-spacing:0.05em;white-space:nowrap;border-right:1px solid var(--card-border);background:rgba(201,168,76,0.06)">MC-</span>
+          <input type="text" id="li-unit" placeholder="16" maxlength="4" inputmode="numeric"
+            style="flex:1;background:transparent;border:none;padding:12px 14px;color:var(--white);font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:600;outline:none;width:80px"
+            oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        </div>
       </div>
       <div class="form-group">
         <label>Password</label>
@@ -326,6 +331,24 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
       </div>
       <button class="login-btn" id="li-btn" onclick="doLogin()">Sign In</button>
       <div class="login-err" id="li-err"></div>
+      <div style="text-align:center;margin-top:16px">
+        <button onclick="showReset()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;letter-spacing:0.05em">Forgot password?</button>
+      </div>
+
+      <!-- Reset password panel -->
+      <div id="reset-panel" style="display:none;margin-top:18px;padding-top:18px;border-top:1px solid var(--card-border)">
+        <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Reset Password — Enter your unit number</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="display:flex;align-items:center;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;overflow:hidden;flex:1">
+            <span style="padding:10px 8px 10px 12px;font-family:'Oswald',sans-serif;font-size:0.95rem;font-weight:600;color:var(--gold);border-right:1px solid var(--card-border);background:rgba(201,168,76,0.06)">MC-</span>
+            <input type="text" id="reset-unit" placeholder="16" maxlength="4" inputmode="numeric"
+              style="flex:1;background:transparent;border:none;padding:10px 12px;color:var(--white);font-family:'Oswald',sans-serif;font-size:1rem;font-weight:600;outline:none;width:60px"
+              oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+          </div>
+          <button onclick="doReset()" style="background:var(--navy-light);border:1px solid var(--card-border);border-radius:8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.8rem;letter-spacing:0.07em;text-transform:uppercase;padding:10px 14px;cursor:pointer;white-space:nowrap;transition:all 0.2s">Send Reset</button>
+        </div>
+        <div id="reset-msg" style="font-size:0.78rem;margin-top:10px;display:none"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -483,6 +506,19 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
   </div>
   <div class="inner-scroll"><div class="inner-content">
 
+    <!-- Bulk Import -->
+    <div class="admin-section">
+      <div class="admin-section-title">Bulk Import Members</div>
+      <div class="add-user-form" style="max-width:100%">
+        <p style="color:var(--gray);font-size:0.82rem;margin-bottom:14px;line-height:1.6;">
+          Imports all 36 members from the roster. Default password: <strong style="color:var(--gold-light);font-family:monospace">Hatzolah1!</strong><br>
+          Members with no email will be skipped. Already-existing accounts will be skipped safely.
+        </p>
+        <button class="submit-btn" id="import-btn" onclick="bulkImport()">🚀 Import All Members</button>
+        <div style="margin-top:14px;font-size:0.8rem;color:var(--gray)" id="import-log"></div>
+      </div>
+    </div>
+
     <!-- Add User -->
     <div class="admin-section">
       <div class="admin-section-title">Add New Member</div>
@@ -529,10 +565,11 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
         <table class="users-table" id="users-table" style="display:none">
           <thead>
             <tr>
+              <th>Unit</th>
               <th>Name</th>
+              <th>Phone</th>
               <th>Email</th>
               <th>Role</th>
-              <th>UID</th>
               <th></th>
             </tr>
           </thead>
@@ -555,7 +592,8 @@ import { getAuth, signInWithEmailAndPassword,
          signOut, onAuthStateChanged,
          createUserWithEmailAndPassword }          from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc,
-         collection, getDocs, deleteDoc }          from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+         collection, getDocs, deleteDoc,
+         query, where }                              from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyDFWxlw9aLIn9HB2L_B6vbhvY5-nlXhpHM",
@@ -582,14 +620,17 @@ onAuthStateChanged(auth, async user => {
     const snap = await getDoc(doc(db, "users", user.uid));
     if (snap.exists()) {
       currentRole = snap.data().role || "member";
+      const d = snap.data();
+      document.getElementById("topbar-email").textContent = (d.unit || d.email);
     } else {
       // First-time super admin auto-provision
       if (user.email === SUPER_ADMIN) {
         await setDoc(doc(db, "users", user.uid), {
-          email: user.email, firstName:"Shmuel", lastName:"Eidelman",
+          unit:"MC-16", email: user.email, firstName:"Shmuel", lastName:"Eidelman",
           role:"admin", createdAt: new Date().toISOString()
         });
         currentRole = "admin";
+        document.getElementById("topbar-email").textContent = "MC-16";
       } else {
         // Not provisioned — deny
         await signOut(auth);
@@ -597,7 +638,6 @@ onAuthStateChanged(auth, async user => {
         return;
       }
     }
-    document.getElementById("topbar-email").textContent = user.email;
     if (currentRole === "admin") document.getElementById("admin-nav-btn").style.display = "inline-flex";
     showPage("home");
   } else {
@@ -609,30 +649,84 @@ onAuthStateChanged(auth, async user => {
 
 /* ── LOGIN ── */
 window.doLogin = async function() {
-  const email = document.getElementById("li-email").value.trim();
-  const pass  = document.getElementById("li-pass").value;
-  const btn   = document.getElementById("li-btn");
-  const err   = document.getElementById("li-err");
+  const num  = document.getElementById("li-unit").value.trim();
+  const pass = document.getElementById("li-pass").value;
+  const btn  = document.getElementById("li-btn");
   err.classList.remove("show"); err.textContent = "";
+
+  if (!num)  { showErr("Please enter your unit number."); return; }
+  if (!pass) { showErr("Please enter your password."); return; }
+
+  const unit = "MC-" + num;
   btn.disabled = true; btn.textContent = "Signing in…";
+
   try {
+    // Look up email by unit number in Firestore
+    const q    = query(collection(db, "users"), where("unit", "==", unit));
+    const snap = await getDocs(q);
+
+    let email;
+    if (!snap.empty) {
+      email = snap.docs[0].data().email;
+    } else if (unit === "MC-16") {
+      // First-time admin login before Firestore doc exists
+      email = SUPER_ADMIN;
+    } else {
+      showErr("Unit not found. Check your number or contact an admin.");
+      btn.disabled=false; btn.textContent="Sign In"; return;
+    }
+
+    if (!email) {
+      showErr("No email on file for this unit. Contact an admin.");
+      btn.disabled=false; btn.textContent="Sign In"; return;
+    }
+
     await signInWithEmailAndPassword(auth, email, pass);
   } catch(e) {
+    console.error("Login error:", e.code, e.message);
     showErr(friendlyError(e.code));
     btn.disabled = false; btn.textContent = "Sign In";
   }
 };
 
+window.showReset = function() {
+  const p = document.getElementById("reset-panel");
+  p.style.display = p.style.display === "none" ? "block" : "none";
+};
+
+window.doReset = async function() {
+  const { sendPasswordResetEmail } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+  const num = document.getElementById("reset-unit").value.trim();
+  const msg = document.getElementById("reset-msg");
+  msg.style.display = "none";
+  if (!num) { msg.style.display="block"; msg.style.color="#ff9090"; msg.textContent="Enter your unit number."; return; }
+  const unit = "MC-" + num;
+  try {
+    const q    = query(collection(db, "users"), where("unit", "==", unit));
+    const snap = await getDocs(q);
+    if (snap.empty) { msg.style.display="block"; msg.style.color="#ff9090"; msg.textContent="Unit not found."; return; }
+    const email = snap.docs[0].data().email;
+    if (!email) { msg.style.display="block"; msg.style.color="#ff9090"; msg.textContent="No email on file. Contact an admin."; return; }
+    await sendPasswordResetEmail(auth, email);
+    msg.style.display="block"; msg.style.color="#7dedb5";
+    msg.textContent = "✓ Reset email sent to your registered address.";
+  } catch(e) {
+    msg.style.display="block"; msg.style.color="#ff9090"; msg.textContent="Error: " + e.message;
+  }
+};
+
+const err = document.getElementById("li-err");
+
 function showErr(msg) {
-  const err = document.getElementById("li-err");
   err.textContent = msg; err.classList.add("show");
 }
 
 function friendlyError(code) {
-  if (code==="auth/user-not-found"||code==="auth/wrong-password"||code==="auth/invalid-credential") return "Invalid email or password.";
+  if (["auth/user-not-found","auth/wrong-password","auth/invalid-credential"].includes(code)) return "Incorrect password. Try again.";
   if (code==="auth/too-many-requests") return "Too many attempts. Try again later.";
-  if (code==="auth/invalid-email") return "Please enter a valid email address.";
-  return "Sign-in failed. Please try again.";
+  if (code==="auth/network-request-failed") return "Network error. Check your connection.";
+  if (code==="auth/invalid-email") return "Invalid email format.";
+  return "Sign-in failed. Please try again. (Check browser console for details)";
 }
 
 /* ── LOGOUT ── */
@@ -700,10 +794,11 @@ async function loadUsers() {
   const tbody = document.getElementById("users-tbody");
   tbody.innerHTML = rows.map(u => `
     <tr>
+      <td style="font-family:'Oswald',sans-serif;color:var(--gold);font-size:0.85rem">${u.unit||"—"}</td>
       <td>${u.firstName||""} ${u.lastName||""}</td>
-      <td style="color:var(--gray)">${u.email||""}</td>
+      <td style="color:var(--gray);font-size:0.8rem">${u.phone||"—"}</td>
+      <td style="color:var(--gray);font-size:0.8rem">${u.email||""}</td>
       <td><span class="role-badge ${u.role}">${u.role||"member"}</span></td>
-      <td style="color:var(--gray);font-size:0.7rem;font-family:monospace">${u.uid.slice(0,10)}…</td>
       <td>${u.email === SUPER_ADMIN ? "" : `<button class="del-btn" onclick="deleteUser('${u.uid}','${u.email}')">Remove</button>`}</td>
     </tr>`).join("");
 
@@ -740,10 +835,104 @@ function showPage(name) {
   window.scrollTo(0,0);
 }
 
-/* ── LOGIN ENTER KEY ── */
 document.addEventListener("keydown", e => {
   if (e.key==="Enter" && document.getElementById("pg-login").classList.contains("active")) window.doLogin();
 });
+
+/* ── BULK IMPORT ROSTER ── */
+const ROSTER = [
+  { unit:"MC-23", lastName:"Zelmanovitz", firstName:"Charles",  phone:"917-648-5236",                          email:"charles@zwigroup.com"           },
+  { unit:"MC-51", lastName:"Werzberger",  firstName:"Shea",     phone:"347-924-1620",                          email:"sheawertz1@gmail.com"           },
+  { unit:"MC-19", lastName:"Weiss",       firstName:"Asher",    phone:"732-829-1073",                          email:"azw.tcp@gmail.com"              },
+  { unit:"MC-22", lastName:"Weiss",       firstName:"Meir",     phone:"845-798-0405",                          email:"meir14weiss@gmail.com"          },
+  { unit:"MC-10", lastName:"Wahrman",     firstName:"Yaakov",   phone:"347-355-9947",                          email:"yawahrman@aol.com"              },
+  { unit:"MC-52", lastName:"Tauber",      firstName:"Joseph",   phone:"646-481-6633",                          email:"tauberyossi123@gmail.com"       },
+  { unit:"MC-25", lastName:"Siegel",      firstName:"Avrohom",  phone:"732-421-7980",                          email:"avrohom.siegel@gmail.com"       },
+  { unit:"MC-33", lastName:"Safrin",      firstName:"Benjamin", phone:"917-935-2129",                          email:"benjaminsafrin@gmail.com"       },
+  { unit:"MC-14", lastName:"Rosenstock",  firstName:"Avraham",  phone:"347-633-6913",                          email:"aarmc14@gmail.com"              },
+  { unit:"MC-50", lastName:"Pscherhofer", firstName:"Jack",     phone:"347-882-1500 / 347-723-2773",           email:"jack@allstarlighting.com"       },
+  { unit:"MC-36", lastName:"Platcheck",   firstName:"David",    phone:"718-490-2873",                          email:""                               },
+  { unit:"MC-29", lastName:"Peikes",      firstName:"Aharon",   phone:"347-572-5832",                          email:"aaron@plainfieldstaffing.com"   },
+  { unit:"MC-11", lastName:"Orgel",       firstName:"Evan",     phone:"732-423-7821",                          email:"evan.orgel@gmail.com"           },
+  { unit:"MC-26", lastName:"Mandelbaum",  firstName:"Howard",   phone:"646-732-2481",                          email:"howlin_m@hotmail.com"           },
+  { unit:"MC-12", lastName:"Malik",       firstName:"Yakov",    phone:"347-578-1945",                          email:"yakovmalik@gmail.com"           },
+  { unit:"MC-30", lastName:"Loewenstein", firstName:"Joshua",   phone:"732-642-9628",                          email:"joshmetfan@yahoo.com"           },
+  { unit:"MC-34", lastName:"Lieblich",    firstName:"Julian",   phone:"520-301-7925",                          email:"yitzchak@websolutionsnyc.com"   },
+  { unit:"MC-17", lastName:"Lewitter",    firstName:"Ari",      phone:"917-751-2747",                          email:"lewitter@yahoo.com"             },
+  { unit:"MC-02", lastName:"Lerner",      firstName:"Eric",     phone:"732-985-5201 / 732-725-1966",           email:"eric.lerner@hatzolahmc.org"     },
+  { unit:"MC-24", lastName:"Lebowitz",    firstName:"Jeremy",   phone:"732-777-2626 / 347-576-5789",           email:"ylebowitz@gmail.com"            },
+  { unit:"MC-21", lastName:"Lachman",     firstName:"Jay",      phone:"516-660-6057",                          email:"yehudalachman@gmail.com"        },
+  { unit:"MC-32", lastName:"Klein",       firstName:"Jeffrey",  phone:"917-841-6431",                          email:"jeffreyklein@yahoo.com"         },
+  { unit:"MC-20", lastName:"Hoffman",     firstName:"Avraham",  phone:"732-718-5819",                          email:"avrahamhoffman@gmail.com"       },
+  { unit:"P-47",  lastName:"Hirsch",      firstName:"Anton",    phone:"201-354-0550",                          email:""                               },
+  { unit:"MC-27", lastName:"Gross",       firstName:"Yosef",    phone:"347-920-8958",                          email:""                               },
+  { unit:"MC-53", lastName:"Goldwasser",  firstName:"Norman",   phone:"917-789-3190",                          email:"normangoldwas@gmail.com"        },
+  { unit:"MC-18", lastName:"Gantz",       firstName:"Michael",  phone:"917-703-2746",                          email:"eskd2004@gmail.com"             },
+  { unit:"MC-01", lastName:"Erps",        firstName:"Fishel",   phone:"732-543-1969 / 347-539-6380",           email:"fishel.erps@hatzolahmc.org"     },
+  { unit:"MC-16", lastName:"Eidelman",    firstName:"Shmuel",   phone:"732-985-2495 / 732-429-5195",           email:"shmueleidelman.work@gmail.com"  },
+  { unit:"MC-28", lastName:"Dietz",       firstName:"Joseph",   phone:"732-789-7271",                          email:"ydietz00@gmail.com"             },
+  { unit:"MC-31", lastName:"Bodlander",   firstName:"Abraham",  phone:"732-339-0908 / 848-391-8697",           email:"avibodlander@gmail.com"         },
+  { unit:"MC-54", lastName:"Biderman",    firstName:"Abraham",  phone:"917-863-3524",                          email:"abeb@msn.com"                   },
+  { unit:"MC-35", lastName:"Berger",      firstName:"Yehuda",   phone:"848-245-5932",                          email:"zeviberger@gmail.com"           },
+  { unit:"MC-15", lastName:"Benedek",     firstName:"Joseph",   phone:"732-545-7353 / 732-735-7611",           email:"yoben18@gmail.com"              },
+  { unit:"MC-03", lastName:"Ben-Haim",    firstName:"Eliezar",  phone:"732-572-3895 / 732-570-5876",           email:"eli.ben_haim@yahoo.com"         },
+  { unit:"MC-13", lastName:"Bauer",       firstName:"Jonathan", phone:"917-207-3602",                          email:"yoni@glatt27.com"               },
+];
+
+window.bulkImport = async function() {
+  if (currentRole !== "admin") return;
+  const btn = document.getElementById("import-btn");
+  const log = document.getElementById("import-log");
+  btn.disabled = true; btn.textContent = "Importing…";
+  log.innerHTML = "";
+
+  const DEFAULT_PASS = "Hatzolah1!";
+  const { initializeApp: initApp2 } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+  const { getAuth: getAuth2, createUserWithEmailAndPassword: createUser2, signOut: signOut2 } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+
+  let created=0, skipped=0, failed=0;
+
+  for (const m of ROSTER) {
+    if (!m.email) {
+      log.innerHTML += `<div style="color:var(--gray)">⏭ ${m.unit} ${m.lastName} — no email, skipped</div>`;
+      skipped++; continue;
+    }
+    if (m.email.toLowerCase() === SUPER_ADMIN.toLowerCase()) {
+      log.innerHTML += `<div style="color:var(--gold)">⚡ ${m.unit} ${m.lastName} — admin account, skipped</div>`;
+      skipped++; continue;
+    }
+    try {
+      const app2  = initApp2(firebaseConfig, "bulk-" + m.email.replace(/\W/g,"_") + "-" + Date.now());
+      const auth2 = getAuth2(app2);
+      const cred  = await createUser2(auth2, m.email, DEFAULT_PASS);
+      const uid   = cred.user.uid;
+      await signOut2(auth2);
+      await setDoc(doc(db, "users", uid), {
+        unit: m.unit, firstName: m.firstName, lastName: m.lastName,
+        email: m.email, phone: m.phone, role: "member",
+        createdAt: new Date().toISOString()
+      });
+      log.innerHTML += `<div style="color:#7dedb5">✓ ${m.unit} ${m.firstName} ${m.lastName}</div>`;
+      created++;
+    } catch(e) {
+      if (e.code === "auth/email-already-in-use") {
+        log.innerHTML += `<div style="color:var(--gray)">⏭ ${m.unit} ${m.lastName} — already exists</div>`;
+        skipped++;
+      } else {
+        log.innerHTML += `<div style="color:#ff9090">✗ ${m.unit} ${m.lastName} — ${e.message}</div>`;
+        failed++;
+      }
+    }
+    // Small delay to avoid rate limiting
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  log.innerHTML += `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--card-border);color:var(--white)">
+    <strong>Done:</strong> ${created} created · ${skipped} skipped · ${failed} failed
+  </div>`;
+  btn.disabled = false; btn.textContent = "🚀 Import All Members";
+  loadUsers();
+};
 
 /* ── DATA ── */
 const DATA = {
