@@ -763,6 +763,21 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
     </div>
   </div></div>
 </div>
+<!-- ══════════════════════════════════
+  TOKEN ACCEPT PAGE (no login needed)
+══════════════════════════════════ -->
+<div class="page" id="pg-token-accept">
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:40px 20px;position:relative;z-index:1">
+    <div style="max-width:400px;width:100%;text-align:center">
+      <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="70" style="filter:drop-shadow(0 4px 16px rgba(201,168,76,0.35));margin-bottom:20px">
+      <div id="token-accept-content">
+        <div style="font-family:'Oswald',sans-serif;font-size:1.3rem;color:var(--white);letter-spacing:0.1em;margin-bottom:8px">Processing…</div>
+        <div style="color:var(--gray);font-size:0.85rem">Accepting ticket, please wait.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="pg-admin">
   <div class="inner-topbar">
     <button class="back-btn" onclick="goHome()">← Home</button>
@@ -853,13 +868,28 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
       </div>
     </div>
 
-    <!-- Test Email -->
+    <!-- Test Email / Testing Mode -->
     <div class="admin-section">
-      <div class="admin-section-title">📧 Test Email</div>
+      <div class="admin-section-title">📧 Email Testing</div>
       <div class="add-user-form" style="max-width:480px">
-        <p style="color:var(--gray);font-size:0.82rem;margin-bottom:14px;line-height:1.6;">
-          Sends a test Service Request email to your admin email only.
-        </p>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-family:'Oswald',sans-serif;font-size:0.9rem;color:var(--white);letter-spacing:0.04em">Testing Mode</div>
+            <div style="font-size:0.75rem;color:var(--gray);margin-top:2px">When ON — all emails go only to you, not the full team</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <div style="position:relative">
+              <input type="checkbox" id="testing-mode-toggle" onchange="toggleTestingMode()" style="opacity:0;position:absolute;width:0;height:0">
+              <div id="toggle-track" style="width:44px;height:24px;background:rgba(255,255,255,0.1);border:1px solid var(--card-border);border-radius:12px;transition:all 0.25s;position:relative">
+                <div id="toggle-thumb" style="position:absolute;top:2px;left:2px;width:18px;height:18px;background:var(--gray);border-radius:50%;transition:all 0.25s"></div>
+              </div>
+            </div>
+            <span id="testing-mode-label" style="font-family:'Oswald',sans-serif;font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Off</span>
+          </label>
+        </div>
+        <div id="testing-mode-banner" style="display:none;background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.35);border-radius:7px;padding:8px 12px;font-size:0.78rem;color:#ffc84a;margin-bottom:14px">
+          ⚠ Testing Mode is ON — emails will only be sent to you
+        </div>
         <button class="submit-btn" id="test-email-btn" onclick="sendTestEmail()">Send Test Email</button>
         <div class="form-msg" id="test-email-msg"></div>
       </div>
@@ -1006,6 +1036,133 @@ function showPage(name) {
   window.scrollTo(0,0);
 }
 
+// ── TOKEN-BASED ACCEPT (no login required) ──
+(function checkTokenAccept() {
+  const params = new URLSearchParams(window.location.search);
+  const tid = params.get("tid");
+  const tok = params.get("tok");
+  if (!tid || !tok) return;
+
+  // Show token accept page immediately
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.getElementById("pg-token-accept").classList.add("active");
+  window.history.replaceState({}, document.title, window.location.pathname);
+
+  function setContent(icon, title, body, color) {
+    document.getElementById("token-accept-content").innerHTML = `
+      <div style="font-size:3rem;margin-bottom:12px">${icon}</div>
+      <div style="font-family:'Oswald',sans-serif;font-size:1.3rem;color:${color||"var(--white)"};letter-spacing:0.08em;margin-bottom:8px">${title}</div>
+      <div style="color:var(--gray);font-size:0.85rem;line-height:1.6">${body}</div>
+    `;
+  }
+
+  // Wait for Firebase to be ready then do the update
+  const tryAccept = (attempts) => {
+    if (typeof firebase === "undefined" || !firebase.firestore) {
+      if (attempts > 20) { setContent("❌","Failed","Firebase not available","#ff9090"); return; }
+      setTimeout(() => tryAccept(attempts + 1), 300);
+      return;
+    }
+    const db2 = firebase.firestore();
+    db2.collection("tickets").doc(tid).get().then(snap => {
+      if (!snap.exists) { setContent("❌","Not Found","This ticket no longer exists.","#ff9090"); return; }
+      const t = snap.data();
+
+      if (t.assignedTo) {
+        setContent("ℹ️","Already Assigned",`This ticket was already accepted by <strong style="color:var(--gold)">${t.assignedTo}</strong>.`,"var(--gold)");
+        return;
+      }
+      if (t.acceptToken !== tok) {
+        setContent("❌","Invalid Link","This accept link is no longer valid.","#ff9090");
+        return;
+      }
+      if (t.status === "resolved") {
+        setContent("✅","Already Resolved","This ticket has already been resolved.","#7dedb5");
+        return;
+      }
+
+      // Show unit input form instead of prompt()
+      document.getElementById("token-accept-content").innerHTML = `
+        <div style="font-size:2.2rem;margin-bottom:14px">✋</div>
+        <div style="font-family:'Oswald',sans-serif;font-size:1.2rem;color:var(--white);letter-spacing:0.08em;margin-bottom:6px">Accept This Ticket?</div>
+        <div style="color:var(--gold);font-size:0.95rem;font-weight:600;margin-bottom:4px">${t.title||"Service Request"}</div>
+        <div style="color:var(--gray);font-size:0.8rem;margin-bottom:22px">${t.unit||""} · ${t.priority||""} priority</div>
+        <div style="text-align:left;max-width:300px;margin:0 auto">
+          <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:6px">Your Unit Number</div>
+          <div style="display:flex;align-items:center;background:rgba(255,255,255,0.06);border:1px solid rgba(201,168,76,0.3);border-radius:8px;overflow:hidden;margin-bottom:14px">
+            <span style="padding:12px 10px 12px 14px;font-family:'Oswald',sans-serif;font-size:1rem;color:var(--gold);border-right:1px solid rgba(201,168,76,0.2);background:rgba(201,168,76,0.06)">MC-</span>
+            <input id="accept-unit-input" type="text" placeholder="05" maxlength="4" inputmode="numeric"
+              style="flex:1;background:transparent;border:none;padding:12px 14px;color:var(--white);font-family:'Oswald',sans-serif;font-size:1.1rem;font-weight:600;outline:none;width:80px"
+              oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+          </div>
+          <button onclick="doTokenAccept('${tid}','${tok}','${(t.title||"").replace(/'/g,"\\'")}','${(t.unit||"").replace(/'/g,"\\'")}','${t.submittedByUid||""}')"
+            style="width:100%;background:var(--gold);color:var(--navy);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:14px;cursor:pointer">
+            Confirm Accept
+          </button>
+        </div>
+      `;
+    }).catch(e => {
+      setContent("❌","Error",e.message,"#ff9090");
+    });
+  };
+
+  tryAccept(0);
+})();
+
+function doTokenAccept(tid, tok, title, unit, submittedByUid) {
+  const numEl = document.getElementById("accept-unit-input");
+  const num   = numEl ? numEl.value.trim() : "";
+  if (!num) { numEl.style.borderColor="#ff9090"; return; }
+  const assignedTo = "MC-" + num;
+
+  function setContent(icon, heading, body, color) {
+    document.getElementById("token-accept-content").innerHTML = `
+      <div style="font-size:3rem;margin-bottom:12px">${icon}</div>
+      <div style="font-family:'Oswald',sans-serif;font-size:1.3rem;color:${color||"var(--white)"};letter-spacing:0.08em;margin-bottom:8px">${heading}</div>
+      <div style="color:var(--gray);font-size:0.85rem;line-height:1.6">${body}</div>
+    `;
+  }
+
+  const db2 = firebase.firestore();
+  db2.collection("tickets").doc(tid).set({
+    assignedTo,
+    assignedAt:       new Date().toISOString(),
+    assignedByUid:    "email-accept",
+    status:           "in-progress",
+    acceptedViaEmail: true,
+    acceptToken:      tok
+  }, {merge:true}).then(() => {
+    setContent("✅","Ticket Accepted!",
+      `<strong style="color:var(--gold)">${assignedTo}</strong> has accepted:<br><br>
+       <strong style="color:var(--white)">${title||"Service Request"}</strong><br>
+       <span style="color:var(--gray)">${unit||""}</span><br><br>
+       The submitting unit has been notified.`,
+      "#7dedb5"
+    );
+    // Notify submitter if uid available
+    if (submittedByUid && submittedByUid !== "undefined") {
+      db2.collection("users").doc(submittedByUid).get().then(snap => {
+        if (snap.exists && snap.data().email && typeof emailjs !== "undefined") {
+          const d = snap.data();
+          emailjs.send("MC-HVAC", "template_g3hm7vg", {
+            title: title||"Service Request",
+            unit: unit||"—", priority:"—",
+            submitted_by: d.unit||"—",
+            accepted_by: assignedTo,
+            details: assignedTo + " has accepted this service request via email.",
+            priority_emoji:"",
+            date: new Date().toLocaleString(),
+            to_email: d.email,
+            reply_to:""
+          }).catch(e => console.warn("Notify submitter failed:", e));
+        }
+      });
+    }
+  }).catch(e => {
+    setContent("❌","Failed",e.message,"#ff9090");
+  });
+}
+
 // ── AUTH STATE ──
 auth.onAuthStateChanged(async user => {
   if (user) {
@@ -1023,6 +1180,7 @@ auth.onAuthStateChanged(async user => {
           role:"admin", roles:["responder"], createdAt: new Date().toISOString()
         });
         currentRole = "admin";
+        currentUserRoles = ["responder"];
         document.getElementById("topbar-email").textContent = "MC-16";
       } else {
         await auth.signOut();
@@ -1876,31 +2034,53 @@ function openTicket(id) {
 }
 
 function acceptTicket(id) {
+  if (currentRole !== "admin" && !(currentUserRoles||[]).includes("logistics")) {
+    showToast("Only service units can accept tickets", true); return;
+  }
+  const t = allTickets.find(x => x.id === id);
   db.collection("users").doc(currentUser.uid).get().then(snap => {
     const d = snap.data();
     const assignedTo = ((d.unit||"")+" "+(d.firstName||"")+" "+(d.lastName||"")).trim();
-    return db.collection("tickets").doc(id).update({
-      assignedTo, assignedByUid: currentUser.uid,
-      assignedAt: new Date().toISOString(), status:"in-progress"
+    const update = {
+      assignedTo,
+      assignedByUid: currentUser.uid,
+      assignedAt:    new Date().toISOString(),
+      status:        "in-progress"
+    };
+    return db.collection("tickets").doc(id).set(update, {merge:true}).then(() => {
+      if (t) {
+        Object.assign(t, update);
+        sendAcceptanceEmails({
+          title:          t.title,
+          unit:           t.unit,
+          priority:       t.priority,
+          submittedBy:    t.submittedBy,
+          acceptedBy:     assignedTo,
+          submittedByUid: t.submittedByUid
+        });
+      }
+      return assignedTo;
     });
   }).then(() => {
-    const t = allTickets.find(x=>x.id===id);
-    if (t) { t.assignedTo = "me"; t.status = "in-progress"; }
     showToast("✋ Assigned to you!");
     openTicket(id);
-  }).catch(e => showToast("Error: "+e.message,true));
+  }).catch(e => { console.error("acceptTicket error:", e); showToast("Error: "+e.message, true); });
 }
 
 function unassignTicket(id) {
   if (!confirm("Remove assignment?")) return;
-  db.collection("tickets").doc(id).update({
+  db.collection("tickets").doc(id).set({
     assignedTo: null, assignedByUid: null, assignedAt: null
-  }).then(() => { showToast("Unassigned"); openTicket(id); })
-  .catch(e => showToast("Error: "+e.message,true));
+  }, {merge:true}).then(() => {
+    const t = allTickets.find(x=>x.id===id);
+    if (t) { t.assignedTo = null; t.assignedByUid = null; t.assignedAt = null; }
+    showToast("Unassigned");
+    openTicket(id);
+  }).catch(e => showToast("Error: "+e.message, true));
 }
 
 function updateTicketStatus(id, status) {
-  db.collection("tickets").doc(id).update({status}).then(() => {
+  db.collection("tickets").doc(id).set({status}, {merge:true}).then(() => {
     const t = allTickets.find(x=>x.id===id);
     if (t) t.status = status;
     showToast("Status updated!");
@@ -1910,11 +2090,37 @@ function updateTicketStatus(id, status) {
 function addComment(id) {
   const text = document.getElementById("new-comment").value.trim();
   if (!text) return;
+  const t = allTickets.find(x => x.id === id);
   db.collection("users").doc(currentUser.uid).get().then(snap => {
     const d = snap.data();
     const author = ((d.unit||"")+" "+(d.firstName||"")+" "+(d.lastName||"")).trim();
     return db.collection("tickets").doc(id).collection("comments").add({
       text, author, createdAt: new Date().toISOString()
+    }).then(() => {
+      // Email the assigned unit (or admin if testing mode)
+      if (t && t.assignedByUid && t.assignedByUid !== currentUser.uid) {
+        const commentData = {
+          title:       t.title,
+          details:     `New comment from ${author}:\n\n"${text}"`,
+          category:    t.category,
+          unit:        t.unit,
+          priority:    t.priority,
+          submittedBy: t.submittedBy,
+          templateId:  EMAILJS_TEMPLATE_COMMENT
+        };
+        if (TESTING_MODE) {
+          getAdminEmail().then(email => {
+            if (email) sendTicketEmail({...commentData, toEmail:email})
+              .catch(e => console.warn("Comment test email failed:", e.message));
+          });
+        } else {
+          db.collection("users").doc(t.assignedByUid).get().then(asnap => {
+            const email = asnap.exists ? asnap.data().email : null;
+            if (email) sendTicketEmail({...commentData, toEmail:email})
+              .catch(e => console.warn("Comment email failed:", e.message));
+          });
+        }
+      }
     });
   }).then(() => {
     document.getElementById("new-comment").value="";
@@ -1948,12 +2154,14 @@ function submitTicket() {
   db.collection("users").doc(currentUser.uid).get().then(snap => {
     const d = snap.data();
     const submittedBy = ((d.unit||"")+" "+(d.firstName||"")+" "+(d.lastName||"")).trim();
+    const acceptToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     return db.collection("tickets").add({
       title, details, category, unit, priority,
       status:"open", submittedBy, submittedByUid: currentUser.uid,
+      acceptToken,
       createdAt: new Date().toISOString()
-    }).then(() => {
-      sendToLogisticsTeam({title,details,category,unit,priority,submittedBy});
+    }).then(ref => {
+      sendToLogisticsTeam({title,details,category,unit,priority,submittedBy,ticketId:ref.id,acceptToken}, EMAILJS_TEMPLATE_NEW);
     });
   }).then(() => {
     msg.className = "form-msg success"; msg.textContent = "✓ Service Request submitted!";
@@ -1965,29 +2173,105 @@ function submitTicket() {
 }
 
 // ── EMAIL ──
-const EMAILJS_SERVICE_ID  = "MC-HVAC";
-const EMAILJS_TEMPLATE_ID = "template_99ne1md";
+const EMAILJS_SERVICE_ID    = "MC-HVAC";
+const EMAILJS_TEMPLATE_NEW    = "template_99ne1md";
+const EMAILJS_TEMPLATE_ACCEPT = "template_g3hm7vg";
+const EMAILJS_TEMPLATE_COMMENT = "template_comment"; // ⬅ replace with your comment template ID
 
-function sendTicketEmail({title,details,category,unit,priority,submittedBy,toEmail}) {
+function sendTicketEmail({title,details,category,unit,priority,submittedBy,toEmail,templateId,accepted_by,ticketId,acceptToken}) {
   if (typeof emailjs === "undefined") { console.error("EmailJS not loaded"); return Promise.reject(new Error("EmailJS not loaded")); }
   const priorityEmoji = {urgent:"🚨",high:"🔴",medium:"🟡",low:"🟢"}[priority]||"";
+  const appUrl = window.location.href.split("?")[0];
+  const acceptLink = (ticketId && acceptToken) ? `${appUrl}?tid=${ticketId}&tok=${acceptToken}` : "";
   const params = { title, details:details||"—", category, unit:unit||"—", priority,
     priority_emoji:priorityEmoji, submitted_by:submittedBy,
+    accepted_by: accepted_by||"—",
+    accept_link: acceptLink,
+    ticket_id:   ticketId ? "#"+ticketId.slice(-6).toUpperCase() : "",
     date:new Date().toLocaleString(), reply_to:currentUser.email||"", to_email:toEmail };
-  console.log("EmailJS sending to:", toEmail);
-  return emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params)
+  console.log("EmailJS sending to:", toEmail, "accept_link:", acceptLink);
+  return emailjs.send(EMAILJS_SERVICE_ID, templateId||EMAILJS_TEMPLATE_NEW, params)
     .then(r => { console.log("EmailJS success:", r.status, r.text); return r; })
-    .catch(e => { console.error("EmailJS error:", e.status, e.text || e.message || JSON.stringify(e)); throw new Error(e.text || e.message || "Status "+e.status); });
+    .catch(e => { console.error("EmailJS error:", e.status, e.text||e.message||JSON.stringify(e)); throw new Error(e.text||e.message||"Status "+e.status); });
 }
 
-function sendToLogisticsTeam(ticketData) {
+// ── TESTING MODE ──
+let TESTING_MODE = false;
+
+function toggleTestingMode() {
+  TESTING_MODE = document.getElementById("testing-mode-toggle").checked;
+  const track  = document.getElementById("toggle-track");
+  const thumb  = document.getElementById("toggle-thumb");
+  const label  = document.getElementById("testing-mode-label");
+  const banner = document.getElementById("testing-mode-banner");
+  if (TESTING_MODE) {
+    track.style.background = "rgba(240,165,0,0.3)";
+    track.style.borderColor = "rgba(240,165,0,0.5)";
+    thumb.style.background = "#f0a500";
+    thumb.style.left = "22px";
+    label.style.color = "#ffc84a";
+    label.textContent = "ON";
+    banner.style.display = "block";
+    showToast("⚠ Testing Mode ON — emails go only to you");
+  } else {
+    track.style.background = "rgba(255,255,255,0.1)";
+    track.style.borderColor = "var(--card-border)";
+    thumb.style.background = "var(--gray)";
+    thumb.style.left = "2px";
+    label.style.color = "var(--gray)";
+    label.textContent = "OFF";
+    banner.style.display = "none";
+    showToast("Testing Mode OFF — emails go to full team");
+  }
+}
+
+function getAdminEmail() {
+  return db.collection("users").doc(currentUser.uid).get().then(snap => {
+    return (snap.exists ? snap.data().email : null) || currentUser.email || "";
+  });
+}
+
+function sendToLogisticsTeam(ticketData, templateId) {
+  if (TESTING_MODE) {
+    getAdminEmail().then(email => {
+      if (email) sendTicketEmail({...ticketData, toEmail:email, templateId})
+        .catch(e => console.warn("Test email failed:", e.message));
+    });
+    return;
+  }
   db.collection("users").where("roles","array-contains","logistics").get().then(snap => {
     if (snap.empty) { console.warn("No logistics members found"); return; }
     snap.forEach(d => {
       const email = d.data().email;
-      if (email) sendTicketEmail({...ticketData,toEmail:email}).catch(e=>console.warn("Email failed for",email,":",e.message));
+      if (email) sendTicketEmail({...ticketData, toEmail:email, templateId})
+        .catch(e => console.warn("Email failed for", email, ":", e.message));
     });
-  }).catch(e=>console.warn("Logistics fetch failed:",e));
+  }).catch(e => console.warn("Logistics fetch failed:", e));
+}
+
+function sendAcceptanceEmails({title, unit, priority, submittedBy, acceptedBy, submittedByUid}) {
+  const ticketData = { title, unit, priority, submittedBy,
+    details: `${acceptedBy} has accepted this service request and will be handling it.`,
+    category: "acceptance", accepted_by: acceptedBy
+  };
+
+  if (TESTING_MODE) {
+    getAdminEmail().then(email => {
+      if (email) sendTicketEmail({...ticketData, toEmail:email, templateId:EMAILJS_TEMPLATE_ACCEPT})
+        .catch(e => console.warn("Test accept email failed:", e.message));
+    });
+    return;
+  }
+
+  sendToLogisticsTeam(ticketData, EMAILJS_TEMPLATE_ACCEPT);
+
+  if (submittedByUid) {
+    db.collection("users").doc(submittedByUid).get().then(snap => {
+      const email = snap.exists ? snap.data().email : null;
+      if (email) sendTicketEmail({...ticketData, toEmail:email, templateId:EMAILJS_TEMPLATE_ACCEPT})
+        .catch(e => console.warn("Submitter email failed:", e.message));
+    });
+  }
 }
 
 function sendTestEmail() {
@@ -2000,10 +2284,13 @@ function sendTestEmail() {
     btn.disabled=false; btn.textContent="Send Test Email"; return;
   }
   db.collection("users").doc(currentUser.uid).get().then(snap => {
-    const d = snap.data();
-    const toEmail = d.email || currentUser.email;
-    if (!toEmail) throw new Error("No email address on your account.");
-    console.log("Sending test to:", toEmail);
+    const d = snap.exists ? snap.data() : {};
+    // Try every possible source for email
+    const toEmail = d.email || currentUser.email || "";
+    console.log("User doc:", d);
+    console.log("currentUser.email:", currentUser.email);
+    console.log("Resolved toEmail:", toEmail);
+    if (!toEmail) throw new Error("No email found. Add your email in Admin → Edit your profile.");
     return sendTicketEmail({
       title:"Test Service Request",
       details:"This is a test email from the Hatzolah MC admin panel.",
