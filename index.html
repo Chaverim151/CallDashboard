@@ -700,7 +700,12 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
       </div>
       <div class="form-row single">
         <div><label>Unit / Location</label>
-          <input type="text" id="tk-unit" placeholder="e.g. MC-02, Station, Storage room…"></div>
+          <select id="tk-unit" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.88rem;outline:none">
+            <option value="">Select or type below…</option>
+            <option value="__custom__">✏️ Type custom location…</option>
+          </select>
+          <input type="text" id="tk-unit-custom" placeholder="Enter location…" style="display:none;width:100%;margin-top:8px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.88rem;outline:none">
+        </div>
       </div>
       <div class="form-row single">
         <div><label>Title</label>
@@ -893,6 +898,51 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
         <button class="submit-btn" id="test-email-btn" onclick="sendTestEmail()">Send Test Email</button>
         <div class="form-msg" id="test-email-msg"></div>
       </div>
+    </div>
+
+    <!-- ── VEHICLES & EQUIPMENT ── -->
+    <div class="admin-section">
+      <div class="admin-section-title">🚑 Vehicles &amp; Equipment</div>
+      <div class="add-user-form" style="max-width:100%">
+        <p style="color:var(--gray);font-size:0.82rem;margin-bottom:16px;line-height:1.6">
+          Add vehicles and assign jump bags / equipment bags. These appear as options in the Service Request unit dropdown.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:12px">
+          <div>
+            <label style="display:block;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:5px">Vehicle / Unit ID</label>
+            <input type="text" id="veh-id" placeholder="e.g. MC-02, Amb-1" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.88rem;outline:none">
+          </div>
+          <div>
+            <label style="display:block;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:5px">Description</label>
+            <input type="text" id="veh-desc" placeholder="e.g. Ford Transit, Jump Bag A" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.88rem;outline:none">
+          </div>
+          <div>
+            <label style="display:block;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:5px">Type</label>
+            <select id="veh-type" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.88rem;outline:none">
+              <option value="vehicle">🚑 Vehicle</option>
+              <option value="jumpbag">🎒 Jump Bag</option>
+              <option value="equipbag">🧰 Equipment Bag</option>
+              <option value="storage">📦 Storage Location</option>
+              <option value="other">📋 Other</option>
+            </select>
+          </div>
+          <button class="submit-btn" style="padding:10px 18px;white-space:nowrap;margin-bottom:0" onclick="addVehicle()">+ Add</button>
+        </div>
+        <div class="form-msg" id="veh-msg"></div>
+        <div id="vehicles-list" style="margin-top:14px"></div>
+      </div>
+    </div>
+
+    <!-- ── LOCATIONS & CODES EDITOR ── -->
+    <div class="admin-section">
+      <div class="admin-section-title">🔑 Codes &amp; Locations Editor</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px" id="codes-editor-tabs">
+        <button class="ticket-tab active" onclick="setCodesTab('buildings',this)">🏢 Buildings</button>
+        <button class="ticket-tab" onclick="setCodesTab('shuls',this)">🕍 Shuls</button>
+        <button class="ticket-tab" onclick="setCodesTab('hospital',this)">🏥 Hospital</button>
+        <button class="ticket-tab" onclick="setCodesTab('storage',this)">🗄️ Storage</button>
+      </div>
+      <div id="codes-editor-content"></div>
     </div>
 
     <!-- All Users -->
@@ -1693,10 +1743,10 @@ function goTo(sec) {
     window.renderCards(sec, window.LIVE_DATA[sec]);
   }
   if (sec === "shifts")       { injectShiftAdminBar(); window.renderShifts(); }
-  if (sec === "admin")        { loadUsers(); checkImportFlag(); }
+  if (sec === "admin")        { loadUsers(); checkImportFlag(); loadVehiclesList(); renderCodesEditor(); }
   if (sec === "contacts")     loadContacts();
   if (sec === "service")      loadTickets();
-}
+  if (sec === "service-new")  loadTicketUnitDropdown();}
 
 function goHome() { showPage("home"); }
 
@@ -2356,7 +2406,153 @@ function urlBase64ToUint8Array(b64) {
   return Uint8Array.from([...atob(b)].map(c=>c.charCodeAt(0)));
 }
 
-// ── EXPOSE ALL FUNCTIONS FOR onclick HANDLERS ──
+// ── VEHICLES & EQUIPMENT ──
+function addVehicle() {
+  const id   = document.getElementById("veh-id").value.trim();
+  const desc = document.getElementById("veh-desc").value.trim();
+  const type = document.getElementById("veh-type").value;
+  const msg  = document.getElementById("veh-msg");
+  msg.className = "form-msg"; msg.textContent = "";
+  if (!id) { msg.className="form-msg error"; msg.textContent="Enter a vehicle/unit ID."; return; }
+  const ref = db.collection("vehicles").doc(id.replace(/\s+/g,"-").toUpperCase());
+  ref.set({ id: id.toUpperCase(), description: desc, type, createdAt: new Date().toISOString() })
+    .then(() => {
+      msg.className="form-msg success"; msg.textContent="✓ " + id.toUpperCase() + " added.";
+      document.getElementById("veh-id").value = "";
+      document.getElementById("veh-desc").value = "";
+      loadVehiclesList();
+      loadTicketUnitDropdown();
+    }).catch(e => { msg.className="form-msg error"; msg.textContent="Error: "+e.message; });
+}
+
+function loadVehiclesList() {
+  const el = document.getElementById("vehicles-list");
+  if (!el) return;
+  db.collection("vehicles").orderBy("id").get().then(snap => {
+    if (snap.empty) { el.innerHTML=`<div style="color:var(--gray);font-size:0.82rem">No vehicles added yet.</div>`; return; }
+    const typeIcons = { vehicle:"🚑", jumpbag:"🎒", equipbag:"🧰", storage:"📦", other:"📋" };
+    el.innerHTML = `<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;overflow:hidden">` +
+      snap.docs.map(d => {
+        const v = d.data();
+        return `<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <span style="font-size:1.1rem">${typeIcons[v.type]||"📋"}</span>
+          <div style="flex:1">
+            <div style="font-family:'Oswald',sans-serif;font-size:0.9rem;color:var(--white)">${v.id}</div>
+            ${v.description?`<div style="font-size:0.75rem;color:var(--gray)">${v.description}</div>`:""}
+          </div>
+          <span style="font-size:0.68rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.08em">${v.type}</span>
+          <button onclick="deleteVehicle('${d.id}')" class="del-btn" style="padding:4px 10px;font-size:0.68rem">✕</button>
+        </div>`;
+      }).join("") + `</div>`;
+  });
+}
+
+function deleteVehicle(id) {
+  if (!confirm("Remove " + id + "?")) return;
+  db.collection("vehicles").doc(id).delete().then(() => {
+    loadVehiclesList(); loadTicketUnitDropdown(); showToast("Removed");
+  });
+}
+
+function loadTicketUnitDropdown() {
+  const sel = document.getElementById("tk-unit");
+  if (!sel) return;
+  const customOpt = `<option value="">Select location…</option>`;
+  db.collection("vehicles").orderBy("type").orderBy("id").get().then(snap => {
+    const typeIcons = { vehicle:"🚑", jumpbag:"🎒", equipbag:"🧰", storage:"📦", other:"📋" };
+    const groups = {};
+    snap.forEach(d => {
+      const v = d.data();
+      if (!groups[v.type]) groups[v.type] = [];
+      groups[v.type].push(v);
+    });
+    let html = customOpt;
+    Object.entries(groups).forEach(([type, items]) => {
+      const label = {vehicle:"Vehicles",jumpbag:"Jump Bags",equipbag:"Equipment Bags",storage:"Storage Locations",other:"Other"}[type]||type;
+      html += `<optgroup label="${typeIcons[type]||""} ${label}">`;
+      items.forEach(v => { html += `<option value="${v.id}">${v.id}${v.description?" — "+v.description:""}</option>`; });
+      html += `</optgroup>`;
+    });
+    html += `<option value="__custom__">✏️ Type custom location…</option>`;
+    sel.innerHTML = html;
+    sel.onchange = function() {
+      const custom = document.getElementById("tk-unit-custom");
+      if (this.value === "__custom__") { custom.style.display="block"; custom.focus(); }
+      else { custom.style.display="none"; }
+    };
+  }).catch(() => {
+    sel.innerHTML = customOpt + `<option value="__custom__">✏️ Type custom location…</option>`;
+  });
+}
+
+// ── CODES EDITOR ──
+let codesEditorTab = "buildings";
+
+function setCodesTab(tab, btn) {
+  codesEditorTab = tab;
+  document.querySelectorAll("#codes-editor-tabs .ticket-tab").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  renderCodesEditor();
+}
+
+function renderCodesEditor() {
+  const el = document.getElementById("codes-editor-content");
+  if (!el) return;
+  const sec = codesEditorTab;
+  const items = window.LIVE_DATA[sec] || [];
+  const isSpecialSec = sec === "hospital" || sec === "storage";
+
+  el.innerHTML = `
+    <div style="margin-bottom:14px">
+      ${items.map((item, i) => `
+        <div style="display:grid;grid-template-columns:1fr 1fr ${!isSpecialSec?'1fr':''} auto;gap:8px;align-items:center;margin-bottom:8px">
+          <input value="${item.name||""}" placeholder="Name"
+            oninput="window.LIVE_DATA['${sec}'][${i}].name=this.value"
+            style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.85rem;outline:none">
+          <input value="${item.code||""}" placeholder="Code (e.g. 1-2-3)"
+            oninput="window.LIVE_DATA['${sec}'][${i}].code=this.value"
+            style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.85rem;outline:none">
+          ${!isSpecialSec?`<input value="${item.address||""}" placeholder="Address (optional)"
+            oninput="window.LIVE_DATA['${sec}'][${i}].address=this.value"
+            style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.85rem;outline:none">`:""}
+          <button onclick="removeCodeEntry('${sec}',${i})" class="del-btn" style="padding:8px 12px">✕</button>
+        </div>`).join("")}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="edit-mode-btn" onclick="addCodeEntry('${sec}')">+ Add Entry</button>
+      <button class="card-save-btn" onclick="saveCodesEditor()">💾 Save All</button>
+    </div>
+    <div class="form-msg" id="codes-editor-msg" style="margin-top:10px"></div>
+  `;
+}
+
+function addCodeEntry(sec) {
+  if (!window.LIVE_DATA[sec]) window.LIVE_DATA[sec] = [];
+  window.LIVE_DATA[sec].push({ name:"", code:"", address:"", note:"" });
+  renderCodesEditor();
+}
+
+function removeCodeEntry(sec, i) {
+  window.LIVE_DATA[sec].splice(i, 1);
+  renderCodesEditor();
+}
+
+function saveCodesEditor() {
+  const msg = document.getElementById("codes-editor-msg");
+  msg.className="form-msg"; msg.textContent="";
+  db.collection("appdata").doc("codes").set({ sections: window.LIVE_DATA }, {merge:true})
+    .then(() => { msg.className="form-msg success"; msg.textContent="✓ Saved!"; window.renderCards(codesEditorTab, window.LIVE_DATA[codesEditorTab]); })
+    .catch(e => { msg.className="form-msg error"; msg.textContent="Error: "+e.message; });
+}
+
+window.addVehicle      = addVehicle;
+window.deleteVehicle   = deleteVehicle;
+window.setCodesTab     = setCodesTab;
+window.addCodeEntry    = addCodeEntry;
+window.removeCodeEntry = removeCodeEntry;
+window.saveCodesEditor = saveCodesEditor;
+
+
 window.doLogin=doLogin; window.doLogout=doLogout; window.togglePass=togglePass;
 window.showReset=showReset; window.doReset=doReset; window.goTo=goTo; window.goHome=goHome;
 window.addUser=addUser; window.openEdit=openEdit; window.closeEdit=closeEdit; window.saveEdit=saveEdit;
