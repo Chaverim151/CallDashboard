@@ -921,7 +921,6 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
             <select id="veh-type" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.88rem;outline:none">
               <option value="vehicle">🚑 Vehicle</option>
               <option value="jumpbag">🎒 Jump Bag</option>
-              <option value="equipbag">🧰 Equipment Bag</option>
               <option value="storage">📦 Storage Location</option>
               <option value="other">📋 Other</option>
             </select>
@@ -2435,7 +2434,7 @@ function loadVehiclesList() {
   if (!el) return;
   db.collection("vehicles").orderBy("id").get().then(snap => {
     if (snap.empty) { el.innerHTML=`<div style="color:var(--gray);font-size:0.82rem">No vehicles added yet.</div>`; return; }
-    const typeIcons = { vehicle:"🚑", jumpbag:"🎒", equipbag:"🧰", storage:"📦", other:"📋" };
+    const typeIcons = { vehicle:"🚑", jumpbag:"🎒", storage:"📦", other:"📋" };
     el.innerHTML = `<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;overflow:hidden">` +
       snap.docs.map(d => {
         const v = d.data();
@@ -2462,31 +2461,38 @@ function deleteVehicle(id) {
 function loadTicketUnitDropdown() {
   const sel = document.getElementById("tk-unit");
   if (!sel) return;
-  const customOpt = `<option value="">Select location…</option>`;
-  db.collection("vehicles").orderBy("type").orderBy("id").get().then(snap => {
-    const typeIcons = { vehicle:"🚑", jumpbag:"🎒", equipbag:"🧰", storage:"📦", other:"📋" };
+  db.collection("vehicles").get().then(snap => {
+    const typeIcons  = { vehicle:"🚑", jumpbag:"🎒", storage:"📦", other:"📋" };
+    const typeLabels = { vehicle:"Vehicles", jumpbag:"Jump Bags", storage:"Storage Locations", other:"Other" };
+    const typeOrder  = ["vehicle","jumpbag","storage","other"];
     const groups = {};
     snap.forEach(d => {
       const v = d.data();
-      if (!groups[v.type]) groups[v.type] = [];
-      groups[v.type].push(v);
+      const t = v.type || "other";
+      if (!groups[t]) groups[t] = [];
+      groups[t].push(v);
     });
-    let html = customOpt;
-    Object.entries(groups).forEach(([type, items]) => {
-      const label = {vehicle:"Vehicles",jumpbag:"Jump Bags",equipbag:"Equipment Bags",storage:"Storage Locations",other:"Other"}[type]||type;
-      html += `<optgroup label="${typeIcons[type]||""} ${label}">`;
-      items.forEach(v => { html += `<option value="${v.id}">${v.id}${v.description?" — "+v.description:""}</option>`; });
+    Object.values(groups).forEach(g => g.sort((a,b) => (a.id||"").localeCompare(b.id||"")));
+    let html = `<option value="">Select location…</option>`;
+    typeOrder.forEach(type => {
+      if (!groups[type] || !groups[type].length) return;
+      html += `<optgroup label="${typeIcons[type]} ${typeLabels[type]}">`;
+      groups[type].forEach(v => {
+        html += `<option value="${v.id}">${v.id}${v.description?" — "+v.description:""}</option>`;
+      });
       html += `</optgroup>`;
     });
     html += `<option value="__custom__">✏️ Type custom location…</option>`;
     sel.innerHTML = html;
     sel.onchange = function() {
       const custom = document.getElementById("tk-unit-custom");
+      if (!custom) return;
       if (this.value === "__custom__") { custom.style.display="block"; custom.focus(); }
       else { custom.style.display="none"; }
     };
-  }).catch(() => {
-    sel.innerHTML = customOpt + `<option value="__custom__">✏️ Type custom location…</option>`;
+  }).catch(e => {
+    console.warn("Vehicle dropdown failed:", e.message);
+    sel.innerHTML = `<option value="">Select location…</option><option value="__custom__">✏️ Type custom location…</option>`;
   });
 }
 
