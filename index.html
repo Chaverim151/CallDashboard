@@ -470,6 +470,36 @@ body::before {
 
 footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing:0.1em; text-transform:uppercase; padding:14px 20px; border-top:1px solid var(--card-border); flex-shrink:0; }
 
+/* ── ADMIN MOBILE ── */
+@media(max-width:600px) {
+  /* Stack all form rows */
+  .add-user-form .form-row { grid-template-columns:1fr !important; }
+
+  /* Vehicles add form stacks */
+  #veh-form-grid { grid-template-columns:1fr !important; }
+
+  /* Hide desktop table, show card list instead */
+  .users-table { display:none !important; }
+  #users-cards { display:flex; flex-direction:column; gap:10px; }
+
+  /* Inner content padding tighter */
+  .inner-content { padding:16px 14px 50px; }
+
+  /* Admin section title smaller */
+  .admin-section-title { font-size:0.65rem; letter-spacing:0.12em; }
+
+  /* Codes editor tabs wrap */
+  #codes-editor-tabs { gap:6px; }
+  #codes-editor-tabs .ticket-tab { font-size:0.68rem; padding:5px 10px; }
+
+  /* Bulk import log text smaller */
+  #import-log { font-size:0.72rem; }
+}
+
+@media(min-width:601px) {
+  #users-cards { display:none; }
+}
+
 @media(max-width:480px){
   .btn-grid { gap:10px; }
   .btn-inner { padding:16px 10px 13px; }
@@ -915,7 +945,7 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
         <p style="color:var(--gray);font-size:0.82rem;margin-bottom:16px;line-height:1.6">
           Add vehicles and assign jump bags / equipment bags. These appear as options in the Service Request unit dropdown.
         </p>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:12px">
+        <div id="veh-form-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:12px">
           <div>
             <label style="display:block;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:5px">Vehicle / Unit ID</label>
             <input type="text" id="veh-id" placeholder="e.g. MC-02, Amb-1" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.88rem;outline:none">
@@ -973,6 +1003,7 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
           </thead>
           <tbody id="users-tbody"></tbody>
         </table>
+        <div id="users-cards"></div>
       </div>
     </div>
 
@@ -1401,6 +1432,8 @@ function loadUsers() {
   if (currentRole !== "admin") return;
   document.getElementById("users-loading").style.display = "block";
   document.getElementById("users-table").style.display   = "none";
+  const cards = document.getElementById("users-cards");
+  if (cards) cards.innerHTML = "";
   db.collection("users").get().then(snap => {
     const rows = [];
     snap.forEach(d => rows.push({uid: d.id, ...d.data()}));
@@ -1430,7 +1463,33 @@ function userRow(u) {
 }
 
 function renderUsersTable(rows) {
+  // Desktop table
   document.getElementById("users-tbody").innerHTML = rows.map(userRow).join("");
+
+  // Mobile cards
+  const cards = document.getElementById("users-cards");
+  if (!cards) return;
+  if (!rows.length) { cards.innerHTML=`<div style="color:var(--gray);text-align:center;padding:30px;font-size:0.85rem">No users found.</div>`; return; }
+  cards.innerHTML = rows.map(u => `
+    <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px 16px;animation:fadeUp 0.35s ease both">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--navy-light);border:1px solid var(--card-border);display:flex;align-items:center;justify-content:center;font-family:'Oswald',sans-serif;font-size:0.72rem;color:var(--gold);flex-shrink:0">
+          ${((u.firstName||"")[0]||"?").toUpperCase()}${((u.lastName||"")[0]||"").toUpperCase()}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:'Oswald',sans-serif;font-size:0.95rem;color:var(--white)">${u.firstName||""} ${u.lastName||""}</div>
+          <div style="font-size:0.72rem;color:var(--gold);letter-spacing:0.05em">${u.unit||"—"}</div>
+        </div>
+        <button class="edit-row-btn" onclick="openEdit('${u.uid}')" style="padding:6px 12px">Edit</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+        ${u.role==="admin"?`<span class="role-badge admin" style="font-size:0.65rem">🔑 Admin</span>`:""}
+        ${(u.roles||[]).filter(r=>r!=="admin").map(r=>`<span class="role-badge ${STANDARD_ROLES.includes(r)?r:"custom"}" style="font-size:0.65rem">${r}</span>`).join("")}
+      </div>
+      <div style="font-size:0.75rem;color:var(--gray)">${u.phone||""}</div>
+      <div style="font-size:0.72rem;color:var(--gray);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email||""}</div>
+      ${u.email!==SUPER_ADMIN?`<button class="del-btn" style="margin-top:10px;padding:6px 14px;font-size:0.72rem;width:100%" onclick="deleteUser('${u.uid}','${u.email}')">Remove User</button>`:""}
+    </div>`).join("");
 }
 
 function filterAdminUsers() {
@@ -2639,14 +2698,14 @@ function renderCodesEditor() {
   el.innerHTML = `
     <div style="margin-bottom:14px">
       ${items.map((item, i) => `
-        <div style="display:grid;grid-template-columns:1fr 1fr ${!isSpecialSec?'1fr':''} auto;gap:8px;align-items:center;margin-bottom:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr ${!isSpecialSec?'1fr':''} auto;gap:8px;align-items:center;margin-bottom:8px" class="codes-editor-row">
           <input value="${item.name||""}" placeholder="Name"
             oninput="window.LIVE_DATA['${sec}'][${i}].name=this.value"
             style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.85rem;outline:none">
           <input value="${item.code||""}" placeholder="Code (e.g. 1-2-3)"
             oninput="window.LIVE_DATA['${sec}'][${i}].code=this.value"
             style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.85rem;outline:none">
-          ${!isSpecialSec?`<input value="${item.address||""}" placeholder="Address (optional)"
+          ${!isSpecialSec?`<input value="${item.address||""}" placeholder="Address" class="codes-addr"
             oninput="window.LIVE_DATA['${sec}'][${i}].address=this.value"
             style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.85rem;outline:none">`:""}
           <button onclick="removeCodeEntry('${sec}',${i})" class="del-btn" style="padding:8px 12px">✕</button>
