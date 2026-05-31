@@ -1068,9 +1068,7 @@ footer { text-align:center; color:var(--gray); font-size:0.68rem; letter-spacing
 <!-- ══════════════════════════════════
   FIREBASE + APP LOGIC
 ══════════════════════════════════ -->
-<!-- EmailJS SDK -->
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<script>emailjs.init("e1aSQzSbslDgQlHzJ");</script>
+<!-- ClickSend via Cloudflare Worker proxy -->
 
 <!-- Firebase Compat SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -1235,18 +1233,12 @@ function doTokenAccept(tid, tok, title, unit, submittedByUid) {
     // Notify submitter if uid available
     if (submittedByUid && submittedByUid !== "undefined") {
       db2.collection("users").doc(submittedByUid).get().then(snap => {
-        if (snap.exists && snap.data().email && typeof emailjs !== "undefined") {
-          const d = snap.data();
-          emailjs.send("MC-HVAC", "template_g3hm7vg", {
-            title: title||"Service Request",
-            unit: unit||"—", priority:"—",
-            submitted_by: d.unit||"—",
-            accepted_by: assignedTo,
-            details: assignedTo + " has accepted this service request via email.",
-            priority_emoji:"",
-            date: new Date().toLocaleString(),
-            to_email: d.email,
-            reply_to:""
+        if (snap.exists && snap.data().email) {
+          const d2 = snap.data();
+          sendTicketEmail({
+            title, unit, priority:"—", submittedBy: d2.unit||"—",
+            accepted_by: assignedTo, toEmail: d2.email,
+            type: "accept", details: assignedTo + " has accepted this service request via email."
           }).catch(e => console.warn("Notify submitter failed:", e));
         }
       });
@@ -2223,11 +2215,11 @@ function addComment(id) {
         const commentData = {
           title:       t.title,
           details:     `New comment from ${author}:\n\n"${text}"`,
-          category:    t.category,
+          commentText: `New comment from ${author}:\n\n"${text}"`,
           unit:        t.unit,
           priority:    t.priority,
           submittedBy: t.submittedBy,
-          templateId:  EMAILJS_TEMPLATE_COMMENT
+          type:        "comment"
         };
         if (TESTING_MODE) {
           getAdminEmail().then(email => {
@@ -2285,7 +2277,7 @@ function submitTicket() {
       acceptToken,
       createdAt: new Date().toISOString()
     }).then(ref => {
-      sendToLogisticsTeam({title,details,category,unit,priority,submittedBy,ticketId:ref.id,acceptToken}, EMAILJS_TEMPLATE_NEW);
+      sendToLogisticsTeam({title,details,category,unit,priority,submittedBy,ticketId:ref.id,acceptToken});
     });
   }).then(() => {
     msg.className = "form-msg success"; msg.textContent = "✓ Service Request submitted!";
@@ -2299,26 +2291,137 @@ function submitTicket() {
 }
 
 // ── EMAIL ──
-const EMAILJS_SERVICE_ID    = "MC-HVAC";
-const EMAILJS_TEMPLATE_NEW    = "template_99ne1md";
-const EMAILJS_TEMPLATE_ACCEPT = "template_g3hm7vg";
-const EMAILJS_TEMPLATE_COMMENT = "template_comment"; // ⬅ replace with your comment template ID
+const CLICKSEND_WORKER = "https://hatzolah-email.shmueleidelman-work.workers.dev/";
+const FROM_EMAIL       = "shmueleidelman.work@gmail.com";
+const FROM_NAME        = "Hatzolah MC Operations";
 
-function sendTicketEmail({title,details,category,unit,priority,submittedBy,toEmail,templateId,accepted_by,ticketId,acceptToken}) {
-  if (typeof emailjs === "undefined") { console.error("EmailJS not loaded"); return Promise.reject(new Error("EmailJS not loaded")); }
+function buildEmailBody({title, details, category, unit, priority, submittedBy, acceptedBy, acceptLink, ticketId, commentText, type}) {
   const priorityEmoji = {urgent:"🚨",high:"🔴",medium:"🟡",low:"🟢"}[priority]||"";
-  const appUrl = window.location.href.split("?")[0];
+  const tid = ticketId ? "#"+ticketId.slice(-6).toUpperCase() : "";
+
+  if (type === "accept") {
+    return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden">
+  <tr><td bgcolor="#0a1628" style="padding:24px;text-align:center">
+    <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55">
+    <div style="color:#4caf80;font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px">TICKET ACCEPTED</div>
+  </td></tr>
+  <tr><td bgcolor="#ffffff" style="padding:24px">
+    <p style="font-size:14px;color:#333"><strong>${acceptedBy||"A team member"}</strong> has accepted this service request.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px">
+      <tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;width:130px">Title</td><td style="padding:10px"><strong>${title}</strong></td></tr>
+      <tr><td style="padding:10px;color:#666">Unit/Location</td><td style="padding:10px">${unit||"—"}</td></tr>
+      <tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666">Priority</td><td style="padding:10px">${priorityEmoji} ${priority}</td></tr>
+      <tr><td style="padding:10px;color:#666">Accepted By</td><td style="padding:10px;color:#4caf80"><strong>${acceptedBy||"—"}</strong></td></tr>
+      <tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666">Date</td><td style="padding:10px">${new Date().toLocaleString()}</td></tr>
+    </table>
+  </td></tr>
+  <tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY — OPERATIONS PORTAL</td></tr>
+</table></td></tr></table></body></html>`;
+  }
+
+  if (type === "comment") {
+    return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden">
+  <tr><td bgcolor="#0a1628" style="padding:24px;text-align:center">
+    <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55">
+    <div style="color:#4a90d9;font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px">NEW COMMENT</div>
+  </td></tr>
+  <tr><td bgcolor="#ffffff" style="padding:24px">
+    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px">
+      <tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;width:130px">Ticket</td><td style="padding:10px"><strong>${title}</strong> ${tid}</td></tr>
+      <tr><td style="padding:10px;color:#666">Unit</td><td style="padding:10px">${unit||"—"}</td></tr>
+      <tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;vertical-align:top">Comment</td><td style="padding:10px;white-space:pre-wrap">${commentText||details||""}</td></tr>
+      <tr><td style="padding:10px;color:#666">Date</td><td style="padding:10px">${new Date().toLocaleString()}</td></tr>
+    </table>
+  </td></tr>
+  <tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY — OPERATIONS PORTAL</td></tr>
+</table></td></tr></table></body></html>`;
+  }
+
+  // Default: new ticket
+  const acceptBtn = acceptLink ? `
+    <tr><td colspan="2" style="padding:20px;text-align:center">
+      <table cellpadding="0" cellspacing="0" style="margin:0 auto">
+        <tr><td bgcolor="#4caf80" style="border-radius:8px;border-bottom:4px solid #3d9e6e">
+          <a href="${acceptLink}" target="_blank"
+             style="display:inline-block;background:#4caf80;color:#fff;padding:16px 40px;border-radius:8px;
+                    font-family:Arial,sans-serif;font-size:16px;font-weight:bold;text-decoration:none;
+                    letter-spacing:1px;text-transform:uppercase">
+            &#9994; ACCEPT THIS TICKET
+          </a>
+        </td></tr>
+      </table>
+    </td></tr>` : "";
+
+  return `<!DOCTYPE html><html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  .accept-btn:hover{background:#3d9e6e!important}
+  .accept-btn:active{background:#2d7a54!important}
+</style></head>
+<body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15)">
+  <tr><td bgcolor="#0a1628" style="padding:28px 24px;text-align:center">
+    <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="65" style="display:block;margin:0 auto 14px">
+    <div style="color:#c9a84c;font-size:22px;font-weight:bold;letter-spacing:3px;text-transform:uppercase">New Service Request</div>
+    <div style="color:#8a9ab5;font-size:12px;letter-spacing:2px;margin-top:6px">HATZOLAH MIDDLESEX COUNTY</div>
+  </td></tr>
+  <tr><td bgcolor="#122040" style="padding:12px 24px;text-align:center">
+    <span style="color:#fff;font-size:15px;font-weight:bold">${priorityEmoji} Priority: <span style="text-transform:uppercase">${priority}</span></span>
+  </td></tr>
+  <tr><td bgcolor="#ffffff" style="padding:28px 24px">
+    <div style="font-size:20px;font-weight:bold;color:#0a1628;margin-bottom:4px">${title}</div>
+    <div style="font-size:11px;color:#999;letter-spacing:1px;text-transform:uppercase;margin-bottom:18px">Service Request &nbsp;·&nbsp; ${tid}</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px">
+      <tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;width:140px">Unit / Location</td><td style="padding:10px">${unit||"—"}</td></tr>
+      <tr><td style="padding:10px;color:#666">Submitted By</td><td style="padding:10px">${submittedBy}</td></tr>
+      <tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666">Priority</td><td style="padding:10px">${priorityEmoji} ${priority}</td></tr>
+      <tr><td style="padding:10px;color:#666">Date &amp; Time</td><td style="padding:10px">${new Date().toLocaleString()}</td></tr>
+      <tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;vertical-align:top">Details</td><td style="padding:10px;white-space:pre-wrap">${details||"—"}</td></tr>
+      ${acceptBtn}
+    </table>
+  </td></tr>
+  <tr><td bgcolor="#0a1628" style="padding:18px 24px;text-align:center">
+    <div style="color:#8a9ab5;font-size:11px;letter-spacing:1px;text-transform:uppercase">Hatzolah Middlesex County &mdash; Operations Portal</div>
+    <div style="color:#4a5568;font-size:10px;margin-top:5px">This is an automated notification. Do not reply.</div>
+  </td></tr>
+</table></td></tr></table></body></html>`;
+}
+
+function sendClickSendEmail({toEmail, subject, htmlBody}) {
+  if (!toEmail) { console.warn("sendClickSendEmail: no toEmail"); return Promise.resolve(); }
+  console.log("ClickSend sending to:", toEmail, "subject:", subject);
+  return fetch(CLICKSEND_WORKER, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: [{ email: toEmail }],
+      from: { email_address_id: 0, name: FROM_NAME, email: FROM_EMAIL },
+      subject,
+      body: htmlBody
+    })
+  }).then(r => r.json())
+    .then(d => { console.log("ClickSend response:", JSON.stringify(d)); return d; })
+    .catch(e => { console.error("ClickSend error:", e.message); throw e; });
+}
+
+function sendTicketEmail({title, details, category, unit, priority, submittedBy, toEmail, accepted_by, ticketId, acceptToken, type, commentText}) {
+  const priorityEmoji = {urgent:"🚨",high:"🔴",medium:"🟡",low:"🟢"}[priority]||"";
+  const appUrl    = window.location.href.split("?")[0];
   const acceptLink = (ticketId && acceptToken) ? `${appUrl}?tid=${ticketId}&tok=${acceptToken}` : "";
-  const params = { title, details:details||"—", category, unit:unit||"—", priority,
-    priority_emoji:priorityEmoji, submitted_by:submittedBy,
-    accepted_by: accepted_by||"—",
-    accept_link: acceptLink,
-    ticket_id:   ticketId ? "#"+ticketId.slice(-6).toUpperCase() : "",
-    date:new Date().toLocaleString(), reply_to:currentUser.email||"", to_email:toEmail };
-  console.log("EmailJS sending to:", toEmail, "accept_link:", acceptLink);
-  return emailjs.send(EMAILJS_SERVICE_ID, templateId||EMAILJS_TEMPLATE_NEW, params)
-    .then(r => { console.log("EmailJS success:", r.status, r.text); return r; })
-    .catch(e => { console.error("EmailJS error:", e.status, e.text||e.message||JSON.stringify(e)); throw new Error(e.text||e.message||"Status "+e.status); });
+  const tid       = ticketId ? "#"+ticketId.slice(-6).toUpperCase() : "";
+  const subjects  = {
+    accept:  `✋ Ticket Accepted: ${title}`,
+    comment: `💬 New Comment on: ${title} ${tid}`,
+    default: `${priorityEmoji} New Service Request: ${title} ${tid}`
+  };
+  const subject  = subjects[type] || subjects.default;
+  const htmlBody = buildEmailBody({title, details, category, unit, priority, submittedBy, acceptedBy:accepted_by, acceptLink, ticketId, commentText, type});
+  return sendClickSendEmail({toEmail, subject, htmlBody});
 }
 
 // ── TESTING MODE ──
@@ -2357,10 +2460,10 @@ function getAdminEmail() {
   });
 }
 
-function sendToLogisticsTeam(ticketData, templateId) {
+function sendToLogisticsTeam(ticketData) {
   if (TESTING_MODE) {
     getAdminEmail().then(email => {
-      if (email) sendTicketEmail({...ticketData, toEmail:email, templateId})
+      if (email) sendTicketEmail({...ticketData, toEmail:email})
         .catch(e => console.warn("Test email failed:", e.message));
     });
     return;
@@ -2369,7 +2472,7 @@ function sendToLogisticsTeam(ticketData, templateId) {
     if (snap.empty) { console.warn("No logistics members found"); return; }
     snap.forEach(d => {
       const email = d.data().email;
-      if (email) sendTicketEmail({...ticketData, toEmail:email, templateId})
+      if (email) sendTicketEmail({...ticketData, toEmail:email})
         .catch(e => console.warn("Email failed for", email, ":", e.message));
     });
   }).catch(e => console.warn("Logistics fetch failed:", e));
@@ -2378,23 +2481,23 @@ function sendToLogisticsTeam(ticketData, templateId) {
 function sendAcceptanceEmails({title, unit, priority, submittedBy, acceptedBy, submittedByUid}) {
   const ticketData = { title, unit, priority, submittedBy,
     details: `${acceptedBy} has accepted this service request and will be handling it.`,
-    category: "acceptance", accepted_by: acceptedBy
+    accepted_by: acceptedBy, type: "accept"
   };
 
   if (TESTING_MODE) {
     getAdminEmail().then(email => {
-      if (email) sendTicketEmail({...ticketData, toEmail:email, templateId:EMAILJS_TEMPLATE_ACCEPT})
+      if (email) sendTicketEmail({...ticketData, toEmail:email})
         .catch(e => console.warn("Test accept email failed:", e.message));
     });
     return;
   }
 
-  sendToLogisticsTeam(ticketData, EMAILJS_TEMPLATE_ACCEPT);
+  sendToLogisticsTeam(ticketData);
 
   if (submittedByUid) {
     db.collection("users").doc(submittedByUid).get().then(snap => {
       const email = snap.exists ? snap.data().email : null;
-      if (email) sendTicketEmail({...ticketData, toEmail:email, templateId:EMAILJS_TEMPLATE_ACCEPT})
+      if (email) sendTicketEmail({...ticketData, toEmail:email})
         .catch(e => console.warn("Submitter email failed:", e.message));
     });
   }
@@ -2405,27 +2508,20 @@ function sendTestEmail() {
   const msg = document.getElementById("test-email-msg");
   msg.className="form-msg"; msg.textContent="";
   btn.disabled=true; btn.textContent="Sending…";
-  if (typeof emailjs === "undefined") {
-    msg.className="form-msg error"; msg.textContent="EmailJS SDK not loaded.";
-    btn.disabled=false; btn.textContent="Send Test Email"; return;
-  }
   db.collection("users").doc(currentUser.uid).get().then(snap => {
     const d = snap.exists ? snap.data() : {};
-    // Try every possible source for email
     const toEmail = d.email || currentUser.email || "";
-    console.log("User doc:", d);
-    console.log("currentUser.email:", currentUser.email);
-    console.log("Resolved toEmail:", toEmail);
+    console.log("Sending test to:", toEmail);
     if (!toEmail) throw new Error("No email found. Add your email in Admin → Edit your profile.");
     return sendTicketEmail({
       title:"Test Service Request",
       details:"This is a test email from the Hatzolah MC admin panel.",
-      category:"other", unit:d.unit||"Admin", priority:"low",
+      unit:d.unit||"Admin", priority:"low",
       submittedBy:((d.unit||"")+" "+(d.firstName||"")+" "+(d.lastName||"")).trim(),
       toEmail
     });
   }).then(() => {
-    msg.className="form-msg success"; msg.textContent="✓ Test email sent! Check your inbox (and spam).";
+    msg.className="form-msg success"; msg.textContent="✓ Test email sent via ClickSend! Check your inbox.";
   }).catch(e => {
     msg.className="form-msg error"; msg.textContent="Failed: " + (e.message || JSON.stringify(e));
   }).finally(()=>{ btn.disabled=false; btn.textContent="Send Test Email"; });
