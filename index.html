@@ -97,7 +97,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .panel h3{font-family:'Oswald',sans-serif;font-size:0.88rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--card-border);}
 .s-row{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.86rem;}
 .s-row:last-child{border-bottom:none;}
-.s-day{font-family:'Oswald',sans-serif;font-weight:600;color:var(--gold);min-width:110px;font-size:0.86rem;}
+.s-day{font-family:'Oswald',sans-serif;font-weight:600;color:#7ab8f5;min-width:110px;font-size:0.86rem;}
 .s-units{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
 .unit-bubble{background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.3);border-radius:20px;padding:3px 11px;font-family:'Oswald',sans-serif;font-size:0.8rem;font-weight:600;color:var(--gold-light);letter-spacing:0.05em;white-space:nowrap;}
 .admin-section{margin-bottom:36px;}
@@ -1678,6 +1678,11 @@ function submitTicket() {
 // ── EMAIL ──
 var CLICKSEND_WORKER = "https://hatzolah-email.shmueleidelman-work.workers.dev/";
 var FROM_EMAIL = "apps@hatzolahmc.org", FROM_NAME = "Hatzolah MC Operations";
+// Shared secret the Worker checks before relaying to ClickSend. This value itself
+// being visible in client source is expected/unavoidable for a pure client-side app —
+// its purpose is to block casual/automated abuse of the public Worker URL, not to be
+// a true secret. Real protection comes from the Worker validating this header server-side.
+var APP_SHARED_SECRET = "hzmc-2026-9f3a7d1c";
 function buildEmailBody(opts) {
   var title = opts.title || "", details = opts.details || "", unit = opts.unit || "", priority = opts.priority || "", submittedBy = opts.submittedBy || "", acceptedBy = opts.acceptedBy || opts.accepted_by || "", acceptLink = opts.acceptLink || "", ticketId = opts.ticketId || "", commentText = opts.commentText || "", type = opts.type || "";
   var pe = { urgent: "🚨", high: "🔴", medium: "🟡", low: "🟢" }[priority] || "";
@@ -1693,7 +1698,11 @@ function buildEmailBody(opts) {
 }
 function sendClickSendEmail(opts) {
   if (!opts.toEmail) return Promise.resolve();
-  return fetch(CLICKSEND_WORKER, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: [{ email: opts.toEmail, name: opts.toEmail }], from: { email_address_id: 33056, name: FROM_NAME, email: FROM_EMAIL }, subject: opts.subject, body: opts.htmlBody }) }).then(function(r) { return r.json(); });
+  return fetch(CLICKSEND_WORKER, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-App-Secret": APP_SHARED_SECRET },
+    body: JSON.stringify({ to: [{ email: opts.toEmail, name: opts.toEmail }], subject: opts.subject, body: opts.htmlBody })
+  }).then(function(r) { return r.json(); });
 }
 function sendTicketEmail(opts) {
   var pe = { urgent: "🚨", high: "🔴", medium: "🟡", low: "🟢" }[opts.priority] || "";
@@ -2123,12 +2132,19 @@ function detectZone(lat, lng) {
 function showZoneBanner(zone) {
   var banner = document.getElementById("maps-zone-banner"); if (!banner) return;
   var ip = zone === "primary", is2 = zone === "secondary";
-  var icon, label, sublabel, bg, border, color;
+  var icon, label, sublabel, bg, border, color, extra;
+  extra = "";
   if (ip) { icon = "🚑"; label = "STANDARD RESPONSE"; sublabel = "MC Primary Response Area"; bg = "rgba(76,175,128,0.12)"; border = "rgba(76,175,128,0.4)"; color = "#7dedb5"; }
   else if (is2) { icon = "🚑"; label = "LOAD AN AMBULANCE"; sublabel = "Secondary Response Area"; bg = "rgba(240,165,0,0.15)"; border = "rgba(240,165,0,0.5)"; color = "#ffc84a"; }
-  else { icon = "🔴"; label = "Outside Coverage Area"; sublabel = "Outside service zone"; bg = "rgba(224,85,85,0.12)"; border = "rgba(224,85,85,0.4)"; color = "#ff9090"; }
+  else {
+    icon = "🔴"; label = "Outside Coverage Area"; sublabel = "Outside service zone"; bg = "rgba(224,85,85,0.12)"; border = "rgba(224,85,85,0.4)"; color = "#ff9090";
+    extra = '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(224,85,85,0.25)">' +
+      '<div style="font-size:0.78rem;color:#ffb3b3;margin-bottom:6px">This location is outside the MC coverage area. Consider contacting Statewide Hatzolah:</div>' +
+      '<a href="tel:2016131111" style="display:inline-flex;align-items:center;gap:8px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:6px 14px;color:#fff;font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.04em;text-decoration:none"><img src="https://i.ibb.co/DNn1t93/hatzalah-statewide-3-orig-removebg-preview.png" alt="" style="height:28px;width:auto">Statewide Hatzolah — (201) 613-1111</a>' +
+      '</div>';
+  }
   banner.style.display = "block"; banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "10px"; banner.style.padding = "14px 16px"; banner.style.marginBottom = "16px";
-  banner.innerHTML = '<div style="display:flex;align-items:center;gap:12px"><span style="font-size:1.8rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;letter-spacing:0.06em;color:' + color + '">' + label + '</div><div style="font-size:0.8rem;color:' + color + ';opacity:0.85;margin-top:2px">' + sublabel + '</div></div></div>';
+  banner.innerHTML = '<div style="display:flex;align-items:center;gap:12px"><span style="font-size:1.8rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;letter-spacing:0.06em;color:' + color + '">' + label + '</div><div style="font-size:0.8rem;color:' + color + ';opacity:0.85;margin-top:2px">' + sublabel + '</div></div></div>' + extra;
 }
 window.initMapsAutocomplete = function() {
   var input = document.getElementById("maps-autocomplete");
