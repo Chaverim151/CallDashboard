@@ -461,6 +461,24 @@ footer{text-align:center;color:var(--gray);font-size:0.68rem;letter-spacing:0.1e
         <div style="font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;margin-bottom:4px">Nearest Cross Street</div>
         <div id="maps-cross-street-text" style="font-size:0.92rem;color:var(--white);font-weight:600"></div>
       </div>
+      <div id="maps-911-info" style="display:none;border-radius:10px;padding:12px 16px;margin-bottom:16px;background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);">
+        <div style="font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;margin-bottom:10px;text-align:center">📞 911 Mutual Aid Request</div>
+        <div style="display:flex;justify-content:center;gap:24px;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+            <a id="maps-911-bls" href="#" style="display:inline-flex;align-items:center;gap:6px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:20px;padding:8px 16px;color:#fff;font-family:'Oswald',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.05em;text-decoration:none;white-space:nowrap">📞 Request BLS</a>
+            <div id="maps-911-bls-num" style="font-size:0.74rem;color:var(--gray);text-align:center"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+            <a id="maps-911-als" href="#" style="display:inline-flex;align-items:center;gap:6px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:20px;padding:8px 16px;color:#fff;font-family:'Oswald',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.05em;text-decoration:none;white-space:nowrap">📞 Request ALS</a>
+            <div id="maps-911-als-num" style="font-size:0.74rem;color:var(--gray);text-align:center"></div>
+          </div>
+          <div id="maps-911-pd-col" style="display:none;flex-direction:column;align-items:center;gap:6px">
+            <a id="maps-911-pd" href="#" style="display:inline-flex;align-items:center;gap:6px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:20px;padding:8px 16px;color:#fff;font-family:'Oswald',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.05em;text-decoration:none;white-space:nowrap">📞 Call PD</a>
+            <div id="maps-911-pd-num" style="font-size:0.74rem;color:var(--gray);text-align:center"></div>
+          </div>
+        </div>
+        <div id="maps-911-borough" style="font-size:0.72rem;color:var(--gray);margin-top:10px;text-align:center"></div>
+      </div>
       <button onclick="generateMapLink()" style="width:100%;background:var(--gold);color:var(--navy);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:14px;cursor:pointer;transition:all 0.2s;margin-bottom:16px">Generate Location Link</button>
       <div id="maps-result" style="display:none;">
         <div style="font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Location Ready</div>
@@ -1971,6 +1989,89 @@ function extractRouteName(addressComponents) {
   return "";
 }
 
+// ── 911 MUTUAL AID BLS/ALS LOOKUP ──
+// Borough names are matched against the selected address's formatted_address text.
+// Order matters: more specific multi-town entries are checked first.
+var MUTUAL_AID_911 = [
+  { match: ["edison","south plainfield"], borough: "Edison / South Plainfield", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-248-7400" },
+  { match: ["highland park"], borough: "Highland Park", bls: "Med-Central: 848-800-5053", als: "Med-Central: 848-800-5053", pd: "732-572-3800" },
+  { match: ["piscataway"], borough: "Piscataway", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-562-1100" },
+  { match: ["east brunswick"], borough: "East Brunswick", bls: "Med-Central: 848-800-5053", als: "Med-Central: 848-800-5053", pd: "732-390-6900" },
+  { match: ["metuchen"], borough: "Metuchen", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-632-8500" },
+  { match: ["north brunswick"], borough: "North Brunswick", bls: "NBPD: 732-545-3200", als: "Med-Central: 848-800-5053", pd: "732-545-3200" },
+  { match: ["south brunswick"], borough: "South Brunswick", bls: "SBPD: 732-329-4646", als: "Med-Central: 848-800-5053", pd: "732-329-4646" },
+  { match: ["new brunswick"], borough: "New Brunswick", bls: "Med-Central: 848-800-5053", als: "Med-Central: 848-800-5053", pd: "732-745-5200" },
+  { match: ["carteret"], borough: "Carteret", bls: "Med-Central: 848-800-5053", als: "JFK: 732-287-5235", pd: "732-541-4181" },
+  { match: ["avenel"], borough: "Avenel", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["colonia"], borough: "Colonia", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["fords"], borough: "Fords", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["hopelawn"], borough: "Hopelawn", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["iselin"], borough: "Iselin", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["keasbey","keasby"], borough: "Keasbey", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["port reading"], borough: "Port Reading", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["rahway"], borough: "Rahway", bls: "Union County PD: 908-518-5650", als: "Union County PD: 908-518-5650", pd: "732-827-2200" },
+  { match: ["sewaren"], borough: "Sewaren", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["woodbridge"], borough: "Woodbridge (if no MC coverage available)", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" },
+  { match: ["cranbury"], borough: "Cranbury", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "609-395-0031" },
+  { match: ["dunellen"], borough: "Dunellen", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-968-3000" },
+  { match: ["franklin township","franklin park"], borough: "Franklin (in Somerset County)", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-873-2300" },
+  { match: ["helmetta","hemleta"], borough: "Helmetta", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-251-4100" },
+  { match: ["jamesburg"], borough: "Jamesburg", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-251-4100" },
+  { match: ["milltown"], borough: "Milltown", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-828-1100" },
+  { match: ["monroe"], borough: "Monroe", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-521-0222" },
+  { match: ["old bridge"], borough: "Old Bridge", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-721-4000" },
+  { match: ["perth amboy"], borough: "Perth Amboy", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-442-4400" },
+  { match: ["plainsboro"], borough: "Plainsboro", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "609-799-2333" },
+  { match: ["sayreville"], borough: "Sayreville", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-727-4444" },
+  { match: ["scotch plains"], borough: "Scotch Plains", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "908-322-7108" },
+  { match: ["south amboy"], borough: "South Amboy", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-721-0111" },
+  { match: ["south river"], borough: "South River", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-238-1000" },
+  { match: ["spotswood"], borough: "Spotswood", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-251-2121" }
+];
+
+function extractPhoneDigits(text) {
+  var m = text.match(/[\d-]{7,}/);
+  return m ? m[0].replace(/-/g, "") : "";
+}
+
+function showMutualAid911(formattedAddress) {
+  var bar = document.getElementById("maps-911-info");
+  if (!bar || !formattedAddress) { if (bar) bar.style.display = "none"; return; }
+  var addrLower = formattedAddress.toLowerCase();
+  var hit = null;
+  for (var i = 0; i < MUTUAL_AID_911.length; i++) {
+    var entry = MUTUAL_AID_911[i];
+    for (var j = 0; j < entry.match.length; j++) {
+      if (addrLower.indexOf(entry.match[j]) !== -1) { hit = entry; break; }
+    }
+    if (hit) break;
+  }
+  if (!hit) { bar.style.display = "none"; return; }
+
+  bar.style.display = "block";
+  var blsEl = document.getElementById("maps-911-bls");
+  var alsEl = document.getElementById("maps-911-als");
+  var pdEl = document.getElementById("maps-911-pd");
+  var pdCol = document.getElementById("maps-911-pd-col");
+  var blsNumEl = document.getElementById("maps-911-bls-num");
+  var alsNumEl = document.getElementById("maps-911-als-num");
+  var pdNumEl = document.getElementById("maps-911-pd-num");
+  var boroughEl = document.getElementById("maps-911-borough");
+  blsEl.href = "tel:" + extractPhoneDigits(hit.bls);
+  blsNumEl.textContent = hit.bls;
+  alsEl.href = "tel:" + extractPhoneDigits(hit.als);
+  alsNumEl.textContent = hit.als;
+  if (hit.pd) {
+    pdCol.style.display = "flex";
+    pdEl.href = "tel:" + extractPhoneDigits(hit.pd);
+    pdNumEl.textContent = hit.pd;
+  } else {
+    pdCol.style.display = "none";
+  }
+  boroughEl.textContent = hit.borough;
+}
+
+
 function findNearestCrossStreet(lat, lng, originalAddress) {
   var bar = document.getElementById("maps-cross-street");
   var textEl = document.getElementById("maps-cross-street-text");
@@ -2038,7 +2139,7 @@ function renderCoverageGoogleMap(pinLat, pinLng) {
   if (!coverageGoogleMap) {
     coverageGoogleMap = new google.maps.Map(container, {
       center: pinPosition,
-      zoom: 15,
+      zoom: 18,
       disableDefaultUI: true,
       zoomControl: true,
       mapTypeId: "roadmap"
@@ -2062,7 +2163,7 @@ function renderCoverageGoogleMap(pinLat, pinLng) {
     });
   } else {
     coverageGoogleMap.setCenter(pinPosition);
-    coverageGoogleMap.setZoom(15);
+    coverageGoogleMap.setZoom(18);
   }
 
   if (coveragePinMarker) {
@@ -2220,6 +2321,7 @@ window.initMapsAutocomplete = function() {
       if (banner) { banner.style.display = "block"; banner.innerHTML = '<div style="color:var(--gray);font-size:0.82rem">Checking coverage zone…</div>'; }
       loadCoverageZones().then(function() { showZoneBanner(detectZone(selectedLat, selectedLng) || "outside"); });
       findNearestCrossStreet(selectedLat, selectedLng, selectedAddress);
+      showMutualAid911(selectedAddress);
       sessionToken = new google.maps.places.AutocompleteSessionToken();
     });
   }
@@ -2321,6 +2423,7 @@ function initMapsPage() {
   var result = document.getElementById("maps-result"); if (result) result.style.display = "none";
   var banner = document.getElementById("maps-zone-banner"); if (banner) banner.style.display = "none";
   var crossBar = document.getElementById("maps-cross-street"); if (crossBar) crossBar.style.display = "none";
+  var aidBar = document.getElementById("maps-911-info"); if (aidBar) aidBar.style.display = "none";
   selectedAddress = ""; selectedPlaceName = ""; selectedMapsLink = ""; selectedLat = null; selectedLng = null; mapsAutocomplete = null;
   var input = document.getElementById("maps-autocomplete"); if (input) input.value = "";
   if (typeof google !== "undefined" && google.maps) window.initMapsAutocomplete();
