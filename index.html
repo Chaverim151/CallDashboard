@@ -332,8 +332,14 @@ footer{text-align:center;color:var(--gray);font-size:0.68rem;letter-spacing:0.1e
         <div class="btn-inner"><span class="btn-icon">👥</span><span class="btn-label">Contacts</span><span class="btn-sub">Call · SMS · WhatsApp<br>responder directory</span></div>
       </button>
       <button class="big-btn" data-sec="maps" id="maps-grid-btn" onclick="goTo('maps')" style="animation-delay:0.55s;--accent:#4a90d9;">
-        <div class="btn-inner"><span class="btn-icon">🗺️</span><span class="btn-label">Maps Generator</span><span class="btn-sub">Generate &amp; share dispatch location links</span></div>
+        <div class="btn-inner"><span class="btn-icon">🗺️</span><span class="btn-label">Dispatcher Dashboard</span><span class="btn-sub">Generate &amp; share dispatch location links</span></div>
       </button>
+      <a class="big-btn" data-sec="edispatches" id="edispatches-grid-btn" href="https://chmc.myesched.com/schedule/logon.asp" target="_blank" style="animation-delay:0.6s;--accent:#4a90d9;text-decoration:none;">
+        <div class="btn-inner"><img src="https://i.ibb.co/84fx96WW/ems-eschedule-logo.png" alt="eScheduler" style="height:2rem;display:block;margin:0 auto 10px;object-fit:contain"><span class="btn-label">eScheduler</span><span class="btn-sub">chmc.myesched.com<br>scheduling system</span></div>
+      </a>
+      <a class="big-btn" data-sec="diverts" id="diverts-grid-btn" href="https://njdivert.juvare.com/" target="_blank" style="animation-delay:0.65s;--accent:#4a90d9;text-decoration:none;">
+        <div class="btn-inner"><span class="btn-icon">🏥</span><span class="btn-label">Hospital Diverts</span><span class="btn-sub">njdivert.juvare.com<br>NJ hospital diversion status</span></div>
+      </a>
     </div>
   </div>
   <footer>Hatzolah Middlesex County &nbsp;·&nbsp; Internal Reference Only &nbsp;·&nbsp; Handle with Care</footer>
@@ -442,7 +448,7 @@ footer{text-align:center;color:var(--gray);font-size:0.68rem;letter-spacing:0.1e
 
 <!-- MAPS -->
 <div class="page" id="pg-maps">
-  <div class="inner-topbar"><button class="back-btn" onclick="goHome()">← Home</button><div class="page-title">🗺️ Maps Generator</div></div>
+  <div class="inner-topbar"><button class="back-btn" onclick="goHome()">← Home</button><div class="page-title">🗺️ Dispatcher Dashboard</div></div>
   <div class="inner-scroll"><div class="inner-content" style="max-width:600px">
     <div class="panel">
       <h3>Dispatch Location Share</h3>
@@ -619,6 +625,18 @@ footer{text-align:center;color:var(--gray);font-size:0.68rem;letter-spacing:0.1e
     </div>
 
     <div class="admin-section">
+      <div class="admin-section-title">🔒 Security</div>
+      <div class="add-user-form" style="max-width:520px">
+        <p style="color:var(--gray);font-size:0.82rem;margin-bottom:14px;line-height:1.6">
+          Forces every user (except yourself) to set a brand new password the next time they log in. Useful if a shared/default password may have been compromised.
+          <br><strong style="color:#ff9090">⚠ This affects every user account immediately and cannot be undone.</strong>
+        </p>
+        <button class="submit-btn" id="force-reset-all-btn" onclick="forceResetAllPasswords()" style="background:#e05555;color:#fff">🔒 Force Password Reset for All Users</button>
+        <div class="form-msg" id="force-reset-all-msg"></div>
+      </div>
+    </div>
+
+    <div class="admin-section">
       <div class="admin-section-title">📧 Email Testing</div>
       <div class="add-user-form" style="max-width:480px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -751,6 +769,16 @@ const db = firebase.firestore();
 const SUPER_ADMIN = "shmueleidelman.work@gmail.com";
 let currentUser = null, currentRole = null, currentUserRoles = [], allUsersCache = [];
 
+// Never let the browser auto-restore a previous session. Default Firebase Auth
+// persistence is LOCAL (survives closing the tab, the browser, even a device
+// restart) — that's exactly what we don't want on a shared/kiosk-style EMS
+// device. NONE means the session lives only in memory for this page load;
+// the moment the tab is closed or the page is refreshed, the person must
+// sign in again with their unit number and password.
+auth.setPersistence(firebase.auth.Auth.Persistence.NONE).catch(function(e) {
+  console.warn("Could not set auth persistence:", e);
+});
+
 // ── HELPERS ──
 function showToast(msg, red) {
   var t = document.getElementById("toast");
@@ -854,6 +882,18 @@ function doTokenAccept(tid, tok, title, unit, submittedByUid) {
 // ── AUTH STATE ──
 auth.onAuthStateChanged(function(user) {
   if (user) {
+    // Only proceed if this session was created by an explicit sign-in in THIS
+    // tab (the doLogin flow sets this flag right after a successful auth call).
+    // If it's missing, this is Firebase auto-restoring a stale session from
+    // before persistence was locked down, or from sessionStorage somehow
+    // surviving — either way, never silently let someone in. Force sign-out
+    // and show the login screen instead.
+    if (sessionStorage.getItem("hzmc_fresh_login") !== "1") {
+      auth.signOut();
+      currentUser = null; currentRole = null;
+      showPage("login");
+      return;
+    }
     currentUser = user;
     var needsPasswordChange = false;
     db.collection("users").doc(user.uid).get().then(function(snap) {
@@ -876,17 +916,7 @@ auth.onAuthStateChanged(function(user) {
         showForcedPasswordChange();
         return;
       }
-      if (currentRole === "admin") document.getElementById("admin-nav-btn").style.display = "inline-flex";
-      // Move Maps to #1 for dispatchers
-      if ((currentUserRoles || []).includes("dispatcher")) {
-        var grid = document.getElementById("home-btn-grid");
-        var mapsBtn = document.getElementById("maps-grid-btn");
-        if (grid && mapsBtn) grid.insertBefore(mapsBtn, grid.firstChild);
-      }
-      showPage("home");
-      loadAppData();
-      if (currentRole === "admin") checkImportFlag();
-      updatePushBtn();
+      enterHomeScreen();
     }).catch(function(e) { showErr("Error: " + e.message); });
   } else {
     currentUser = null; currentRole = null;
@@ -895,6 +925,45 @@ auth.onAuthStateChanged(function(user) {
     showPage("login");
   }
 });
+
+// Shared setup that runs every time a user lands on the home screen — whether
+// from a normal login or right after completing a forced password change.
+// Keeping this in one place means tile visibility rules never drift out of
+// sync between the two entry paths.
+function enterHomeScreen() {
+  if (currentRole === "admin") document.getElementById("admin-nav-btn").style.display = "inline-flex";
+  var rolesLower = (currentUserRoles || []).map(function(r) { return r.toLowerCase(); });
+  var isFieldRole = rolesLower.indexOf("responder") !== -1 || rolesLower.indexOf("captain") !== -1 || rolesLower.indexOf("chief") !== -1;
+  var isDispatcher = rolesLower.indexOf("dispatcher") !== -1;
+  var isPureDispatcher = isDispatcher && !isFieldRole;
+
+  // Move Maps/Dispatcher Dashboard to #1 for any dispatcher
+  if (isDispatcher) {
+    var grid = document.getElementById("home-btn-grid");
+    var mapsBtn = document.getElementById("maps-grid-btn");
+    if (grid && mapsBtn) grid.insertBefore(mapsBtn, grid.firstChild);
+  }
+  // Pure dispatchers (dispatcher role, with NO responder/captain/chief role)
+  // don't need RMA hotline, hospital codes, ePCR, storage room, or MC portal —
+  // those are field-operations tools, not dispatch tools. Hide those tiles.
+  if (isPureDispatcher) {
+    ["rma", "hospital", "epcr", "storage", "portal"].forEach(function(sec) {
+      var btn = document.querySelector('.big-btn[data-sec="' + sec + '"]');
+      if (btn) btn.style.display = "none";
+    });
+  }
+  // eDispatches and Hospital Diverts are dispatcher-only tools
+  if (!isDispatcher) {
+    ["edispatches", "diverts"].forEach(function(sec) {
+      var btn = document.querySelector('.big-btn[data-sec="' + sec + '"]');
+      if (btn) btn.style.display = "none";
+    });
+  }
+  showPage("home");
+  loadAppData();
+  if (currentRole === "admin") checkImportFlag();
+  updatePushBtn();
+}
 
 function showForcedPasswordChange() {
   showPage("force-password");
@@ -914,16 +983,7 @@ function submitForcedPasswordChange() {
     return db.collection("users").doc(currentUser.uid).set({ mustChangePassword: false }, { merge: true });
   }).then(function() {
     showToast("✓ Password updated!");
-    if (currentRole === "admin") document.getElementById("admin-nav-btn").style.display = "inline-flex";
-    if ((currentUserRoles || []).includes("dispatcher")) {
-      var grid = document.getElementById("home-btn-grid");
-      var mapsBtn = document.getElementById("maps-grid-btn");
-      if (grid && mapsBtn) grid.insertBefore(mapsBtn, grid.firstChild);
-    }
-    showPage("home");
-    loadAppData();
-    if (currentRole === "admin") checkImportFlag();
-    updatePushBtn();
+    enterHomeScreen();
   }).catch(function(e) {
     msg.className = "form-msg error";
     msg.textContent = e.code === "auth/requires-recent-login" ? "Please sign out and sign back in, then try again." : "Error: " + e.message;
@@ -950,14 +1010,17 @@ function doLogin() {
     else if (unit === "MC-16") { email = SUPER_ADMIN; }
     else { showErr("Unit not found. Check your number or contact an admin."); btn.disabled = false; btn.textContent = "Sign In"; return Promise.reject({ code: "no-unit" }); }
     if (!email) { showErr("No email on file. Contact an admin."); btn.disabled = false; btn.textContent = "Sign In"; return Promise.reject({ code: "no-email" }); }
-    return auth.signInWithEmailAndPassword(email, pass);
+    return auth.signInWithEmailAndPassword(email, pass).then(function(cred) {
+      sessionStorage.setItem("hzmc_fresh_login", "1");
+      return cred;
+    });
   }).catch(function(e) {
     if (e.code === "no-unit" || e.code === "no-email") return;
     showErr(friendlyError(e.code));
     btn.disabled = false; btn.textContent = "Sign In";
   });
 }
-function doLogout() { auth.signOut(); }
+function doLogout() { sessionStorage.removeItem("hzmc_fresh_login"); auth.signOut(); }
 function togglePass() {
   var inp = document.getElementById("li-pass");
   var icon = document.getElementById("eye-icon");
@@ -1107,6 +1170,36 @@ function deleteUser(uid, email) {
   if (!confirm("Remove " + email + "?")) return;
   db.collection("users").doc(uid).delete().then(function() { showToast("User removed"); loadUsers(); }).catch(function(e) { showToast("Error: " + e.message, true); });
 }
+
+// ── FORCE RESET ALL PASSWORDS ──
+function forceResetAllPasswords() {
+  if (currentRole !== "admin") return;
+  if (!confirm("Force every user (except you) to set a new password on their next login? This cannot be undone.")) return;
+  var btn = document.getElementById("force-reset-all-btn");
+  var msg = document.getElementById("force-reset-all-msg");
+  msg.className = "form-msg"; msg.textContent = "";
+  btn.disabled = true; btn.textContent = "Applying…";
+  db.collection("users").get().then(function(snap) {
+    var batchPromises = [];
+    var count = 0;
+    snap.forEach(function(doc) {
+      if (doc.id === currentUser.uid) return; // never lock out the admin doing this
+      count++;
+      batchPromises.push(db.collection("users").doc(doc.id).set({ mustChangePassword: true }, { merge: true }));
+    });
+    return Promise.all(batchPromises).then(function() { return count; });
+  }).then(function(count) {
+    msg.className = "form-msg success";
+    msg.textContent = "✓ " + count + " user(s) will be required to set a new password on next login.";
+    loadUsers();
+  }).catch(function(e) {
+    msg.className = "form-msg error";
+    msg.textContent = "Error: " + e.message;
+  }).finally(function() {
+    btn.disabled = false; btn.textContent = "🔒 Force Password Reset for All Users";
+  });
+}
+window.forceResetAllPasswords = forceResetAllPasswords;
 
 // ── CUSTOM ROLES ──
 function addCustomRole(prefix) {
@@ -1996,7 +2089,7 @@ var MUTUAL_AID_911 = [
   { match: ["edison","south plainfield"], borough: "Edison / South Plainfield", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-248-7400" },
   { match: ["highland park"], borough: "Highland Park", bls: "Med-Central: 848-800-5053", als: "Med-Central: 848-800-5053", pd: "732-572-3800" },
   { match: ["piscataway"], borough: "Piscataway", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-562-1100" },
-  { match: ["east brunswick"], borough: "East Brunswick", bls: "Med-Central: 848-800-5053", als: "Med-Central: 848-800-5053", pd: "732-390-6900" },
+  { match: ["east brunswick"], borough: "East Brunswick", bls: "EBPD: 732-390-6900", als: "Med-Central: 848-800-5053", pd: "732-390-6900" },
   { match: ["metuchen"], borough: "Metuchen", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-632-8500" },
   { match: ["north brunswick"], borough: "North Brunswick", bls: "NBPD: 732-545-3200", als: "Med-Central: 848-800-5053", pd: "732-545-3200" },
   { match: ["south brunswick"], borough: "South Brunswick", bls: "SBPD: 732-329-4646", als: "Med-Central: 848-800-5053", pd: "732-329-4646" },
@@ -2072,6 +2165,17 @@ function showMutualAid911(formattedAddress) {
 }
 
 
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  var R = 6371000;
+  var toRad = function(d) { return d * Math.PI / 180; };
+  var dLat = toRad(lat2 - lat1);
+  var dLng = toRad(lng2 - lng1);
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function findNearestCrossStreet(lat, lng, originalAddress) {
   var bar = document.getElementById("maps-cross-street");
   var textEl = document.getElementById("maps-cross-street-text");
@@ -2089,31 +2193,61 @@ function findNearestCrossStreet(lat, lng, originalAddress) {
       ownStreet = extractRouteName(results[0].address_components);
     }
 
-    // Sample 8 points in a small ring (~45m) around the address to catch nearby intersections
-    var radiusDeg = 0.0004; // ~45m at this latitude
-    var offsets = [
-      [1, 0], [0.707, 0.707], [0, 1], [-0.707, 0.707],
-      [-1, 0], [-0.707, -0.707], [0, -1], [0.707, -0.707]
-    ];
-    var samplePoints = offsets.map(function(o) {
-      return { lat: lat + o[1] * radiusDeg, lng: lng + o[0] * radiusDeg };
-    });
+    // Sample 16 points around the address in a dense ring (~35m), then a
+    // slightly wider ring (~70m) only if nothing turns up in the first pass.
+    // Every hit is scored by its real haversine distance from the original
+    // point, so even if a far-ring sample happens to resolve first, the
+    // genuinely closest cross street still wins.
+    var ringRadiiDeg = [0.00032, 0.00065]; // ~35m, ~72m at this latitude
+    var angleCount = 16;
+    var offsets = [];
+    for (var a = 0; a < angleCount; a++) {
+      var theta = (a / angleCount) * 2 * Math.PI;
+      offsets.push([Math.cos(theta), Math.sin(theta)]);
+    }
 
-    var found = [];
-    var remaining = samplePoints.length;
-
-    samplePoints.forEach(function(pt) {
-      geocoder.geocode({ location: pt }, function(res, st) {
-        remaining--;
-        if (st === "OK" && res && res[0]) {
-          var route = extractRouteName(res[0].address_components);
-          if (route && route !== ownStreet && found.indexOf(route) === -1) {
-            found.push(route);
-          }
-        }
-        if (remaining === 0) finishCrossStreetLookup(found, ownStreet);
+    function tryRing(ringIndex) {
+      if (ringIndex >= ringRadiiDeg.length) { finishCrossStreetLookup([], ownStreet); return; }
+      var radiusDeg = ringRadiiDeg[ringIndex];
+      var samplePoints = offsets.map(function(o) {
+        return { lat: lat + o[1] * radiusDeg, lng: lng + o[0] * radiusDeg };
       });
-    });
+
+      var hits = []; // { route, distance }
+      var remaining = samplePoints.length;
+
+      samplePoints.forEach(function(pt) {
+        geocoder.geocode({ location: pt }, function(res, st) {
+          remaining--;
+          if (st === "OK" && res && res[0]) {
+            var route = extractRouteName(res[0].address_components);
+            if (route && route !== ownStreet) {
+              var d = haversineMeters(lat, lng, pt.lat, pt.lng);
+              hits.push({ route: route, distance: d });
+            }
+          }
+          if (remaining === 0) {
+            if (hits.length > 0) {
+              // Pick the closest hit per unique route name, then sort by distance
+              var bestByRoute = {};
+              hits.forEach(function(h) {
+                if (!bestByRoute[h.route] || h.distance < bestByRoute[h.route]) {
+                  bestByRoute[h.route] = h.distance;
+                }
+              });
+              var ranked = Object.keys(bestByRoute).map(function(name) {
+                return { route: name, distance: bestByRoute[name] };
+              }).sort(function(x, y) { return x.distance - y.distance; });
+              finishCrossStreetLookup(ranked.map(function(r) { return r.route; }), ownStreet);
+            } else {
+              tryRing(ringIndex + 1);
+            }
+          }
+        });
+      });
+    }
+
+    tryRing(0);
   });
 }
 
