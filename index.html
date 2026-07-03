@@ -775,7 +775,10 @@ let currentUser = null, currentRole = null, currentUserRoles = [], allUsersCache
 // device. NONE means the session lives only in memory for this page load;
 // the moment the tab is closed or the page is refreshed, the person must
 // sign in again with their unit number and password.
-auth.setPersistence(firebase.auth.Auth.Persistence.NONE).catch(function(e) {
+// This must fully resolve BEFORE any sign-in attempt — calling
+// signInWithEmailAndPassword while persistence is still being set can leave
+// the very first login in an inconsistent state, requiring a second click.
+var authPersistenceReady = auth.setPersistence(firebase.auth.Auth.Persistence.NONE).catch(function(e) {
   console.warn("Could not set auth persistence:", e);
 });
 
@@ -1004,18 +1007,19 @@ function doLogin() {
   if (!pass) { showErr("Please enter your password."); return; }
   var unit = "MC-" + num;
   btn.disabled = true; btn.textContent = "Signing in…";
-  db.collection("users").where("unit", "==", unit).get().then(function(snap) {
+  authPersistenceReady.then(function() {
+    return db.collection("users").where("unit", "==", unit).get();
+  }).then(function(snap) {
     var email;
     if (!snap.empty) { email = snap.docs[0].data().email; }
     else if (unit === "MC-16") { email = SUPER_ADMIN; }
     else { showErr("Unit not found. Check your number or contact an admin."); btn.disabled = false; btn.textContent = "Sign In"; return Promise.reject({ code: "no-unit" }); }
     if (!email) { showErr("No email on file. Contact an admin."); btn.disabled = false; btn.textContent = "Sign In"; return Promise.reject({ code: "no-email" }); }
-    return auth.signInWithEmailAndPassword(email, pass).then(function(cred) {
-      sessionStorage.setItem("hzmc_fresh_login", "1");
-      return cred;
-    });
+    sessionStorage.setItem("hzmc_fresh_login", "1");
+    return auth.signInWithEmailAndPassword(email, pass);
   }).catch(function(e) {
     if (e.code === "no-unit" || e.code === "no-email") return;
+    sessionStorage.removeItem("hzmc_fresh_login");
     showErr(friendlyError(e.code));
     btn.disabled = false; btn.textContent = "Sign In";
   });
