@@ -3282,10 +3282,72 @@ function initMapsPage() {
 var ddMap = null, ddStreetView = null, ddStreetViewActive = false;
 var ddCallMarkers = {}, ddSelectedCallId = null, ddCallsListener = null;
 var allRespondersCache = [];
+var allAmbulancesCache = [];
 var currentManagedCallId = null;
 
+function loadAmbulancesCache() {
+  if (allAmbulancesCache.length) return Promise.resolve(allAmbulancesCache);
+  return db.collection("vehicles").get().then(function(snap) {
+    allAmbulancesCache = [];
+    snap.forEach(function(d) {
+      var v = d.data();
+      if (v.type === "vehicle") allAmbulancesCache.push(Object.assign({ docId: d.id }, v));
+    });
+    return allAmbulancesCache;
+  });
+}
+
+function addCrewToCall(callId) {
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [{ primary: "", backup: "", rig: "" }];
+    crews.push({ primary: "", backup: "", rig: "" });
+    db.collection("activeCalls").doc(callId).set({ crews: crews }, { merge: true }).then(function() {
+      selectDDCall(callId);
+      showToast("✓ Crew " + crews.length + " added");
+    });
+  });
+}
+
+function removeCrewFromCall(callId, crewIdx) {
+  if (!confirm("Remove Crew " + (crewIdx + 1) + " from this call?")) return;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [];
+    if (crews.length <= 1) { showToast("Must have at least one crew", true); return; }
+    crews.splice(crewIdx, 1);
+    db.collection("activeCalls").doc(callId).set({ crews: crews }, { merge: true }).then(function() {
+      selectDDCall(callId);
+    });
+  });
+}
+
+function assignCrewMember(callId, crewIdx, role, value) {
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [];
+    while (crews.length <= crewIdx) crews.push({ primary: "", backup: "", rig: "" });
+    var current = crews[crewIdx][role] || "";
+    // Toggle off if same value
+    crews[crewIdx][role] = (current === value) ? "" : value;
+    // Sync assignedUnits for backward compat
+    var allUnits = [];
+    crews.forEach(function(c) {
+      if (c.primary) allUnits.push(c.primary);
+      if (c.backup) allUnits.push(c.backup);
+    });
+    db.collection("activeCalls").doc(callId).set({ crews: crews, assignedUnits: allUnits }, { merge: true }).then(function() {
+      selectDDCall(callId);
+    });
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+}
+
+window.addCrewToCall = addCrewToCall;
+window.removeCrewFromCall = removeCrewFromCall;
+window.assignCrewMember = assignCrewMember;
+
 var DD_LANDMARKS = [
-  { name: "Hatzolah Base", lat: 40.4988, lng: -74.4284, icon: "🚑", color: "#c9a84c", phone: "", address: "1587 NJ-27, Highland Park NJ" },
+  { name: "Hatzolah Base", lat: 40.5077036, lng: -74.4133431, icon: "🚑", color: "#c9a84c", phone: "", address: "1587 NJ-27, Edison, NJ 08817" },
   { name: "RWJ East Brunswick", lat: 40.4226, lng: -74.4158, icon: "🏥", color: "#4a90d9", phone: "732-390-1000", address: "58 Veronica Ave, Somerset NJ" },
   { name: "St. Peter's University Hospital", lat: 40.4859, lng: -74.4438, icon: "🏥", color: "#4a90d9", phone: "732-745-8600", address: "254 Easton Ave, New Brunswick NJ" },
   { name: "JFK Medical Center", lat: 40.5686, lng: -74.3229, icon: "🏥", color: "#4a90d9", phone: "732-321-7000", address: "65 James St, Edison NJ" }
@@ -3524,80 +3586,129 @@ function toggleStreetView() {
 
 function renderDDSidebar(call) {
   var empty = document.getElementById("dd-sidebar-empty");
-  var content = document.getElementById("dd-sidebar-content");
-  if (!content) return;
+  var content2 = document.getElementById("dd-sidebar-content");
+  if (!content2) return;
   if (empty) empty.style.display = "none";
-  content.style.display = "flex";
+  content2.style.display = "block";
+  currentManagedCallId = call.id;
+  // Load ambulances then render
+  loadAmbulancesCache().then(function(ambs) {
+    renderDDSidebarContent(call, ambs);
+  });
+}
+
+function renderDDSidebarContent(call, ambulances) {
+  var content2 = document.getElementById("dd-sidebar-content");
+  if (!content2) return;
 
   var nature = call.callNature ? stripNatureNumber(call.callNature) : "";
   var age = call.patientAge === "pediatric" ? "👶 Pediatric" : call.patientAge === "adult" ? "🧑 Adult" : "";
-  var zoneLabel = call.zone === "primary" ? "🟢 Standard Response" : call.zone === "secondary" ? "🚑 Load an Ambulance" : "🔴 Outside Zone";
   var zoneColor = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
+  var zoneLabel = call.zone === "primary" ? "🟢 Standard Response" : call.zone === "secondary" ? "🚑 Load an Ambulance" : "🔴 Outside Zone";
+
   var alsInfo = call.alsActivated
-    ? '<div style="background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:7px;padding:8px 10px;font-size:0.78rem;color:#ff9090"><strong>🚨 ALS: ' + (call.alsProvider || "Activated") + '</strong>' + (call.alsUnit ? " · " + call.alsUnit : "") + (call.alsEta ? " · ETA " + call.alsEta + "min" : "") + '</div>'
+    ? '<div style="background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+        '<div style="font-size:0.65rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:4px">🚨 ALS Activated</div>' +
+        '<div style="font-size:0.82rem;color:var(--white);font-weight:600">' + (call.alsProvider || "") + '</div>' +
+        (call.alsUnit ? '<div style="font-size:0.75rem;color:var(--gray)">Unit: ' + call.alsUnit + '</div>' : '') +
+        (call.alsEta ? '<div style="font-size:0.75rem;color:var(--gray)">ETA: ' + call.alsEta + ' min</div>' : '') +
+      '</div>'
     : "";
 
-  // Suggest ALS provider based on zone/borough
   var alsSuggestion = "";
   if (!call.alsActivated && call.callNature) {
     var alsNatures = ["01","02","03","04","06","07","08","09","11","12","13","14","16","18","20","23"];
-    var isALS = alsNatures.some(function(n) { return (call.callNature||"").indexOf(n+" -") === 0; });
-    if (isALS) {
+    var isALSNature = alsNatures.some(function(n) { return (call.callNature || "").indexOf(n + " -") === 0; });
+    if (isALSNature) {
       var addr = (call.address || "").toLowerCase();
-      var provider = (addr.indexOf("highland park")!==-1||addr.indexOf("new brunswick")!==-1||addr.indexOf("north brunswick")!==-1||addr.indexOf("east brunswick")!==-1||addr.indexOf("south brunswick")!==-1) ? "Med-Central: 848-800-5053" : "JFK ALS: 732-287-5235";
-      alsSuggestion = '<div style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);border-radius:7px;padding:8px 10px;margin-bottom:8px">' +
-        '<div style="font-size:0.65rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:4px">⚡ ALS Suggested</div>' +
-        '<div style="font-size:0.78rem;color:var(--white);margin-bottom:6px">' + provider + '</div>' +
-        '<button onclick="openALSModal(\'' + call.id + '\')" style="width:100%;background:#e05555;color:#fff;border:none;border-radius:6px;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:7px;cursor:pointer">🚨 Activate ALS</button>' +
-      '</div>';
+      var provider = (addr.indexOf("highland park") !== -1 || addr.indexOf("new brunswick") !== -1 ||
+          addr.indexOf("north brunswick") !== -1 || addr.indexOf("east brunswick") !== -1 ||
+          addr.indexOf("south brunswick") !== -1 || addr.indexOf("piscataway") !== -1)
+        ? "Med-Central: 848-800-5053" : "JFK ALS: 732-287-5235";
+      alsSuggestion =
+        '<div style="background:rgba(224,85,85,0.08);border:1px solid rgba(224,85,85,0.3);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+          '<div style="font-size:0.65rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:4px">⚡ ALS Suggested</div>' +
+          '<div style="font-size:0.8rem;color:var(--white);margin-bottom:8px">' + provider + '</div>' +
+          '<button onclick=\'openALSModal("' + call.id + '")\'  style="width:100%;background:#e05555;color:#fff;border:none;border-radius:6px;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:8px;cursor:pointer">🚨 Activate ALS</button>' +
+        '</div>';
     }
   }
 
-  // Unit assignment: Primary / Backup / Ambulance Unit
-  var assignedUnits = call.assignedUnits || [];
   var responders = allRespondersCache.filter(function(u) {
-    var r = (u.roles||[]).map(function(x){return x.toLowerCase();});
-    return r.indexOf("responder")!==-1||r.indexOf("captain")!==-1||r.indexOf("driver")!==-1;
+    var r = (u.roles || []).map(function(x) { return x.toLowerCase(); });
+    return r.indexOf("responder") !== -1 || r.indexOf("captain") !== -1 || r.indexOf("driver") !== -1;
   });
 
-  function unitRow(label, role, color) {
-    var assigned = assignedUnits.filter(function(u, i) {
-      if (role === "primary") return i === 0;
-      if (role === "backup") return i === 1;
-      if (role === "ambo") return i === 2;
-      return false;
-    });
-    var assignedUnit = assigned.length ? assigned[0] : null;
-    var pills = responders.map(function(u) {
-      var isThis = u.unit === assignedUnit;
-      return '<button onclick="assignDDUnit(\'' + call.id + '\',\'' + role + '\',\'' + u.unit + '\')" style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;letter-spacing:0.05em;padding:4px 9px;border-radius:12px;border:1px solid ' + (isThis ? color : "var(--card-border)") + ';background:' + (isThis ? "rgba("+hexToRgb(color)+",0.2)" : "rgba(255,255,255,0.03)") + ';color:' + (isThis ? color : "var(--gray)") + ';cursor:pointer;transition:all 0.15s">' + u.unit + '</button>';
+  var crews = call.crews && call.crews.length ? call.crews : [{ primary: "", backup: "", rig: "" }];
+
+  function memberPills(crewIdx, role, currentVal, color) {
+    var items = role === "rig" ? ambulances : responders;
+    return items.map(function(item) {
+      var val = role === "rig" ? (item.id || item.docId) : item.unit;
+      var label = role === "rig" ? (item.id || item.docId) + (item.description ? " — " + item.description : "") : item.unit;
+      var isThis = currentVal === val;
+      var rgb = hexToRgb(color);
+      return '<button onclick=\'assignCrewMember("' + call.id + '",' + crewIdx + ',"' + role + '","' + val + '")\'  style="font-family:\'Oswald\',sans-serif;font-size:0.62rem;padding:3px 6px;border-radius:7px;border:1px solid ' + (isThis ? color : "var(--card-border)") + ';background:' + (isThis ? "rgba("+rgb+",0.2)" : "rgba(255,255,255,0.03)") + ';color:' + (isThis ? color : "var(--gray)") + ';cursor:pointer;margin:2px;white-space:nowrap">' + label + '</button>';
     }).join("");
-    return '<div style="margin-bottom:10px">' +
-      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">' +
-        '<span style="font-size:0.65rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.1em;text-transform:uppercase;color:' + color + '">' + label + '</span>' +
-        (assignedUnit ? '<span style="font-family:\'Oswald\',sans-serif;font-size:0.75rem;font-weight:700;color:' + color + ';background:rgba('+hexToRgb(color)+',0.12);border:1px solid rgba('+hexToRgb(color)+',0.3);border-radius:12px;padding:2px 8px">' + assignedUnit + '</span>' : '<span style="font-size:0.68rem;color:var(--gray)">Unassigned</span>') +
-      '</div>' +
-      '<div style="display:flex;flex-wrap:wrap;gap:4px">' + pills + '</div>' +
-    '</div>';
   }
 
-  content.innerHTML =
-    '<div style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;font-weight:700;color:var(--white);line-height:1.3;margin-bottom:3px">' + (call.address||"Unknown").split("—")[0].trim() + '</div>' +
-    (call.crossStreet ? '<div style="font-size:0.72rem;color:var(--gray);margin-bottom:8px">↪ ' + call.crossStreet + '</div>' : '') +
-    '<div style="font-size:0.72rem;font-family:\'Oswald\',sans-serif;font-weight:700;color:' + zoneColor + ';margin-bottom:6px">' + zoneLabel + '</div>' +
-    (age || nature ? '<div style="font-size:0.78rem;color:var(--white);margin-bottom:8px">' + [age, nature].filter(Boolean).join(" · ") + '</div>' : '') +
-    (call.notes ? '<div style="font-size:0.75rem;color:var(--gray);padding:8px 10px;background:rgba(255,255,255,0.04);border-radius:6px;margin-bottom:8px;line-height:1.5">' + call.notes + '</div>' : '') +
-    alsInfo + alsSuggestion +
-    '<div style="font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-bottom:8px;padding-top:4px;border-top:1px solid var(--card-border)">Unit Assignment</div>' +
-    unitRow("Primary", "primary", "#7dedb5") +
-    unitRow("Backup", "backup", "#7ab8f5") +
-    unitRow("🚑 Ambulance Unit", "ambo", "#ffc84a") +
-    '<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--card-border)">' +
-      '<a href="' + (call.mapsLink||"#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center;font-size:0.7rem">🗺 Map</a>' +
-      '<button onclick="completeCall(\'' + call.id + '\')" class="call-action-btn danger" style="flex:1;font-size:0.7rem">✓ Complete</button>' +
-    '</div>';
+  function crewBlock(crew, idx) {
+    var canRemove = crews.length > 1;
+    var html = '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:8px;padding:10px 10px 8px;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold)">Crew ' + (idx+1) + '</span>' +
+        (canRemove ? '<button onclick=\'removeCrewFromCall("' + call.id + '",' + idx + ')\'  style="background:none;border:none;color:var(--gray);font-size:0.75rem;cursor:pointer;padding:0">✕ Remove</button>' : '') +
+      '</div>';
 
-  currentManagedCallId = call.id;
+    // Primary
+    html += '<div style="margin-bottom:8px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">' +
+        '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.1em;text-transform:uppercase;color:#7dedb5">Primary</span>' +
+        (crew.primary ? '<span style="font-size:0.65rem;font-weight:700;color:#7dedb5;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:7px;padding:1px 6px">' + crew.primary + '</span>' : '<span style="font-size:0.62rem;color:var(--gray);font-style:italic">—</span>') +
+      '</div><div style="display:flex;flex-wrap:wrap">' + memberPills(idx, "primary", crew.primary || "", "#7dedb5") + '</div></div>';
+
+    // Backup
+    html += '<div style="margin-bottom:8px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">' +
+        '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5">Backup</span>' +
+        (crew.backup ? '<span style="font-size:0.65rem;font-weight:700;color:#7ab8f5;background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.4);border-radius:7px;padding:1px 6px">' + crew.backup + '</span>' : '<span style="font-size:0.62rem;color:var(--gray);font-style:italic">—</span>') +
+      '</div><div style="display:flex;flex-wrap:wrap">' + memberPills(idx, "backup", crew.backup || "", "#7ab8f5") + '</div></div>';
+
+    // Rig
+    html += '<div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">' +
+        '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.1em;text-transform:uppercase;color:#ffc84a">🚑 Rig</span>' +
+        (crew.rig ? '<span style="font-size:0.65rem;font-weight:700;color:#ffc84a;background:rgba(255,200,74,0.15);border:1px solid rgba(255,200,74,0.4);border-radius:7px;padding:1px 6px">' + crew.rig + '</span>' : '<span style="font-size:0.62rem;color:var(--gray);font-style:italic">—</span>') +
+      '</div><div style="display:flex;flex-wrap:wrap">' +
+        (ambulances.length ? memberPills(idx, "rig", crew.rig || "", "#ffc84a") : '<span style="font-size:0.68rem;color:var(--gray)">No ambulances in vehicle list</span>') +
+      '</div></div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  var crewsHTML = crews.map(function(crew, idx) { return crewBlock(crew, idx); }).join("");
+
+  content2.innerHTML =
+    '<div style="padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--card-border)">' +
+      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.9rem;font-weight:700;color:var(--white);line-height:1.4;margin-bottom:3px">' + (call.address || "Unknown").split("—")[0].trim() + '</div>' +
+      (call.crossStreet ? '<div style="font-size:0.7rem;color:var(--gray)">↪ ' + call.crossStreet + '</div>' : '') +
+    '</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">' +
+      '<span style="font-size:0.68rem;font-family:\'Oswald\',sans-serif;font-weight:700;color:' + zoneColor + ';background:rgba(' + hexToRgb(zoneColor) + ',0.12);border:1px solid rgba(' + hexToRgb(zoneColor) + ',0.3);border-radius:5px;padding:3px 8px">' + zoneLabel + '</span>' +
+      (age ? '<span style="font-size:0.68rem;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:5px;padding:3px 8px;color:var(--white)">' + age + '</span>' : '') +
+      (nature ? '<span style="font-size:0.68rem;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:5px;padding:3px 8px;color:var(--gold)">' + nature + '</span>' : '') +
+    '</div>' +
+    (call.notes ? '<div style="font-size:0.73rem;color:var(--gray);padding:8px;background:rgba(255,255,255,0.04);border-radius:6px;margin-bottom:10px;line-height:1.5;border:1px solid var(--card-border)">' + call.notes + '</div>' : '') +
+    alsInfo + alsSuggestion +
+    '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-bottom:8px;padding-top:8px;border-top:1px solid var(--card-border)">Crew &amp; Rigs</div>' +
+    crewsHTML +
+    '<button onclick=\'addCrewToCall("' + call.id + '")\'  style="width:100%;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:7px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:8px;cursor:pointer;margin-bottom:10px">+ Add Crew &amp; Rig</button>' +
+    '<div style="display:flex;gap:5px;padding-top:8px;border-top:1px solid var(--card-border)">' +
+      '<a href="' + (call.mapsLink || "#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center;font-size:0.68rem">🗺 Map</a>' +
+      '<button onclick=\'openALSModal("' + call.id + '")\'  class="call-action-btn als-btn" style="flex:1;font-size:0.68rem">🚨 ALS</button>' +
+      '<button onclick=\'completeCall("' + call.id + '")\'  class="call-action-btn danger" style="flex:1;font-size:0.68rem">✓ Done</button>' +
+    '</div>';
 }
 
 function hexToRgb(hex) {
@@ -4047,7 +4158,9 @@ function createActiveCall(lat, lng, address, crossStreet, zone, mapsLink, placeN
       zone: zone || "outside",
       callNature: callNature || "",
       patientAge: patientAge || "",
-      assignedUnits: [], notes: "",
+      crews: [{ primary: "", backup: "", rig: "" }],
+      assignedUnits: [],
+      notes: "",
       alsActivated: false, status: "active",
       createdBy: createdBy, createdAt: new Date().toISOString()
     });
