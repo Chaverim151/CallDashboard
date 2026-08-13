@@ -830,6 +830,22 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
 </div>
 
 <!-- MANAGE CALL MODAL (dispatchers only) -->
+<!-- TRANSPORT MODAL -->
+<div id="transport-modal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#122040;border:1px solid rgba(74,144,217,0.4);border-radius:16px;width:100%;max-width:420px;animation:fadeUp 0.2s ease both;overflow:hidden">
+    <div style="background:rgba(74,144,217,0.12);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(74,144,217,0.25)">
+      <div style="font-family:'Oswald',sans-serif;font-size:0.92rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#7ab8f5">🚑 Transporting Units</div>
+      <button onclick="closeTransportModal()" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer;padding:0 4px">×</button>
+    </div>
+    <div style="padding:16px 20px">
+      <div style="font-size:0.78rem;color:var(--gray);margin-bottom:14px">Select all units transporting to the hospital. The ambulance and crew will be updated together.</div>
+      <div id="transport-unit-list" style="margin-bottom:16px"></div>
+      <button onclick="confirmTransport()" style="width:100%;background:#4a90d9;color:#fff;border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:12px;cursor:pointer">🚑 Confirm Transport</button>
+      <input type="hidden" id="transport-call-id">
+    </div>
+  </div>
+</div>
+
 <div id="manage-call-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;">
   <div style="background:#122040;border:1px solid var(--card-border);border-radius:16px;padding:0;width:100%;max-width:480px;animation:fadeUp 0.2s ease both;overflow:hidden">
     <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--card-border)">
@@ -3355,18 +3371,93 @@ function toggleDDSection(id) {
 }
 
 function setDisposition(callId, type) {
+  if (type === "transport") {
+    openTransportModal(callId);
+    return;
+  }
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
     var current = (snap.data().disposition || {}).type || "";
-    var newType = current === type ? "" : type; // toggle off if same
+    var newType = current === type ? "" : type;
     db.collection("activeCalls").doc(callId).set({
-      disposition: { type: newType, hospital: "" },
+      disposition: { type: newType, hospital: "", rmaBy: "", rmaCustom: "" },
       updatedAt: new Date().toISOString()
-    }, { merge: true }).then(function() {
-      selectDDCall(callId);
-    });
+    }, { merge: true }).then(function() { selectDDCall(callId); });
   });
 }
+
+function openTransportModal(callId) {
+  document.getElementById("transport-call-id").value = callId;
+  var list = document.getElementById("transport-unit-list");
+  list.innerHTML = '<div style="color:var(--gray);font-size:0.8rem">Loading…</div>';
+  document.getElementById("transport-modal").style.display = "flex";
+
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data();
+    var crews = call.crews || [];
+    var items = [];
+
+    // Collect all assigned persons + ambulances across all crews
+    crews.forEach(function(crew, idx) {
+      var roles = ["primary","backup","rigUnit","observer"];
+      var roleLabels = ["Primary","Backup","Rig Pickup","Observer"];
+      roles.forEach(function(role, ri) {
+        if (crew[role]) items.push({ id: idx + "_" + role, label: crew[role] + " (" + roleLabels[ri] + " · Crew " + (idx+1) + ")", crewIdx: idx, role: role, isAmbo: false });
+      });
+      if (crew.rig) items.push({ id: idx + "_rig", label: "🚑 " + crew.rig + " (Ambulance · Crew " + (idx+1) + ")", crewIdx: idx, role: "rig", isAmbo: true });
+    });
+
+    if (!items.length) {
+      list.innerHTML = '<div style="color:var(--gray);font-size:0.8rem">No units assigned to this call yet.</div>';
+      return;
+    }
+
+    list.innerHTML = items.map(function(item) {
+      return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:7px;margin-bottom:6px;cursor:pointer">' +
+        '<input type="checkbox" data-id="' + item.id + '" data-crew="' + item.crewIdx + '" data-role="' + item.role + '" checked style="accent-color:#4a90d9;width:16px;height:16px;cursor:pointer">' +
+        '<span style="font-size:0.82rem;color:var(--white)">' + item.label + '</span>' +
+      '</label>';
+    }).join("");
+  });
+}
+
+function closeTransportModal() {
+  document.getElementById("transport-modal").style.display = "none";
+}
+
+function confirmTransport() {
+  var callId = document.getElementById("transport-call-id").value;
+  var d = new Date();
+  var now = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  var checkboxes = document.querySelectorAll("#transport-unit-list input[type=checkbox]:checked");
+  var update = { "disposition.type": "transport", updatedAt: new Date().toISOString() };
+
+  // Set en route time
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var times = snap.data().times || {};
+    if (!times.enroute) update["times.enroute"] = now;
+
+    // Set transporting status on each checked unit
+    checkboxes.forEach(function(cb) {
+      var crewIdx = cb.getAttribute("data-crew");
+      var role = cb.getAttribute("data-role");
+      update["unitDetails." + crewIdx + "_" + role + ".status"] = "transporting";
+    });
+
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).then(function() {
+    closeTransportModal();
+    showToast("🚑 Transport confirmed — En route time stamped");
+    selectDDCall(callId);
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+}
+
+document.getElementById("transport-modal").addEventListener("click", function(e) { if (e.target === this) closeTransportModal(); });
+window.openTransportModal = openTransportModal;
+window.closeTransportModal = closeTransportModal;
+window.confirmTransport = confirmTransport;
 
 function setDispHospital(callId, hospital) {
   db.collection("activeCalls").doc(callId).set({
