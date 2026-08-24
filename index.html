@@ -3549,14 +3549,84 @@ function setDispRMA(callId, mode, val) {
 }
 
 window.setCallTime = setCallTime;
+
+function saveCallNotes(callId) {
+  var ta = document.getElementById("dd-call-notes");
+  var msg = document.getElementById("dd-notes-msg");
+  if (!ta) return;
+  db.collection("activeCalls").doc(callId).set({ notes: ta.value.trim(), updatedAt: new Date().toISOString() }, { merge: true })
+    .then(function() {
+      if (msg) { msg.textContent = "✓ Saved"; setTimeout(function(){ if(msg) msg.textContent=""; }, 2000); }
+    }).catch(function(e) { if (msg) msg.textContent = "Error: " + e.message; });
+}
+window.saveCallNotes = saveCallNotes;
+
+function addExtraUnit(callId) {
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [];
+    // Add an extra slot to the last crew as an additional responder
+    var lastCrew = crews[crews.length - 1];
+    // Find next available extra slot key
+    var extraIdx = 0;
+    while (lastCrew["extra" + extraIdx]) extraIdx++;
+    lastCrew["extra" + extraIdx] = "";
+    db.collection("activeCalls").doc(callId).set({ crews: crews }, { merge: true })
+      .then(function() { selectDDCall(callId); showToast("✓ Extra unit slot added"); });
+  });
+}
+window.addExtraUnit = addExtraUnit;
+
+function toggleExtraUnitMenu(callId, crewIdx) {
+  var menu = document.getElementById("extra-menu-" + crewIdx);
+  if (!menu) return;
+  menu.style.display = menu.style.display === "none" ? "block" : "none";
+  // Close on outside click
+  setTimeout(function() {
+    document.addEventListener("click", function closeMenu(e) {
+      if (!menu.contains(e.target)) { menu.style.display = "none"; document.removeEventListener("click", closeMenu); }
+    });
+  }, 10);
+}
+
+function addExtraUnitRole(callId, crewIdx, role) {
+  var menu = document.getElementById("extra-menu-" + crewIdx);
+  if (menu) menu.style.display = "none";
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [];
+    while (crews.length <= crewIdx) crews.push({});
+    var crew = crews[crewIdx];
+    // Use the role name as key if not taken, otherwise find next extra slot
+    var key = role;
+    if (crew[key] !== undefined && crew[key] !== "") {
+      // Already taken — find next extra slot
+      var extraIdx = 0;
+      while (crew["extra" + extraIdx] !== undefined) extraIdx++;
+      key = "extra" + extraIdx;
+    }
+    crew[key] = "";
+    db.collection("activeCalls").doc(callId).set({ crews: crews }, { merge: true })
+      .then(function() { selectDDCall(callId); showToast("✓ " + role.charAt(0).toUpperCase() + role.slice(1) + " slot added"); });
+  });
+}
+window.toggleExtraUnitMenu = toggleExtraUnitMenu;
+window.addExtraUnitRole = addExtraUnitRole;
 window.setUnitDetail = setUnitDetail;
 window.setDispRMA = setDispRMA;
 
 var DD_LANDMARKS = [
   { name: "Hatzolah Base", lat: 40.5077036, lng: -74.4133431, icon: "🚑", color: "#c9a84c", phone: "", address: "1587 NJ-27, Edison, NJ 08817" },
+  { name: "RWJ University Hospital", lat: 40.4974, lng: -74.4484, icon: "🏥", color: "#4a90d9", phone: "732-828-3000", address: "1 Robert Wood Johnson Pl, New Brunswick NJ" },
+  { name: "RWJ Somerset", lat: 40.5654, lng: -74.6019, icon: "🏥", color: "#4a90d9", phone: "908-685-2200", address: "110 Rehill Ave, Somerville NJ" },
   { name: "RWJ East Brunswick", lat: 40.4226, lng: -74.4158, icon: "🏥", color: "#4a90d9", phone: "732-390-1000", address: "58 Veronica Ave, Somerset NJ" },
   { name: "St. Peter's University Hospital", lat: 40.4859, lng: -74.4438, icon: "🏥", color: "#4a90d9", phone: "732-745-8600", address: "254 Easton Ave, New Brunswick NJ" },
-  { name: "JFK Medical Center", lat: 40.5686, lng: -74.3229, icon: "🏥", color: "#4a90d9", phone: "732-321-7000", address: "65 James St, Edison NJ" }
+  { name: "JFK Medical Center", lat: 40.5686, lng: -74.3229, icon: "🏥", color: "#4a90d9", phone: "732-321-7000", address: "65 James St, Edison NJ" },
+  { name: "Overlook Medical Center", lat: 40.7007, lng: -74.3637, icon: "🏥", color: "#4a90d9", phone: "908-522-2000", address: "99 Beauvoir Ave, Summit NJ" },
+  { name: "Morristown Medical Center", lat: 40.7976, lng: -74.4815, icon: "🏥", color: "#4a90d9", phone: "973-971-5000", address: "100 Madison Ave, Morristown NJ" },
+  { name: "Clara Maass Medical Center", lat: 40.8051, lng: -74.1555, icon: "🏥", color: "#4a90d9", phone: "973-450-2000", address: "1 Clara Maass Dr, Belleville NJ" },
+  { name: "Trinitas Regional Medical Center", lat: 40.6501, lng: -74.2168, icon: "🏥", color: "#4a90d9", phone: "908-994-5000", address: "225 Williamson St, Elizabeth NJ" },
+  { name: "Perth Amboy General Hospital", lat: 40.5154, lng: -74.2685, icon: "🏥", color: "#4a90d9", phone: "732-442-3700", address: "530 New Brunswick Ave, Perth Amboy NJ" }
 ];
 
 function sizeDD() {
@@ -3880,7 +3950,7 @@ function renderDDSidebarContent(call, ambulances) {
   // ── UNITS / CREWS ──
   var responders = allRespondersCache.filter(function(u) {
     var r = (u.roles||[]).map(function(x){return x.toLowerCase();});
-    return r.indexOf("responder")!==-1||r.indexOf("captain")!==-1||r.indexOf("driver")!==-1||r.indexOf("observer")!==-1;
+    return r.indexOf("responder") !== -1 || r.indexOf("captain") !== -1 || r.indexOf("chief") !== -1 || r.indexOf("driver") !== -1;
   });
 
   var STATUSES = [
@@ -3914,16 +3984,30 @@ function renderDDSidebarContent(call, ambulances) {
     '</div>';
   }
 
+  function getRolePool(role) {
+    if (role === "observer") return allRespondersCache.filter(function(u) {
+      var r = (u.roles||[]).map(function(x){return x.toLowerCase();});
+      return r.indexOf("observer") !== -1;
+    });
+    if (role === "supervisor") return allRespondersCache.filter(function(u) {
+      var r = (u.roles||[]).map(function(x){return x.toLowerCase();});
+      return r.indexOf("captain") !== -1 || r.indexOf("chief") !== -1;
+    });
+    // primary, backup, rigUnit, extra responder slots
+    return responders;
+  }
+
   function unitBlock(callId, crewIdx, role, label, color, currentVal) {
     var detailKey = crewIdx + "_" + role;
     var det = unitDetails[detailKey] || {};
     var status = det.status || "";
+    var pool = getRolePool(role);
     return '<div style="margin-bottom:8px;padding:7px 8px;background:rgba(255,255,255,0.02);border-left:2px solid ' + color + ';border-radius:0 6px 6px 0">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">' +
         '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.08em;text-transform:uppercase;color:' + color + '">' + label + '</span>' +
         (currentVal ? '<span style="font-size:0.65rem;font-weight:700;color:' + color + ';background:rgba(' + hexToRgb(color) + ',0.15);border:1px solid rgba(' + hexToRgb(color) + ',0.35);border-radius:5px;padding:1px 6px">' + currentVal + '</span>' : '<span style="font-size:0.6rem;color:var(--gray)">—</span>') +
       '</div>' +
-      assignPills(callId, crewIdx, role, currentVal, color, responders) +
+      (pool.length ? assignPills(callId, crewIdx, role, currentVal, color, pool) : '<span style="font-size:0.65rem;color:var(--gray);font-style:italic">No ' + label.toLowerCase() + 's in roster</span>') +
       (currentVal ? statusPills(callId, crewIdx, role, status) : '') +
     '</div>';
   }
@@ -3941,7 +4025,18 @@ function renderDDSidebarContent(call, ambulances) {
       unitBlock(call.id, idx, "primary",  "Primary",        "#7dedb5", crew.primary||"") +
       unitBlock(call.id, idx, "backup",   "Backup",         "#7ab8f5", crew.backup||"") +
       unitBlock(call.id, idx, "rigUnit",  "→ Rig Pickup",   "#e8a0ff", crew.rigUnit||"") +
-      unitBlock(call.id, idx, "observer", "Observer",       "#8a9ab5", crew.observer||"") +
+      // Extra units (observer, supervisor, additional responders)
+      (function() {
+        var extras = "";
+        var extraSlots = ["observer","supervisor","extra0","extra1","extra2","extra3"];
+        var extraLabels = {"observer":"Observer","supervisor":"Supervisor","extra0":"Extra Unit 1","extra1":"Extra Unit 2","extra2":"Extra Unit 3","extra3":"Extra Unit 4"};
+        extraSlots.forEach(function(key) {
+          if (crew[key] !== undefined) {
+            extras += unitBlock(call.id, idx, key, extraLabels[key]||key, "#8a9ab5", crew[key]||"");
+          }
+        });
+        return extras;
+      })() +
       '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06)">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">' +
           '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.08em;text-transform:uppercase;color:#ffc84a">🚑 Ambulance</span>' +
@@ -3952,8 +4047,20 @@ function renderDDSidebarContent(call, ambulances) {
     '</div>';
   }
 
+  var lastIdx = crews.length - 1;
   var unitsHTML = crews.map(function(crew,idx){ return crewBlock(crew,idx); }).join("") +
-    '<button onclick="addCrewToCall(\'' + call.id + '\')" style="width:100%;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.25);border-radius:7px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:7px;cursor:pointer;margin-top:2px">+ Add Crew &amp; Rig</button>';
+    '<div style="display:flex;gap:6px;margin-top:6px">' +
+    '<button onclick="addCrewToCall(\'' + call.id + '\')" style="flex:1;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.25);border-radius:7px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:7px;cursor:pointer">+ Add Crew &amp; Rig</button>' +
+    '<div style="position:relative;flex:1">' +
+    '<button onclick="toggleExtraUnitMenu(\'' + call.id + '\',' + lastIdx + ')" style="width:100%;background:rgba(138,154,181,0.08);border:1px solid rgba(138,154,181,0.25);border-radius:7px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:7px;cursor:pointer">+ Extra Unit</button>' +
+    '<div id="extra-menu-' + lastIdx + '" style="display:none;position:absolute;bottom:110%;left:0;right:0;background:#122040;border:1px solid var(--card-border);border-radius:7px;padding:6px;z-index:50">' +
+      ['observer','supervisor','responder'].map(function(role) {
+        var lbl = role.charAt(0).toUpperCase()+role.slice(1);
+        return '<button onclick="addExtraUnitRole(\'' + call.id + '\',' + lastIdx + ',\'' + role + '\')" style="display:block;width:100%;text-align:left;background:none;border:none;color:var(--white);font-size:0.78rem;padding:5px 8px;cursor:pointer;border-radius:5px">' + lbl + '</button>';
+      }).join("") +
+    '</div>' +
+    '</div>' +
+    '</div>';
 
   // ── DISPOSITION ──
   var disp = disposition.type || "";
@@ -3998,11 +4105,18 @@ function renderDDSidebarContent(call, ambulances) {
         (hospital ? '<div style="font-size:0.7rem;color:#7ab8f5;margin-top:5px">→ ' + hospital + '</div>' : '') +
       '</div>' : "");
 
+  // ── NOTES ──
+  var notesHTML =
+    '<textarea id="dd-call-notes" rows="4" placeholder="Add call notes…" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 10px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.82rem;outline:none;resize:vertical;margin-bottom:8px">' + (call.notes || "") + '</textarea>' +
+    '<button onclick="saveCallNotes(\'' + call.id + '\')" style="width:100%;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:7px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:7px;cursor:pointer">Save Notes</button>' +
+    '<div id="dd-notes-msg" style="font-size:0.7rem;color:#7dedb5;margin-top:4px;height:16px"></div>';
+
   el.innerHTML =
     alsBanner +
     section("info",  "📋", "Call Info",   infoHTML,  true) +
     section("times", "🕐", "Call Times",  timesHTML, true) +
     section("units", "👥", "Units",       unitsHTML, true) +
+    section("notes", "📝", "Call Notes",  notesHTML, false) +
     section("disp",  "🏥", "Disposition", dispHTML,  true) +
     '<div style="display:flex;gap:5px;margin-top:8px">' +
       '<a href="' + (call.mapsLink||"#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center;font-size:0.68rem">🗺 Map</a>' +
@@ -4142,86 +4256,104 @@ function renderCallCard(call, i) {
   var isCaptain = rolesLower.indexOf("captain") !== -1 || rolesLower.indexOf("chief") !== -1;
   var canManage = isDispatcher || isAdmin || isCaptain;
 
-  // Zone badge — large and prominent
-  var zoneBadge = "";
-  if (call.zone === "primary") zoneBadge = '<span style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#7dedb5;background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:6px;padding:3px 10px">🟢 STANDARD RESPONSE</span>';
-  else if (call.zone === "secondary") zoneBadge = '<span style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#ffc84a;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.4);border-radius:6px;padding:3px 10px">🚑 LOAD AN AMBULANCE</span>';
-  else zoneBadge = '<span style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:6px;padding:3px 10px">🔴 OUTSIDE ZONE</span>';
+  // Zone badge
+  var zoneBadge = call.zone === "primary"
+    ? '<span style="font-size:0.62rem;background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);color:#7dedb5;border-radius:5px;padding:2px 7px;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em">🟢 STANDARD</span>'
+    : call.zone === "secondary"
+    ? '<span style="font-size:0.62rem;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.4);color:#ffc84a;border-radius:5px;padding:2px 7px;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em">🚑 LOAD RIG</span>'
+    : '<span style="font-size:0.62rem;background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);color:#ff9090;border-radius:5px;padding:2px 7px;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em">🔴 OUTSIDE</span>';
 
-  // Time
-  var time = call.createdAt ? new Date(call.createdAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
+  var time = call.createdAt ? new Date(call.createdAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "";
+  var nature = call.callNature ? stripNatureNumber(call.callNature) : "";
+  var age = call.patientAge === "pediatric" ? "👶" : call.patientAge === "adult" ? "🧑" : "";
 
-  // ALS row
-  var alsRow = call.alsActivated
-    ? '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;padding:6px 10px;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.3);border-radius:7px">' +
-        '<span style="font-size:0.9rem">🚨</span>' +
-        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.78rem;font-weight:700;color:#ff9090;letter-spacing:0.04em">ALS ACTIVATED</span>' +
-        (call.alsProvider ? '<span style="font-size:0.75rem;color:var(--gray)">· ' + call.alsProvider + '</span>' : '') +
-        (call.alsUnit ? '<span style="font-size:0.75rem;color:var(--gray)">· ' + call.alsUnit + '</span>' : '') +
-        (call.alsEta ? '<span style="font-size:0.75rem;color:var(--gray)">· ETA ' + call.alsEta + ' min</span>' : '') +
+  // ALS pill
+  var alsPill = call.alsActivated
+    ? '<span style="font-size:0.6rem;background:rgba(224,85,85,0.2);border:1px solid rgba(224,85,85,0.5);color:#ff9090;border-radius:5px;padding:2px 7px;font-family:\'Oswald\',sans-serif;font-weight:700">🚨 ALS: ' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta?" · ETA "+call.alsEta+"min":"") + '</span>'
+    : "";
+
+  // Call times row
+  var times = call.times || {};
+  var timeItems = [];
+  if (times.dispatched)     timeItems.push("📟 " + times.dispatched);
+  if (times.first_on_scene) timeItems.push("📍 " + times.first_on_scene);
+  if (times.enroute)        timeItems.push("🚑 " + times.enroute);
+  if (times.at_hospital)    timeItems.push("🏨 " + times.at_hospital);
+  var timesRow = timeItems.length
+    ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' +
+        timeItems.map(function(t) {
+          return '<span style="font-size:0.65rem;color:var(--gray);font-family:\'Oswald\',sans-serif">' + t + '</span>';
+        }).join('<span style="color:var(--card-border)">·</span>') +
       '</div>'
     : "";
 
-  // Nature + age row
-  var natureParts = [];
-  if (call.patientAge === "pediatric") natureParts.push("👶 Pediatric");
-  else if (call.patientAge === "adult") natureParts.push("🧑 Adult");
-  if (call.callNature) natureParts.push(stripNatureNumber(call.callNature));
-  var natureRow = natureParts.length
-    ? '<div style="font-size:0.82rem;color:var(--white);margin-top:6px">' + natureParts.join(" · ") + '</div>'
+  // Crew + unit status summary
+  var crews = call.crews || [];
+  var unitDetails = call.unitDetails || {};
+  var STATUS_SHORT = {
+    enroute_scene:"→Scene", enroute_rig:"→Rig", on_scene:"OnScene",
+    enroute_ambo:"w/Ambo", transporting:"Transit", at_hospital:"@Hosp", clearing:"Clear"
+  };
+  var crewRows = crews.map(function(crew, ci) {
+    var parts = [];
+    ["primary","backup","rigUnit","observer"].forEach(function(role) {
+      if (!crew[role]) return;
+      var det = unitDetails[ci+"_"+role] || {};
+      var st = det.status ? STATUS_SHORT[det.status] || det.status : "";
+      parts.push('<span style="font-size:0.65rem;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-weight:600">' + crew[role] + (st ? '<span style="color:var(--gray);font-weight:400"> ' + st + '</span>' : '') + '</span>');
+    });
+    if (crew.rig) {
+      var rigDet = unitDetails[ci+"_rig"] || {};
+      var rigSt = rigDet.status ? STATUS_SHORT[rigDet.status] || rigDet.status : "";
+      parts.push('<span style="font-size:0.65rem;color:#ffc84a;font-family:\'Oswald\',sans-serif;font-weight:600">🚑' + crew.rig + (rigSt ? '<span style="color:var(--gray);font-weight:400"> ' + rigSt + '</span>' : '') + '</span>');
+    }
+    if (!parts.length) return "";
+    return '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;padding-top:4px;' + (ci>0?"border-top:1px solid rgba(255,255,255,0.05)":"") + '">' + parts.join("") + '</div>';
+  }).filter(Boolean).join("");
+
+  // Disposition
+  var disp = (call.disposition || {}).type || "";
+  var dispPill = disp === "rma"
+    ? '<span style="font-size:0.6rem;background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.35);color:#7dedb5;border-radius:5px;padding:2px 7px;font-family:\'Oswald\',sans-serif;font-weight:700">RMA</span>'
+    : disp === "transport"
+    ? '<span style="font-size:0.6rem;background:rgba(74,144,217,0.15);border:1px solid rgba(74,144,217,0.35);color:#7ab8f5;border-radius:5px;padding:2px 7px;font-family:\'Oswald\',sans-serif;font-weight:700">Transport' + ((call.disposition||{}).hospital ? " → "+(call.disposition.hospital) : "") + '</span>'
     : "";
 
-  // Units row
-  var unitsRow = (call.assignedUnits || []).length
-    ? '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">' +
-        (call.assignedUnits || []).map(function(u) {
-          return '<span style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:600;letter-spacing:0.05em;color:#7ab8f5;background:rgba(74,144,217,0.12);border:1px solid rgba(74,144,217,0.3);border-radius:12px;padding:2px 9px">' + u + '</span>';
-        }).join("") +
+  // Notes (only for canManage)
+  var myUnit = (document.getElementById("topbar-email")||{}).textContent || "";
+  var allUnits = [];
+  crews.forEach(function(c) { ["primary","backup","rigUnit","observer"].forEach(function(r){ if(c[r]) allUnits.push(c[r]); }); });
+  var isAssigned = allUnits.indexOf(myUnit) !== -1;
+  var notesRow = (call.notes && (canManage || isAssigned))
+    ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.06);line-height:1.4">' + call.notes + '</div>'
+    : "";
+
+  // Actions
+  var actions = canManage
+    ? '<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">' +
+        '<a href="' + (call.mapsLink||"#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center">🗺 Map</a>' +
+        '<button onclick="goTo(\'maps\')" class="call-action-btn primary" style="flex:1">⚙ Dashboard</button>' +
+        '<button onclick="completeCall(\'' + call.id + '\')" class="call-action-btn danger" style="flex:1">✓ Done</button>' +
       '</div>'
-    : "";
+    : '<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">' +
+        '<a href="' + (call.mapsLink||"#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center">🗺 Map</a>' +
+        '<button onclick="openCallDetail(\'' + call.id + '\')" class="call-action-btn primary" style="flex:1">ℹ Details</button>' +
+      '</div>';
 
-  // Notes — only visible to dispatchers, admins, captains/chiefs, or assigned units
-  var myUnit = (document.getElementById('topbar-email') ? document.getElementById('topbar-email').textContent : '');
-  var isAssigned = (call.assignedUnits || []).indexOf(myUnit) !== -1;
-  var canSeeNotes = canManage || isAssigned;
-  var notesRow = (call.notes && canSeeNotes)
-    ? '<div style="font-size:0.78rem;color:var(--gray);margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);line-height:1.5">' + call.notes + '</div>'
-    : "";
-
-  // Action buttons
-  var actions = "";
-  if (canManage) {
-    actions = '<div style="display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">' +
-      '<a href="' + (call.mapsLink || "#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center">🗺 Map</a>' +
-      '<button onclick="goTo(\'maps\')" class="call-action-btn primary" style="flex:1">⚙ Dashboard</button>' +
-      '<button onclick="completeCall(\'' + call.id + '\')" class="call-action-btn danger" style="flex:1">✓ Complete</button>' +
-    '</div>';
-  } else {
-    actions = '<div style="display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06)">' +
-      '<a href="' + (call.mapsLink || "#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center">🗺 Open Map</a>' +
-      '<button onclick="openCallDetail(\'' + call.id + '\')" class="call-action-btn primary" style="flex:1">ℹ Details</button>' +
-    '</div>';
-  }
-
-  return '<div class="call-card" style="animation-delay:' + (i * 60) + 'ms">' +
-    // Top row: zone badge + time
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+  return '<div class="call-card" style="animation-delay:' + (i*60) + 'ms">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       zoneBadge +
-      '<span style="font-size:0.68rem;color:var(--gray)">' + time + '</span>' +
+      '<span style="font-size:0.65rem;color:var(--gray);font-family:\'Oswald\',sans-serif">' + time + '</span>' +
     '</div>' +
-    // Address
-    '<div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;color:var(--white);line-height:1.3">' + (call.address || "Unknown Location") + '</div>' +
-    // Cross street
-    (call.crossStreet ? '<div style="font-size:0.75rem;color:var(--gray);margin-top:2px">↪ ' + call.crossStreet + '</div>' : '') +
-    // Nature + age
-    natureRow +
-    // ALS activated banner
-    alsRow +
-    // Assigned units
-    unitsRow +
-    // Notes
+    '<div style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;font-weight:700;color:var(--white);line-height:1.3">' + (call.address||"Unknown").split("—")[0].trim() + '</div>' +
+    (call.crossStreet ? '<div style="font-size:0.7rem;color:var(--gray);margin-top:1px">↪ ' + call.crossStreet + '</div>' : '') +
+    '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">' +
+      (nature ? '<span style="font-size:0.65rem;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:5px;padding:2px 6px;color:var(--gold)">' + age + (age?" ":"") + nature + '</span>' : '') +
+      alsPill + dispPill +
+    '</div>' +
+    crewRows +
+    timesRow +
     notesRow +
-    // Actions
     actions +
   '</div>';
 }
