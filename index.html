@@ -3577,6 +3577,31 @@ function addExtraUnit(callId) {
 }
 window.addExtraUnit = addExtraUnit;
 
+function clearCrewUnit(callId, crewIdx, role) {
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [];
+    if (!crews[crewIdx]) return;
+    crews[crewIdx][role] = "";
+    // Also clear the unit's detail/status
+    var update = { crews: crews };
+    update["unitDetails." + crewIdx + "_" + role] = {};
+    // Re-sync assignedUnits
+    var allUnits = [];
+    crews.forEach(function(c) {
+      ["primary","backup","rigUnit","observer","supervisor"].forEach(function(r) {
+        if (c[r]) allUnits.push(c[r]);
+      });
+    });
+    update.assignedUnits = allUnits;
+    db.collection("activeCalls").doc(callId).update(update).then(function() {
+      selectDDCall(callId);
+      showToast("✓ Unit removed");
+    });
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+}
+window.clearCrewUnit = clearCrewUnit;
+
 function toggleExtraUnitMenu(callId, crewIdx) {
   var menu = document.getElementById("extra-menu-" + crewIdx);
   if (!menu) return;
@@ -3900,13 +3925,25 @@ function renderDDSidebarContent(call, ambulances) {
   var alsBanner = "";
   if (isALSNature && !call.alsActivated) {
     var addr2 = (call.address||"").toLowerCase();
-    var sugProv = (addr2.indexOf("highland park")!==-1||addr2.indexOf("new brunswick")!==-1||addr2.indexOf("north brunswick")!==-1||addr2.indexOf("east brunswick")!==-1||addr2.indexOf("south brunswick")!==-1||addr2.indexOf("piscataway")!==-1)?"Med-Central (848-800-5053)":"JFK ALS (732-287-5235)";
-    alsBanner = '<div style="background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.5);border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
-      '<div>' +
-        '<div style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:1px">⚡ ALS Indicated</div>' +
-        '<div style="font-size:0.72rem;color:var(--white)">' + sugProv + '</div>' +
+    var isMedCentral = addr2.indexOf("highland park")!==-1||addr2.indexOf("new brunswick")!==-1||addr2.indexOf("north brunswick")!==-1||addr2.indexOf("east brunswick")!==-1||addr2.indexOf("south brunswick")!==-1||addr2.indexOf("piscataway")!==-1;
+    var sugProv = isMedCentral ? "Med-Central" : "JFK ALS";
+    var sugPhone = isMedCentral ? "8488005053" : "7322875235";
+    var sugPhoneDisplay = isMedCentral ? "848-800-5053" : "732-287-5235";
+    alsBanner = '<div style="background:rgba(224,85,85,0.18);border:2px solid rgba(224,85,85,0.6);border-radius:8px;padding:10px 12px;margin-bottom:8px;animation:pulse-red 1.4s infinite">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:4px">🚨 ALS ACTIVATION RECOMMENDED</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
+        '<span style="font-size:0.78rem;color:var(--white);font-weight:600">' + sugProv + '</span>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+          '<a href="tel:' + sugPhone + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(76,175,128,0.2);border:1px solid rgba(76,175,128,0.5);border-radius:12px;padding:4px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;text-decoration:none">📞 ' + sugPhoneDisplay + '</a>' +
+          '<button onclick="openALSModal(\''+call.id+'\')" style="background:rgba(224,85,85,0.25);border:1px solid rgba(224,85,85,0.5);border-radius:12px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;padding:4px 10px;cursor:pointer">Enter ALS Info</button>' +
+        '</div>' +
       '</div>' +
-      '<button onclick="openALSModal(\'' + call.id + '\')" style="background:#e05555;color:#fff;border:none;border-radius:6px;font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:6px 10px;cursor:pointer;flex-shrink:0">Activate</button>' +
+    '</div>';
+  } else if (call.alsActivated) {
+    alsBanner = '<div style="background:rgba(224,85,85,0.2);border:1px solid rgba(224,85,85,0.6);border-radius:8px;padding:8px 12px;margin-bottom:8px">' +
+      '<div style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:2px">🚨 ALS Activated</div>' +
+      '<div style="font-size:0.78rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") +
+        (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta?" · ETA "+call.alsEta+"min":"") + '</div>' +
     '</div>';
   } else if (call.alsActivated) {
     alsBanner = '<div style="background:rgba(224,85,85,0.2);border:1px solid rgba(224,85,85,0.6);border-radius:8px;padding:8px 12px;margin-bottom:8px">' +
@@ -4002,47 +4039,81 @@ function renderDDSidebarContent(call, ambulances) {
     var det = unitDetails[detailKey] || {};
     var status = det.status || "";
     var pool = getRolePool(role);
+    var removeBtn = currentVal
+      ? ' <button onclick="clearCrewUnit(\''+callId+'\','+crewIdx+',\''+role+'\')" title="Remove unit" style="background:none;border:none;color:var(--gray);font-size:0.7rem;cursor:pointer;padding:0 2px;line-height:1">✕</button>'
+      : '';
     return '<div style="margin-bottom:8px;padding:7px 8px;background:rgba(255,255,255,0.02);border-left:2px solid ' + color + ';border-radius:0 6px 6px 0">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">' +
         '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.08em;text-transform:uppercase;color:' + color + '">' + label + '</span>' +
-        (currentVal ? '<span style="font-size:0.65rem;font-weight:700;color:' + color + ';background:rgba(' + hexToRgb(color) + ',0.15);border:1px solid rgba(' + hexToRgb(color) + ',0.35);border-radius:5px;padding:1px 6px">' + currentVal + '</span>' : '<span style="font-size:0.6rem;color:var(--gray)">—</span>') +
+        '<div style="display:flex;align-items:center;gap:3px">' +
+          (currentVal ? '<span style="font-size:0.65rem;font-weight:700;color:' + color + ';background:rgba(' + hexToRgb(color) + ',0.15);border:1px solid rgba(' + hexToRgb(color) + ',0.35);border-radius:5px;padding:1px 6px">' + currentVal + '</span>' : '<span style="font-size:0.6rem;color:var(--gray)">—</span>') +
+          removeBtn +
+        '</div>' +
       '</div>' +
       (pool.length ? assignPills(callId, crewIdx, role, currentVal, color, pool) : '<span style="font-size:0.65rem;color:var(--gray);font-style:italic">No ' + label.toLowerCase() + 's in roster</span>') +
       (currentVal ? statusPills(callId, crewIdx, role, status) : '') +
     '</div>';
   }
 
+  // Build sequential unit numbers across all crews
+  var unitCounter = 0;
+  var unitMap = {};
+  crews.forEach(function(crew, ci) {
+    ["primary","backup","rigUnit","observer","supervisor","extra0","extra1","extra2","extra3"].forEach(function(role) {
+      if (crew[role]) { unitCounter++; unitMap[ci+"_"+role] = unitCounter; }
+    });
+  });
+
+  function unitTitle(crewIdx, role, currentVal) {
+    var num = unitMap[crewIdx+"_"+role] || "?";
+    var det = unitDetails[crewIdx+"_"+role] || {};
+    var resp = det.response || "scene";
+    var respLabel = resp === "rig" ? " → Rig" : " → Scene";
+    var roleLabel = role === "observer" ? " (Observer)" : role === "supervisor" ? " (Supervisor)" : "";
+    return "Unit " + num + respLabel + roleLabel;
+  }
+
   function crewBlock(crew, idx) {
     var canRemove = crews.length > 1;
     var rigItems = ambulances.length ? ambulances : [];
-    var detKey = idx + "_rig";
-    var rigDet = unitDetails[detKey] || {};
+    var extraSlots = ["observer","supervisor","extra0","extra1","extra2","extra3"];
+    var extraLabels = {"observer":"Observer","supervisor":"Supervisor","extra0":"Extra","extra1":"Extra","extra2":"Extra","extra3":"Extra"};
+    var extraColors = {"observer":"#8a9ab5","supervisor":"#e8a0ff","extra0":"#8a9ab5","extra1":"#8a9ab5","extra2":"#8a9ab5","extra3":"#8a9ab5"};
+
+    var unitRows = "";
+    var roleSlots = [
+      {role:"primary", color:"#7dedb5", defaultLabel:"Primary"},
+      {role:"backup",  color:"#7ab8f5", defaultLabel:"Backup"},
+      {role:"rigUnit", color:"#e8a0ff", defaultLabel:"→ Rig Pickup"}
+    ];
+    roleSlots.forEach(function(s, si) {
+      var prevFilled = si === 0 || crew[roleSlots[si-1].role];
+      if (crew[s.role] || prevFilled) {
+        var label = crew[s.role] ? unitTitle(idx, s.role, crew[s.role]) : s.defaultLabel;
+        unitRows += unitBlock(call.id, idx, s.role, label, s.color, crew[s.role]||"");
+      }
+    });
+
+    var extraRows = "";
+    extraSlots.forEach(function(key) {
+      if (crew[key] !== undefined) {
+        var lbl = crew[key] ? unitTitle(idx, key, crew[key]) : (extraLabels[key]||key);
+        extraRows += unitBlock(call.id, idx, key, lbl, extraColors[key]||"#8a9ab5", crew[key]||"");
+      }
+    });
+
     return '<div style="background:rgba(255,255,255,0.025);border:1px solid var(--card-border);border-radius:8px;padding:8px;margin-bottom:8px">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">' +
         '<span style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold)">🚑 Crew ' + (idx+1) + '</span>' +
-        (canRemove ? '<button onclick="removeCrewFromCall(\'' + call.id + '\',' + idx + ')" style="background:none;border:none;color:var(--gray);font-size:0.72rem;cursor:pointer">✕ Remove</button>' : '') +
+        (canRemove ? '<button onclick="removeCrewFromCall(\''+call.id+'\','+idx+')" style="background:none;border:none;color:var(--gray);font-size:0.72rem;cursor:pointer">✕ Remove</button>' : '') +
       '</div>' +
-      unitBlock(call.id, idx, "primary",  "Primary",        "#7dedb5", crew.primary||"") +
-      unitBlock(call.id, idx, "backup",   "Backup",         "#7ab8f5", crew.backup||"") +
-      unitBlock(call.id, idx, "rigUnit",  "→ Rig Pickup",   "#e8a0ff", crew.rigUnit||"") +
-      // Extra units (observer, supervisor, additional responders)
-      (function() {
-        var extras = "";
-        var extraSlots = ["observer","supervisor","extra0","extra1","extra2","extra3"];
-        var extraLabels = {"observer":"Observer","supervisor":"Supervisor","extra0":"Extra Unit 1","extra1":"Extra Unit 2","extra2":"Extra Unit 3","extra3":"Extra Unit 4"};
-        extraSlots.forEach(function(key) {
-          if (crew[key] !== undefined) {
-            extras += unitBlock(call.id, idx, key, extraLabels[key]||key, "#8a9ab5", crew[key]||"");
-          }
-        });
-        return extras;
-      })() +
+      unitRows + extraRows +
       '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06)">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">' +
           '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.08em;text-transform:uppercase;color:#ffc84a">🚑 Ambulance</span>' +
           (crew.rig ? '<span style="font-size:0.65rem;font-weight:700;color:#ffc84a;background:rgba(255,200,74,0.15);border:1px solid rgba(255,200,74,0.35);border-radius:5px;padding:1px 6px">' + crew.rig + '</span>' : '<span style="font-size:0.6rem;color:var(--gray)">—</span>') +
         '</div>' +
-        (rigItems.length ? assignPills(call.id, idx, "rig", crew.rig||"", "#ffc84a", rigItems) : '<span style="font-size:0.68rem;color:var(--gray)">No ambulances in vehicle list</span>') +
+        (rigItems.length ? assignPills(call.id, idx, "rig", crew.rig||"", "#ffc84a", rigItems) : '<span style="font-size:0.68rem;color:var(--gray)">No ambulances</span>') +
       '</div>' +
     '</div>';
   }
