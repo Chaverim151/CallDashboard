@@ -3244,19 +3244,6 @@ function postCall() {
       setTimeout(function() {
         // Call posted — go back to dashboard and select the new call
         if (document.getElementById('dd-call-cards')) { selectDDCall(newCallId); closeNewCallForm(); }
-        // Auto-trigger ALS modal for ALS-indicated call natures
-        var alsNatures = ["01","02","03","04","06","07","08","09","11","12","13","14","16","18","20","23"];
-        var isALS = callNature && alsNatures.some(function(n) { return callNature.indexOf(n + " -") === 0 || callNature.indexOf("0" + n) === 0; });
-        if (isALS) {
-          setTimeout(function() {
-            document.getElementById("als-call-id").value = newCallId;
-            document.getElementById("als-provider").value = "";
-            document.getElementById("als-eta").value = "";
-            document.getElementById("als-modal-msg").className = "form-msg";
-            document.getElementById("als-modal-msg").textContent = "";
-            document.getElementById("als-modal").style.display = "flex";
-          }, 600);
-        }
       }, 400);
     })
     .catch(function(e) {
@@ -4087,9 +4074,11 @@ function renderDDSidebarContent(call, ambulances) {
       {role:"rigUnit", color:"#e8a0ff", defaultLabel:"→ Rig Pickup"}
     ];
     roleSlots.forEach(function(s, si) {
-      var prevFilled = si === 0 || crew[roleSlots[si-1].role];
-      if (crew[s.role] || prevFilled) {
-        var label = crew[s.role] ? unitTitle(idx, s.role, crew[s.role]) : s.defaultLabel;
+      // Show this slot only if it has a value, OR if the previous slot is filled (one-at-a-time reveal)
+      var prevFilled = si === 0 ? true : !!(crew[roleSlots[si-1].role]);
+      var hasCurrent = !!(crew[s.role]);
+      if (hasCurrent || prevFilled) {
+        var label = hasCurrent ? unitTitle(idx, s.role, crew[s.role]) : s.defaultLabel;
         unitRows += unitBlock(call.id, idx, s.role, label, s.color, crew[s.role]||"");
       }
     });
