@@ -383,6 +383,13 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <span class="m-tile-sub">Member directory</span>
         </div>
       </button>
+      <button class="m-tile" id="m-edu-tile" onclick="mGoTo('education')" style="display:none">
+        <div class="m-tile-inner">
+          <span class="m-tile-icon">🎓</span>
+          <span class="m-tile-label">Education</span>
+          <span class="m-tile-sub">CME · Classes · Drills</span>
+        </div>
+      </button>
     </div>
   </div>
 </div>
@@ -436,6 +443,48 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   </div>
 </div>
 
+
+<!-- EDUCATION PAGE (MOBILE) -->
+<div class="page" id="m-pg-education">
+  <div class="m-subpage-header">
+    <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
+    <span class="m-page-title">Education</span>
+  </div>
+  <!-- Tabs -->
+  <div style="display:flex;border-bottom:1px solid var(--card-border);flex-shrink:0">
+    <button id="m-edu-tab-upcoming" onclick="mSetEduTab('upcoming')" style="flex:1;background:none;border:none;border-bottom:2px solid var(--gold);color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:12px 8px;cursor:pointer">Upcoming</button>
+    <button id="m-edu-tab-past" onclick="mSetEduTab('past')" style="flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:12px 8px;cursor:pointer">Past</button>
+    <button id="m-edu-tab-cme" onclick="mSetEduTab('cme')" style="flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:12px 8px;cursor:pointer">My CME</button>
+  </div>
+  <div class="m-scroll" id="m-edu-content"></div>
+</div>
+
+<!-- QR SCANNER PAGE (MOBILE) -->
+<div class="page" id="m-pg-scanner">
+  <div class="m-subpage-header">
+    <button class="m-back-btn" onclick="mGoTo('education')">← Back</button>
+    <span class="m-page-title">Scan QR Code</span>
+  </div>
+  <div class="m-scroll" style="display:flex;flex-direction:column;align-items:center;padding:20px 16px">
+    <div style="font-size:0.82rem;color:var(--gray);text-align:center;margin-bottom:16px">
+      Point your camera at the event QR code. You must be at the class location to check in.
+    </div>
+    <div id="m-qr-reader" style="width:100%;max-width:320px;border-radius:12px;overflow:hidden;border:2px solid var(--card-border)"></div>
+    <div id="m-qr-status" style="margin-top:16px;text-align:center;font-size:0.82rem;color:var(--gray)">Initializing camera...</div>
+    <div id="m-qr-result" style="margin-top:12px;width:100%;max-width:320px"></div>
+  </div>
+</div>
+
+<!-- EVENT DETAIL MODAL (MOBILE) -->
+<div class="m-modal-overlay" id="m-edu-detail-modal">
+  <div class="m-modal">
+    <div class="m-modal-header">
+      <span class="m-modal-title">Event Details</span>
+      <button class="m-modal-close" onclick="mCloseEduDetail()">×</button>
+    </div>
+    <div class="m-modal-body" id="m-edu-detail-body"></div>
+  </div>
+</div>
 <!-- CALL DETAIL MODAL -->
 <div class="m-modal-overlay" id="m-detail-modal">
   <div class="m-modal">
@@ -494,6 +543,11 @@ setInterval(tickMClock, 1000);
 
 // ── PAGES ──
 function mGoTo(page) {
+  // Stop QR scanner if navigating away
+  if (page !== "scanner" && mQRScanner) {
+    try { mQRScanner.stop(); } catch(e) {}
+    mQRScanner = null;
+  }
   document.querySelectorAll(".page").forEach(function(p) { p.classList.remove("active"); });
   var pg = document.getElementById("m-pg-" + page);
   if (pg) pg.classList.add("active");
@@ -503,6 +557,8 @@ function mGoTo(page) {
   if (page === "shifts") mLoadShifts();
   if (page === "contacts") mLoadContacts();
   if (page === "hospital") mLoadHospital();
+  if (page === "education") mInitEducation();
+  if (page === "scanner") { /* scanner started by mStartScanner() */ }
 }
 
 // ── TOAST ──
@@ -612,6 +668,12 @@ function mEnterHome() {
   mStartCallsListener();
   mUpdateAlertBtn();
   if (Notification.permission === "granted") setTimeout(mSendTokenToSW, 1000);
+
+  // Show education tile for field members (not pure dispatchers/logistics)
+  var roles = (mCurrentUserRoles||[]).map(function(r){ return r.toLowerCase(); });
+  var canEdu = mCurrentRole==="admin"||roles.includes("captain")||roles.includes("chief")||roles.includes("responder")||roles.includes("observer");
+  var eduTile = document.getElementById("m-edu-tile");
+  if (eduTile) eduTile.style.display = canEdu ? "" : "none";
 }
 
 // ── CALLS LISTENER ──
@@ -1033,6 +1095,380 @@ function mPlayTone() {
       o.start(now+t.s); o.stop(now+t.e);
     });
   } catch(e) {}
+}
+
+// ── EDUCATION (MOBILE) ──
+var mEduTab = "upcoming";
+var mEduIsAdmin = false;
+
+var M_EDU_COLORS = {
+  cme:      { bg:"rgba(76,175,128,0.15)", border:"rgba(76,175,128,0.4)", color:"#7dedb5", label:"CME" },
+  drill:    { bg:"rgba(255,200,74,0.15)", border:"rgba(255,200,74,0.4)", color:"#ffc84a", label:"Drill" },
+  meeting:  { bg:"rgba(74,144,217,0.15)", border:"rgba(74,144,217,0.4)", color:"#7ab8f5", label:"Meeting" },
+  training: { bg:"rgba(232,160,255,0.15)", border:"rgba(232,160,255,0.4)", color:"#e8a0ff", label:"Training" },
+  other:    { bg:"rgba(138,154,181,0.15)", border:"rgba(138,154,181,0.3)", color:"var(--gray)", label:"Other" }
+};
+
+function mInitEducation() {
+  var roles = (mCurrentUserRoles||[]).map(function(r){ return r.toLowerCase(); });
+  mEduIsAdmin = mCurrentRole === "admin" || roles.includes("captain") || roles.includes("chief");
+  mSetEduTab("upcoming");
+}
+
+function mSetEduTab(tab) {
+  mEduTab = tab;
+  ["upcoming","past","cme"].forEach(function(t) {
+    var el = document.getElementById("m-edu-tab-" + t);
+    if (!el) return;
+    el.style.color = t === tab ? "var(--gold)" : "var(--gray)";
+    el.style.borderBottomColor = t === tab ? "var(--gold)" : "transparent";
+  });
+  mLoadEduContent();
+}
+
+function mLoadEduContent() {
+  var el = document.getElementById("m-edu-content");
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:16px 0">Loading...</div>';
+
+  if (mEduTab === "cme") { mRenderCME(el); return; }
+
+  var now = new Date().toISOString();
+  db.collection("education").get().then(function(snap) {
+    var events = [];
+    snap.forEach(function(d) { events.push(Object.assign({id:d.id}, d.data())); });
+    if (mEduTab === "upcoming") {
+      events = events.filter(function(e){ return (e.dateTime||"") >= now; });
+      events.sort(function(a,b){ return (a.dateTime||"").localeCompare(b.dateTime||""); });
+    } else {
+      events = events.filter(function(e){ return (e.dateTime||"") < now; });
+      events.sort(function(a,b){ return (b.dateTime||"").localeCompare(a.dateTime||""); });
+    }
+    if (!events.length) {
+      el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:16px 0">' +
+        (mEduTab === "upcoming" ? "No upcoming events." : "No past events.") + '</div>';
+      return;
+    }
+    el.innerHTML = events.map(function(ev) {
+      var dt = ev.dateTime ? new Date(ev.dateTime) : null;
+      var dateStr = dt ? dt.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}) : "—";
+      var timeStr = dt ? dt.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : "";
+      var tc = M_EDU_COLORS[ev.type||"other"] || M_EDU_COLORS.other;
+      var isPast = (ev.dateTime||"") < now;
+      return '<div class="m-info-card" onclick="mOpenEduDetail(\'' + ev.id + '\')" style="cursor:pointer;border-left:3px solid ' + tc.color + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">' +
+          '<span style="background:' + tc.bg + ';border:1px solid ' + tc.border + ';color:' + tc.color + ';font-family:\'Oswald\',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:2px 7px;border-radius:4px">' + tc.label + (ev.ceHours ? ' · ' + ev.ceHours + ' CE' : '') + '</span>' +
+          '<span style="font-size:0.65rem;color:var(--gray);text-align:right;flex-shrink:0">' + dateStr + '<br>' + timeStr + '</span>' +
+        '</div>' +
+        '<div class="m-info-name">' + (ev.title||"Untitled") + '</div>' +
+        (ev.location ? '<div class="m-info-sub">📍 ' + ev.location + '</div>' : '') +
+        (!isPast ? '<div style="margin-top:8px"><button onclick="event.stopPropagation();mGoTo(\'scanner\');mStartScanner(\'' + ev.id + '\')" style="background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.3);border-radius:6px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;padding:6px 12px;cursor:pointer;min-height:36px">📷 Scan Check-In</button></div>' : '') +
+      '</div>';
+    }).join("");
+  }).catch(function(e) {
+    el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Error: ' + e.message + '</div>';
+  });
+}
+
+function mRenderCME(el) {
+  var year = new Date().getFullYear();
+  if (mEduIsAdmin) {
+    // Admin sees field-member roster (no pure dispatchers/logistics)
+    db.collection("users").get().then(function(snap) {
+      var members = [];
+      snap.forEach(function(d){
+        var m=d.data(); if(!m.unit) return;
+        var roles=(m.roles||[]).map(function(r){return r.toLowerCase();});
+        var isField=roles.includes("responder")||roles.includes("captain")||roles.includes("chief")||roles.includes("observer")||m.role==="admin";
+        if(!isField) return;
+        members.push(Object.assign({uid:d.id},m));
+      });
+      members.sort(function(a,b){ return (a.unit||"").localeCompare(b.unit||""); });
+      el.innerHTML = '<div style="font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:10px">' + year + ' CME — All Members</div>' +
+        members.map(function(m) {
+          var name = ((m.firstName||"")+" "+(m.lastName||"")).trim();
+          var hrs = (m.cmeHours||{})[year]||0;
+          var classes = (m.cmeClasses||{})[year]||0;
+          var hrsColor = hrs>=10?"#7dedb5":hrs>=5?"#ffc84a":"var(--white)";
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">' +
+            '<div><span style="color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-weight:700">' + (m.unit||"") + '</span><span style="color:var(--gray);font-size:0.72rem;margin-left:6px">' + (name||"") + '</span></div>' +
+            '<div style="text-align:right"><span style="color:' + hrsColor + ';font-family:\'Oswald\',sans-serif;font-weight:700;font-size:1rem">' + hrs + '</span><span style="color:var(--gray);font-size:0.65rem"> CE · ' + classes + ' classes</span></div>' +
+          '</div>';
+        }).join("");
+    });
+  } else {
+    // Regular member - own record only
+    db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
+      var m = snap.exists ? snap.data() : {};
+      var hrs = (m.cmeHours||{})[year]||0;
+      var classes = (m.cmeClasses||{})[year]||0;
+      var hrsColor = hrs>=10?"#7dedb5":hrs>=5?"#ffc84a":"var(--white)";
+      el.innerHTML =
+        '<div style="font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:14px">' + year + ' My CME Hours</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">' +
+          '<div class="m-info-card" style="text-align:center">' +
+            '<div style="font-family:\'Oswald\',sans-serif;font-size:2.5rem;font-weight:700;color:' + hrsColor + '">' + hrs + '</div>' +
+            '<div style="font-size:0.62rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.06em">CE Hours</div>' +
+          '</div>' +
+          '<div class="m-info-card" style="text-align:center">' +
+            '<div style="font-family:\'Oswald\',sans-serif;font-size:2.5rem;font-weight:700;color:var(--white)">' + classes + '</div>' +
+            '<div style="font-size:0.62rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.06em">Classes</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:0.75rem;color:var(--gray);line-height:1.5">Scan the QR code at each class to record your attendance and CE hours automatically.</div>';
+    });
+  }
+}
+
+function mOpenEduDetail(eventId) {
+  var modal = document.getElementById("m-edu-detail-modal");
+  var body = document.getElementById("m-edu-detail-body");
+  if (!modal||!body) return;
+  modal.classList.add("open");
+  body.innerHTML = '<div style="color:var(--gray);font-size:0.82rem">Loading...</div>';
+
+  db.collection("education").doc(eventId).get().then(function(snap) {
+    if (!snap.exists) { body.innerHTML='<div style="color:#ff9090">Not found.</div>'; return; }
+    var ev = Object.assign({id:snap.id}, snap.data());
+    var tc = M_EDU_COLORS[ev.type||"other"]||M_EDU_COLORS.other;
+    var dt = ev.dateTime ? new Date(ev.dateTime) : null;
+    var dateStr = dt ? dt.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"}) : "—";
+    var timeStr = dt ? dt.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : "";
+    var isPast = (ev.dateTime||"") < new Date().toISOString();
+
+    // Get my RSVP
+    db.collection("education").doc(eventId).collection("rsvps").doc(mCurrentUser.uid).get().then(function(rsnap) {
+      var myRsvp = rsnap.exists ? rsnap.data().status : null;
+
+      body.innerHTML =
+        '<span style="background:' + tc.bg + ';border:1px solid ' + tc.border + ';color:' + tc.color + ';font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:3px 8px;border-radius:4px;display:inline-block;margin-bottom:10px">' + tc.label + (ev.ceHours?' · '+ev.ceHours+' CE hrs':'') + '</span>' +
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:4px">' + (ev.title||"Untitled") + '</div>' +
+        '<div style="font-size:0.75rem;color:var(--gray);margin-bottom:10px">' + dateStr + ' at ' + timeStr + '</div>' +
+        (ev.location ? '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:0.82rem;color:var(--white)">📍 ' + ev.location + '</div>' : '') +
+        (ev.description ? '<div style="font-size:0.82rem;color:var(--white);line-height:1.6;margin-bottom:12px">' + ev.description + '</div>' : '') +
+
+        // RSVP
+        (!isPast ? '<div style="margin-bottom:12px"><div style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Will you attend?</div>' +
+          '<div style="display:flex;gap:8px">' +
+          ['yes','maybe','no'].map(function(s) {
+            var labels={yes:"✓ Yes",maybe:"? Maybe",no:"✗ No"};
+            var colors={yes:"#7dedb5",maybe:"#ffc84a",no:"#ff9090"};
+            var active=myRsvp===s;
+            return '<button onclick="mSubmitRSVP(\'' + ev.id + '\',\'' + s + '\')" style="flex:1;padding:10px 6px;border-radius:7px;border:1px solid ' + (active?colors[s]:"var(--card-border)") + ';background:' + (active?"rgba(255,255,255,0.08)":"transparent") + ';color:' + (active?colors[s]:"var(--gray)") + ';font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;cursor:pointer;min-height:44px">' + labels[s] + '</button>';
+          }).join("") +
+        '</div></div>' : '') +
+
+        // QR scan button
+        (!isPast && ev.lat ? '<button onclick="mCloseEduDetail();mGoTo(\'scanner\');mStartScanner(\'' + ev.id + '\')" style="width:100%;padding:14px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;margin-bottom:10px">📷 Scan QR to Check In</button>' : '') +
+
+        // Admin: attendance count
+        (mEduIsAdmin ? '<div id="m-edu-attend-count" style="font-size:0.75rem;color:var(--gray);text-align:center">Loading attendance...</div>' : '');
+
+      if (mEduIsAdmin) {
+        db.collection("education").doc(eventId).collection("attendance").get().then(function(asnap) {
+          var el2 = document.getElementById("m-edu-attend-count");
+          if (el2) el2.textContent = asnap.size + " member" + (asnap.size!==1?"s":"") + " checked in";
+        });
+      }
+    });
+  });
+}
+
+function mCloseEduDetail() {
+  document.getElementById("m-edu-detail-modal").classList.remove("open");
+}
+
+function mSubmitRSVP(eventId, status) {
+  db.collection("education").doc(eventId).collection("rsvps").doc(mCurrentUser.uid).set({
+    status:status, uid:mCurrentUser.uid, unit:mCurrentUserUnit||"", timestamp:new Date().toISOString()
+  }).then(function(){
+    db.collection("education").doc(eventId).collection("rsvps").get().then(function(rsnap){
+      var yes=0; rsnap.forEach(function(d){if(d.data().status==="yes")yes++;});
+      db.collection("education").doc(eventId).set({rsvpCount:yes},{merge:true});
+    });
+    mToast("RSVP saved!"); mCloseEduDetail(); mOpenEduDetail(eventId);
+  }).catch(function(e){mToast("Error: "+e.message,true);});
+}
+
+// ── QR SCANNER ──
+var mQRScanner = null;
+var mScanEventId = null;
+
+function mStartScanner(eventId) {
+  mScanEventId = eventId;
+  var statusEl = document.getElementById("m-qr-status");
+  var resultEl = document.getElementById("m-qr-result");
+  if (statusEl) statusEl.textContent = "Initializing camera...";
+  if (resultEl) resultEl.innerHTML = "";
+
+  // Load Html5Qrcode library
+  if (typeof Html5Qrcode !== "undefined") {
+    doStartScanner();
+  } else {
+    var script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
+    script.onload = doStartScanner;
+    script.onerror = function() {
+      if (statusEl) statusEl.textContent = "Failed to load scanner library.";
+    };
+    document.head.appendChild(script);
+  }
+}
+
+function doStartScanner() {
+  var readerEl = document.getElementById("m-qr-reader");
+  var statusEl = document.getElementById("m-qr-status");
+  if (!readerEl) return;
+  readerEl.innerHTML = "";
+
+  if (mQRScanner) {
+    try { mQRScanner.stop(); } catch(e) {}
+    mQRScanner = null;
+  }
+
+  mQRScanner = new Html5Qrcode("m-qr-reader");
+  mQRScanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 250, height: 250 } },
+    function(decodedText) {
+      // QR code scanned
+      mQRScanner.stop().catch(function(){});
+      mHandleQRScan(decodedText);
+    },
+    function() {} // scan failure — silent
+  ).then(function() {
+    if (statusEl) statusEl.textContent = "Camera ready — scan the event QR code";
+  }).catch(function(e) {
+    if (statusEl) statusEl.textContent = "Camera error: " + e;
+  });
+}
+
+function mHandleQRScan(qrText) {
+  var statusEl = document.getElementById("m-qr-status");
+  var resultEl = document.getElementById("m-qr-result");
+  if (statusEl) statusEl.textContent = "Processing...";
+
+  var payload;
+  try { payload = JSON.parse(qrText); } catch(e) {
+    if (statusEl) statusEl.textContent = "Invalid QR code.";
+    return;
+  }
+  if (payload.type !== "hatzolah_edu") {
+    if (statusEl) statusEl.textContent = "Not a Hatzolah Education QR code.";
+    return;
+  }
+
+  var eventId = payload.eventId;
+  var evLat = payload.lat;
+  var evLng = payload.lng;
+  var radius = payload.radius || 100;
+
+  // Check event time — must be within 2 hours of event start
+  db.collection("education").doc(eventId).get().then(function(snap) {
+    if (!snap.exists) { if(statusEl) statusEl.textContent="Event not found."; return; }
+    var ev = snap.data();
+    var now = new Date();
+    var evTime = ev.dateTime ? new Date(ev.dateTime) : null;
+
+    if (evTime) {
+      var diffMin = (now - evTime) / 60000; // minutes since event start
+      if (diffMin < -60 || diffMin > 180) {
+        if (resultEl) resultEl.innerHTML = '<div style="background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:10px;padding:14px;text-align:center"><div style="color:#ff9090;font-family:\'Oswald\',sans-serif;font-weight:700;margin-bottom:4px">⏰ Wrong Time</div><div style="font-size:0.78rem;color:var(--gray)">Check-in is only available within 1 hour before to 3 hours after the event starts.</div></div>';
+        if (statusEl) statusEl.textContent = "";
+        return;
+      }
+    }
+
+    // Geo-lock check
+    if (evLat && evLng && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function(pos) {
+        var dist = getDistanceMeters(pos.coords.latitude, pos.coords.longitude, evLat, evLng);
+        if (dist > radius) {
+          if (resultEl) resultEl.innerHTML = '<div style="background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:10px;padding:14px;text-align:center"><div style="color:#ff9090;font-family:\'Oswald\',sans-serif;font-weight:700;margin-bottom:4px">📍 Not at Location</div><div style="font-size:0.78rem;color:var(--gray)">You are ' + Math.round(dist) + 'm away. Must be within ' + radius + 'm of the class location to check in.</div></div>';
+          if (statusEl) statusEl.textContent = "";
+        } else {
+          mRecordAttendance(eventId, ev, pos.coords.latitude, pos.coords.longitude, dist, statusEl, resultEl);
+        }
+      }, function() {
+        // Geolocation failed — still allow check-in but log without coords
+        mRecordAttendance(eventId, ev, null, null, null, statusEl, resultEl);
+      }, { enableHighAccuracy: true, timeout: 10000 });
+    } else {
+      // No geo-lock on this event
+      mRecordAttendance(eventId, ev, null, null, null, statusEl, resultEl);
+    }
+  }).catch(function(e) {
+    if (statusEl) statusEl.textContent = "Error: " + e.message;
+  });
+}
+
+function mRecordAttendance(eventId, ev, lat, lng, dist, statusEl, resultEl) {
+  // Check if already checked in
+  db.collection("education").doc(eventId).collection("attendance").doc(mCurrentUser.uid).get().then(function(snap) {
+    if (snap.exists) {
+      if (resultEl) resultEl.innerHTML = '<div style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:10px;padding:14px;text-align:center"><div style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;margin-bottom:4px">✓ Already Checked In</div><div style="font-size:0.78rem;color:var(--gray)">You were already marked present for this event.</div></div>';
+      if (statusEl) statusEl.textContent = "";
+      return;
+    }
+
+    var attendanceData = {
+      uid: mCurrentUser.uid,
+      unit: mCurrentUserUnit || "",
+      name: "",
+      timestamp: new Date().toISOString(),
+      lat: lat || null,
+      lng: lng || null,
+      distanceMeters: dist ? Math.round(dist) : null
+    };
+
+    // Get member name
+    db.collection("users").doc(mCurrentUser.uid).get().then(function(usnap) {
+      if (usnap.exists) {
+        var d = usnap.data();
+        attendanceData.name = ((d.firstName||"")+" "+(d.lastName||"")).trim();
+      }
+
+      // Write attendance
+      db.collection("education").doc(eventId).collection("attendance").doc(mCurrentUser.uid).set(attendanceData).then(function() {
+        // Update attendance count on event doc
+        db.collection("education").doc(eventId).collection("attendance").get().then(function(asnap) {
+          db.collection("education").doc(eventId).set({ attendanceCount: asnap.size }, { merge: true });
+        });
+
+        // Update CME hours on user doc
+        if (ev.ceHours && ev.ceHours > 0) {
+          var year = new Date().getFullYear().toString();
+          var updateData = {};
+          updateData["cmeHours." + year] = firebase.firestore.FieldValue.increment(ev.ceHours);
+          updateData["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
+          db.collection("users").doc(mCurrentUser.uid).update(updateData).catch(function(){});
+        }
+
+        if (resultEl) resultEl.innerHTML =
+          '<div style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:10px;padding:16px;text-align:center">' +
+            '<div style="font-size:2rem;margin-bottom:8px">✅</div>' +
+            '<div style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">Checked In!</div>' +
+            '<div style="font-size:0.82rem;color:var(--white);margin-bottom:4px">' + (ev.title||"Event") + '</div>' +
+            (ev.ceHours ? '<div style="font-size:0.78rem;color:var(--gold)">+' + ev.ceHours + ' CE hours added to your record</div>' : '') +
+            (dist ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:6px">' + Math.round(dist) + 'm from class location</div>' : '') +
+          '</div>';
+        if (statusEl) statusEl.textContent = "";
+        mPlayTone(); // brief alert tone on success
+      }).catch(function(e) {
+        if (statusEl) statusEl.textContent = "Error saving attendance: " + e.message;
+      });
+    });
+  });
+}
+
+// Haversine distance formula
+function getDistanceMeters(lat1, lng1, lat2, lng2) {
+  var R = 6371000;
+  var dLat = (lat2-lat1) * Math.PI/180;
+  var dLng = (lng2-lng1) * Math.PI/180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+          Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 // ── PUSH / SW ──
