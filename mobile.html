@@ -762,27 +762,160 @@ function mRenderCalls(calls) {
 }
 
 // ── CALL DETAIL ──
+// ── CALL DETAIL (live updating) ──
+var mDetailListener = null;
+var mDetailCallId = null;
+
 function mOpenDetail(callId) {
-  db.collection("activeCalls").doc(callId).get().then(function(snap) {
-    if (!snap.exists) return;
-    var call = Object.assign({id:snap.id}, snap.data());
-    var notes = call.callNotes || [];
-    var body = document.getElementById("m-detail-body");
-    body.innerHTML =
-      '<div style="font-family:Oswald,sans-serif;font-size:0.88rem;font-weight:700;color:var(--white);margin-bottom:10px">' + (call.address||"").split(",")[0] + '</div>' +
-      (call.accessCode ? '<div style="background:rgba(255,200,74,0.08);border:1px solid rgba(255,200,74,0.3);border-radius:7px;padding:10px;margin-bottom:10px"><div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:#ffc84a;margin-bottom:4px">Access Code</div><div style="font-size:1rem;color:var(--white);font-weight:700;font-family:Oswald,sans-serif">' + call.accessCode + '</div></div>' : "") +
-      (call.dispatchNotes ? '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:7px;padding:10px;margin-bottom:10px"><div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gray);margin-bottom:4px">Dispatch Notes</div><div style="font-size:0.85rem;color:var(--white);line-height:1.5">' + call.dispatchNotes + '</div></div>' : "") +
-      (notes.length ? '<div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gray);margin-bottom:8px">Call Notes</div>' +
-        notes.map(function(n) {
-          return '<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.05)"><div style="font-size:0.62rem;color:var(--gray);margin-bottom:2px">' + (n.time||"") + (n.by?" · "+n.by:"") + '</div><div style="font-size:0.82rem;color:var(--white);line-height:1.4">' + (n.text||"") + '</div></div>';
-        }).join("") : "") +
-      '<a href="' + (call.mapsLink||"#") + '" target="_blank" style="display:block;text-align:center;margin-top:12px;padding:12px;background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.35);border-radius:8px;color:var(--gold);font-family:Oswald,sans-serif;font-size:0.8rem;font-weight:700;text-decoration:none">Open in Maps</a>';
-    document.getElementById("m-detail-modal").classList.add("open");
+  mDetailCallId = callId;
+  // Stop any existing listener
+  if (mDetailListener) { mDetailListener(); mDetailListener = null; }
+
+  document.getElementById("m-detail-modal").classList.add("open");
+  document.getElementById("m-detail-body").innerHTML =
+    '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
+
+  // Live listener so detail updates in real time
+  mDetailListener = db.collection("activeCalls").doc(callId)
+    .onSnapshot(function(snap) {
+      if (!snap.exists) { mCloseDetail(); return; }
+      mRenderDetail(Object.assign({id:snap.id}, snap.data()));
+    }, function() {
+      // Fallback to single get
+      db.collection("activeCalls").doc(callId).get().then(function(snap) {
+        if (snap.exists) mRenderDetail(Object.assign({id:snap.id}, snap.data()));
+      });
+    });
+}
+
+function mRenderDetail(call) {
+  var notes = call.callNotes || [];
+  var times = call.times || {};
+  var crews = call.crews || [];
+  var unitDetails = call.unitDetails || {};
+
+  // Check if current user is assigned
+  var isAssigned = false;
+  crews.forEach(function(crew) {
+    if (!crew) return;
+    Object.keys(crew).forEach(function(k) {
+      if (k !== "rig" && crew[k] === mCurrentUserUnit) isAssigned = true;
+    });
   });
+
+  var html = "";
+
+  // Address header
+  html += '<div style="font-family:Oswald,sans-serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:12px;line-height:1.3">' +
+    (call.address||"Unknown location") + '</div>';
+
+  // Zone + nature row
+  var zone = call.zone === "primary" ? "primary" : call.zone === "secondary" ? "secondary" : "outside";
+  var zoneLabel = call.zone === "primary" ? "Standard Response" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
+  var parts = [];
+  if (call.patientAgeNum) parts.push(call.patientAgeNum + " YO");
+  else if (call.patientAge === "pediatric") parts.push("Ped");
+  else if (call.patientAge === "adult") parts.push("Adult");
+  if (call.patientSex === "male") parts.push("M");
+  else if (call.patientSex === "female") parts.push("F");
+  if (call.callNature) parts.push(call.callNature.replace(/^\d+\s*-\s*/,""));
+  html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">' +
+    '<span class="m-zone-pill ' + zone + '">' + zoneLabel + '</span>' +
+    (parts.length ? '<span class="m-pill nature">' + parts.join(" · ") + '</span>' : "") +
+  "</div>";
+
+  // ALS banner
+  if (call.alsActivated) {
+    html += '<div style="background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="font-family:Oswald,sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;margin-bottom:4px">ALS Activated</div>' +
+      '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + '</div>' +
+      (call.alsUnit ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:2px">Unit: ' + call.alsUnit + '</div>' : "") +
+      (call.alsEta ? '<div style="font-size:0.72rem;color:var(--gray)">ETA: ' + call.alsEta + ' min</div>' : "") +
+    '</div>';
+  } else if (call.alsRecommended) {
+    html += '<div style="background:rgba(224,85,85,0.08);border:1px solid rgba(224,85,85,0.25);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="font-family:Oswald,sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090">ALS Recommended</div>' +
+    '</div>';
+  }
+
+  // Access code
+  if (call.accessCode) {
+    html += '<div style="background:rgba(255,200,74,0.08);border:1px solid rgba(255,200,74,0.3);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:#ffc84a;margin-bottom:4px">Access Code</div>' +
+      '<div style="font-size:1.1rem;color:var(--white);font-weight:700;font-family:Oswald,sans-serif;letter-spacing:0.05em">' + call.accessCode + '</div>' +
+    '</div>';
+  }
+
+  // Dispatch notes
+  if (call.dispatchNotes) {
+    html += '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gray);margin-bottom:4px">Dispatch Notes</div>' +
+      '<div style="font-size:0.85rem;color:var(--white);line-height:1.5">' + call.dispatchNotes + '</div>' +
+    '</div>';
+  }
+
+  // Call times
+  if (times.dispatched || times.first_on_scene || times.enroute || times.at_hospital) {
+    html += '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gray);margin-bottom:8px">Timeline</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
+      [["dispatched","Call Time"],["first_on_scene","On Scene"],["enroute","En Route"],["at_hospital","Hospital"]].map(function(t) {
+        return times[t[0]] ? '<div><div style="font-size:0.55rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.07em">' + t[1] + '</div>' +
+          '<div style="font-family:Oswald,sans-serif;font-size:0.88rem;font-weight:700;color:var(--white)">' + times[t[0]] + '</div></div>' : '<div></div>';
+      }).join("") +
+      '</div></div>';
+  }
+
+  // Units assigned
+  var unitRows = [];
+  var STATUS_LABEL = { enroute_scene:"En Route", on_scene_direct:"On Scene",
+    picking_up_ambo:"Picking Up Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene",
+    rma_scene:"RMA", transporting:"Transporting", at_facility:"At Hospital",
+    clearing_facility:"Clearing", back_at_base:"Back at Base" };
+  crews.forEach(function(crew, ci) {
+    if (!crew) return;
+    Object.keys(crew).sort().forEach(function(role) {
+      if (role === "rig") return;
+      var val = crew[role]; if (!val || val === "__added__") return;
+      var det = unitDetails[ci+"_"+role] || {};
+      var status = STATUS_LABEL[det.status] || "";
+      unitRows.push('<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">' +
+        '<span style="font-family:Oswald,sans-serif;font-size:0.82rem;font-weight:700;color:' + (val===mCurrentUserUnit?"#7dedb5":"var(--white)") + '">' + val + '</span>' +
+        (status ? '<span style="font-size:0.68rem;color:var(--gray)">' + status + '</span>' : "") +
+      '</div>');
+    });
+  });
+  if (unitRows.length) {
+    html += '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gray);margin-bottom:6px">Units</div>' +
+      unitRows.join("") +
+    '</div>';
+  }
+
+  // Call notes
+  if (notes.length) {
+    html += '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--gray);margin-bottom:8px">Notes</div>' +
+      notes.map(function(n) {
+        return '<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.05)">' +
+          '<div style="font-size:0.62rem;color:var(--gray);margin-bottom:3px">' + (n.time||"") + (n.by?" · "+n.by:"") + '</div>' +
+          '<div style="font-size:0.85rem;color:var(--white);line-height:1.5">' + (n.text||"") + '</div>' +
+        '</div>';
+      }).join("") +
+    '</div>';
+  }
+
+  // Map link
+  html += '<a href="' + (call.mapsLink||"#") + '" target="_blank" ' +
+    'style="display:block;text-align:center;margin-top:4px;padding:12px;background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.35);border-radius:8px;color:var(--gold);font-family:Oswald,sans-serif;font-size:0.8rem;font-weight:700;text-decoration:none">Open in Maps</a>';
+
+  document.getElementById("m-detail-body").innerHTML = html;
 }
 
 function mCloseDetail() {
   document.getElementById("m-detail-modal").classList.remove("open");
+  if (mDetailListener) { mDetailListener(); mDetailListener = null; }
+  mDetailCallId = null;
 }
 
 // ── SUBPAGE LOADERS ──
