@@ -42,7 +42,7 @@ body{background:var(--navy);color:var(--white);font-family:'Source Sans 3',sans-
 body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(201,168,76,0.07) 0%,transparent 70%),radial-gradient(ellipse 60% 40% at 80% 90%,rgba(10,22,40,0.9) 0%,transparent 70%);pointer-events:none;z-index:0;}
 .page{display:none;position:relative;z-index:1;min-height:100vh;animation:fadeIn 0.3s ease both;}
 .page.active{display:block;}
-#pg-maps.active{display:flex;flex-direction:column;height:100vh;min-height:unset;overflow:hidden;}
+#pg-maps.active{display:flex;flex-direction:column;height:100vh;min-height:unset;overflow:hidden;position:relative;}
 .page.active{display:flex;flex-direction:column;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 #dd-sidebar-content input[type="time"]::-webkit-calendar-picker-indicator{opacity:0.4;filter:invert(1);width:10px;height:10px;cursor:pointer;}
@@ -535,7 +535,22 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
       <button class="back-btn" onclick="goHome()">← Home</button>
       <div class="page-title">🗺️ Dispatcher Dashboard</div>
     </div>
-    <button onclick="openNewCallForm()" style="background:var(--gold);color:var(--navy);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:8px 16px;cursor:pointer">+ New Call</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button onclick="window.openVehicleStatus()" id="veh-status-btn" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:8px 14px;cursor:pointer;color:var(--white);position:relative">
+        🚑 Fleet
+        <span id="veh-oos-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:#ff9090;color:#000;font-family:'Oswald',sans-serif;font-size:0.52rem;font-weight:700;padding:1px 5px;border-radius:8px">0</span>
+      </button>
+      <button onclick="openNewCallForm()" style="background:var(--gold);color:var(--navy);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:8px 16px;cursor:pointer">+ New Call</button>
+    </div>
+  </div>
+
+  <!-- VEHICLE STATUS PANEL -->
+  <div id="veh-status-panel" style="display:none;position:absolute;top:49px;right:0;width:320px;background:#0f1e38;border:1px solid var(--card-border);border-top:none;border-right:none;z-index:500;box-shadow:-4px 4px 20px rgba(0,0,0,0.4);max-height:calc(100vh - 49px);overflow-y:auto">
+    <div style="padding:12px 14px;border-bottom:1px solid var(--card-border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-family:'Oswald',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold)">Fleet Status</span>
+      <button onclick="window.closeVehicleStatus()" style="background:none;border:none;color:var(--gray);font-size:1.2rem;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div id="veh-status-list" style="padding:10px 12px"></div>
   </div>
 
   <!-- LAYOUT: sidebar left, map+cards right -->
@@ -3971,7 +3986,160 @@ window.showQR = showQR;
 function closeQRModal() { document.getElementById("edu-qr-modal").style.display="none"; }
 window.closeQRModal = closeQRModal;
 
-// ── CALL LOGS ──
+// ── VEHICLE STATUS PANEL ──
+var vehStatusOpen = false;
+
+window.openVehicleStatus = function() {
+  vehStatusOpen = true;
+  document.getElementById("veh-status-panel").style.display = "block";
+  loadVehicleStatusPanel();
+};
+
+window.closeVehicleStatus = function() {
+  vehStatusOpen = false;
+  document.getElementById("veh-status-panel").style.display = "none";
+};
+
+function loadVehicleStatusPanel() {
+  var el = document.getElementById("veh-status-list");
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.78rem;padding:8px 0">Loading...</div>';
+
+  db.collection("vehicles").get().then(function(snap) {
+    var vehicles = [];
+    snap.forEach(function(d) {
+      var v = d.data();
+      if (v.type === "vehicle") vehicles.push(Object.assign({ docId: d.id }, v));
+    });
+    vehicles.sort(function(a,b){ return (a.id||"").localeCompare(b.id||""); });
+
+    if (!vehicles.length) {
+      el.innerHTML = '<div style="color:var(--gray);font-size:0.78rem;padding:8px 0">No vehicles found. Add vehicles in Admin.</div>';
+      return;
+    }
+
+    var now = Date.now();
+    var oosCount = 0;
+
+    el.innerHTML = vehicles.map(function(v) {
+      var status = v.serviceStatus || "in";
+      var outUntil = v.outUntil || null; // ISO string or null
+      var outReason = v.outReason || "";
+
+      // Auto-restore if time expired
+      if (status === "out" && outUntil && new Date(outUntil).getTime() < now) {
+        status = "in";
+        // Silently restore
+        db.collection("vehicles").doc(v.docId).set({ serviceStatus:"in", outUntil:null, outReason:"" }, { merge:true }).catch(function(){});
+      }
+
+      var isOut = status === "out";
+      if (isOut) oosCount++;
+
+      var outUntilStr = "";
+      if (isOut && outUntil) {
+        var d2 = new Date(outUntil);
+        outUntilStr = "Until " + d2.toLocaleDateString("en-US",{month:"short",day:"numeric"}) + " " + d2.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+      } else if (isOut) {
+        outUntilStr = "Indefinitely";
+      }
+
+      return '<div style="border:1px solid ' + (isOut?'rgba(224,85,85,0.35)':'rgba(76,175,128,0.25)') + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;background:' + (isOut?'rgba(224,85,85,0.06)':'rgba(76,175,128,0.04)') + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:' + (isOut?'8':'0') + 'px">' +
+          '<div>' +
+            '<span style="font-family:\'Oswald\',sans-serif;font-weight:700;font-size:0.85rem;color:var(--white)">' + (v.id||v.docId) + '</span>' +
+            (v.description ? '<span style="font-size:0.68rem;color:var(--gray);margin-left:6px">' + v.description + '</span>' : '') +
+            (outUntilStr ? '<div style="font-size:0.65rem;color:#ff9090;margin-top:1px">' + outUntilStr + '</div>' : '') +
+            (outReason ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:1px;font-style:italic">' + outReason + '</div>' : '') +
+          '</div>' +
+          '<div style="display:flex;gap:5px;align-items:center">' +
+            '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;color:' + (isOut?'#ff9090':'#7dedb5') + '">' + (isOut?'OOS':'IN SVC') + '</span>' +
+            (isOut ?
+              '<button onclick="window.setVehIn(\'' + v.docId + '\')" style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:5px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">Restore</button>' :
+              '<button onclick="window.openVehOOS(\'' + v.docId + '\',\'' + (v.id||v.docId) + '\')" style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);border-radius:5px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">OOS</button>'
+            ) +
+          '</div>' +
+        '</div>' +
+        (isOut ? '' : '') +
+      '</div>';
+    }).join("");
+
+    // Update badge
+    var badge = document.getElementById("veh-oos-badge");
+    if (badge) { badge.textContent = oosCount; badge.style.display = oosCount > 0 ? "inline" : "none"; }
+  }).catch(function(e) {
+    var el2 = document.getElementById("veh-status-list");
+    if (el2) el2.innerHTML = '<div style="color:#ff9090;font-size:0.78rem">Error: ' + e.message + '</div>';
+  });
+}
+
+window.setVehIn = function(docId) {
+  db.collection("vehicles").doc(docId).set({ serviceStatus:"in", outUntil:null, outReason:"" }, { merge:true })
+    .then(function(){ loadVehicleStatusPanel(); showToast("✓ Vehicle restored to service"); })
+    .catch(function(e){ showToast("Error: "+e.message,true); });
+};
+
+window.openVehOOS = function(docId, label) {
+  window._vehOOSDocId = docId;
+  window._vehOOSLabel = label;
+  var panel = document.getElementById("veh-oos-form");
+  if (panel) { panel.style.display = "block"; return; }
+
+  // Build inline form inside panel
+  var formHtml = '<div id="veh-oos-form" style="background:#0a1628;border:1px solid var(--card-border);border-radius:8px;padding:12px;margin-bottom:8px">' +
+    '<div style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:10px">Out of Service — <span id="veh-oos-label"></span></div>' +
+    '<div style="margin-bottom:8px">' +
+      '<label style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);display:block;margin-bottom:4px">Reason (optional)</label>' +
+      '<input type="text" id="veh-oos-reason" placeholder="e.g. Maintenance, Inspection..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;outline:none;box-sizing:border-box">' +
+    '</div>' +
+    '<div style="margin-bottom:10px">' +
+      '<label style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);display:block;margin-bottom:6px">Duration</label>' +
+      '<div style="display:flex;flex-direction:column;gap:5px">' +
+        '<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="veh-oos-dur" value="indefinite" checked> <span style="font-size:0.78rem;color:var(--white)">Indefinitely</span></label>' +
+        '<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="veh-oos-dur" value="hours"> <span style="font-size:0.78rem;color:var(--white)">For</span> <input type="number" id="veh-oos-hours" min="1" max="72" value="2" style="width:50px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:5px;padding:3px 6px;color:var(--white);font-size:0.78rem;outline:none"> <span style="font-size:0.78rem;color:var(--white)">hours</span></label>' +
+        '<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="veh-oos-dur" value="until"> <span style="font-size:0.78rem;color:var(--white)">Until</span> <input type="datetime-local" id="veh-oos-until" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:5px;padding:3px 6px;color:var(--white);font-size:0.72rem;outline:none"></label>' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:6px">' +
+      '<button onclick="window.confirmVehOOS()" style="flex:1;background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:6px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;padding:7px;cursor:pointer">Mark OOS</button>' +
+      '<button onclick="document.getElementById(\'veh-oos-form\').style.display=\'none\'" style="background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;padding:7px 12px;cursor:pointer">Cancel</button>' +
+    '</div>' +
+  '</div>';
+
+  var el = document.getElementById("veh-status-list");
+  el.insertAdjacentHTML("afterbegin", formHtml);
+  document.getElementById("veh-oos-label").textContent = label;
+};
+
+window.confirmVehOOS = function() {
+  var docId = window._vehOOSDocId;
+  var reason = (document.getElementById("veh-oos-reason").value||"").trim();
+  var durType = document.querySelector('input[name="veh-oos-dur"]:checked').value;
+  var outUntil = null;
+
+  if (durType === "hours") {
+    var hrs = parseFloat(document.getElementById("veh-oos-hours").value)||2;
+    outUntil = new Date(Date.now() + hrs*3600000).toISOString();
+  } else if (durType === "until") {
+    var untilVal = document.getElementById("veh-oos-until").value;
+    if (untilVal) outUntil = new Date(untilVal).toISOString();
+  }
+
+  db.collection("vehicles").doc(docId).set({
+    serviceStatus: "out",
+    outUntil: outUntil,
+    outReason: reason,
+    oosAt: new Date().toISOString(),
+    oosBy: currentUserUnit||""
+  }, { merge:true }).then(function() {
+    showToast("Vehicle marked out of service");
+    var form = document.getElementById("veh-oos-form");
+    if (form) form.remove();
+    loadVehicleStatusPanel();
+  }).catch(function(e){ showToast("Error: "+e.message,true); });
+};
+
+// ── END VEHICLE STATUS ──
 var clAllLogs = [];
 var clCurrentCallId = null;
 
@@ -5616,12 +5784,20 @@ var allAmbulancesCache = [];
 var currentManagedCallId = null;
 
 function loadAmbulancesCache() {
-  if (allAmbulancesCache.length) return Promise.resolve(allAmbulancesCache);
+  // Always re-fetch to pick up live OOS status — don't cache stale service status
   return db.collection("vehicles").get().then(function(snap) {
     allAmbulancesCache = [];
+    var now = Date.now();
     snap.forEach(function(d) {
       var v = d.data();
-      if (v.type === "vehicle" || v.type === "erv") allAmbulancesCache.push(Object.assign({ docId: d.id }, v));
+      if (v.type !== "vehicle" && v.type !== "erv") return;
+      var isOOS = v.serviceStatus === "out";
+      // Auto-expire timed OOS
+      if (isOOS && v.outUntil && new Date(v.outUntil).getTime() < now) {
+        isOOS = false;
+        db.collection("vehicles").doc(d.id).set({ serviceStatus:"in", outUntil:null, outReason:"" }, { merge:true }).catch(function(){});
+      }
+      allAmbulancesCache.push(Object.assign({ docId: d.id, isOOS: isOOS }, v));
     });
     return allAmbulancesCache;
   });
@@ -5895,13 +6071,34 @@ function setUnitStatusAndResponse(callId, crewIdx, role, status, response) {
 window.setUnitStatusAndResponse = setUnitStatusAndResponse;
 
 function setPickedRig(callId, crewIdx, role, vehicleId, isERV) {
-  var baseKey = "unitDetails." + crewIdx + "_" + role + ".";
-  var update = {};
-  update[baseKey + "pickedAmbo"] = vehicleId;
-  update[baseKey + "pickedAmboIsERV"] = isERV ? true : false;
-  db.collection("activeCalls").doc(callId).update(update)
-    .then(function() { selectDDCall(callId, "units"); })
-    .catch(function(e) { showToast("Error: " + e.message, true); });
+  // Verify vehicle is not OOS before assigning
+  db.collection("vehicles").doc(vehicleId).get().then(function(vsnap) {
+    if (vsnap.exists) {
+      var v = vsnap.data();
+      var isOOS = v.serviceStatus === "out";
+      if (isOOS && v.outUntil && new Date(v.outUntil).getTime() < Date.now()) isOOS = false;
+      if (isOOS) {
+        showToast("⚠️ " + vehicleId + " is out of service" + (v.outReason ? ": " + v.outReason : ""), true);
+        return;
+      }
+    }
+    var baseKey = "unitDetails." + crewIdx + "_" + role + ".";
+    var update = {};
+    update[baseKey + "pickedAmbo"] = vehicleId;
+    update[baseKey + "pickedAmboIsERV"] = isERV ? true : false;
+    db.collection("activeCalls").doc(callId).update(update)
+      .then(function() { selectDDCall(callId, "units"); })
+      .catch(function(e) { showToast("Error: " + e.message, true); });
+  }).catch(function() {
+    // Vehicle doc not found — allow anyway
+    var baseKey = "unitDetails." + crewIdx + "_" + role + ".";
+    var update = {};
+    update[baseKey + "pickedAmbo"] = vehicleId;
+    update[baseKey + "pickedAmboIsERV"] = isERV ? true : false;
+    db.collection("activeCalls").doc(callId).update(update)
+      .then(function() { selectDDCall(callId, "units"); })
+      .catch(function(e) { showToast("Error: " + e.message, true); });
+  });
 }
 window.setPickedRig = setPickedRig;
 
@@ -6275,6 +6472,7 @@ function initDispatcherDashboard() {
   if (ddMap) {
     setTimeout(function() { sizeDD(); google.maps.event.trigger(ddMap, "resize"); }, 100);
     if (!ddCallsListener) startDDCallsListener();
+    loadVehicleStatusPanel(); // refresh OOS badge
     return;
   }
   buildDDMap();
@@ -6943,8 +7141,14 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
             var av = a.id || a.docId || '';
             var atype = a.type || 'vehicle';
             var isERV = atype === 'erv';
-            var albl = av + (a.description ? ' \u2014 ' + a.description : '') + (isERV ? ' \u2022 ERV' : '');
+            var isOOS = a.isOOS || false;
+            var albl = av + (a.description ? ' — ' + a.description : '') + (isERV ? ' • ERV' : '') + (isOOS ? ' • OOS' : '');
             var isSel = pickedAmbo === av;
+            if (isOOS) {
+              return '<button disabled title="Out of Service' + (a.outReason ? ': ' + a.outReason : '') + '" ' +
+                'style="display:inline-block;margin:2px;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px 8px;border-radius:5px;cursor:not-allowed;opacity:0.4;' +
+                'border:1px solid rgba(224,85,85,0.3);background:rgba(224,85,85,0.06);color:#ff9090">🔴 ' + albl + '</button>';
+            }
             return '<button onclick="setPickedRig(\''+cid+'\','+ci+',\''+r+'\',\''+av+'\','+(isERV?'true':'false')+')" ' +
               'style="display:inline-block;margin:2px;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px 8px;border-radius:5px;cursor:pointer;' +
               'border:1px solid '+(isSel?'#ffc84a':'var(--card-border)')+';' +
