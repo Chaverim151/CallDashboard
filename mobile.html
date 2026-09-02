@@ -40,7 +40,9 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 /* ── TOPBAR ── */
 .m-topbar{
   display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;
-  padding:10px 14px;border-bottom:1px solid var(--card-border);
+  padding:12px 14px;
+  padding-top:max(12px,env(safe-area-inset-top));
+  border-bottom:1px solid var(--card-border);
   background:var(--navy);flex-shrink:0;position:sticky;top:0;z-index:10;
 }
 .m-topbar-left{display:flex;align-items:center;gap:8px;flex-shrink:0;}
@@ -320,14 +322,14 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           Active Calls
           <span class="m-count" id="m-calls-count">0</span>
         </div>
-        <button class="m-btn" id="m-alert-btn" onclick="mRequestPush()" style="font-size:0.6rem;padding:3px 7px;">🔔 Alerts</button>
+        <button class="m-btn" id="m-alert-btn" onclick="mRequestPush()" style="font-size:0.6rem;padding:3px 7px;">🔕 Alerts</button>
       </div>
       <div id="m-calls-list"></div>
     </div>
 
-    <!-- Alerts button when no calls visible -->
+    <!-- Alerts button when no active calls -->
     <div id="m-alerts-row" style="display:flex;justify-content:flex-end;margin-bottom:10px">
-      <button class="m-btn" id="m-alert-btn-2" onclick="mRequestPush()" style="font-size:0.6rem;padding:3px 7px;">🔔 Alerts</button>
+      <button class="m-btn" id="m-alert-btn-2" onclick="mRequestPush()" style="font-size:0.6rem;padding:3px 7px;">🔕 Enable Alerts</button>
     </div>
 
     <!-- Home tiles -->
@@ -652,9 +654,10 @@ function mRenderCalls(calls) {
   var list = document.getElementById("m-calls-list");
   var count = document.getElementById("m-calls-count");
   if (!section || !list) return;
-  if (!calls.length) { section.style.display = "none"; return; }
+  if (!calls.length) { section.style.display = "none"; mUpdateAlertBtn(); return; }
   section.style.display = "block";
   count.textContent = calls.length;
+  mUpdateAlertBtn();
 
   var STATUS_LABEL = {
     enroute_scene:"En Route", on_scene_direct:"On Scene",
@@ -963,17 +966,21 @@ function mRequestPush() {
 }
 
 function mUpdateAlertBtn() {
-  var btns = [document.getElementById("m-alert-btn"), document.getElementById("m-alert-btn-2")];
   var on = Notification.permission === "granted";
-  btns.forEach(function(btn) {
+  var icon = on ? "🔔" : "🔕";
+  var label = on ? "Alerts On" : "Enable Alerts";
+  var color = on ? "#7dedb5" : "var(--gray)";
+  ["m-alert-btn","m-alert-btn-2"].forEach(function(id) {
+    var btn = document.getElementById(id);
     if (!btn) return;
-    btn.textContent = on ? "🔔 Alerts On" : "🔕 Enable Alerts";
-    btn.style.color = on ? "#7dedb5" : "var(--gray)";
+    btn.textContent = icon + " " + label;
+    btn.style.color = color;
   });
-  // Hide the standalone alerts row when calls section is visible
-  var callsVisible = document.getElementById("m-calls-section").style.display !== "none";
-  var alertsRow = document.getElementById("m-alerts-row");
-  if (alertsRow) alertsRow.style.display = callsVisible ? "none" : "flex";
+  // Show standalone row only when calls section is hidden
+  var callsVisible = document.getElementById("m-calls-section") &&
+                     document.getElementById("m-calls-section").style.display !== "none";
+  var row = document.getElementById("m-alerts-row");
+  if (row) row.style.display = callsVisible ? "none" : "flex";
 }
 </script>
 </body>
