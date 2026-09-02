@@ -1393,13 +1393,23 @@ function mStartScanner(eventId) {
 
   // Load Html5Qrcode library
   if (typeof Html5Qrcode !== "undefined") {
+    if (typeof Html5QrcodeScanType === "undefined") {
+      window.Html5QrcodeScanType = { SCAN_TYPE_CAMERA: 0, SCAN_TYPE_FILE: 1 };
+    }
     doStartScanner();
   } else {
+    if (statusEl) statusEl.textContent = "Loading scanner...";
     var script = document.createElement("script");
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
-    script.onload = doStartScanner;
+    script.onload = function() {
+      // Html5QrcodeScanType may not exist in all versions — define fallback
+      if (typeof Html5QrcodeScanType === "undefined") {
+        window.Html5QrcodeScanType = { SCAN_TYPE_CAMERA: 0, SCAN_TYPE_FILE: 1 };
+      }
+      doStartScanner();
+    };
     script.onerror = function() {
-      if (statusEl) statusEl.textContent = "Failed to load scanner. Check your connection.";
+      if (statusEl) statusEl.textContent = "⚠️ Failed to load scanner. Check your connection and try again.";
     };
     document.head.appendChild(script);
   }
@@ -1409,28 +1419,54 @@ function doStartScanner() {
   var readerEl = document.getElementById("m-qr-reader");
   var statusEl = document.getElementById("m-qr-status");
   if (!readerEl) return;
-  readerEl.innerHTML = "";
 
+  // Stop any existing scanner first
   if (mQRScanner) {
-    try { mQRScanner.stop(); } catch(e) {}
+    try { mQRScanner.stop().catch(function(){}); } catch(e) {}
     mQRScanner = null;
   }
+  readerEl.innerHTML = "";
+  if (statusEl) statusEl.textContent = "Starting camera...";
 
-  mQRScanner = new Html5Qrcode("m-qr-reader");
-  mQRScanner.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: { width: 250, height: 250 } },
-    function(decodedText) {
-      // QR code scanned
-      mQRScanner.stop().catch(function(){});
-      mHandleQRScan(decodedText);
-    },
-    function() {} // scan failure — silent
-  ).then(function() {
-    if (statusEl) statusEl.textContent = "Camera ready — scan the event QR code";
-  }).catch(function(e) {
-    if (statusEl) statusEl.textContent = "Camera error: " + e;
-  });
+  // Small delay to ensure the page is fully visible before starting camera
+  setTimeout(function() {
+    try {
+      mQRScanner = new Html5Qrcode("m-qr-reader", { verbose: false });
+
+      var config = {
+        fps: 10,
+        qrbox: function(w, h) {
+          var min = Math.min(w, h);
+          return { width: Math.floor(min * 0.75), height: Math.floor(min * 0.75) };
+        },
+        aspectRatio: 1.0
+      };
+
+      mQRScanner.start(
+        { facingMode: "environment" },
+        config,
+        function(decodedText) {
+          mQRScanner.stop().catch(function(){});
+          mHandleQRScan(decodedText);
+        },
+        function() {} // per-frame failure — silent
+      ).then(function() {
+        if (statusEl) statusEl.textContent = "📷 Camera ready — point at QR code";
+      }).catch(function(err) {
+        var msg = (err && err.toString) ? err.toString() : "Unknown error";
+        if (msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("denied")) {
+          if (statusEl) statusEl.innerHTML = '⚠️ Camera permission denied.<br><span style="font-size:0.72rem">Go to Settings → Safari → Camera and allow access.</span>';
+        } else if (msg.toLowerCase().includes("https") || msg.toLowerCase().includes("secure")) {
+          if (statusEl) statusEl.textContent = "⚠️ Camera requires HTTPS — check your connection.";
+        } else {
+          if (statusEl) statusEl.textContent = "Camera error: " + msg;
+        }
+        console.error("QR scanner error:", err);
+      });
+    } catch(e) {
+      if (statusEl) statusEl.textContent = "Scanner failed to start: " + e.message;
+    }
+  }, 300);
 }
 
 function mHandleQRScan(qrText) {
