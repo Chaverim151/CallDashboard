@@ -1477,17 +1477,29 @@ function mHandleQRScan(qrText) {
   var payload;
   try { payload = JSON.parse(qrText); } catch(e) {
     if (statusEl) statusEl.textContent = "Invalid QR code.";
-    return;
-  }
-  if (payload.type !== "hatzolah_edu") {
-    if (statusEl) statusEl.textContent = "Not a Hatzolah Education QR code.";
+    var sb = document.getElementById("m-scan-again-btn"); if (sb) sb.style.display = "block";
     return;
   }
 
-  var eventId = payload.eventId;
-  var evLat = payload.lat;
-  var evLng = payload.lng;
-  var radius = payload.radius || 100;
+  // Support both new short format {h,e,a,r} and old format {type,eventId,lat,lng,radius}
+  var isNewFormat = payload.h === "1" && payload.e;
+  var isOldFormat = payload.type === "hatzolah_edu" && payload.eventId;
+
+  if (!isNewFormat && !isOldFormat) {
+    if (statusEl) statusEl.textContent = "Not a Hatzolah Education QR code.";
+    var sb2 = document.getElementById("m-scan-again-btn"); if (sb2) sb2.style.display = "block";
+    return;
+  }
+
+  var eventId = isNewFormat ? payload.e : payload.eventId;
+  var evLat = null, evLng = null;
+  if (isNewFormat && payload.a) {
+    var parts = payload.a.split(",");
+    evLat = parseFloat(parts[0]); evLng = parseFloat(parts[1]);
+  } else {
+    evLat = payload.lat; evLng = payload.lng;
+  }
+  var radius = payload.r || payload.radius || 100;
 
   // Check event time — must be within 2 hours of event start
   db.collection("education").doc(eventId).get().then(function(snap) {
