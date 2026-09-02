@@ -2192,7 +2192,8 @@ window.saveCallInfoEdit = function(callId) {
 };
 // ── CME EDIT (admin) ──
 window.openCMEEdit = function(uid, unit, name, year) {
-  document.getElementById("cme-edit-modal")._uid = uid;
+  var modal = document.getElementById("cme-edit-modal");
+  modal.dataset.uid = uid;  // store on dataset — survives renders
   document.getElementById("cme-edit-year-disp").value = year;
   document.getElementById("cme-edit-member-label").textContent = unit + (name ? " · " + name : "");
   var msg = document.getElementById("cme-edit-msg"); if (msg) { msg.className="form-msg"; msg.textContent=""; }
@@ -2403,7 +2404,7 @@ window.saveAttEdit = function(rowId, evId, uid, decision) {
     }
 
     // Reload the whole modal to reflect changes
-    var modalUid = document.getElementById("cme-edit-modal")._uid;
+    var modalUid = document.getElementById("cme-edit-modal").dataset.uid;
     var memberLabel = document.getElementById("cme-edit-member-label").textContent;
     var parts = memberLabel.split(" · ");
     var year = parseInt(document.getElementById("cme-edit-year-disp").value);
@@ -2414,7 +2415,7 @@ window.saveAttEdit = function(rowId, evId, uid, decision) {
 };
 
 window.loadCMEForYear = function(year) {
-  var uid = document.getElementById("cme-edit-modal")._uid;
+  var uid = document.getElementById("cme-edit-modal").dataset.uid;
   if (!uid) return;
   year = parseInt(year);
   db.collection("users").doc(uid).get().then(function(snap) {
@@ -2425,7 +2426,7 @@ window.loadCMEForYear = function(year) {
 };
 
 window.saveCMEEdit = function() {
-  var uid     = document.getElementById("cme-edit-modal")._uid;
+  var uid     = document.getElementById("cme-edit-modal").dataset.uid;
   var year    = parseInt(document.getElementById("cme-edit-year-disp").value);
   var hrs     = parseFloat(document.getElementById("cme-edit-hours").value)||0;
   var classes = parseInt(document.getElementById("cme-edit-classes").value)||0;
@@ -2483,6 +2484,72 @@ window.confirmDivert = function(unit, fromCallId, fromAddr, toCallId, crewIdx, r
     selectDDCall(toCallId, "units");
   }).catch(function(e) { showToast("Error: " + e.message, true); });
 };
+
+// ── CODES ADDRESS AUTOCOMPLETE ──
+var _codesAddrTimer = null;
+window.codesAddrSearch = function(inp, sec, idx) {
+  var q = inp.value.trim();
+  var ddId = "codes-addr-dd-" + sec + "-" + idx;
+  var dd = document.getElementById(ddId);
+  if (!dd) return;
+  window.LIVE_DATA[sec][idx].address = q;
+  clearTimeout(_codesAddrTimer);
+  if (q.length < 3) { dd.style.display = "none"; return; }
+  if (typeof google === "undefined" || !google.maps || !google.maps.places) return;
+  _codesAddrTimer = setTimeout(function() {
+    new google.maps.places.AutocompleteService().getPlacePredictions({
+      input: q,
+      componentRestrictions: { country: "us" },
+      locationBias: { center: new google.maps.LatLng(40.5077036, -74.4133431), radius: 20000 }
+    }, function(predictions, status) {
+      var dd2 = document.getElementById(ddId);
+      if (!dd2) return;
+      if (status !== "OK" || !predictions || !predictions.length) { dd2.style.display = "none"; return; }
+      dd2.innerHTML = predictions.slice(0, 5).map(function(p) {
+        var name = p.structured_formatting.main_text;
+        var sub  = p.structured_formatting.secondary_text || "";
+        return '<div data-placeid="' + p.place_id + '" onclick="window.codesAddrSelect(this,\'' + sec + '\',' + idx + ')" ' +
+          'style="padding:8px 12px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.82rem;color:var(--white)" ' +
+          'onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'\'">' +
+          '<div>' + name + '</div>' +
+          (sub ? '<div style="font-size:0.68rem;color:var(--gray)">' + sub.split(",")[0] + '</div>' : '') +
+        '</div>';
+      }).join("");
+      dd2.style.display = "block";
+    });
+  }, 300);
+};
+
+window.codesAddrSelect = function(el, sec, idx) {
+  var placeId = el.dataset.placeid;
+  var ddEl = el.parentElement;
+  if (ddEl) ddEl.style.display = "none";
+  var inp = document.getElementById("codes-addr-" + sec + "-" + idx);
+  new google.maps.Geocoder().geocode({ placeId: placeId }, function(results, status) {
+    if (status !== "OK" || !results[0]) return;
+    var r = results[0];
+    var addr = r.formatted_address;
+    var lat = r.geometry.location.lat();
+    var lng = r.geometry.location.lng();
+    window.LIVE_DATA[sec][idx].address = addr;
+    window.LIVE_DATA[sec][idx].lat = lat;
+    window.LIVE_DATA[sec][idx].lng = lng;
+    if (inp) inp.value = addr;
+    // Show geocoded badge
+    var wrap = inp ? inp.parentElement : null;
+    if (wrap) {
+      var existing = wrap.parentElement.querySelector(".codes-geocode-badge");
+      if (!existing) {
+        existing = document.createElement("div");
+        existing.className = "codes-geocode-badge";
+        existing.style.cssText = "font-size:0.6rem;color:#7dedb5;margin-top:2px";
+        wrap.insertAdjacentElement("afterend", existing);
+      }
+      existing.textContent = "📍 " + lat.toFixed(5) + ", " + lng.toFixed(5);
+    }
+  });
+};
+// ── END CODES ADDRESS AUTOCOMPLETE ──
 
 window.openCancelCallModal = function(callId) {
   var el = document.getElementById("cancel-call-id");
@@ -3087,7 +3154,13 @@ function mkCard(item, i, sec) {
     html += '<div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">' +
       '<input class="card-edit-inp" placeholder="Code (e.g. 1-2-3)" value="' + (item.code || "") + '" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].code=this.value">' +
       '<input class="card-edit-inp" placeholder="Note (optional)" value="' + (item.note || "") + '" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].note=this.value">' +
-      '<input class="card-edit-inp" placeholder="Address (optional)" value="' + (item.address || "") + '" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].address=this.value">' +
+      '<div style="position:relative">' +
+        '<input class="card-edit-inp codes-addr-inp" id="codes-addr-' + sec + '-' + i + '" placeholder="Address (type to search…)" value="' + (item.address || "") + '" autocomplete="off"' +
+          ' oninput="window.codesAddrSearch(this,\'' + sec + '\',' + i + ')"' +
+          ' style="width:100%;box-sizing:border-box">' +
+        '<div id="codes-addr-dd-' + sec + '-' + i + '" style="display:none;position:absolute;top:100%;left:0;right:0;background:#0f1e38;border:1px solid var(--card-border);border-radius:0 0 7px 7px;z-index:200;max-height:160px;overflow-y:auto;box-shadow:0 6px 16px rgba(0,0,0,0.4)"></div>' +
+      '</div>' +
+      (item.lat && item.lng ? '<div style="font-size:0.6rem;color:#7dedb5;margin-top:2px">📍 Geocoded: ' + item.lat.toFixed(5) + ', ' + item.lng.toFixed(5) + '</div>' : '') +
       '<button class="card-save-btn" onclick="window.saveSection(\'' + sec + '\');window.renderCards(\'' + sec + '\',window.LIVE_DATA[\'' + sec + '\'])">💾 Save Changes</button>' +
       '</div>';
   }
@@ -4781,7 +4854,7 @@ window.toggleHospDD = function(btn, callId) {
   var existing = document.getElementById("hosp-dd-popup");
   if (existing) { existing.remove(); return; }
 
-  var HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","RWJ East Brunswick","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
+  var HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
 
   // Get button position
   var rect = btn.getBoundingClientRect();
@@ -5662,7 +5735,6 @@ function checkAccessCodeOnFile(formattedAddress, placeName) {
 
   var addrLower  = (formattedAddress||"").toLowerCase();
   var placeLower = (placeName||"").toLowerCase();
-  // Combined haystack for name matching
   var haystack   = (addrLower + " " + placeLower).trim();
 
   var NOISE = ["highland","park","edison","brunswick","piscataway","plainfield",
@@ -5674,30 +5746,42 @@ function checkAccessCodeOnFile(formattedAddress, placeName) {
                "press","together","behind","dorm","offices","classrooms"];
   function isNoise(w) { return NOISE.indexOf(w) !== -1 || w.length < 2; }
 
+  // Haversine distance in meters
+  function distMeters(lat1, lng1, lat2, lng2) {
+    var R = 6371000;
+    var dLat = (lat2-lat1)*Math.PI/180;
+    var dLng = (lng2-lng1)*Math.PI/180;
+    var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
   function scoreEntry(entry) {
     if (!entry.code) return 0;
     var score = 0;
-    var nameClean = (entry.name||"").toLowerCase();
 
-    // 1. Name words vs combined haystack (covers place name AND address text)
+    // If entry has geocoded lat/lng and we have the call's coordinates — use distance
+    if (entry.lat && entry.lng && selectedLat && selectedLng) {
+      var dist = distMeters(selectedLat, selectedLng, entry.lat, entry.lng);
+      if (dist <= 50)  return 100; // within 50m — definitive match
+      if (dist <= 150) score += 20;
+      if (dist <= 400) score += 10;
+      if (dist > 400)  return 0;   // geocoded but too far — skip
+    }
+
+    // Text matching fallback (no lat/lng on entry)
+    var nameClean = (entry.name||"").toLowerCase();
     var nameWords = nameClean.split(/[\s,()/&\-]+/).filter(function(w){ return !isNoise(w) && w.length >= 2; });
-    nameWords.forEach(function(w) {
-      if (haystack.indexOf(w) !== -1) score += 4;
-    });
-    // Bonus: full cleaned name in haystack
+    nameWords.forEach(function(w) { if (haystack.indexOf(w) !== -1) score += 4; });
     var nameStripped = nameClean.replace(/[^a-z0-9 ]/g,'').trim();
     if (nameStripped.length > 4 && haystack.indexOf(nameStripped) !== -1) score += 6;
 
-    // 2. Entry address vs formattedAddress
     if (entry.address) {
       var entryAddrLower = entry.address.toLowerCase();
-      // Street number match
       var numMatch = entryAddrLower.match(/^\d+/);
       if (numMatch && addrLower.indexOf(numMatch[0] + " ") !== -1) score += 4;
-      // Non-noise words in entry address vs formatted address
       var eWords = entryAddrLower.split(/[\s,]+/).filter(function(w){ return !isNoise(w) && w.length >= 3; });
       eWords.forEach(function(w) { if (addrLower.indexOf(w) !== -1) score += 2; });
-      // Full entry address substring
       if (entryAddrLower.length > 8 && addrLower.indexOf(entryAddrLower) !== -1) score += 10;
     }
 
@@ -6048,7 +6132,14 @@ window.initMapsAutocomplete = function() {
       item.className = "pac-item";
       var main = pred.structured_formatting ? pred.structured_formatting.main_text : pred.description;
       var secondary = pred.structured_formatting ? pred.structured_formatting.secondary_text : "";
-      item.innerHTML = '<span class="pac-item-query">' + main + '</span> ' + (secondary || "");
+      if (pred._isCode) {
+        item.style.borderLeft = "2px solid rgba(201,168,76,0.6)";
+        item.style.background = "rgba(201,168,76,0.04)";
+        item.innerHTML = '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--gold);margin-right:6px">🔑</span>' +
+          '<span class="pac-item-query">' + main + '</span> <span style="color:var(--gray);font-size:0.8rem">' + (secondary||"") + '</span>';
+      } else {
+        item.innerHTML = '<span class="pac-item-query">' + main + '</span> ' + (secondary || "");
+      }
       item.dataset.idx = idx;
       item.addEventListener("mousedown", function(e) {
         e.preventDefault();
@@ -6062,6 +6153,34 @@ window.initMapsAutocomplete = function() {
 
   function selectPrediction(pred) {
     closeDropdown();
+
+    // ── CODES ENTRY: geocode the address then commitAddress ──
+    if (pred._isCode) {
+      var entry = pred._codeEntry;
+      input.value = entry.name + (entry.address ? " — " + entry.address : "");
+      var geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ address: entry.address + ", NJ", region: "us" }, function(results, status) {
+        if (status !== "OK" || !results || !results[0]) {
+          input.style.borderColor = "#e05555";
+          showToast("⚠ Could not locate address — try Google Maps search", true);
+          return;
+        }
+        var place = results[0];
+        var lat = place.geometry.location.lat();
+        var lng = place.geometry.location.lng();
+        commitAddress(lat, lng, place.formatted_address, entry.name, input);
+        // Also pre-fill access code if present
+        if (entry.code) {
+          var codeInp = document.getElementById("maps-access-code");
+          if (codeInp && !codeInp.value) {
+            codeInp.value = entry.code + (entry.note ? " (" + entry.note + ")" : "");
+            codeInp.style.borderColor = "rgba(201,168,76,0.6)";
+          }
+        }
+      });
+      return;
+    }
+
     input.value = pred.description;
     placesService.getDetails({ placeId: pred.place_id, fields: ["formatted_address","geometry","name","address_components","types"], sessionToken: sessionToken }, function(place, status) {
       if (status !== "OK" || !place || !place.geometry) {
@@ -6189,17 +6308,46 @@ window.initMapsAutocomplete = function() {
   }
 
   function fetchPredictions(query) {
-    if (!query || query.length < 3) { closeDropdown(); return; }
+    if (!query || query.length < 2) { closeDropdown(); return; }
+
+    // ── CODES ENTRIES (buildings + shuls) ──
+    var allCodes = (window.LIVE_DATA.buildings||[]).concat(window.LIVE_DATA.shuls||[]);
+    var queryLower = query.toLowerCase();
+    var codeMatches = allCodes.filter(function(entry) {
+      return entry.address && (
+        (entry.name||"").toLowerCase().indexOf(queryLower) !== -1 ||
+        (entry.address||"").toLowerCase().indexOf(queryLower) !== -1
+      );
+    }).slice(0, 4);
+
+    // Build synthetic prediction objects for codes entries
+    var codePredictions = codeMatches.map(function(entry) {
+      return {
+        description: entry.address,
+        structured_formatting: {
+          main_text: entry.name || entry.address,
+          secondary_text: entry.address
+        },
+        _isCode: true,
+        _codeEntry: entry
+      };
+    });
+
+    if (query.length < 3) {
+      // Only show codes, not Google results yet
+      currentPredictions = codePredictions;
+      renderDropdown(codePredictions);
+      return;
+    }
+
     autocompleteService.getPlacePredictions({
       input: query,
       sessionToken: sessionToken,
       componentRestrictions: { country: "us" },
       locationBias: { center: new google.maps.LatLng(MC_CENTER.lat, MC_CENTER.lng), radius: MC_RADIUS_METERS }
     }, function(predictions, status) {
-      if (status !== "OK" || !predictions) { closeDropdown(); return; }
-      // Re-rank: anything with a NJ / Middlesex-area town name bubbles to the top.
-      // Build a fresh plain array and sort by an explicit numeric score (more reliable
-      // than relying on boolean comparisons against a live Google response array).
+      var googlePreds = (status === "OK" && predictions) ? predictions : [];
+      // Re-rank local results to top
       var localTowns = ["edison","highland park","new brunswick","south plainfield","piscataway",
         "south river","sayreville","north brunswick","east brunswick","metuchen","woodbridge",
         "perth amboy","south amboy","old bridge","monroe","plainsboro","spotswood","milltown",
@@ -6213,21 +6361,25 @@ window.initMapsAutocomplete = function() {
         "somerville","green brook","watchung","bridgewater","martinsville","warren",
         "nj, usa","new jersey"];
       var scored = [];
-      for (var pi = 0; pi < predictions.length; pi++) {
-        var desc = (predictions[pi].description || "").toLowerCase();
+      for (var pi = 0; pi < googlePreds.length; pi++) {
+        var desc = (googlePreds[pi].description || "").toLowerCase();
         var isLocal = false;
         for (var ti = 0; ti < localTowns.length; ti++) {
           if (desc.indexOf(localTowns[ti]) !== -1) { isLocal = true; break; }
         }
-        scored.push({ pred: predictions[pi], score: isLocal ? 0 : 1, origIdx: pi });
+        scored.push({ pred: googlePreds[pi], score: isLocal ? 0 : 1, origIdx: pi });
       }
-      scored.sort(function(a, b) {
-        if (a.score !== b.score) return a.score - b.score;
-        return a.origIdx - b.origIdx;
+      scored.sort(function(a, b) { return a.score !== b.score ? a.score - b.score : a.origIdx - b.origIdx; });
+      var sortedPreds = scored.map(function(s) { return s.pred; });
+
+      // Codes first, then Google results (deduped by address)
+      var googleAddrs = sortedPreds.map(function(p){ return p.description.toLowerCase(); });
+      var filteredCodes = codePredictions.filter(function(cp){
+        return googleAddrs.indexOf(cp.description.toLowerCase()) === -1;
       });
-      var sortedPredictions = scored.map(function(s) { return s.pred; });
-      currentPredictions = sortedPredictions;
-      renderDropdown(sortedPredictions);
+      var allPreds = filteredCodes.concat(sortedPreds);
+      currentPredictions = allPreds;
+      renderDropdown(allPreds);
     });
   }
 
@@ -7227,7 +7379,6 @@ var DD_LANDMARKS = [
   { name: "Hatzolah Base", lat: 40.5077036, lng: -74.4133431, icon: "🚑", color: "#c9a84c", phone: "", address: "1587 NJ-27, Edison, NJ 08817" },
   { name: "RWJ University Hospital", lat: 40.4974, lng: -74.4484, icon: "🏥", color: "#4a90d9", phone: "732-828-3000", address: "1 Robert Wood Johnson Pl, New Brunswick NJ" },
   { name: "RWJ Somerset", lat: 40.5654, lng: -74.6019, icon: "🏥", color: "#4a90d9", phone: "908-685-2200", address: "110 Rehill Ave, Somerville NJ" },
-  { name: "RWJ East Brunswick", lat: 40.4226, lng: -74.4158, icon: "🏥", color: "#4a90d9", phone: "732-390-1000", address: "58 Veronica Ave, Somerset NJ" },
   { name: "St. Peters University Hospital", lat: 40.4859, lng: -74.4438, icon: "🏥", color: "#4a90d9", phone: "732-745-8600", address: "254 Easton Ave, New Brunswick NJ" },
   { name: "JFK Medical Center", lat: 40.5686, lng: -74.3229, icon: "🏥", color: "#4a90d9", phone: "732-321-7000", address: "65 James St, Edison NJ" },
   { name: "Overlook Medical Center", lat: 40.7007, lng: -74.3637, icon: "🏥", color: "#4a90d9", phone: "908-522-2000", address: "99 Beauvoir Ave, Summit NJ" },
@@ -7315,21 +7466,48 @@ function buildDDMap() {
   });
   DD_LANDMARKS.forEach(function(lm) {
     var isBase = lm.name === "Hatzolah Base";
-    var marker = new google.maps.Marker({
-      position: { lat: lm.lat, lng: lm.lng }, map: ddMap, title: lm.name,
-      icon: {
-        path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
-        fillColor: isBase ? "#c9a84c" : "#4a90d9", fillOpacity: 1,
-        strokeColor: "#fff", strokeWeight: 1.5,
-        scale: isBase ? 1.8 : 1.4, anchor: new google.maps.Point(12, 22)
-      }, zIndex: isBase ? 200 : 150
+
+    function placeMarker(iconUrl) {
+      var marker = new google.maps.Marker({
+        position: { lat: lm.lat, lng: lm.lng }, map: ddMap, title: lm.name,
+        icon: isBase ? {
+          path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+          fillColor: "#c9a84c", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 1.5,
+          scale: 1.8, anchor: new google.maps.Point(12, 22)
+        } : {
+          url: iconUrl,
+          scaledSize: new google.maps.Size(32, 32),
+          anchor: new google.maps.Point(16, 32)
+        },
+        zIndex: isBase ? 200 : 150
+      });
+      var iw = new google.maps.InfoWindow({ content:
+        '<div style="font-family:sans-serif;font-size:13px;color:#111;padding:2px;max-width:180px"><strong>' + lm.icon + " " + lm.name + "</strong><br>" +
+        '<span style="font-size:12px;color:#555">' + lm.address + "</span>" +
+        (lm.phone ? '<br><a href="tel:' + lm.phone.replace(/\D/g,"") + '" style="font-size:12px;color:#1a73e8">' + lm.phone + "</a>" : "") + "</div>"
+      });
+      marker.addListener("click", function() { iw.open(ddMap, marker); });
+    }
+
+    var emojiUrl = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><text y="26" font-size="26">🏥</text></svg>');
+
+    if (isBase) { placeMarker(emojiUrl); return; }
+
+    // Try to get the real Google Places icon
+    var placesService = new google.maps.places.PlacesService(ddMap);
+    placesService.nearbySearch({
+      location: { lat: lm.lat, lng: lm.lng },
+      radius: 100,
+      type: "hospital",
+      keyword: lm.name
+    }, function(results, status) {
+      if (status === "OK" && results && results[0] && results[0].icon) {
+        // Use Google's icon but tint it — wrap in an img-based marker
+        placeMarker(results[0].icon);
+      } else {
+        placeMarker(emojiUrl);
+      }
     });
-    var iw = new google.maps.InfoWindow({ content:
-      '<div style="font-family:sans-serif;font-size:13px;color:#111;padding:2px;max-width:180px"><strong>' + lm.icon + " " + lm.name + "</strong><br>" +
-      '<span style="font-size:12px;color:#555">' + lm.address + "</span>" +
-      (lm.phone ? '<br><a href="tel:' + lm.phone.replace(/\D/g,"") + '" style="font-size:12px;color:#1a73e8">' + lm.phone + "</a>" : "") + "</div>"
-    });
-    marker.addListener("click", function() { iw.open(ddMap, marker); });
   });
   var svDiv = document.getElementById("dd-street-view");
   if (svDiv) ddStreetView = new google.maps.StreetViewPanorama(svDiv, { visible: false, disableDefaultUI: true, zoomControl: true });
@@ -8341,7 +8519,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   var hospital = disposition.hospital || "";
   var rmaBy = disposition.rmaBy || "";
   var rmaCustom = disposition.rmaCustom || "";
-  var HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","RWJ East Brunswick","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
+  var HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
   var allUnitNums = [];
   crews.forEach(function(c) {
     Object.keys(c).forEach(function(k) { if (k!=="rig" && c[k] && c[k]!=="__added__") allUnitNums.push(c[k]); });
