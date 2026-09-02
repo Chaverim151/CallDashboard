@@ -1215,6 +1215,7 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places,geometry&loading=async"></script>
 <script>
 // ── EARLY WINDOW EXPORTS — must be assigned before any other code runs ──
@@ -1503,6 +1504,7 @@ auth.onAuthStateChanged(function(user) {
         return;
       }
       enterHomeScreen();
+      updatePushBtn();
     }).catch(function(e) { showErr("Error: " + e.message); });
   } else {
     currentUser = null; currentRole = null;
@@ -1603,6 +1605,7 @@ function startActiveCallsListener() {
     .onSnapshot(function(snap) {
       var calls = [];
       snap.forEach(function(d) { calls.push(Object.assign({ id: d.id }, d.data())); });
+      checkForNewCall(calls);
       renderActiveCallsHome(calls);
     }, function(e) {
       console.error("Active calls listener error:", e.code, e.message);
@@ -2925,22 +2928,127 @@ function sendTestEmail() {
   .finally(function() { btn.disabled = false; btn.textContent = "Send Test Email"; });
 }
 
-// ── PUSH ──
-var PUSH_PUBLIC_KEY = "";
+// ── PUSH & TONES ──
+// Paste your VAPID key here from Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
+var FCM_VAPID_KEY = "BHiVdlY2FxPJn_pWsg8Ydz7LGH2-Amp0DnSNyopkOvIB_ki3lEPEeITHXx2bv7gm50vofMC_ADeAujS16rqjgqg";
+var SW_REG = null;
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/CallDashboard/sw.js')
+    .then(function(reg) {
+      SW_REG = reg;
+      console.log('SW registered');
+      updatePushBtn();
+      navigator.serviceWorker.addEventListener('message', function(e) {
+        if (!e.data) return;
+        if (e.data.type === 'NEW_CALL' && e.data.callId) {
+          goTo('maps');
+          setTimeout(function() { selectDDCall(e.data.callId); }, 300);
+        }
+        if (e.data.type === 'PLAY_TONE') {
+          playDispatchTone();
+        }
+      });
+    })
+    .catch(function(err) { console.warn('SW registration failed:', err); });
+}
+
+// In-app tone — plays when app is open/focused
+var toneCtx = null;
+function playDispatchTone() {
+  try {
+    if (!toneCtx) toneCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (toneCtx.state === 'suspended') toneCtx.resume();
+    var tones = [
+      { freq: 1050, start: 0.0, end: 0.4 },
+      { freq: 770,  start: 0.4, end: 0.8 },
+      { freq: 1050, start: 0.8, end: 1.2 },
+      { freq: 770,  start: 1.2, end: 1.6 },
+      { freq: 1050, start: 1.6, end: 2.0 },
+      { freq: 770,  start: 2.0, end: 2.4 },
+    ];
+    var now = toneCtx.currentTime;
+    tones.forEach(function(t) {
+      var osc = toneCtx.createOscillator();
+      var gain = toneCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(t.freq, now + t.start);
+      gain.gain.setValueAtTime(0, now + t.start);
+      gain.gain.linearRampToValueAtTime(0.7, now + t.start + 0.02);
+      gain.gain.setValueAtTime(0.7, now + t.end - 0.02);
+      gain.gain.linearRampToValueAtTime(0, now + t.end);
+      osc.connect(gain);
+      gain.connect(toneCtx.destination);
+      osc.start(now + t.start);
+      osc.stop(now + t.end);
+    });
+  } catch(e) { console.warn('Tone error:', e); }
+}
+
+// Track new calls — play tone on new arrivals
+var knownCallIds = {};
+var initialLoadDone = false;
+function checkForNewCall(calls) {
+  var isNew = false;
+  calls.forEach(function(call) {
+    if (!knownCallIds[call.id]) {
+      knownCallIds[call.id] = true;
+      if (initialLoadDone) isNew = true;
+    }
+  });
+  if (!initialLoadDone) { initialLoadDone = true; return; }
+  if (isNew) playDispatchTone();
+}
+
+// Request notification permission + get FCM token
+function requestPushPermission() {
+  if (!('Notification' in window)) { showToast("Notifications not supported", true); return; }
+  if (!FCM_VAPID_KEY || FCM_VAPID_KEY === 'PASTE_YOUR_VAPID_KEY_HERE') {
+    showToast("Add VAPID key to enable push", true); return;
+  }
+  Notification.requestPermission().then(function(permission) {
+    if (permission !== 'granted') { showToast("Notifications blocked in browser settings", true); return; }
+    var messaging = firebase.messaging();
+    messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: SW_REG })
+      .then(function(token) {
+        if (!token) { showToast("Could not get push token", true); return; }
+        return db.collection("pushTokens").doc(currentUser.uid).set({
+          token: token,
+          unit: currentUserUnit || "",
+          uid: currentUser.uid,
+          platform: /iPhone|iPad|iPod/.test(navigator.userAgent) ? "ios" : "android",
+          updatedAt: new Date().toISOString()
+        });
+      })
+      .then(function() { showToast("🔔 Alerts enabled!"); updatePushBtn(); })
+      .catch(function(e) { showToast("Error: " + e.message, true); });
+  });
+}
+
+function disablePush() {
+  var messaging = firebase.messaging();
+  messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: SW_REG })
+    .then(function(token) { if (token) return messaging.deleteToken(); })
+    .catch(function() {});
+  if (currentUser) db.collection("pushTokens").doc(currentUser.uid).delete();
+  showToast("Alerts disabled");
+  updatePushBtn();
+}
+
 function updatePushBtn() {
   var btn = document.getElementById("push-toggle-btn");
-  if (!btn || !("serviceWorker" in navigator)) return;
-  navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSubscription(); }).then(function(sub) {
-    if (sub) { btn.textContent = "🔔 Notifications On"; btn.style.color = "#7dedb5"; btn.onclick = disablePush; }
-    else { btn.textContent = "🔕 Notifications"; btn.style.color = "var(--gray)"; btn.onclick = requestPushPermission; }
-  }).catch(function() {});
-}
-function requestPushPermission() { if (!PUSH_PUBLIC_KEY) { showToast("Push not configured", true); return; } }
-function disablePush() {
-  navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSubscription(); }).then(function(sub) {
-    if (sub) sub.unsubscribe();
-    return db.collection("pushSubscriptions").doc(currentUser.uid).delete();
-  }).then(function() { showToast("Notifications disabled"); updatePushBtn(); });
+  if (!btn) return;
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) { btn.style.display = "none"; return; }
+  if (Notification.permission === 'granted') {
+    btn.textContent = "🔔 Alerts On";
+    btn.style.color = "#7dedb5";
+    btn.onclick = disablePush;
+  } else {
+    btn.textContent = "🔕 Enable Alerts";
+    btn.style.color = "var(--gray)";
+    btn.onclick = requestPushPermission;
+  }
 }
 
 // ── VEHICLES ──
