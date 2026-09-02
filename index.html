@@ -3234,17 +3234,19 @@ function renderCMEHours(el) {
       members.sort(function(a,b){ return (a.unit||"").localeCompare(b.unit||""); });
       el.innerHTML = '<div style="font-family:\'Oswald\',sans-serif;font-size:0.75rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:12px">' + year + ' CME Hours — All Members</div>' +
         '<table style="width:100%;border-collapse:collapse;font-size:0.82rem"><thead><tr style="border-bottom:2px solid var(--card-border)">' +
-        ['Unit','Name','CE Hrs','Classes'].map(function(h){ return '<th style="text-align:left;padding:8px 10px;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">' + h + '</th>'; }).join("") +
+        ['Unit','Name','CE Hrs','Pending','Classes'].map(function(h){ return '<th style="text-align:left;padding:8px 10px;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">' + h + '</th>'; }).join("") +
         '</tr></thead><tbody>' +
         members.map(function(m) {
           var name = ((m.firstName||"")+" "+(m.lastName||"")).trim();
           var hrs = (m.cmeHours||{})[year]||0;
           var classes = (m.cmeClasses||{})[year]||0;
+          var pending = (m.cmePending||{})[year]||0;
           var hrsColor = hrs>=10?"#7dedb5":hrs>=5?"#ffc84a":"var(--white)";
           return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">' +
             '<td style="padding:8px 10px;color:#7ab8f5;font-weight:700">' + (m.unit||"") + '</td>' +
             '<td style="padding:8px 10px;color:var(--white)">' + (name||"—") + '</td>' +
             '<td style="padding:8px 10px;color:' + hrsColor + ';font-family:\'Oswald\',sans-serif;font-size:0.95rem;font-weight:700">' + hrs + '</td>' +
+            '<td style="padding:8px 10px;color:' + (pending>0?'#ffc84a':'var(--gray)') + ';font-size:0.82rem">' + (pending>0?pending+' ⏳':'—') + '</td>' +
             '<td style="padding:8px 10px;color:var(--gray)">' + classes + '</td>' +
           '</tr>';
         }).join("") + '</tbody></table>';
@@ -3353,16 +3355,106 @@ function renderEventDetail(ev, body) {
         var rows=[];
         asnap.forEach(function(d){rows.push(Object.assign({uid:d.id},d.data()));});
         rows.sort(function(a,b){return(a.unit||"").localeCompare(b.unit||"");});
-        div2.innerHTML='<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Attendance ('+rows.length+')</div>' +
-          (rows.length ? rows.map(function(r){
-            var t=r.timestamp?new Date(r.timestamp).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}):"";
-            return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="color:#7ab8f5;font-weight:700">'+(r.unit||r.uid)+'</span><span style="font-size:0.68rem;color:var(--gray)">'+(r.name||"")+" · "+t+'</span></div>';
+
+        var pendingCount = rows.filter(function(r){ return !r.ceApproved && r.ceHours > 0; }).length;
+
+        div2.innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+            '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Attendance & CE Approval (' + rows.length + ')</div>' +
+            (pendingCount > 0 ? '<span style="background:rgba(255,200,74,0.15);border:1px solid rgba(255,200,74,0.4);border-radius:12px;color:#ffc84a;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;padding:2px 8px">' + pendingCount + ' pending</span>' : '') +
+          '</div>' +
+          (rows.length ? rows.map(function(r) {
+            var t = r.timestamp ? new Date(r.timestamp).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : "";
+            var approved = r.ceApproved;
+            var hasCE = r.ceHours && r.ceHours > 0;
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px">' +
+              '<div>' +
+                '<span style="color:#7ab8f5;font-weight:700;font-family:\'Oswald\',sans-serif">' + (r.unit||r.uid) + '</span>' +
+                '<span style="color:var(--gray);font-size:0.7rem;margin-left:6px">' + (r.name||"") + '</span>' +
+                '<div style="font-size:0.65rem;color:var(--gray);margin-top:1px">' + t + (r.distanceMeters ? ' · ' + r.distanceMeters + 'm away' : '') + '</div>' +
+              '</div>' +
+              (hasCE ?
+                '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">' +
+                  '<span style="font-size:0.68rem;color:' + (approved ? '#7dedb5' : '#ffc84a') + ';font-weight:600">' + r.ceHours + ' CE ' + (approved ? '✓' : '⏳') + '</span>' +
+                  (approved ?
+                    '<button onclick="window.rejectCE(\'' + ev.id + '\',\'' + r.uid + '\',' + r.ceHours + ')" style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);border-radius:5px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">Revoke</button>' :
+                    '<button onclick="window.approveCE(\'' + ev.id + '\',\'' + r.uid + '\',' + r.ceHours + ')" style="background:rgba(76,175,128,0.12);border:1px solid rgba(76,175,128,0.4);border-radius:5px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">Approve</button>'
+                  ) +
+                '</div>' :
+                '<span style="font-size:0.65rem;color:var(--gray)">No CE</span>'
+              ) +
+            '</div>';
           }).join("") : '<div style="color:var(--gray);font-size:0.78rem">No check-ins yet.</div>');
+
         if (sec) sec.appendChild(div2);
+
+        if (pendingCount > 0) {
+          var approveAllDiv = document.createElement("div");
+          approveAllDiv.style.cssText = "margin-bottom:12px";
+          approveAllDiv.innerHTML = '<button onclick="window.approveAllCE(\'' + ev.id + '\')" style="width:100%;background:rgba(76,175,128,0.12);border:1px solid rgba(76,175,128,0.4);border-radius:7px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:9px;cursor:pointer">✓ Approve All Pending (' + pendingCount + ')</button>';
+          if (sec) sec.insertBefore(approveAllDiv, div2);
+        }
       });
     }
   });
 }
+
+// ── CE HOUR APPROVAL ──
+window.approveCE = function(eventId, uid, ceHours) {
+  if (!eduIsAdmin) { showToast("Admin access required", true); return; }
+  var year = new Date().getFullYear().toString();
+  var batch = db.batch();
+  // Mark attendance record as approved
+  batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), { ceApproved: true, approvedBy: currentUserUnit||currentUser.email, approvedAt: new Date().toISOString() });
+  // Add CE hours to user record
+  var userRef = db.collection("users").doc(uid);
+  var cmeUpdate = {};
+  cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(ceHours);
+  cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
+  batch.update(userRef, cmeUpdate);
+  batch.commit().then(function() {
+    showToast("✓ " + ceHours + " CE hours approved");
+    openEventDetail(eventId);
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+};
+
+window.rejectCE = function(eventId, uid, ceHours) {
+  if (!eduIsAdmin) { showToast("Admin access required", true); return; }
+  if (!confirm("Revoke CE hours for this member? Their CME record will be updated.")) return;
+  var year = new Date().getFullYear().toString();
+  var batch = db.batch();
+  batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), { ceApproved: false, approvedBy: null, approvedAt: null });
+  var cmeUpdate = {};
+  cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(-ceHours);
+  cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(-1);
+  batch.update(db.collection("users").doc(uid), cmeUpdate);
+  batch.commit().then(function() {
+    showToast("CE hours revoked");
+    openEventDetail(eventId);
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+};
+
+window.approveAllCE = function(eventId) {
+  if (!eduIsAdmin) { showToast("Admin access required", true); return; }
+  db.collection("education").doc(eventId).collection("attendance").where("ceApproved","==",false).get().then(function(snap) {
+    if (snap.empty) { showToast("No pending approvals"); return; }
+    var year = new Date().getFullYear().toString();
+    var batch = db.batch();
+    snap.forEach(function(d) {
+      var r = d.data();
+      if (!r.ceHours || r.ceHours <= 0) return;
+      batch.update(d.ref, { ceApproved: true, approvedBy: currentUserUnit||currentUser.email, approvedAt: new Date().toISOString() });
+      var cmeUpdate = {};
+      cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(r.ceHours);
+      cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
+      batch.update(db.collection("users").doc(d.id), cmeUpdate);
+    });
+    batch.commit().then(function() {
+      showToast("✓ All CE hours approved (" + snap.size + " members)");
+      openEventDetail(eventId);
+    }).catch(function(e) { showToast("Error: " + e.message, true); });
+  });
+};
 
 function submitRSVP(eventId, status) {
   if (!currentUser) return;

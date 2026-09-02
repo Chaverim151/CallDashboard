@@ -1567,34 +1567,30 @@ function mRecordAttendance(eventId, ev, lat, lng, dist, statusEl, resultEl) {
         attendanceData.name = ((d.firstName||"")+" "+(d.lastName||"")).trim();
       }
 
-      // Write attendance
+      // Write attendance with pending CE hours status
+      attendanceData.ceHours = ev.ceHours || 0;
+      attendanceData.ceApproved = false; // pending admin approval
+
       db.collection("education").doc(eventId).collection("attendance").doc(mCurrentUser.uid).set(attendanceData).then(function() {
         // Update attendance count on event doc
         db.collection("education").doc(eventId).collection("attendance").get().then(function(asnap) {
           db.collection("education").doc(eventId).set({ attendanceCount: asnap.size }, { merge: true });
         });
 
-        // Update CME hours on user doc
-        if (ev.ceHours && ev.ceHours > 0) {
-          var year = new Date().getFullYear().toString();
-          var updateData = {};
-          updateData["cmeHours." + year] = firebase.firestore.FieldValue.increment(ev.ceHours);
-          updateData["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
-          db.collection("users").doc(mCurrentUser.uid).update(updateData).catch(function(){});
-        }
+        // CE hours are NOT auto-added — pending admin approval
 
-    if (resultEl) resultEl.innerHTML =
+        if (resultEl) resultEl.innerHTML =
           '<div style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:10px;padding:16px;text-align:center">' +
             '<div style="font-size:2rem;margin-bottom:8px">✅</div>' +
             '<div style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">Checked In!</div>' +
-            '<div style="font-size:0.82rem;color:var(--white);margin-bottom:4px">' + (ev.title||"Event") + '</div>' +
-            (ev.ceHours ? '<div style="font-size:0.78rem;color:var(--gold)">+' + ev.ceHours + ' CE hours added to your record</div>' : '') +
-            (dist ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:6px">' + Math.round(dist) + 'm from class location</div>' : '') +
+            '<div style="font-size:0.82rem;color:var(--white);margin-bottom:6px">' + (ev.title||"Event") + '</div>' +
+            (ev.ceHours ? '<div style="font-size:0.75rem;color:#ffc84a;background:rgba(255,200,74,0.1);border:1px solid rgba(255,200,74,0.3);border-radius:6px;padding:6px 10px;margin-top:4px">⏳ ' + ev.ceHours + ' CE hours pending admin approval</div>' : '') +
+            (dist ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:8px">' + Math.round(dist) + 'm from class location</div>' : '') +
           '</div>';
         var scanAgainBtn = document.getElementById("m-scan-again-btn");
         if (scanAgainBtn) scanAgainBtn.style.display = "block";
         if (statusEl) statusEl.textContent = "";
-        mPlayTone(); // brief alert tone on success
+        mPlayTone();
       }).catch(function(e) {
         if (statusEl) statusEl.textContent = "Error saving attendance: " + e.message;
       });
