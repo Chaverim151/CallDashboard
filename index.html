@@ -1203,6 +1203,33 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
   </div>
 </div>
 
+<!-- CME EDIT MODAL -->
+<div id="cme-edit-modal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#122040;border:1px solid rgba(125,237,181,0.4);border-radius:16px;width:100%;max-width:520px;max-height:85vh;display:flex;flex-direction:column;animation:fadeUp 0.2s ease both;overflow:hidden">
+    <div style="background:rgba(125,237,181,0.1);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(125,237,181,0.2);flex-shrink:0">
+      <div>
+        <div style="font-family:'Oswald',sans-serif;font-size:0.92rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#7dedb5">CME History</div>
+        <div id="cme-edit-member-label" style="font-size:0.72rem;color:var(--gray);margin-top:2px"></div>
+      </div>
+      <button onclick="window.closeCMEEdit()" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer;padding:0 4px">×</button>
+    </div>
+    <!-- Stats row -->
+    <div id="cme-stats-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--card-border);border-bottom:1px solid var(--card-border);flex-shrink:0"></div>
+    <!-- Year picker + manual edit -->
+    <div style="padding:10px 16px;border-bottom:1px solid var(--card-border);flex-shrink:0;display:flex;align-items:center;gap:10px">
+      <label style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Year</label>
+      <input id="cme-edit-year-disp" type="number" min="2020" max="2035" style="width:70px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:5px 8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;outline:none;text-align:center" onchange="window.loadCMEForYear(this.value)">
+      <span style="font-size:0.62rem;color:var(--gray);margin-left:auto">Manual override:</span>
+      <input id="cme-edit-hours" type="number" min="0" step="0.5" placeholder="Hrs" style="width:55px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:5px 8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;outline:none;text-align:center">
+      <input id="cme-edit-classes" type="number" min="0" placeholder="Cls" style="width:50px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:5px 8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;outline:none;text-align:center">
+      <button onclick="window.saveCMEEdit()" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;font-family:'Oswald',sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:6px 10px;cursor:pointer;color:#7dedb5">Save</button>
+    </div>
+    <!-- Attendance list -->
+    <div id="cme-attendance-list" style="overflow-y:auto;flex:1;padding:12px 16px"></div>
+    <div class="form-msg" id="cme-edit-msg" style="padding:0 16px 10px;flex-shrink:0"></div>
+  </div>
+</div>
+
 <!-- PASTE LINK / COORDS MODAL -->
 <div id="paste-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;">
   <div style="background:#122040;border:1px solid var(--card-border);border-radius:16px;padding:26px 24px 22px;width:100%;max-width:460px;animation:fadeUp 0.2s ease both">
@@ -2163,7 +2190,263 @@ window.saveCallInfoEdit = function(callId) {
       selectDDCall(callId);
     }).catch(function(e){ showToast("Error: " + e.message, true); });
 };
-// ── UNIT DIVERT ──
+// ── CME EDIT (admin) ──
+window.openCMEEdit = function(uid, unit, name, year) {
+  document.getElementById("cme-edit-modal")._uid = uid;
+  document.getElementById("cme-edit-year-disp").value = year;
+  document.getElementById("cme-edit-member-label").textContent = unit + (name ? " · " + name : "");
+  var msg = document.getElementById("cme-edit-msg"); if (msg) { msg.className="form-msg"; msg.textContent=""; }
+  document.getElementById("cme-edit-modal").style.display = "flex";
+  document.getElementById("cme-attendance-list").innerHTML = '<div style="color:var(--gray);font-size:0.78rem">Loading…</div>';
+  document.getElementById("cme-stats-row").innerHTML = '';
+
+  // Fetch user record + all education events + attendance subcollections
+  Promise.all([
+    db.collection("users").doc(uid).get(),
+    db.collection("education").get()
+  ]).then(function(results) {
+    var userSnap = results[0];
+    var eduSnap  = results[1];
+    var userData = userSnap.exists ? userSnap.data() : {};
+    var events = [];
+    eduSnap.forEach(function(d){ events.push(Object.assign({id:d.id}, d.data())); });
+
+    // Fetch attendance records for this user across all events
+    var attendancePromises = events.map(function(ev) {
+      return db.collection("education").doc(ev.id).collection("attendance").doc(uid).get()
+        .then(function(asnap){ return { ev: ev, att: asnap.exists ? asnap.data() : null }; })
+        .catch(function(){ return { ev: ev, att: null }; });
+    });
+
+    return Promise.all(attendancePromises).then(function(records) {
+      // Filter to events where this user attended
+      var attended = records.filter(function(r){ return r.att; });
+      attended.sort(function(a,b){ return (b.ev.dateTime||"").localeCompare(a.ev.dateTime||""); });
+
+      // Stats
+      var totalHrs = 0, totalClasses = 0;
+      var yearHrs = {}, yearClasses = {};
+      attended.forEach(function(r) {
+        var hrs = r.att.ceHours || 0;
+        var approved = r.att.ceApproved;
+        if (!approved) return; // only count approved
+        var y = r.ev.dateTime ? new Date(r.ev.dateTime).getFullYear() : null;
+        totalHrs += hrs;
+        totalClasses++;
+        if (y) {
+          yearHrs[y] = (yearHrs[y]||0) + hrs;
+          yearClasses[y] = (yearClasses[y]||0) + 1;
+        }
+      });
+
+      var currentYear = parseInt(document.getElementById("cme-edit-year-disp").value) || new Date().getFullYear();
+      var cyHrs = yearHrs[currentYear] || (userData.cmeHours||{})[currentYear] || 0;
+      var cyClasses = yearClasses[currentYear] || (userData.cmeClasses||{})[currentYear] || 0;
+
+      // Stats bar
+      document.getElementById("cme-stats-row").innerHTML = [
+        { label: currentYear + ' CE Hrs', val: cyHrs, color: cyHrs>=10?'#7dedb5':cyHrs>=5?'#ffc84a':'var(--white)' },
+        { label: currentYear + ' Classes', val: cyClasses, color: 'var(--white)' },
+        { label: 'Lifetime CE Hrs', val: Math.round(totalHrs*10)/10, color: '#7ab8f5' }
+      ].map(function(s){
+        return '<div style="background:rgba(255,255,255,0.03);padding:10px;text-align:center">' +
+          '<div style="font-family:\'Oswald\',sans-serif;font-size:1.4rem;font-weight:700;color:' + s.color + '">' + s.val + '</div>' +
+          '<div style="font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:2px">' + s.label + '</div>' +
+        '</div>';
+      }).join('');
+
+      // Populate manual override fields from user doc
+      document.getElementById("cme-edit-hours").value = (userData.cmeHours||{})[currentYear]||0;
+      document.getElementById("cme-edit-classes").value = (userData.cmeClasses||{})[currentYear]||0;
+
+      // Attendance list
+      var listEl = document.getElementById("cme-attendance-list");
+      if (!attended.length) {
+        listEl.innerHTML = '<div style="color:var(--gray);font-size:0.78rem;padding:8px 0">No attendance records found.</div>';
+        return;
+      }
+
+      listEl.innerHTML = '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Attended Classes</div>' +
+        attended.map(function(r) {
+          var ev = r.ev, att = r.att;
+          var dt = ev.dateTime ? new Date(ev.dateTime) : null;
+          var dateStr = dt ? dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—";
+          var approved = att.ceApproved;
+          var pending = !approved && att.ceDecision !== "denied";
+          var denied = att.ceDecision === "denied";
+          var statusColor = approved ? '#7dedb5' : pending ? '#ffc84a' : '#ff9090';
+          var statusLabel = approved ? '✓ Approved' : pending ? '⏳ Pending' : '✗ Denied';
+          var hrs = att.ceHours || 0;
+          var rowId = "cme-row-" + ev.id;
+          return '<div id="' + rowId + '" style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">' +
+            // Normal view
+            '<div class="cme-row-view" style="display:flex;align-items:center;gap:10px">' +
+              '<div style="flex:1;min-width:0">' +
+                '<div style="font-size:0.8rem;color:var(--white);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (ev.title||"Untitled") + '</div>' +
+                '<div style="font-size:0.65rem;color:var(--gray);margin-top:1px">' + dateStr + (ev.type ? ' · ' + ev.type : '') + '</div>' +
+              '</div>' +
+              '<div style="text-align:right;flex-shrink:0">' +
+                '<div style="font-family:\'Oswald\',sans-serif;font-size:0.82rem;font-weight:700;color:var(--white)">' + hrs + ' CE</div>' +
+                '<div style="font-size:0.6rem;color:' + statusColor + ';margin-top:1px">' + statusLabel + '</div>' +
+              '</div>' +
+              '<button onclick="window.openAttEdit(\'' + rowId + '\',\'' + ev.id + '\',\'' + uid + '\',\'' + uid + '\',' + hrs + ',\'' + (att.ceDecision||"") + '\')" style="background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:5px;color:var(--gray);font-size:0.65rem;padding:3px 7px;cursor:pointer;flex-shrink:0">✎</button>' +
+            '</div>' +
+            // Edit view (hidden by default)
+            '<div class="cme-row-edit" style="display:none;margin-top:8px;background:rgba(255,255,255,0.03);border-radius:7px;padding:9px 10px">' +
+              '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:7px">Edit Record — ' + (ev.title||"Untitled") + '</div>' +
+              '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">' +
+                '<label style="font-size:0.62rem;color:var(--gray)">CE Hours</label>' +
+                '<input type="number" min="0" step="0.5" value="' + hrs + '" class="att-hrs-inp" style="width:60px;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);border-radius:5px;padding:4px 7px;color:var(--white);font-family:\'Oswald\',sans-serif;font-size:0.88rem;font-weight:700;outline:none;text-align:center">' +
+              '</div>' +
+              '<div style="display:flex;gap:5px;margin-bottom:8px">' +
+                '<button onclick="window.saveAttEdit(\'' + rowId + '\',\'' + ev.id + '\',\'' + uid + '\',\'approved\')" style="flex:1;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.35);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;padding:6px;cursor:pointer">✓ Approve</button>' +
+                '<button onclick="window.saveAttEdit(\'' + rowId + '\',\'' + ev.id + '\',\'' + uid + '\',\'pending\')" style="flex:1;background:rgba(255,200,74,0.08);border:1px solid rgba(255,200,74,0.3);border-radius:6px;color:#ffc84a;font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;padding:6px;cursor:pointer">⏳ Pending</button>' +
+                '<button onclick="window.saveAttEdit(\'' + rowId + '\',\'' + ev.id + '\',\'' + uid + '\',\'denied\')" style="flex:1;background:rgba(224,85,85,0.08);border:1px solid rgba(224,85,85,0.3);border-radius:6px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;padding:6px;cursor:pointer">✗ Deny</button>' +
+                '<button onclick="window.closeAttEdit(\'' + rowId + '\')" style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.65rem;padding:6px 8px;cursor:pointer">✕</button>' +
+              '</div>' +
+              '<div class="att-edit-msg" style="font-size:0.68rem;min-height:14px"></div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+    });
+  }).catch(function(e) {
+    document.getElementById("cme-attendance-list").innerHTML = '<div style="color:#ff9090;font-size:0.78rem">Error: ' + e.message + '</div>';
+  });
+};
+
+window.openAttEdit = function(rowId, evId, uid) {
+  var row = document.getElementById(rowId);
+  if (!row) return;
+  // Close any other open edit rows
+  document.querySelectorAll(".cme-row-edit").forEach(function(el){ el.style.display = "none"; });
+  document.querySelectorAll(".cme-row-view").forEach(function(el){ el.style.display = "flex"; });
+  row.querySelector(".cme-row-view").style.display = "none";
+  row.querySelector(".cme-row-edit").style.display = "block";
+};
+
+window.closeAttEdit = function(rowId) {
+  var row = document.getElementById(rowId);
+  if (!row) return;
+  row.querySelector(".cme-row-edit").style.display = "none";
+  row.querySelector(".cme-row-view").style.display = "flex";
+};
+
+window.saveAttEdit = function(rowId, evId, uid, decision) {
+  var row = document.getElementById(rowId);
+  if (!row) return;
+  var hrsInp = row.querySelector(".att-hrs-inp");
+  var newHrs = parseFloat(hrsInp ? hrsInp.value : 0) || 0;
+  var msgEl = row.querySelector(".att-edit-msg");
+  if (msgEl) msgEl.textContent = "Saving…";
+
+  var approved = decision === "approved";
+  var update = {
+    ceHours: newHrs,
+    ceApproved: approved,
+    ceDecision: decision,
+    editedBy: currentUserUnit || (currentUser ? currentUser.email : "Admin"),
+    editedAt: new Date().toISOString()
+  };
+
+  // Also update the user's cmeHours/cmeClasses totals if approving or un-approving
+  db.collection("education").doc(evId).get().then(function(evSnap) {
+    var evData = evSnap.exists ? evSnap.data() : {};
+    var year = evData.dateTime ? new Date(evData.dateTime).getFullYear() : new Date().getFullYear();
+
+    return db.collection("education").doc(evId).collection("attendance").doc(uid).get().then(function(prevSnap) {
+      var prev = prevSnap.exists ? prevSnap.data() : {};
+      var wasApproved = prev.ceApproved || false;
+      var prevHrs = prev.ceHours || 0;
+
+      // Update attendance record
+      return db.collection("education").doc(evId).collection("attendance").doc(uid).set(update, { merge: true }).then(function() {
+        // Recalculate user totals delta
+        var userUpdate = {};
+        if (wasApproved && !approved) {
+          // Was approved, now un-approving — subtract old hours, decrement classes
+          userUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(-prevHrs);
+          userUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(-1);
+        } else if (!wasApproved && approved) {
+          // Was not approved, now approving — add new hours, increment classes
+          userUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(newHrs);
+          userUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
+        } else if (wasApproved && approved && prevHrs !== newHrs) {
+          // Was approved, still approved but hours changed — adjust delta
+          userUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(newHrs - prevHrs);
+        }
+        if (Object.keys(userUpdate).length) {
+          return db.collection("users").doc(uid).update(userUpdate);
+        }
+      });
+    });
+  }).then(function() {
+    if (msgEl) msgEl.textContent = "✓ Saved";
+    showToast("✓ Record updated");
+
+    // Send notification on approve or deny
+    if (decision === "approved" || decision === "denied") {
+      db.collection("education").doc(evId).get().then(function(evSnap) {
+        var evTitle = evSnap.exists ? (evSnap.data().title||"class") : "class";
+        var evHrs = newHrs;
+        if (decision === "approved") {
+          sendCENotification(uid,
+            "✅ CE Hours Approved",
+            evHrs + " CE hour" + (evHrs !== 1 ? "s" : "") + " from \"" + evTitle + "\" have been approved and added to your record."
+          );
+        } else {
+          sendCENotification(uid,
+            "❌ CE Hours Denied",
+            "Your CE hours from \"" + evTitle + "\" have been denied.\nPlease contact your education coordinator for more information."
+          );
+        }
+      }).catch(function(){});
+    }
+
+    // Reload the whole modal to reflect changes
+    var modalUid = document.getElementById("cme-edit-modal")._uid;
+    var memberLabel = document.getElementById("cme-edit-member-label").textContent;
+    var parts = memberLabel.split(" · ");
+    var year = parseInt(document.getElementById("cme-edit-year-disp").value);
+    setTimeout(function(){ window.openCMEEdit(modalUid, parts[0]||"", parts[1]||"", year); }, 600);
+  }).catch(function(e) {
+    if (msgEl) msgEl.textContent = "Error: " + e.message;
+  });
+};
+
+window.loadCMEForYear = function(year) {
+  var uid = document.getElementById("cme-edit-modal")._uid;
+  if (!uid) return;
+  year = parseInt(year);
+  db.collection("users").doc(uid).get().then(function(snap) {
+    var m = snap.exists ? snap.data() : {};
+    document.getElementById("cme-edit-hours").value = (m.cmeHours||{})[year]||0;
+    document.getElementById("cme-edit-classes").value = (m.cmeClasses||{})[year]||0;
+  });
+};
+
+window.saveCMEEdit = function() {
+  var uid     = document.getElementById("cme-edit-modal")._uid;
+  var year    = parseInt(document.getElementById("cme-edit-year-disp").value);
+  var hrs     = parseFloat(document.getElementById("cme-edit-hours").value)||0;
+  var classes = parseInt(document.getElementById("cme-edit-classes").value)||0;
+  var msg     = document.getElementById("cme-edit-msg");
+  var update  = {};
+  update["cmeHours."   + year] = hrs;
+  update["cmeClasses." + year] = classes;
+  db.collection("users").doc(uid).update(update).then(function() {
+    showToast("✓ CME updated");
+    if (msg) { msg.className="form-msg"; msg.textContent="✓ Saved for " + year; }
+    var el = document.getElementById("edu-content");
+    if (el && eduTab === "cme") setTimeout(function(){ renderCMEHours(el); }, 400);
+  }).catch(function(e) {
+    if (msg) { msg.className="form-msg error"; msg.textContent="Error: "+e.message; }
+  });
+};
+
+window.closeCMEEdit = function() {
+  document.getElementById("cme-edit-modal").style.display = "none";
+};
+// ── END CME EDIT ──
 window.confirmDivert = function(unit, fromCallId, fromAddr, toCallId, crewIdx, role) {
   if (!confirm("⚠ " + unit + " is currently assigned to:\n" + fromAddr + "\n\nDivert to this call?")) return;
 
@@ -3618,9 +3901,9 @@ function renderCMEHours(el) {
         members.push(Object.assign({uid:d.id}, m));
       });
       members.sort(function(a,b){ return (a.unit||"").localeCompare(b.unit||""); });
-      el.innerHTML = '<div style="font-family:\'Oswald\',sans-serif;font-size:0.75rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:12px">' + year + ' CME Hours — All Members</div>' +
+      el.innerHTML = '<div style="font-family:\'Oswald\',sans-serif;font-size:0.75rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:12px">' + year + ' CME Hours — All Members <span style="font-size:0.6rem;color:rgba(255,255,255,0.2);text-transform:none;letter-spacing:0;font-family:\'Source Sans 3\',sans-serif">Click row to edit</span></div>' +
         '<table style="width:100%;border-collapse:collapse;font-size:0.82rem"><thead><tr style="border-bottom:2px solid var(--card-border)">' +
-        ['Unit','Name','CE Hrs','Pending','Classes'].map(function(h){ return '<th style="text-align:left;padding:8px 10px;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">' + h + '</th>'; }).join("") +
+        ['Unit','Name','CE Hrs','Pending','Classes',''].map(function(h){ return '<th style="text-align:left;padding:8px 10px;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">' + h + '</th>'; }).join("") +
         '</tr></thead><tbody>' +
         members.map(function(m) {
           var name = ((m.firstName||"")+" "+(m.lastName||"")).trim();
@@ -3628,12 +3911,13 @@ function renderCMEHours(el) {
           var classes = (m.cmeClasses||{})[year]||0;
           var pending = (m.cmePending||{})[year]||0;
           var hrsColor = hrs>=10?"#7dedb5":hrs>=5?"#ffc84a":"var(--white)";
-          return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">' +
+          return '<tr onclick="window.openCMEEdit(\'' + m.uid + '\',\'' + (m.unit||"") + '\',\'' + name.replace(/'/g,"\\'") + '\',' + year + ')" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;transition:background 0.1s" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
             '<td style="padding:8px 10px;color:#7ab8f5;font-weight:700">' + (m.unit||"") + '</td>' +
             '<td style="padding:8px 10px;color:var(--white)">' + (name||"—") + '</td>' +
             '<td style="padding:8px 10px;color:' + hrsColor + ';font-family:\'Oswald\',sans-serif;font-size:0.95rem;font-weight:700">' + hrs + '</td>' +
             '<td style="padding:8px 10px;color:' + (pending>0?'#ffc84a':'var(--gray)') + ';font-size:0.82rem">' + (pending>0?pending+' ⏳':'—') + '</td>' +
             '<td style="padding:8px 10px;color:var(--gray)">' + classes + '</td>' +
+            '<td style="padding:8px 10px;color:var(--gray);font-size:0.72rem">✎</td>' +
           '</tr>';
         }).join("") + '</tbody></table>';
     });
@@ -3796,34 +4080,29 @@ function renderEventDetail(ev, body) {
 var ceDenyContext = null; // { eventId, uid, ceHours, memberName, unit, eventTitle }
 
 function sendCENotification(uid, title, body) {
-  // Send push via FCM by writing to a ceNotifications collection (picked up by Cloud Function)
-  // OR send email via ClickSend directly
+  // Push is handled by Cloud Function onAttendanceWrite which fires on ceDecision change
+  // Just send the email here
   db.collection("users").doc(uid).get().then(function(snap) {
     if (!snap.exists) return;
     var email = snap.data().email;
     var name = ((snap.data().firstName||"")+" "+(snap.data().lastName||"")).trim();
-    if (email) {
-      var htmlBody = '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">' +
-        '<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0">' +
-        '<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden">' +
-        '<tr><td bgcolor="#0a1628" style="padding:24px;text-align:center">' +
-          '<img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55">' +
-          '<div style="color:' + (title.includes('Approved') ? '#4caf80' : '#e05555') + ';font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px;text-transform:uppercase">' + title + '</div>' +
-        '</td></tr>' +
-        '<tr><td bgcolor="#ffffff" style="padding:24px">' +
-          '<p style="font-size:15px;color:#333;margin-top:0">Hi ' + (name||snap.data().unit||"Member") + ',</p>' +
-          '<p style="font-size:14px;color:#333;white-space:pre-wrap;line-height:1.7">' + body.replace(/\n/g,'<br>') + '</p>' +
-        '</td></tr>' +
-        '<tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY</td></tr>' +
-        '</table></td></tr></table></body></html>';
-      sendClickSendEmail({ toEmail: email, subject: title + " — Hatzolah MC Education", htmlBody: htmlBody }).catch(function(){});
-    }
-    // Also write a push notification request for the Cloud Function to pick up
-    db.collection("pushNotifications").add({
-      toUid: uid, title: title, body: body,
-      createdAt: new Date().toISOString(), tag: "hatzolah-ce"
-    }).catch(function(){});
-  }).catch(function(){});
+    if (!email) return;
+    var htmlBody = '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">' +
+      '<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0">' +
+      '<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden">' +
+      '<tr><td bgcolor="#0a1628" style="padding:24px;text-align:center">' +
+        '<img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55">' +
+        '<div style="color:' + (title.includes('Approved') ? '#4caf80' : '#e05555') + ';font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px;text-transform:uppercase">' + title + '</div>' +
+      '</td></tr>' +
+      '<tr><td bgcolor="#ffffff" style="padding:24px">' +
+        '<p style="font-size:15px;color:#333;margin-top:0">Hi ' + (name||snap.data().unit||"Member") + ',</p>' +
+        '<p style="font-size:14px;color:#333;white-space:pre-wrap;line-height:1.7">' + body.replace(/\n/g,'<br>') + '</p>' +
+      '</td></tr>' +
+      '<tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY</td></tr>' +
+      '</table></td></tr></table></body></html>';
+    sendClickSendEmail({ toEmail: email, subject: title + " — Hatzolah MC Education", htmlBody: htmlBody })
+      .catch(function(e){ console.error("Email send failed:", e); });
+  }).catch(function(e){ console.error("User fetch failed:", e); });
 }
 
 window.approveCE = function(eventId, uid, ceHours) {
