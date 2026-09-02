@@ -980,30 +980,12 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
       <!-- Facility selector -->
       <div style="margin-bottom:14px">
         <div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:5px">Transporting To</div>
-        <select id="transport-facility-select" onchange="handleTransportFacilityChange()" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.82rem;outline:none">
-          <option value="">Select hospital…</option>
-          <option value="RWJ University Hospital (NB)">RWJ University Hospital (NB)</option>
-          <option value="RWJ Somerset Medical Center">RWJ Somerset Medical Center</option>
-          <option value="RWJ East Brunswick">RWJ East Brunswick</option>
-          <option value="St. Peters University Hospital">St. Peters University Hospital</option>
-          <option value="JFK Medical Center">JFK Medical Center</option>
-          <option value="Overlook Medical Center">Overlook Medical Center</option>
-          <option value="Morristown Medical Center">Morristown Medical Center</option>
-          <option value="Clara Maass Medical Center">Clara Maass Medical Center</option>
-          <option value="Trinitas Regional Medical Center">Trinitas Regional Medical Center</option>
-          <option value="Perth Amboy General Hospital">Perth Amboy General Hospital</option>
-          <option value="Newark Beth Israel Medical Center">Newark Beth Israel Medical Center</option>
-          <option value="University Hospital Newark">University Hospital Newark</option>
-          <option value="Robert Wood Johnson Rahway">Robert Wood Johnson Rahway</option>
-          <option value="__other__">Other (Search)…</option>
-        </select>
-        <div id="transport-facility-search-wrap" style="display:none;position:relative;margin-top:6px">
-          <input type="text" id="transport-facility-search" placeholder="Search facility…"
-            oninput="transportFacilitySearch(this)"
-            style="width:100%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);border-radius:6px;padding:7px 10px;color:var(--white);font-size:0.82rem;outline:none">
-          <div id="transport-facility-results" style="display:none;position:absolute;top:100%;left:0;right:0;background:#122040;border:1px solid var(--card-border);border-radius:0 0 6px 6px;z-index:200;max-height:140px;overflow-y:auto"></div>
-        </div>
+        <button id="transport-hosp-btn" onclick="window.toggleTransportHospDD(this)" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--gray);font-family:'Source Sans 3',sans-serif;font-size:0.82rem;outline:none;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+          <span id="transport-hosp-label">Select hospital…</span>
+          <span style="font-size:0.7rem;color:var(--gray)">▾</span>
+        </button>
         <div id="transport-facility-chosen" style="display:none;margin-top:5px;font-size:0.75rem;font-weight:700;color:#7ab8f5"></div>
+        <input type="hidden" id="transport-facility-value">
       </div>
 
       <!-- Non-transport status -->
@@ -1017,7 +999,6 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
 
       <button onclick="confirmTransport()" style="width:100%;background:#4a90d9;color:#fff;border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:12px;cursor:pointer">🚑 Confirm Transport</button>
       <input type="hidden" id="transport-call-id">
-      <input type="hidden" id="transport-facility-value">
     </div>
   </div>
 </div>
@@ -4139,6 +4120,42 @@ window.confirmVehOOS = function() {
   }).catch(function(e){ showToast("Error: "+e.message,true); });
 };
 
+window.toggleHospDD = function(btn, callId) {
+  // Remove any existing dropdown
+  var existing = document.getElementById("hosp-dd-popup");
+  if (existing) { existing.remove(); return; }
+
+  var HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","RWJ East Brunswick","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
+
+  // Get button position
+  var rect = btn.getBoundingClientRect();
+  var popup = document.createElement("div");
+  popup.id = "hosp-dd-popup";
+  popup.style.cssText = "position:fixed;z-index:9999;background:#0f1e38;border:1px solid var(--card-border);border-radius:8px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.5);min-width:" + rect.width + "px;left:" + rect.left + "px;top:" + (rect.bottom + 4) + "px;max-height:220px;overflow-y:auto";
+
+  popup.innerHTML = HOSPITALS.map(function(h) {
+    return '<div onclick="window.selectHosp(\'' + callId + '\',\'' + h.replace(/'/g,"\\'") + '\')" style="padding:9px 14px;font-size:0.82rem;color:var(--white);cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.1s" onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'\'">'+h+'</div>';
+  }).join("");
+
+  document.body.appendChild(popup);
+
+  // Close on outside click
+  setTimeout(function() {
+    document.addEventListener("click", function closeDD(e) {
+      if (!popup.contains(e.target) && e.target !== btn) {
+        popup.remove();
+        document.removeEventListener("click", closeDD);
+      }
+    });
+  }, 10);
+};
+
+window.selectHosp = function(callId, hospital) {
+  var popup = document.getElementById("hosp-dd-popup");
+  if (popup) popup.remove();
+  setDispHospital(callId, hospital);
+};
+
 // ── END VEHICLE STATUS ──
 var clAllLogs = [];
 var clCurrentCallId = null;
@@ -5929,14 +5946,14 @@ function openTransportModal(callId) {
     }).join("");
 
     // Reset facility selector
-    var facSel = document.getElementById("transport-facility-select");
     var facVal = document.getElementById("transport-facility-value");
     var facChosen = document.getElementById("transport-facility-chosen");
-    var facWrap = document.getElementById("transport-facility-search-wrap");
-    if (facSel) facSel.value = "";
+    var hospBtn = document.getElementById("transport-hosp-btn");
+    var hospLabel = document.getElementById("transport-hosp-label");
     if (facVal) facVal.value = "";
     if (facChosen) { facChosen.style.display = "none"; facChosen.textContent = ""; }
-    if (facWrap) facWrap.style.display = "none";
+    if (hospLabel) hospLabel.textContent = "Select hospital…";
+    if (hospBtn) hospBtn.style.color = "var(--gray)";
   });
 }
 
@@ -6102,64 +6119,65 @@ function setPickedRig(callId, crewIdx, role, vehicleId, isERV) {
 }
 window.setPickedRig = setPickedRig;
 
-function handleTransportFacilityChange() {
-  var sel = document.getElementById("transport-facility-select");
-  var wrap = document.getElementById("transport-facility-search-wrap");
+window.toggleTransportHospDD = function(btn) {
+  var existing = document.getElementById("transport-hosp-dd-popup");
+  if (existing) { existing.remove(); return; }
+
+  var TRANSPORT_HOSPITALS = [
+    "RWJ University Hospital (NB)", "RWJ Somerset Medical Center", "RWJ East Brunswick",
+    "St. Peters University Hospital", "JFK Medical Center", "Overlook Medical Center",
+    "Morristown Medical Center", "Clara Maass Medical Center", "Trinitas Regional Medical Center",
+    "Perth Amboy General Hospital", "Newark Beth Israel Medical Center",
+    "University Hospital Newark", "Robert Wood Johnson Rahway", "Other"
+  ];
+
+  var rect = btn.getBoundingClientRect();
+  var popup = document.createElement("div");
+  popup.id = "transport-hosp-dd-popup";
+
+  // Position above or below depending on space
+  var spaceBelow = window.innerHeight - rect.bottom;
+  var popupHeight = Math.min(TRANSPORT_HOSPITALS.length * 40, 300);
+  var posTop = spaceBelow > popupHeight ? rect.bottom + 4 : rect.top - popupHeight - 4;
+
+  popup.style.cssText = "position:fixed;z-index:9999;background:#0f1e38;border:1px solid var(--card-border);border-radius:8px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);width:" + rect.width + "px;left:" + rect.left + "px;top:" + posTop + "px;max-height:300px";
+
+  popup.innerHTML = TRANSPORT_HOSPITALS.map(function(h) {
+    return '<div onclick="window.selectTransportHosp(\'' + h.replace(/'/g,"\\'") + '\')" style="padding:9px 14px;font-size:0.82rem;color:var(--white);cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.1s" onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'\'">' + h + '</div>';
+  }).join("");
+
+  document.body.appendChild(popup);
+
+  setTimeout(function() {
+    document.addEventListener("click", function closeDD(e) {
+      if (!popup.contains(e.target) && e.target !== btn) {
+        popup.remove();
+        document.removeEventListener("click", closeDD);
+      }
+    });
+  }, 10);
+};
+
+window.selectTransportHosp = function(hospital) {
+  var popup = document.getElementById("transport-hosp-dd-popup");
+  if (popup) popup.remove();
   var facVal = document.getElementById("transport-facility-value");
+  var hospLabel = document.getElementById("transport-hosp-label");
+  var hospBtn = document.getElementById("transport-hosp-btn");
   var chosen = document.getElementById("transport-facility-chosen");
-  var val = sel ? sel.value : '';
-  if (val === '__other__') {
-    if (wrap) wrap.style.display = "block";
-    if (facVal) facVal.value = '';
-    if (chosen) { chosen.style.display = "none"; chosen.textContent = ""; }
-    var inp = document.getElementById("transport-facility-search");
-    if (inp) { inp.value = ''; inp.focus(); }
-  } else {
-    if (wrap) wrap.style.display = "none";
-    if (facVal) facVal.value = val;
-    if (chosen && val) { chosen.textContent = "✓ " + val; chosen.style.display = "block"; }
-    else if (chosen) { chosen.style.display = "none"; }
-  }
-}
+  if (facVal) facVal.value = hospital;
+  if (hospLabel) hospLabel.textContent = hospital;
+  if (hospBtn) hospBtn.style.color = "var(--white)";
+  if (chosen) { chosen.textContent = "✓ " + hospital; chosen.style.display = "block"; }
+};
+
+// Legacy stubs (kept for safety)
+function handleTransportFacilityChange() {}
 window.handleTransportFacilityChange = handleTransportFacilityChange;
-
-function transportFacilitySearch(input) {
-  var query = input.value.trim();
-  var resultsEl = document.getElementById("transport-facility-results");
-  var facVal = document.getElementById("transport-facility-value");
-  var chosen = document.getElementById("transport-facility-chosen");
-  if (!resultsEl) return;
-  if (!query || query.length < 2) { resultsEl.style.display = "none"; return; }
-  if (typeof google === "undefined" || !google.maps || !google.maps.places) { return; }
-  var service = new google.maps.places.AutocompleteService();
-  service.getPlacePredictions({
-    input: query + " hospital emergency",
-    componentRestrictions: { country: "us" },
-    types: ["establishment"]
-  }, function(predictions, status) {
-    if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions) { resultsEl.style.display = "none"; return; }
-    resultsEl.innerHTML = predictions.slice(0, 5).map(function(p) {
-      var name = p.structured_formatting.main_text;
-      var sub = p.structured_formatting.secondary_text || '';
-      var full = name + (sub ? " — " + sub : "");
-      return '<button onclick="selectTransportFacility(\'' + full.replace(/'/g, "\\'") + '\')" ' +
-        'style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--card-border);color:var(--white);font-size:0.78rem;padding:7px 10px;cursor:pointer">' +
-        name + '<span style="color:var(--gray);font-size:0.7rem"> — ' + sub + '</span></button>';
-    }).join('');
-    resultsEl.style.display = "block";
-  });
-}
+function transportFacilitySearch() {}
 window.transportFacilitySearch = transportFacilitySearch;
-
 function selectTransportFacility(name) {
-  var facVal = document.getElementById("transport-facility-value");
-  var resultsEl = document.getElementById("transport-facility-results");
-  var inp = document.getElementById("transport-facility-search");
-  var chosen = document.getElementById("transport-facility-chosen");
-  if (facVal) facVal.value = name;
-  if (inp) inp.value = name;
-  if (resultsEl) resultsEl.style.display = "none";
-  if (chosen) { chosen.textContent = "✓ " + name; chosen.style.display = "block"; }
+  window.selectTransportHosp(name);
 }
 window.selectTransportFacility = selectTransportFacility;
 
@@ -7433,22 +7451,17 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
   });
 
   var dispHTML =
-    '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+    '<div style="display:flex;gap:8px;margin-bottom:8px">' +
       '<button onclick="setDisposition(\''+call.id+'\',\'rma\')" style="flex:1;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:9px;border-radius:7px;cursor:pointer;border:1px solid '+(disp==='rma'?'rgba(125,237,181,0.6)':'var(--card-border)')+';background:'+(disp==='rma'?'rgba(125,237,181,0.12)':'rgba(255,255,255,0.03)')+';color:'+(disp==='rma'?'#7dedb5':'var(--gray)')+'">RMA</button>' +
-      '<button onclick="setDisposition(\''+call.id+'\',\'transport\')" style="flex:1;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:9px;border-radius:7px;cursor:pointer;border:1px solid '+(disp==='transport'?'rgba(74,144,217,0.6)':'var(--card-border)')+';background:'+(disp==='transport'?'rgba(74,144,217,0.12)':'rgba(255,255,255,0.03)')+';color:'+(disp==='transport'?'#7ab8f5':'var(--gray)')+'">Transport</button>' +
+      '<button onclick="openTransportModal(\''+call.id+'\')" style="flex:1;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:9px;border-radius:7px;cursor:pointer;border:1px solid '+(disp==='transport'?'rgba(74,144,217,0.6)':'var(--card-border)')+';background:'+(disp==='transport'?'rgba(74,144,217,0.12)':'rgba(255,255,255,0.03)')+';color:'+(disp==='transport'?'#7ab8f5':'var(--gray)')+'">🚑 Transport' + (disp==='transport' && hospital ? ' ✓' : '') + '</button>' +
     '</div>' +
-    (disp==='rma' ? '<div style="margin-bottom:8px"><div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:5px">RMA Approved By</div>' +
+    (disp==='rma' ? '<div style="margin-bottom:4px"><div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px">RMA Approved By</div>' +
       '<input type="text" placeholder="Name or unit…" value="'+(rmaBy==='__custom__' ? rmaCustom : rmaBy)+'" ' +
         'onchange="setDispRMA(\''+call.id+'\',\'text\',this.value)" ' +
         'style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:7px 10px;color:var(--white);font-size:0.82rem;outline:none">' +
-    '</div>'
-    : '') +
-    (disp==='transport' ? '<div style="margin-bottom:8px"><div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:5px">Hospital</div>' +
-      '<select onchange="setDispHospital(\''+call.id+'\',this.value)" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.82rem;outline:none">' +
-        '<option value="">Select hospital…</option>' +
-        HOSPITALS.map(function(h){ return '<option value="'+h+'"'+(hospital===h?' selected':'')+'>'+h+'</option>'; }).join("") +
-      '</select></div>'
-    : '');
+    '</div>' : '') +
+    (disp==='transport' && hospital ?
+      '<div style="background:rgba(74,144,217,0.08);border:1px solid rgba(74,144,217,0.3);border-radius:6px;padding:6px 10px;font-size:0.75rem;color:#7ab8f5">🏥 ' + hospital + '</div>' : '');
 
   el.innerHTML =
     alsBanner +
