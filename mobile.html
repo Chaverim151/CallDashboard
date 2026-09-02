@@ -390,6 +390,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <span class="m-tile-sub">CME · Classes · Drills</span>
         </div>
       </button>
+
     </div>
   </div>
 </div>
@@ -462,16 +463,21 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 <!-- QR SCANNER PAGE (MOBILE) -->
 <div class="page" id="m-pg-scanner">
   <div class="m-subpage-header">
-    <button class="m-back-btn" onclick="mGoTo('education')">← Back</button>
-    <span class="m-page-title">Scan QR Code</span>
+    <button class="m-back-btn" id="m-scanner-back-btn" onclick="mScannerBack()">← Back</button>
+    <span class="m-page-title" id="m-scanner-title">Scan Attendance QR</span>
   </div>
   <div class="m-scroll" style="display:flex;flex-direction:column;align-items:center;padding:20px 16px">
+    <div id="m-qr-event-banner" style="display:none;width:100%;max-width:320px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:10px;padding:10px 14px;margin-bottom:14px;text-align:center">
+      <div style="font-family:'Oswald',sans-serif;font-size:0.75rem;font-weight:700;color:var(--gold)" id="m-qr-event-name-banner"></div>
+      <div style="font-size:0.68rem;color:var(--gray)" id="m-qr-event-time-banner"></div>
+    </div>
     <div style="font-size:0.82rem;color:var(--gray);text-align:center;margin-bottom:16px">
-      Point your camera at the event QR code. You must be at the class location to check in.
+      Point your camera at the event QR code.<br>You must be at the class location to check in.
     </div>
     <div id="m-qr-reader" style="width:100%;max-width:320px;border-radius:12px;overflow:hidden;border:2px solid var(--card-border)"></div>
     <div id="m-qr-status" style="margin-top:16px;text-align:center;font-size:0.82rem;color:var(--gray)">Initializing camera...</div>
     <div id="m-qr-result" style="margin-top:12px;width:100%;max-width:320px"></div>
+    <button id="m-scan-again-btn" onclick="mScanAgain()" style="display:none;margin-top:16px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:10px 24px;cursor:pointer;min-height:44px">Scan Again</button>
   </div>
 </div>
 
@@ -669,11 +675,43 @@ function mEnterHome() {
   mUpdateAlertBtn();
   if (Notification.permission === "granted") setTimeout(mSendTokenToSW, 1000);
 
-  // Show education tile for field members (not pure dispatchers/logistics)
+  // Request permissions on first login
+  setTimeout(mRequestPermissions, 800);
+
+  // Show education tile for field members
   var roles = (mCurrentUserRoles||[]).map(function(r){ return r.toLowerCase(); });
   var canEdu = mCurrentRole==="admin"||roles.includes("captain")||roles.includes("chief")||roles.includes("responder")||roles.includes("observer");
   var eduTile = document.getElementById("m-edu-tile");
   if (eduTile) eduTile.style.display = canEdu ? "" : "none";
+
+}
+
+function mRequestPermissions() {
+  // Step 1: Notification permission
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission().then(function(p) {
+      if (p === "granted") {
+        mUpdateAlertBtn();
+        setTimeout(mSendTokenToSW, 500);
+        mToast("🔔 Alerts enabled");
+      }
+      // Step 2: Location permission (after notification, or if already decided)
+      mRequestLocation();
+    });
+  } else {
+    // Notification already decided — just request location
+    mRequestLocation();
+  }
+}
+
+function mRequestLocation() {
+  if (!("geolocation" in navigator)) return;
+  // Only request if not already granted (browsers don't expose "granted" easily, just try quietly)
+  navigator.geolocation.getCurrentPosition(
+    function() {}, // success — permission granted, no need to show anything
+    function() {}, // denied — silent, don't bother the user
+    { timeout: 5000 }
+  );
 }
 
 // ── CALLS LISTENER ──
@@ -1162,7 +1200,13 @@ function mLoadEduContent() {
         '</div>' +
         '<div class="m-info-name">' + (ev.title||"Untitled") + '</div>' +
         (ev.location ? '<div class="m-info-sub">📍 ' + ev.location + '</div>' : '') +
-        (!isPast ? '<div style="margin-top:8px"><button onclick="event.stopPropagation();mGoTo(\'scanner\');mStartScanner(\'' + ev.id + '\')" style="background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.3);border-radius:6px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;padding:6px 12px;cursor:pointer;min-height:36px">📷 Scan Check-In</button></div>' : '') +
+        (ev.instructor ? '<div class="m-info-sub">👨‍🏫 ' + ev.instructor + '</div>' : '') +
+        (!isPast ? '<div style="margin-top:8px">' +
+          (ev.checkinOpen ?
+            '<button onclick="event.stopPropagation();mGoTo(\'scanner\');mStartScanner(\'' + ev.id + '\')" style="width:100%;background:var(--gold);color:var(--navy);border:none;border-radius:8px;font-family:\'Oswald\',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer;min-height:44px">📷 Scan to Check In</button>' :
+            '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:7px;padding:8px 12px;font-size:0.72rem;color:var(--gray);text-align:center">Check-in not yet open</div>'
+          ) +
+        '</div>' : '') +
       '</div>';
     }).join("");
   }).catch(function(e) {
@@ -1245,6 +1289,8 @@ function mOpenEduDetail(eventId) {
         '<div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:4px">' + (ev.title||"Untitled") + '</div>' +
         '<div style="font-size:0.75rem;color:var(--gray);margin-bottom:10px">' + dateStr + ' at ' + timeStr + '</div>' +
         (ev.location ? '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:0.82rem;color:var(--white)">📍 ' + ev.location + '</div>' : '') +
+        (!isPast ? '<div style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px;background:' + (ev.checkinOpen ? 'rgba(76,175,128,0.15)' : 'rgba(255,255,255,0.06)') + ';border:1px solid ' + (ev.checkinOpen ? 'rgba(76,175,128,0.4)' : 'var(--card-border)') + ';color:' + (ev.checkinOpen ? '#7dedb5' : 'var(--gray)') + '">' + (ev.checkinOpen ? '🟢 Check-In Open' : '🔴 Check-In Locked') + '</div>' : '') +
+        (ev.instructor ? '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:0.82rem;color:var(--white)">👨‍🏫 Instructor: <strong>' + ev.instructor + '</strong></div>' : '') +
         (ev.description ? '<div style="font-size:0.82rem;color:var(--white);line-height:1.6;margin-bottom:12px">' + ev.description + '</div>' : '') +
 
         // RSVP
@@ -1258,8 +1304,11 @@ function mOpenEduDetail(eventId) {
           }).join("") +
         '</div></div>' : '') +
 
-        // QR scan button
-        (!isPast && ev.lat ? '<button onclick="mCloseEduDetail();mGoTo(\'scanner\');mStartScanner(\'' + ev.id + '\')" style="width:100%;padding:14px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;margin-bottom:10px">📷 Scan QR to Check In</button>' : '') +
+        // QR scan button - only when check-in is open
+        (!isPast ? (ev.checkinOpen ?
+          '<button onclick="mCloseEduDetail();mGoTo(\'scanner\');mStartScanner(\'' + ev.id + '\')" style="width:100%;padding:14px;background:var(--gold);color:var(--navy);border:none;border-radius:8px;font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;margin-bottom:10px">📷 Scan QR to Check In</button>' :
+          '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:12px;margin-bottom:10px;text-align:center;font-size:0.78rem;color:var(--gray)">⏳ Check-in not yet open — wait for the instructor to unlock</div>'
+        ) : '') +
 
         // Admin: attendance count
         (mEduIsAdmin ? '<div id="m-edu-attend-count" style="font-size:0.75rem;color:var(--gray);text-align:center">Loading attendance...</div>' : '');
@@ -1294,12 +1343,53 @@ function mSubmitRSVP(eventId, status) {
 var mQRScanner = null;
 var mScanEventId = null;
 
+var mScanFromHome = false;
+
+function mScannerBack() {
+  mGoTo(mScanFromHome ? "home" : "education");
+}
+
+function mScanAgain() {
+  var resultEl = document.getElementById("m-qr-result");
+  var scanAgainBtn = document.getElementById("m-scan-again-btn");
+  if (resultEl) resultEl.innerHTML = "";
+  if (scanAgainBtn) scanAgainBtn.style.display = "none";
+  doStartScanner();
+}
+
 function mStartScanner(eventId) {
   mScanEventId = eventId;
+  mScanFromHome = !eventId;
+
   var statusEl = document.getElementById("m-qr-status");
   var resultEl = document.getElementById("m-qr-result");
+  var scanAgainBtn = document.getElementById("m-scan-again-btn");
+  var banner = document.getElementById("m-qr-event-banner");
+  var titleEl = document.getElementById("m-scanner-title");
+
   if (statusEl) statusEl.textContent = "Initializing camera...";
   if (resultEl) resultEl.innerHTML = "";
+  if (scanAgainBtn) scanAgainBtn.style.display = "none";
+  if (banner) banner.style.display = "none";
+
+  // If scanning from a specific event, show its info
+  if (eventId) {
+    if (titleEl) titleEl.textContent = "Scan to Check In";
+    db.collection("education").doc(eventId).get().then(function(snap) {
+      if (!snap.exists) return;
+      var ev = snap.data();
+      var nameBanner = document.getElementById("m-qr-event-name-banner");
+      var timeBanner = document.getElementById("m-qr-event-time-banner");
+      if (nameBanner) nameBanner.textContent = ev.title || "Event";
+      if (timeBanner) {
+        var dt = ev.dateTime ? new Date(ev.dateTime) : null;
+        timeBanner.textContent = dt ? dt.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}) + " · " + dt.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : "";
+      }
+      if (banner) banner.style.display = "block";
+    });
+  } else {
+    if (titleEl) titleEl.textContent = "Scan Attendance QR";
+  }
 
   // Load Html5Qrcode library
   if (typeof Html5Qrcode !== "undefined") {
@@ -1309,7 +1399,7 @@ function mStartScanner(eventId) {
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
     script.onload = doStartScanner;
     script.onerror = function() {
-      if (statusEl) statusEl.textContent = "Failed to load scanner library.";
+      if (statusEl) statusEl.textContent = "Failed to load scanner. Check your connection.";
     };
     document.head.appendChild(script);
   }
@@ -1407,6 +1497,7 @@ function mRecordAttendance(eventId, ev, lat, lng, dist, statusEl, resultEl) {
   db.collection("education").doc(eventId).collection("attendance").doc(mCurrentUser.uid).get().then(function(snap) {
     if (snap.exists) {
       if (resultEl) resultEl.innerHTML = '<div style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:10px;padding:14px;text-align:center"><div style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;margin-bottom:4px">✓ Already Checked In</div><div style="font-size:0.78rem;color:var(--gray)">You were already marked present for this event.</div></div>';
+      var sb = document.getElementById("m-scan-again-btn"); if (sb) sb.style.display = "block";
       if (statusEl) statusEl.textContent = "";
       return;
     }
@@ -1444,7 +1535,7 @@ function mRecordAttendance(eventId, ev, lat, lng, dist, statusEl, resultEl) {
           db.collection("users").doc(mCurrentUser.uid).update(updateData).catch(function(){});
         }
 
-        if (resultEl) resultEl.innerHTML =
+    if (resultEl) resultEl.innerHTML =
           '<div style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:10px;padding:16px;text-align:center">' +
             '<div style="font-size:2rem;margin-bottom:8px">✅</div>' +
             '<div style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">Checked In!</div>' +
@@ -1452,6 +1543,8 @@ function mRecordAttendance(eventId, ev, lat, lng, dist, statusEl, resultEl) {
             (ev.ceHours ? '<div style="font-size:0.78rem;color:var(--gold)">+' + ev.ceHours + ' CE hours added to your record</div>' : '') +
             (dist ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:6px">' + Math.round(dist) + 'm from class location</div>' : '') +
           '</div>';
+        var scanAgainBtn = document.getElementById("m-scan-again-btn");
+        if (scanAgainBtn) scanAgainBtn.style.display = "block";
         if (statusEl) statusEl.textContent = "";
         mPlayTone(); // brief alert tone on success
       }).catch(function(e) {
