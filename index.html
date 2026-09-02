@@ -381,6 +381,9 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
       <button class="big-btn" data-sec="shuls" onclick="goTo('shuls')" style="animation-delay:0.3s">
         <div class="btn-inner"><span class="btn-icon">🕍</span><span class="btn-label">Shuls</span><span class="btn-sub">Synagogue entrance<br>access codes</span></div>
       </button>
+      <button class="big-btn" data-sec="calllogs" id="calllogs-btn" onclick="goTo('calllogs')" style="animation-delay:0.4s;display:none">
+        <div class="btn-inner"><span class="btn-icon">📁</span><span class="btn-label">Call Logs</span><span class="btn-sub">HIPAA-secured<br>call records</span></div>
+      </button>
       <button class="big-btn" data-sec="storage" onclick="goTo('storage')" style="animation-delay:0.35s">
         <div class="btn-inner"><span class="btn-icon">🗄️</span><span class="btn-label">Storage Room</span><span class="btn-sub">Room code<br>&amp; lock box</span></div>
       </button>
@@ -1492,6 +1495,11 @@ function enterHomeScreen() {
   if (currentRole === "admin") checkImportFlag();
   updatePushBtn();
   startActiveCallsListener();
+
+  // Show Call Logs button for dispatchers, captains, chiefs, admins
+  var canSeeLogs = currentRole === "admin" || rolesLower.includes("dispatcher") || rolesLower.includes("captain") || rolesLower.includes("chief");
+  var clBtn = document.getElementById("calllogs-btn");
+  if (clBtn) clBtn.style.display = canSeeLogs ? "" : "none";
   // Show active calls section + New Call pill immediately for dispatchers
   // (don't wait for the first Firestore snapshot)
   if (isDispatcher || currentRole === "admin") {
@@ -2425,6 +2433,14 @@ function filter(sec) {
 // ── NAVIGATION ──
 function goTo(sec) {
   if (sec === "admin" && currentRole !== "admin") return;
+  if (sec === "calllogs") {
+    var rolesLower = (currentUserRoles || []).map(function(r) { return r.toLowerCase(); });
+    var canAccessLogs = currentRole === "admin" || rolesLower.includes("dispatcher") || rolesLower.includes("captain") || rolesLower.includes("chief");
+    if (!canAccessLogs) { showToast("Access restricted to Dispatchers, Captains & Admins."); return; }
+    showPage("calllogs");
+    setTimeout(initCallLogs, 100);
+    return;
+  }
   if (sec === "maps") {
     var rolesLower = (currentUserRoles || []).map(function(r) { return r.toLowerCase(); });
     var canAccessDispatch = rolesLower.indexOf("dispatcher") !== -1 || currentRole === "admin";
@@ -2985,6 +3001,374 @@ function updatePushBtn() {
     btn.onclick = requestPushPermission;
   }
 }
+
+// ── CALL LOGS ──
+var clAllLogs = [];
+var clCurrentCallId = null;
+
+function initCallLogs() {
+  // Set default date range: last 30 days
+  var today = new Date();
+  var from = new Date(); from.setDate(today.getDate() - 30);
+  document.getElementById("cl-from").value = from.toISOString().split("T")[0];
+  document.getElementById("cl-to").value = today.toISOString().split("T")[0];
+
+  // Show export button for captains/admins
+  var canExport = currentRole === "admin" || (currentUserRoles||[]).includes("captain") || (currentUserRoles||[]).includes("chief");
+  var exportBtn = document.getElementById("cl-export-btn");
+  if (exportBtn) exportBtn.style.display = canExport ? "block" : "none";
+
+  // Log this access for audit trail
+  logAuditAccess("call_logs_list", null);
+
+  loadCallLogs();
+}
+window.initCallLogs = initCallLogs;
+
+function loadCallLogs() {
+  var listEl = document.getElementById("cl-list");
+  var statsEl = document.getElementById("cl-stats");
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0">Loading...</div>';
+
+  var from = document.getElementById("cl-from").value;
+  var to = document.getElementById("cl-to").value;
+  var zone = document.getElementById("cl-zone").value;
+  var disp = document.getElementById("cl-disp").value;
+  var unit = (document.getElementById("cl-unit").value||"").trim().toUpperCase();
+
+  // Build query — Firestore query on activeCalls with status complete
+  var query = db.collection("activeCalls").where("status", "==", "complete");
+  if (from) query = query.where("createdAt", ">=", from + "T00:00:00.000Z");
+  if (to)   query = query.where("createdAt", "<=", to + "T23:59:59.999Z");
+  query = query.orderBy("createdAt", "desc").limit(200);
+
+  query.get().then(function(snap) {
+    var logs = [];
+    snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
+
+    // Client-side filters
+    if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
+    if (disp) logs = logs.filter(function(l) { return (l.disposition||{}).type === disp; });
+    if (unit) logs = logs.filter(function(l) {
+      var crews = l.crews || [];
+      return crews.some(function(crew) {
+        return Object.values(crew||{}).includes(unit);
+      }) || (l.assignedUnits||[]).includes(unit);
+    });
+
+    clAllLogs = logs;
+    renderCallLogs(logs, statsEl, listEl);
+  }).catch(function(e) {
+    listEl.innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0">Error loading logs: ' + e.message + '</div>';
+  });
+}
+window.loadCallLogs = loadCallLogs;
+
+function clearCLFilters() {
+  var today = new Date();
+  var from = new Date(); from.setDate(today.getDate() - 30);
+  document.getElementById("cl-from").value = from.toISOString().split("T")[0];
+  document.getElementById("cl-to").value = today.toISOString().split("T")[0];
+  document.getElementById("cl-zone").value = "";
+  document.getElementById("cl-disp").value = "";
+  document.getElementById("cl-unit").value = "";
+  loadCallLogs();
+}
+window.clearCLFilters = clearCLFilters;
+
+function renderCallLogs(logs, statsEl, listEl) {
+  // Stats
+  var total = logs.length;
+  var transports = logs.filter(function(l){ return (l.disposition||{}).type === "transport"; }).length;
+  var rmas = logs.filter(function(l){ return (l.disposition||{}).type === "rma"; }).length;
+  var als = logs.filter(function(l){ return l.alsActivated; }).length;
+  if (statsEl) statsEl.innerHTML =
+    '<span><b style="color:var(--white)">' + total + '</b> calls</span>' +
+    '<span><b style="color:#7ab8f5">' + transports + '</b> transports</span>' +
+    '<span><b style="color:#7dedb5">' + rmas + '</b> RMA</span>' +
+    '<span><b style="color:#ff9090">' + als + '</b> ALS</span>';
+
+  if (!logs.length) {
+    listEl.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0">No call records found for the selected filters.</div>';
+    return;
+  }
+
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:0.78rem">' +
+    '<thead><tr style="border-bottom:2px solid var(--card-border);text-align:left">' +
+    ['Date/Time','Address','Nature','Units','Times','Disp','ALS',''].map(function(h) {
+      return '<th style="padding:8px 10px;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);font-weight:700">' + h + '</th>';
+    }).join("") +
+    '</tr></thead><tbody>';
+
+  logs.forEach(function(log) {
+    var dt = log.createdAt ? new Date(log.createdAt) : null;
+    var dateStr = dt ? dt.toLocaleDateString("en-US", {month:"short", day:"numeric", year:"numeric"}) : "—";
+    var timeStr = dt ? dt.toLocaleTimeString("en-US", {hour:"2-digit", minute:"2-digit"}) : "";
+
+    var addr = (log.address||"Unknown").split(",")[0];
+    var city = (log.address||"").split(",")[1] ? (log.address||"").split(",")[1].trim() : "";
+
+    var nature = "";
+    var parts = [];
+    if (log.patientAgeNum) parts.push(log.patientAgeNum + " YO");
+    else if (log.patientAge === "pediatric") parts.push("Ped");
+    else if (log.patientAge === "adult") parts.push("Adult");
+    if (log.patientSex === "male") parts.push("M");
+    else if (log.patientSex === "female") parts.push("F");
+    if (log.callNature) parts.push(log.callNature.replace(/^\d+\s*-\s*/, ""));
+    nature = parts.join(" · ");
+
+    // Units
+    var unitList = [];
+    (log.crews||[]).forEach(function(crew) {
+      Object.keys(crew||{}).forEach(function(k) {
+        if (k !== "rig" && crew[k] && crew[k] !== "__added__") unitList.push(crew[k]);
+      });
+    });
+
+    // Times
+    var times = log.times || {};
+    var timesCells = [times.dispatched, times.first_on_scene, times.enroute, times.at_hospital].filter(Boolean).join(" → ");
+
+    // Disposition
+    var disp = (log.disposition||{}).type || "—";
+    var dispColor = disp === "transport" ? "#7ab8f5" : disp === "rma" ? "#7dedb5" : "var(--gray)";
+    var dispHosp = disp === "transport" && (log.disposition||{}).hospital ? " → " + log.disposition.hospital : "";
+
+    // Zone
+    var zoneColor = log.zone === "primary" ? "#7dedb5" : log.zone === "secondary" ? "#ffc84a" : "#ff9090";
+    var zoneDot = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + zoneColor + ';margin-right:5px"></span>';
+
+    html += '<tr onclick="window.openCLDetail(\'' + log.id + '\')" style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'none\'">' +
+      '<td style="padding:10px 10px;white-space:nowrap"><div style="color:var(--white);font-weight:600">' + dateStr + '</div><div style="color:var(--gray);font-size:0.68rem">' + timeStr + '</div></td>' +
+      '<td style="padding:10px 10px"><div style="color:var(--white)">' + zoneDot + addr + '</div><div style="color:var(--gray);font-size:0.68rem">' + city + '</div></td>' +
+      '<td style="padding:10px 10px;color:var(--white)">' + (nature||"—") + '</td>' +
+      '<td style="padding:10px 10px;color:#7ab8f5">' + unitList.join(", ") + '</td>' +
+      '<td style="padding:10px 10px;color:var(--gray);font-size:0.72rem;white-space:nowrap">' + (timesCells||"—") + '</td>' +
+      '<td style="padding:10px 10px"><span style="color:' + dispColor + ';text-transform:capitalize;font-weight:600">' + disp.toUpperCase() + '</span><div style="color:var(--gray);font-size:0.68rem">' + dispHosp + '</div></td>' +
+      '<td style="padding:10px 10px">' + (log.alsActivated ? '<span style="color:#ff9090;font-weight:700;font-size:0.72rem">ALS</span>' : "") + '</td>' +
+      '<td style="padding:10px 10px"><button onclick="event.stopPropagation();window.openCLDetail(\'' + log.id + '\')" style="background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.3);border-radius:5px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;padding:4px 8px;cursor:pointer">View</button></td>' +
+    '</tr>';
+  });
+
+  html += '</tbody></table>';
+  listEl.innerHTML = html;
+}
+
+function openCLDetail(callId) {
+  clCurrentCallId = callId;
+  var overlay = document.getElementById("cl-detail-overlay");
+  var body = document.getElementById("cl-detail-body");
+  if (!overlay || !body) return;
+  overlay.style.display = "flex";
+  body.innerHTML = '<div style="color:var(--gray);font-size:0.82rem">Loading...</div>';
+
+  // Audit log: record this access
+  logAuditAccess("call_record_view", callId);
+
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) { body.innerHTML = '<div style="color:#ff9090">Record not found.</div>'; return; }
+    var log = Object.assign({ id: snap.id }, snap.data());
+    renderCLDetail(log, body);
+  }).catch(function(e) {
+    body.innerHTML = '<div style="color:#ff9090">Error: ' + e.message + '</div>';
+  });
+}
+window.openCLDetail = openCLDetail;
+
+function closeCLDetail() {
+  var overlay = document.getElementById("cl-detail-overlay");
+  if (overlay) overlay.style.display = "none";
+  clCurrentCallId = null;
+}
+window.closeCLDetail = closeCLDetail;
+
+function openEPCR() {
+  window.open("https://chmiddlesex.imagetrendelite.com/Elite/Organizationchmiddlesex/RunForm/login", "_blank");
+}
+window.openEPCR = openEPCR;
+
+function renderCLDetail(log, body) {
+  var dt = log.createdAt ? new Date(log.createdAt) : null;
+  var dateStr = dt ? dt.toLocaleDateString("en-US", {weekday:"long", month:"long", day:"numeric", year:"numeric"}) : "—";
+  var timeStr = dt ? dt.toLocaleTimeString("en-US", {hour:"2-digit", minute:"2-digit", second:"2-digit"}) : "";
+
+  // Units with statuses
+  var unitRows = "";
+  var STATUS_LABEL = { enroute_scene:"En Route to Scene", on_scene_direct:"On Scene", picking_up_ambo:"Picking Up Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene w/ Rig", rma_scene:"RMA on Scene", transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Clearing Facility", back_at_base:"Back at Base" };
+  (log.crews||[]).forEach(function(crew, ci) {
+    Object.keys(crew||{}).sort().forEach(function(role) {
+      if (role === "rig") return;
+      var val = crew[role]; if (!val || val === "__added__") return;
+      var det = (log.unitDetails||{})[ci+"_"+role] || {};
+      unitRows += '<tr><td style="padding:6px 10px;color:#7ab8f5;font-weight:700">' + val + '</td>' +
+        '<td style="padding:6px 10px;color:var(--gray)">' + (STATUS_LABEL[det.status]||det.status||"—") + '</td>' +
+        '<td style="padding:6px 10px;color:var(--gray)">' + (det.responseDir === "scene" ? "Direct to Scene" : det.responseDir === "rig" ? "Picked Up Rig" : "—") + '</td></tr>';
+    });
+  });
+
+  // Notes
+  var notesHtml = (log.callNotes||[]).map(function(n) {
+    return '<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">' +
+      '<div style="font-size:0.62rem;color:var(--gray);margin-bottom:3px">' + (n.time||"") + (n.by?" · "+n.by:"") + '</div>' +
+      '<div style="font-size:0.85rem;color:var(--white);line-height:1.5">' + (n.text||"") + '</div>' +
+    '</div>';
+  }).join("") || '<div style="color:var(--gray);font-size:0.78rem">No notes</div>';
+
+  var times = log.times || {};
+  var disp = log.disposition || {};
+  var zone = log.zone === "primary" ? "Standard Response" : log.zone === "secondary" ? "Load a Rig" : "Outside Zone";
+
+  body.innerHTML =
+    // Header
+    '<div style="margin-bottom:16px">' +
+      '<div style="font-family:\'Oswald\',sans-serif;font-size:1.1rem;font-weight:700;color:var(--white);margin-bottom:4px">' + (log.address||"Unknown") + '</div>' +
+      '<div style="font-size:0.78rem;color:var(--gray)">' + dateStr + ' at ' + timeStr + '</div>' +
+    '</div>' +
+
+    // Info grid
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
+      clInfoCell("Zone", zone) +
+      clInfoCell("Nature", (function(){var p=[];if(log.patientAgeNum)p.push(log.patientAgeNum+" YO");else if(log.patientAge)p.push(log.patientAge);if(log.patientSex==="male")p.push("M");else if(log.patientSex==="female")p.push("F");if(log.callNature)p.push(log.callNature.replace(/^\d+\s*-\s*/,""));return p.join(" · ")||"—";})()) +
+      clInfoCell("Disposition", disp.type ? disp.type.toUpperCase() + (disp.hospital?" → "+disp.hospital:"") : "—") +
+    '</div>' +
+
+    // Times
+    '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Timeline</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">' +
+        [["dispatched","Dispatched"],["first_on_scene","On Scene"],["enroute","En Route"],["at_hospital","Hospital"]].map(function(t) {
+          return '<div><div style="font-size:0.55rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">' + t[1] + '</div>' +
+            '<div style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;font-weight:700;color:' + (times[t[0]]?"var(--white)":"var(--gray)") + '">' + (times[t[0]]||"—") + '</div></div>';
+        }).join("") +
+      '</div>' +
+    '</div>' +
+
+    // ALS
+    (log.alsActivated ? '<div style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.35);border-radius:10px;padding:12px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:6px">ALS Activated</div>' +
+      '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
+        (log.alsProvider ? '<div><span style="color:var(--gray);font-size:0.68rem">Provider: </span><span style="color:var(--white)">' + log.alsProvider + '</span></div>' : "") +
+        (log.alsUnit ? '<div><span style="color:var(--gray);font-size:0.68rem">Unit: </span><span style="color:var(--white)">' + log.alsUnit + '</span></div>' : "") +
+        (log.alsEta ? '<div><span style="color:var(--gray);font-size:0.68rem">ETA: </span><span style="color:var(--white)">' + log.alsEta + ' min</span></div>' : "") +
+      '</div>' +
+    '</div>' : "") +
+
+    // Access code (only show to dispatchers/captains/admins)
+    (log.accessCode ? '<div style="background:rgba(255,200,74,0.08);border:1px solid rgba(255,200,74,0.3);border-radius:10px;padding:12px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:#ffc84a;margin-bottom:4px">Access Code</div>' +
+      '<div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;color:var(--white)">' + log.accessCode + '</div>' +
+    '</div>' : "") +
+
+    // Units table
+    '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Assigned Units</div>' +
+      (unitRows ? '<table style="width:100%;border-collapse:collapse;font-size:0.78rem"><thead><tr>' +
+        ['Unit','Status','Response'].map(function(h){ return '<th style="text-align:left;padding:4px 10px;font-size:0.6rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.06em">' + h + '</th>'; }).join("") +
+        '</tr></thead><tbody>' + unitRows + '</tbody></table>' :
+        '<div style="color:var(--gray);font-size:0.78rem">No units assigned</div>') +
+    '</div>' +
+
+    // Dispatch notes
+    (log.dispatchNotes ? '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px">Dispatch Notes</div>' +
+      '<div style="font-size:0.85rem;color:var(--white);line-height:1.6">' + log.dispatchNotes + '</div>' +
+    '</div>' : "") +
+
+    // Call notes
+    '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Call Notes</div>' +
+      notesHtml +
+    '</div>' +
+
+    // Metadata
+    '<div style="font-size:0.65rem;color:var(--gray);border-top:1px solid var(--card-border);padding-top:10px;display:flex;gap:16px;flex-wrap:wrap">' +
+      '<span>Call ID: <span style="color:var(--white);font-family:monospace">' + log.id + '</span></span>' +
+      (log.createdBy ? '<span>Dispatched by: <span style="color:var(--white)">' + log.createdBy + '</span></span>' : '') +
+      (log.completedBy ? '<span>Closed by: <span style="color:var(--white)">' + log.completedBy + '</span></span>' : '') +
+      (log.completedAt ? '<span>Closed at: <span style="color:var(--white)">' + new Date(log.completedAt).toLocaleString() + '</span></span>' : '') +
+    '</div>';
+}
+
+function clInfoCell(label, value) {
+  return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px">' +
+    '<div style="font-size:0.55rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">' + label + '</div>' +
+    '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (value||"—") + '</div>' +
+  '</div>';
+}
+
+// ── AUDIT TRAIL ──
+function logAuditAccess(action, callId) {
+  if (!currentUser) return;
+  var entry = {
+    action: action,
+    callId: callId || null,
+    uid: currentUser.uid,
+    unit: currentUserUnit || "",
+    role: currentRole || "",
+    timestamp: new Date().toISOString(),
+    userAgent: navigator.userAgent.substring(0, 100)
+  };
+  db.collection("callLogAudit").add(entry).catch(function() {});
+}
+
+// ── CSV EXPORT ──
+window.exportCallLogs = function() {
+  if (!clAllLogs.length) { showToast("No records to export", true); return; }
+  var canExport = currentRole === "admin" || (currentUserRoles||[]).includes("captain") || (currentUserRoles||[]).includes("chief");
+  if (!canExport) { showToast("Export requires Captain or Admin role", true); return; }
+
+  logAuditAccess("call_logs_export", null);
+
+  var headers = ["Date","Time","Address","Zone","Nature","Patient Age","Patient Sex","Units","Dispatched","On Scene","En Route","Hospital","Disposition","Hospital Transported To","ALS","ALS Provider","ALS Unit","Dispatch Notes","Completed By","Completed At","Call ID"];
+  var rows = clAllLogs.map(function(log) {
+    var dt = log.createdAt ? new Date(log.createdAt) : null;
+    var units = [];
+    (log.crews||[]).forEach(function(crew) {
+      Object.keys(crew||{}).forEach(function(k) {
+        if (k !== "rig" && crew[k] && crew[k] !== "__added__") units.push(crew[k]);
+      });
+    });
+    var times = log.times || {};
+    var disp = log.disposition || {};
+    return [
+      dt ? dt.toLocaleDateString() : "",
+      dt ? dt.toLocaleTimeString() : "",
+      '"' + (log.address||"").replace(/"/g,'""') + '"',
+      log.zone||"",
+      '"' + (log.callNature||"").replace(/"/g,'""') + '"',
+      log.patientAgeNum || log.patientAge || "",
+      log.patientSex||"",
+      '"' + units.join(", ") + '"',
+      times.dispatched||"",
+      times.first_on_scene||"",
+      times.enroute||"",
+      times.at_hospital||"",
+      disp.type||"",
+      disp.hospital||"",
+      log.alsActivated ? "Yes" : "No",
+      log.alsProvider||"",
+      log.alsUnit||"",
+      '"' + (log.dispatchNotes||"").replace(/"/g,'""') + '"',
+      log.completedBy||"",
+      log.completedAt ? new Date(log.completedAt).toLocaleString() : "",
+      log.id
+    ].join(",");
+  });
+
+  var csv = [headers.join(",")].concat(rows).join("\n");
+  var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "HatzolahMC_CallLogs_" + new Date().toISOString().split("T")[0] + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast("✓ Exported " + clAllLogs.length + " records");
+};
 
 // ── VEHICLES ──
 function addVehicle() {
@@ -5697,5 +6081,76 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
 
 </body>
 
+
+<!-- CALL LOGS PAGE -->
+<div class="page" id="pg-calllogs">
+  <div class="inner-topbar" style="position:relative">
+    <button class="back-btn" onclick="goTo('home')">← Home</button>
+    <span class="page-title">Call Logs</span>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <span id="cl-hipaa-badge" style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:#7dedb5;border:1px solid rgba(76,175,128,0.4);border-radius:5px;padding:3px 8px;font-family:'Oswald',sans-serif;font-weight:700">HIPAA Secured</span>
+      <button id="cl-export-btn" onclick="window.exportCallLogs()" style="display:none;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:7px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px 12px;cursor:pointer">Export CSV</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div style="padding:14px 20px 0;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;border-bottom:1px solid var(--card-border);padding-bottom:14px">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">From</label>
+      <input type="date" id="cl-from" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:7px 10px;color:var(--white);font-size:0.82rem;outline:none">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">To</label>
+      <input type="date" id="cl-to" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:7px 10px;color:var(--white);font-size:0.82rem;outline:none">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Zone</label>
+      <select id="cl-zone" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:7px 10px;color:var(--white);font-size:0.82rem;outline:none">
+        <option value="">All Zones</option>
+        <option value="primary">Standard</option>
+        <option value="secondary">Load a Rig</option>
+        <option value="outside">Outside Zone</option>
+      </select>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Disposition</label>
+      <select id="cl-disp" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:7px 10px;color:var(--white);font-size:0.82rem;outline:none">
+        <option value="">All</option>
+        <option value="transport">Transport</option>
+        <option value="rma">RMA</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <label style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Unit</label>
+      <input type="text" id="cl-unit" placeholder="MC-##" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:7px 10px;color:var(--white);font-size:0.82rem;outline:none;width:90px">
+    </div>
+    <button onclick="window.loadCallLogs()" style="background:var(--gold);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 16px;cursor:pointer;align-self:flex-end">Search</button>
+    <button onclick="window.clearCLFilters()" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer;align-self:flex-end">Clear</button>
+  </div>
+
+  <!-- Stats bar -->
+  <div id="cl-stats" style="padding:10px 20px;display:flex;gap:20px;border-bottom:1px solid var(--card-border);font-size:0.72rem;color:var(--gray)"></div>
+
+  <!-- Table -->
+  <div class="inner-scroll" style="flex:1;overflow-y:auto">
+    <div id="cl-list" style="padding:16px 20px"></div>
+  </div>
+</div>
+
+<!-- CALL LOG DETAIL MODAL -->
+<div id="cl-detail-overlay" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:20px">
+  <div style="background:#122040;border:1px solid var(--card-border);border-radius:16px;padding:0;width:100%;max-width:680px;max-height:88vh;display:flex;flex-direction:column;animation:fadeUp 0.2s ease both">
+    <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--card-border);flex-shrink:0">
+      <span style="font-family:'Oswald',sans-serif;font-size:0.9rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase">Call Record</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:0.58rem;color:#7dedb5;border:1px solid rgba(76,175,128,0.4);border-radius:4px;padding:2px 7px;font-family:'Oswald',sans-serif;letter-spacing:0.06em">HIPAA</span>
+        <button id="cl-epcr-btn" onclick="window.openEPCR()" style="background:rgba(74,144,217,0.15);border:1px solid rgba(74,144,217,0.4);border-radius:7px;color:#7ab8f5;font-family:'Oswald',sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:5px 10px;cursor:pointer">Open ePCR</button>
+        <button onclick="window.closeCLDetail()" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer;line-height:1">×</button>
+      </div>
+    </div>
+    <div id="cl-detail-body" style="padding:20px;overflow-y:auto;flex:1"></div>
+  </div>
+</div>
 </body>
 </html>
