@@ -39,17 +39,21 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 /* ── TOPBAR ── */
 .m-topbar{
-  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;
   padding:10px 14px;border-bottom:1px solid var(--card-border);
   background:var(--navy);flex-shrink:0;position:sticky;top:0;z-index:10;
 }
-.m-topbar-left{display:flex;align-items:center;gap:10px;flex:1;min-width:0;overflow:hidden;}
-.m-topbar-left img{width:40px;height:auto;filter:drop-shadow(0 2px 8px rgba(201,168,76,0.3));flex-shrink:0;}
-.m-topbar-title{font-family:'Oswald',sans-serif;font-size:clamp(0.78rem,3vw,1.1rem);font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--white);}
+.m-topbar-left{display:flex;align-items:center;gap:8px;min-width:0;}
+.m-topbar-left img{width:34px;height:auto;filter:drop-shadow(0 2px 8px rgba(201,168,76,0.3));flex-shrink:0;}
+.m-topbar-title{font-family:'Oswald',sans-serif;font-size:0.82rem;font-weight:700;
+  letter-spacing:0.06em;text-transform:uppercase;color:var(--white);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
 .m-topbar-title span{color:var(--gold);}
-.m-topbar-right{display:flex;align-items:center;gap:5px;flex-shrink:0;}
-.m-unit{display:block;font-size:0.72rem;color:var(--gray);font-family:'Oswald',sans-serif;letter-spacing:0.06em;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.m-clock{font-family:'Oswald',sans-serif;font-size:0.75rem;font-weight:700;color:var(--white);text-align:center;line-height:1.3;}
+.m-topbar-center{text-align:center;font-family:'Oswald',sans-serif;
+  font-size:0.78rem;font-weight:700;color:var(--white);line-height:1.35;}
+.m-topbar-right{display:flex;align-items:center;gap:5px;justify-content:flex-end;}
+.m-unit{font-size:0.68rem;color:var(--gray);font-family:'Oswald',sans-serif;
+  letter-spacing:0.06em;white-space:nowrap;font-weight:700;}
 
 /* ── ICON BUTTONS (match desktop) ── */
 .m-btn{background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:7px;
@@ -302,14 +306,13 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div>
-        <div class="m-topbar-title">Hatzolah <span>MC</span></div>
-      </div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span></div>
+    </div>
+    <div class="m-topbar-center">
+      <div id="m-clock"></div>
     </div>
     <div class="m-topbar-right">
-      <div class="m-clock" id="m-clock"></div>
       <span class="m-unit" id="m-topbar-unit"></span>
-      <button class="m-btn" id="m-alert-btn" onclick="mRequestPush()" style="color:var(--gray)">Alerts</button>
       <button class="m-btn danger" onclick="mSignOut()">Out</button>
     </div>
   </div>
@@ -323,8 +326,14 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           Active Calls
           <span class="m-count" id="m-calls-count">0</span>
         </div>
+        <button class="m-btn" id="m-alert-btn" onclick="mRequestPush()" style="font-size:0.6rem;padding:4px 8px;color:var(--gray)">🔕 Alerts</button>
       </div>
       <div id="m-calls-list"></div>
+    </div>
+
+    <!-- Alerts button when no calls visible -->
+    <div id="m-alerts-row" style="display:flex;justify-content:flex-end;margin-bottom:10px">
+      <button class="m-btn" id="m-alert-btn-2" onclick="mRequestPush()" style="font-size:0.6rem;padding:4px 8px;color:var(--gray)">🔕 Enable Alerts</button>
     </div>
 
     <!-- Home tiles -->
@@ -467,7 +476,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 // ── STATE ──
 var mCurrentUser = null, mCurrentRole = null, mCurrentUserRoles = [], mCurrentUserUnit = "";
 var mCallsListener = null, mKnownCallIds = {}, mInitialLoadDone = false;
-var mSWReg = null, mToneCtx = null;
+var mSWReg = null, mToneCtx = null, mFCMMessaging = null;
 var FCM_VAPID_KEY = "BHiVdlY2FxPJn_pWsg8Ydz7LGH2-Amp0DnSNyopkOvIB_ki3lEPEeITHXx2bv7gm50vofMC_ADeAujS16rqjgqg";
 var SUPER_ADMIN = "shmueleidelman.work@gmail.com";
 
@@ -481,8 +490,8 @@ function tickMClock() {
   var ss = String(now.getSeconds()).padStart(2,"0");
   var h12 = now.getHours() % 12 || 12;
   var ampm = now.getHours() < 12 ? "AM" : "PM";
-  el.innerHTML = "<div style='font-size:0.78rem;font-weight:700;letter-spacing:0.06em'>" + hh+":"+mm+":"+ss + "</div>" +
-                 "<div style='font-size:0.55rem;opacity:0.5'>(" + h12+":"+mm+" "+ampm + ")</div>";
+  el.innerHTML = hh+":"+mm+":"+ss +
+    "<br><span style='font-size:0.55rem;opacity:0.5;font-weight:400'>("+h12+":"+mm+" "+ampm+")</span>";
 }
 tickMClock();
 setInterval(tickMClock, 1000);
@@ -774,71 +783,84 @@ function mCloseDetail() {
 
 // ── SUBPAGE LOADERS ──
 function mLoadHospital() {
-  db.collection("codes").doc("hospital").get().then(function(snap) {
-    var el = document.getElementById("m-hospital-content");
-    if (!snap.exists) { el.innerHTML = '<div style="color:var(--gray)">No hospital codes found.</div>'; return; }
-    var data = snap.data();
-    el.innerHTML = Object.keys(data).map(function(hospital) {
-      var codes = data[hospital];
-      return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:10px">' +
-        '<div style="font-family:Oswald,sans-serif;font-size:0.85rem;font-weight:700;color:var(--white);margin-bottom:8px">' + hospital + '</div>' +
-        Object.keys(codes).map(function(code) {
-          return '<div class="m-info-row"><span class="m-info-label">' + code + '</span><span class="m-info-value">' + codes[code] + '</span></div>';
-        }).join("") +
+  var el = document.getElementById("m-hospital-content");
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
+  db.collection("appdata").doc("codes").get().then(function(snap) {
+    if (!snap.exists || !snap.data().sections || !snap.data().sections.hospital) {
+      el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No hospital codes found.</div>';
+      return;
+    }
+    var items = snap.data().sections.hospital;
+    if (!items.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No hospital codes found.</div>'; return; }
+    el.innerHTML = items.map(function(item) {
+      return '<div class="m-info-card">' +
+        '<div class="m-info-name">' + (item.name||"") + '</div>' +
+        (item.address ? '<div class="m-info-sub">' + item.address + '</div>' : '') +
+        (item.code ? '<div class="m-code-badge">' + item.code + '</div>' : '') +
+        (item.note ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">' + item.note + '</div>' : '') +
       '</div>';
     }).join("");
-  }).catch(function() {
-    document.getElementById("m-hospital-content").innerHTML = '<div style="color:var(--gray)">Unable to load codes.</div>';
+  }).catch(function(e) {
+    el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>';
   });
 }
 
 function mLoadBuildings() {
-  db.collection("buildings").orderBy("name").get().then(function(snap) {
-    var el = document.getElementById("m-buildings-content");
-    if (snap.empty) { el.innerHTML = '<div style="color:var(--gray)">No buildings on file.</div>'; return; }
-    el.innerHTML = snap.docs.map(function(d) {
-      var b = d.data();
-      return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:10px">' +
-        '<div style="font-family:Oswald,sans-serif;font-size:0.85rem;font-weight:700;color:var(--white);margin-bottom:4px">' + (b.name||"") + '</div>' +
-        (b.address ? '<div style="font-size:0.72rem;color:var(--gray);margin-bottom:6px">' + b.address + '</div>' : "") +
-        (b.code ? '<div style="background:rgba(255,200,74,0.08);border:1px solid rgba(255,200,74,0.3);border-radius:6px;padding:6px 10px;font-family:Oswald,sans-serif;font-size:0.88rem;font-weight:700;color:#ffc84a">' + b.code + '</div>' : "") +
-        (b.notes ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:6px">' + b.notes + '</div>' : "") +
+  var el = document.getElementById("m-buildings-content");
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
+  db.collection("appdata").doc("codes").get().then(function(snap) {
+    var items = (snap.exists && snap.data().sections && snap.data().sections.buildings) || [];
+    if (!items.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No buildings on file.</div>'; return; }
+    el.innerHTML = items.map(function(b) {
+      return '<div class="m-info-card">' +
+        '<div class="m-info-name">' + (b.name||"") + '</div>' +
+        (b.address ? '<div class="m-info-sub">' + b.address + '</div>' : "") +
+        (b.code ? '<div class="m-code-badge">' + b.code + '</div>' : "") +
+        (b.note ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">' + b.note + '</div>' : "") +
       '</div>';
     }).join("");
-  });
+  }).catch(function(e) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; });
 }
 
 function mLoadShuls() {
-  db.collection("shuls").orderBy("name").get().then(function(snap) {
-    var el = document.getElementById("m-shuls-content");
-    if (snap.empty) { el.innerHTML = '<div style="color:var(--gray)">No shuls on file.</div>'; return; }
-    el.innerHTML = snap.docs.map(function(d) {
-      var s = d.data();
-      return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:10px">' +
-        '<div style="font-family:Oswald,sans-serif;font-size:0.85rem;font-weight:700;color:var(--white);margin-bottom:4px">' + (s.name||"") + '</div>' +
-        (s.address ? '<div style="font-size:0.72rem;color:var(--gray);margin-bottom:6px">' + s.address + '</div>' : "") +
-        (s.code ? '<div style="background:rgba(255,200,74,0.08);border:1px solid rgba(255,200,74,0.3);border-radius:6px;padding:6px 10px;font-family:Oswald,sans-serif;font-size:0.88rem;font-weight:700;color:#ffc84a">' + s.code + '</div>' : "") +
-        (s.notes ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:6px">' + s.notes + '</div>' : "") +
+  var el = document.getElementById("m-shuls-content");
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
+  db.collection("appdata").doc("codes").get().then(function(snap) {
+    var items = (snap.exists && snap.data().sections && snap.data().sections.shuls) || [];
+    if (!items.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No shuls on file.</div>'; return; }
+    el.innerHTML = items.map(function(s) {
+      return '<div class="m-info-card">' +
+        '<div class="m-info-name">' + (s.name||"") + '</div>' +
+        (s.address ? '<div class="m-info-sub">' + s.address + '</div>' : "") +
+        (s.code ? '<div class="m-code-badge">' + s.code + '</div>' : "") +
+        (s.note ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">' + s.note + '</div>' : "") +
       '</div>';
     }).join("");
-  });
+  }).catch(function(e) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; });
 }
 
 function mLoadShifts() {
-  db.collection("nightShifts").orderBy("date","desc").limit(14).get().then(function(snap) {
-    var el = document.getElementById("m-shifts-content");
-    if (snap.empty) { el.innerHTML = '<div style="color:var(--gray)">No shifts on file.</div>'; return; }
-    el.innerHTML = snap.docs.map(function(d) {
-      var s = d.data();
-      return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:10px">' +
-        '<div style="font-family:Oswald,sans-serif;font-size:0.85rem;font-weight:700;color:var(--white);margin-bottom:6px">' + (s.date||d.id) + '</div>' +
-        (s.units ? s.units.map(function(u) {
-          return '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.78rem;border-bottom:1px solid rgba(255,255,255,0.05)"><span style="color:var(--gray)">' + (u.role||"") + '</span><span style="color:#7ab8f5;font-family:Oswald,sans-serif;font-weight:700">' + (u.unit||"") + '</span></div>';
-        }).join("") : "") +
+  var el = document.getElementById("m-shifts-content");
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
+  db.collection("appdata").doc("shifts").get().then(function(snap) {
+    var shifts = (snap.exists && snap.data().shifts) || [];
+    if (!shifts.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No shifts on file.</div>'; return; }
+    shifts.sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
+    el.innerHTML = shifts.slice(0,14).map(function(s) {
+      var units = s.units || [];
+      return '<div class="m-info-card">' +
+        '<div class="m-info-name">' + (s.date||"") + '</div>' +
+        (units.length ? '<div style="margin-top:6px">' + units.map(function(u) {
+          return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:0.78rem;border-bottom:1px solid rgba(255,255,255,0.05)">' +
+            '<span style="color:var(--gray)">' + (u.role||u.position||"") + '</span>' +
+            '<span style="color:#7ab8f5;font-family:Oswald,sans-serif;font-weight:700">' + (u.unit||u.name||"") + '</span>' +
+          '</div>';
+        }).join("") + '</div>' : "") +
       '</div>';
     }).join("");
-  });
+  }).catch(function(e) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; });
 }
+
 
 function mLoadContacts() {
   db.collection("users").orderBy("unit").get().then(function(snap) {
@@ -880,14 +902,16 @@ function mPlayTone() {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/CallDashboard/sw.js").then(function(reg) {
     mSWReg = reg;
+    // Initialize FCM messaging with this SW registration
+    try {
+      mFCMMessaging = firebase.messaging();
+    } catch(e) { console.warn("FCM messaging init:", e.message); }
     navigator.serviceWorker.addEventListener("message", function(e) {
       if (!e.data) return;
       if (e.data.type === "PLAY_TONE") mPlayTone();
-      if (e.data.type === "NEW_CALL" && e.data.callId) {
-        mGoTo("home");
-      }
+      if (e.data.type === "NEW_CALL" && e.data.callId) mGoTo("home");
     });
-  }).catch(function() {});
+  }).catch(function(e) { console.warn("SW registration failed:", e); });
 }
 
 function mSendTokenToSW() {
@@ -898,33 +922,57 @@ function mSendTokenToSW() {
 }
 
 function mRequestPush() {
-  if (!("Notification" in window)) { mToast("Notifications not supported", true); return; }
+  if (!("Notification" in window)) { mToast("Notifications not supported on this browser", true); return; }
   if (!FCM_VAPID_KEY) { mToast("Push not configured", true); return; }
+  if (!("serviceWorker" in navigator)) { mToast("Service worker not supported", true); return; }
+
   Notification.requestPermission().then(function(p) {
-    if (p !== "granted") { mToast("Notifications blocked in settings", true); return; }
-    var msg = firebase.messaging();
-    msg.getToken({vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: mSWReg})
-      .then(function(token) {
-        if (!token) { mToast("Could not get push token", true); return; }
-        return db.collection("pushTokens").doc(mCurrentUser.uid).set({
-          token: token, unit: mCurrentUserUnit, uid: mCurrentUser.uid,
-          platform: /iPhone|iPad|iPod/.test(navigator.userAgent) ? "ios" : "android",
-          updatedAt: new Date().toISOString()
-        });
-      })
-      .then(function() { mToast("Alerts enabled!"); mUpdateAlertBtn(); })
-      .catch(function(e) { mToast("Error: " + e.message, true); });
+    if (p !== "granted") { mToast("Notifications blocked — check Settings", true); return; }
+
+    // Wait for SW to be ready
+    navigator.serviceWorker.ready.then(function(reg) {
+      mSWReg = reg;
+      try {
+        var msg = mFCMMessaging || firebase.messaging();
+        msg.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg })
+          .then(function(token) {
+            if (!token) { mToast("Could not get push token — try again", true); return; }
+            if (!mCurrentUser) { mToast("Not signed in", true); return; }
+            return db.collection("pushTokens").doc(mCurrentUser.uid).set({
+              token: token,
+              unit: mCurrentUserUnit || "",
+              uid: mCurrentUser.uid,
+              platform: /iPhone|iPad|iPod/.test(navigator.userAgent) ? "ios" : "android",
+              updatedAt: new Date().toISOString()
+            });
+          })
+          .then(function() { mToast("🔔 Alerts enabled!"); mUpdateAlertBtn(); })
+          .catch(function(e) {
+            console.error("FCM getToken error:", e);
+            mToast("Alert error: " + (e.message || e.code || "unknown"), true);
+          });
+      } catch(e) {
+        console.error("firebase.messaging() error:", e);
+        mToast("Messaging error: " + e.message, true);
+      }
+    }).catch(function(e) {
+      mToast("SW not ready — try reloading the app", true);
+    });
   });
 }
 
 function mUpdateAlertBtn() {
-  var btn = document.getElementById("m-alert-btn");
-  if (!btn) return;
-  if (Notification.permission === "granted") {
-    btn.textContent = "Alerts On"; btn.style.color = "#7dedb5";
-  } else {
-    btn.textContent = "Alerts"; btn.style.color = "var(--gray)";
-  }
+  var btns = [document.getElementById("m-alert-btn"), document.getElementById("m-alert-btn-2")];
+  var on = Notification.permission === "granted";
+  btns.forEach(function(btn) {
+    if (!btn) return;
+    btn.textContent = on ? "🔔 Alerts On" : "🔕 Enable Alerts";
+    btn.style.color = on ? "#7dedb5" : "var(--gray)";
+  });
+  // Hide the standalone alerts row when calls section is visible
+  var callsVisible = document.getElementById("m-calls-section").style.display !== "none";
+  var alertsRow = document.getElementById("m-alerts-row");
+  if (alertsRow) alertsRow.style.display = callsVisible ? "none" : "flex";
 }
 </script>
 </body>
