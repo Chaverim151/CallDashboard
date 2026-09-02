@@ -1192,7 +1192,7 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places,geometry&loading=async"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places,geometry&callback=Function.prototype"></script>
 <script>
 // ── EARLY WINDOW EXPORTS — must be assigned before any other code runs ──
 // These are referenced by inline onclick handlers in the HTML above this script tag.
@@ -5954,6 +5954,8 @@ function openTransportModal(callId) {
     if (facChosen) { facChosen.style.display = "none"; facChosen.textContent = ""; }
     if (hospLabel) hospLabel.textContent = "Select hospital…";
     if (hospBtn) hospBtn.style.color = "var(--gray)";
+    var otherSearch = document.getElementById("transport-other-search");
+    if (otherSearch) otherSearch.remove();
   });
 }
 
@@ -6128,32 +6130,72 @@ window.toggleTransportHospDD = function(btn) {
     "St. Peters University Hospital", "JFK Medical Center", "Overlook Medical Center",
     "Morristown Medical Center", "Clara Maass Medical Center", "Trinitas Regional Medical Center",
     "Perth Amboy General Hospital", "Newark Beth Israel Medical Center",
-    "University Hospital Newark", "Robert Wood Johnson Rahway", "Other"
+    "University Hospital Newark", "Robert Wood Johnson Rahway"
   ];
 
   var rect = btn.getBoundingClientRect();
+  var spaceBelow = window.innerHeight - rect.bottom;
+  var posTop = spaceBelow > 320 ? rect.bottom + 4 : rect.top - 340 - 4;
+
   var popup = document.createElement("div");
   popup.id = "transport-hosp-dd-popup";
+  popup.style.cssText = "position:fixed;z-index:9999;background:#0f1e38;border:1px solid var(--card-border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.5);width:" + rect.width + "px;left:" + rect.left + "px;top:" + posTop + "px;max-height:340px;display:flex;flex-direction:column;overflow:hidden";
 
-  // Position above or below depending on space
-  var spaceBelow = window.innerHeight - rect.bottom;
-  var popupHeight = Math.min(TRANSPORT_HOSPITALS.length * 40, 300);
-  var posTop = spaceBelow > popupHeight ? rect.bottom + 4 : rect.top - popupHeight - 4;
+  var searchWrap = document.createElement("div");
+  searchWrap.style.cssText = "padding:8px;border-bottom:1px solid var(--card-border);flex-shrink:0";
+  searchWrap.innerHTML = '<input type="text" id="transport-hosp-search-inp" placeholder="Type to search…" autocomplete="off" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:7px 10px;color:var(--white);font-size:0.82rem;outline:none;box-sizing:border-box">';
+  popup.appendChild(searchWrap);
 
-  popup.style.cssText = "position:fixed;z-index:9999;background:#0f1e38;border:1px solid var(--card-border);border-radius:8px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);width:" + rect.width + "px;left:" + rect.left + "px;top:" + posTop + "px;max-height:300px";
+  var listWrap = document.createElement("div");
+  listWrap.id = "transport-hosp-list";
+  listWrap.style.cssText = "overflow-y:auto;flex:1";
 
-  popup.innerHTML = TRANSPORT_HOSPITALS.map(function(h) {
-    return '<div onclick="window.selectTransportHosp(\'' + h.replace(/'/g,"\\'") + '\')" style="padding:9px 14px;font-size:0.82rem;color:var(--white);cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.1s" onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'\'">' + h + '</div>';
-  }).join("");
+  function renderList(q) {
+    var filtered = q ? TRANSPORT_HOSPITALS.filter(function(h){ return h.toLowerCase().indexOf(q.toLowerCase()) !== -1; }) : TRANSPORT_HOSPITALS;
+    listWrap.innerHTML = filtered.map(function(h) {
+      return '<div onclick="window.selectTransportHosp(\'' + h.replace(/'/g,"\\'") + '\')" style="padding:9px 14px;font-size:0.82rem;color:var(--white);cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05)" onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'\'">' + h + '</div>';
+    }).join("") + '<div id="transport-hosp-places" style="' + (q.length>=2?'':'display:none') + ';border-top:1px solid var(--card-border)"></div>';
+  }
 
+  renderList("");
+  popup.appendChild(listWrap);
   document.body.appendChild(popup);
+
+  var inp = document.getElementById("transport-hosp-search-inp");
+  if (inp) {
+    inp.focus();
+    inp.addEventListener("input", function() {
+      var q = inp.value.trim();
+      renderList(q);
+      if (q.length >= 2) {
+        fetch('https://api.api-ninjas.com/v1/hospitals?name=' + encodeURIComponent(q) + '&limit=8', {
+          headers: { 'X-Api-Key': 'pjjLfeqUHWBqhedxV1ow3rfRTQXvE8zgKqYOi20V' }
+        }).then(function(res){ return res.json(); }).then(function(hospitals) {
+          var pl = document.getElementById("transport-hosp-places");
+          if (!pl) return;
+          if (!hospitals || !hospitals.length) { pl.innerHTML = ""; pl.style.display = "none"; return; }
+          // Filter to NJ first, then nearby states
+          var nj = hospitals.filter(function(h){ return h.state === "NJ"; });
+          var nearby = hospitals.filter(function(h){ return h.state !== "NJ" && ['NY','PA','CT','DE'].indexOf(h.state) !== -1; });
+          var results = nj.concat(nearby).slice(0, 5);
+          if (!results.length) { pl.innerHTML = ""; pl.style.display = "none"; return; }
+          pl.innerHTML = '<div style="padding:4px 14px;font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Hospitals</div>' +
+            results.map(function(h) {
+              var display = h.name + (h.city ? ", " + h.city : "");
+              return '<div onclick="window.selectTransportHosp(\'' + display.replace(/'/g,"\\'") + '\')" style="padding:9px 14px;font-size:0.80rem;color:var(--white);cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05)" onmouseover="this.style.background=\'rgba(255,255,255,0.07)\'" onmouseout="this.style.background=\'\'">' +
+                '<div>' + h.name + '</div>' +
+                (h.city ? '<div style="font-size:0.68rem;color:var(--gray)">' + h.city + (h.state ? ', ' + h.state : '') + '</div>' : '') +
+              '</div>';
+            }).join("");
+          pl.style.display = "block";
+        }).catch(function() {});
+      }
+    });
+  }
 
   setTimeout(function() {
     document.addEventListener("click", function closeDD(e) {
-      if (!popup.contains(e.target) && e.target !== btn) {
-        popup.remove();
-        document.removeEventListener("click", closeDD);
-      }
+      if (!popup.contains(e.target) && e.target !== btn) { popup.remove(); document.removeEventListener("click", closeDD); }
     });
   }, 10);
 };
@@ -6161,6 +6203,8 @@ window.toggleTransportHospDD = function(btn) {
 window.selectTransportHosp = function(hospital) {
   var popup = document.getElementById("transport-hosp-dd-popup");
   if (popup) popup.remove();
+  var existingSearch = document.getElementById("transport-other-search");
+  if (existingSearch) existingSearch.remove();
   var facVal = document.getElementById("transport-facility-value");
   var hospLabel = document.getElementById("transport-hosp-label");
   var hospBtn = document.getElementById("transport-hosp-btn");
@@ -6170,6 +6214,7 @@ window.selectTransportHosp = function(hospital) {
   if (hospBtn) hospBtn.style.color = "var(--white)";
   if (chosen) { chosen.textContent = "✓ " + hospital; chosen.style.display = "block"; }
 };
+
 
 // Legacy stubs (kept for safety)
 function handleTransportFacilityChange() {}
