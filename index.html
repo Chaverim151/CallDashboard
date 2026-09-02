@@ -1825,6 +1825,13 @@ function completeCall(callId) {
 window.openManageCall = openManageCall;
 window.completeCall = completeCall;
 
+// Legacy manage-call modal stubs (modal redirects to dispatcher dashboard)
+window.closeManageCall = function() {
+  var modal = document.getElementById("manage-call-modal");
+  if (modal) modal.style.display = "none";
+};
+window.saveManageCall = function() { window.closeManageCall(); };
+
 // ── HEX TO RGB ──
 function hexToRgb(hex) {
   var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
@@ -2886,7 +2893,7 @@ function buildEmailBody(opts) {
   var pe = { urgent: "🚨", high: "🔴", medium: "🟡", low: "🟢" }[priority] || "";
   var tid = ticketId ? "#" + ticketId.slice(-6).toUpperCase() : "";
   if (type === "accept") {
-    return '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0"><table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden"><tr><td bgcolor="#0a1628" style="padding:24px;text-align:center"><img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55"><div style="color:#4caf80;font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px">TICKET ACCEPTED</div></td></tr><tr><td bgcolor="#ffffff" style="padding:24px"><p style="font-size:14px;color:#333"><strong>' + acceptedBy + '</strong> accepted this service request.</p><table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px"><tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;width:130px">Title</td><td style="padding:10px"><strong>' + title + '</strong></td></tr><tr><td style="padding:10px;color:#666">Unit</td><td style="padding:10px">' + unit + '</td></tr><tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666">Accepted By</td><td style="padding:10px;color:#4caf80"><strong>' + acceptedBy + '</strong></td></tr></table></td></tr><tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY</td></tr></table></td></tr></table></body></html>';
+    return '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0"><table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden"><tr><td bgcolor="#0a1628" style="padding:24px;text-align:center"><img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55"><div style="color:#4caf80;font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px">TICKET ACCEPTED</div></td></tr><tr><td bgcolor="#ffffff" style="padding:24px"><p style="font-size:14px;color:#333"><strong>' + acceptedBy + '</strong> accepted this service request.</p><table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px"><tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;width:130px">Title</td><td style="padding:10px"><strong>' + title + '</strong></td></tr><tr><td style="padding:10px;color:#666">Unit</td><td style="padding:10px">' + unit + '</td></tr><tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666">Accepted By</td><td style="padding:10px;color:#4caf80"><strong>' + acceptedBy + '</strong></td></tr></table></td></tr><tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY</td></tr></table></td></tr></table></html>';
   }
   if (type === "comment") {
     return '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0"><table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden"><tr><td bgcolor="#0a1628" style="padding:24px;text-align:center"><img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55"><div style="color:#4a90d9;font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px">NEW COMMENT</div></td></tr><tr><td bgcolor="#ffffff" style="padding:24px"><table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px"><tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;width:130px">Ticket</td><td style="padding:10px"><strong>' + title + '</strong> ' + tid + '</td></tr><tr><td style="padding:10px;color:#666">Unit</td><td style="padding:10px">' + unit + '</td></tr><tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;vertical-align:top">Comment</td><td style="padding:10px;white-space:pre-wrap">' + (commentText || details) + '</td></tr></table></td></tr><tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY</td></tr></table></td></tr></table></body></html>';
@@ -3146,13 +3153,18 @@ function initEducation() {
   eduIsAdmin = currentRole === "admin" || rolesLower.includes("captain") || rolesLower.includes("chief");
   var newBtn = document.getElementById("edu-new-btn");
   if (newBtn) newBtn.style.display = eduIsAdmin ? "block" : "none";
+
+  // Show Pending CE tab for admins, and load badge count
+  var pendingTab = document.getElementById("edu-tab-pending");
+  if (pendingTab) pendingTab.style.display = eduIsAdmin ? "flex" : "none";
+  if (eduIsAdmin) loadPendingCEBadge();
   setEduTab("upcoming");
 }
 window.initEducation = initEducation;
 
 function setEduTab(tab) {
   eduTab = tab;
-  ["upcoming","past","cme"].forEach(function(t) {
+  ["upcoming","past","cme","pending"].forEach(function(t) {
     var el = document.getElementById("edu-tab-" + t);
     if (el) el.className = "edu-tab" + (t === tab ? " edu-tab-active" : "");
   });
@@ -3165,6 +3177,7 @@ function loadEduContent() {
   if (!el) return;
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0">Loading...</div>';
   if (eduTab === "cme") { renderCMEHours(el); return; }
+  if (eduTab === "pending") { renderPendingCE(el); return; }
   var now = new Date().toISOString();
   db.collection("education").get().then(function(snap) {
     eduEvents = [];
@@ -3366,7 +3379,10 @@ function renderEventDetail(ev, body) {
           (rows.length ? rows.map(function(r) {
             var t = r.timestamp ? new Date(r.timestamp).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : "";
             var approved = r.ceApproved;
+            var denied = r.ceDecision === "denied";
             var hasCE = r.ceHours && r.ceHours > 0;
+            var statusColor = approved ? "#7dedb5" : denied ? "#ff9090" : "#ffc84a";
+            var statusIcon = approved ? "✓" : denied ? "✗" : "⏳";
             return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px">' +
               '<div>' +
                 '<span style="color:#7ab8f5;font-weight:700;font-family:\'Oswald\',sans-serif">' + (r.unit||r.uid) + '</span>' +
@@ -3375,9 +3391,13 @@ function renderEventDetail(ev, body) {
               '</div>' +
               (hasCE ?
                 '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">' +
-                  '<span style="font-size:0.68rem;color:' + (approved ? '#7dedb5' : '#ffc84a') + ';font-weight:600">' + r.ceHours + ' CE ' + (approved ? '✓' : '⏳') + '</span>' +
-                  (approved ?
+                  '<span style="font-size:0.68rem;color:' + statusColor + ';font-weight:600">' + r.ceHours + ' CE ' + statusIcon + '</span>' +
+                  (denied ?
+                    '<span style="font-size:0.62rem;color:#ff9090;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.denialReason||"") + '">Denied</span>' +
+                    '<button onclick="window.approveCE(\'' + ev.id + '\',\'' + r.uid + '\',' + r.ceHours + ')" style="background:rgba(76,175,128,0.12);border:1px solid rgba(76,175,128,0.4);border-radius:5px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">Override</button>' :
+                  approved ?
                     '<button onclick="window.rejectCE(\'' + ev.id + '\',\'' + r.uid + '\',' + r.ceHours + ')" style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);border-radius:5px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">Revoke</button>' :
+                    '<button onclick="window.openDenyCE(\'' + ev.id + '\',\'' + r.uid + '\',' + r.ceHours + ',\'' + (r.name||"").replace(/'/g,"\\'") + '\',\'' + (r.unit||"") + '\',\'' + (ev.title||"").replace(/'/g,"\\'") + '\')" style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);border-radius:5px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">Deny</button>' +
                     '<button onclick="window.approveCE(\'' + ev.id + '\',\'' + r.uid + '\',' + r.ceHours + ')" style="background:rgba(76,175,128,0.12);border:1px solid rgba(76,175,128,0.4);border-radius:5px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">Approve</button>'
                   ) +
                 '</div>' :
@@ -3400,61 +3420,235 @@ function renderEventDetail(ev, body) {
 }
 
 // ── CE HOUR APPROVAL ──
+var ceDenyContext = null; // { eventId, uid, ceHours, memberName, unit, eventTitle }
+
+function sendCENotification(uid, title, body) {
+  // Send push via FCM by writing to a ceNotifications collection (picked up by Cloud Function)
+  // OR send email via ClickSend directly
+  db.collection("users").doc(uid).get().then(function(snap) {
+    if (!snap.exists) return;
+    var email = snap.data().email;
+    var name = ((snap.data().firstName||"")+" "+(snap.data().lastName||"")).trim();
+    if (email) {
+      var htmlBody = '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif">' +
+        '<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0">' +
+        '<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden">' +
+        '<tr><td bgcolor="#0a1628" style="padding:24px;text-align:center">' +
+          '<img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55">' +
+          '<div style="color:' + (title.includes('Approved') ? '#4caf80' : '#e05555') + ';font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px;text-transform:uppercase">' + title + '</div>' +
+        '</td></tr>' +
+        '<tr><td bgcolor="#ffffff" style="padding:24px">' +
+          '<p style="font-size:15px;color:#333;margin-top:0">Hi ' + (name||snap.data().unit||"Member") + ',</p>' +
+          '<p style="font-size:14px;color:#333;white-space:pre-wrap;line-height:1.7">' + body.replace(/\n/g,'<br>') + '</p>' +
+        '</td></tr>' +
+        '<tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY</td></tr>' +
+        '</table></td></tr></table></body></html>';
+      sendClickSendEmail({ toEmail: email, subject: title + " — Hatzolah MC Education", htmlBody: htmlBody }).catch(function(){});
+    }
+    // Also write a push notification request for the Cloud Function to pick up
+    db.collection("pushNotifications").add({
+      toUid: uid, title: title, body: body,
+      createdAt: new Date().toISOString(), tag: "hatzolah-ce"
+    }).catch(function(){});
+  }).catch(function(){});
+}
+
 window.approveCE = function(eventId, uid, ceHours) {
   if (!eduIsAdmin) { showToast("Admin access required", true); return; }
   var year = new Date().getFullYear().toString();
-  var batch = db.batch();
-  // Mark attendance record as approved
-  batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), { ceApproved: true, approvedBy: currentUserUnit||currentUser.email, approvedAt: new Date().toISOString() });
-  // Add CE hours to user record
-  var userRef = db.collection("users").doc(uid);
-  var cmeUpdate = {};
-  cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(ceHours);
-  cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
-  batch.update(userRef, cmeUpdate);
-  batch.commit().then(function() {
-    showToast("✓ " + ceHours + " CE hours approved");
-    openEventDetail(eventId);
-  }).catch(function(e) { showToast("Error: " + e.message, true); });
-};
+  var approvedBy = currentUserUnit || currentUser.email;
 
-window.rejectCE = function(eventId, uid, ceHours) {
-  if (!eduIsAdmin) { showToast("Admin access required", true); return; }
-  if (!confirm("Revoke CE hours for this member? Their CME record will be updated.")) return;
-  var year = new Date().getFullYear().toString();
-  var batch = db.batch();
-  batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), { ceApproved: false, approvedBy: null, approvedAt: null });
-  var cmeUpdate = {};
-  cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(-ceHours);
-  cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(-1);
-  batch.update(db.collection("users").doc(uid), cmeUpdate);
-  batch.commit().then(function() {
-    showToast("CE hours revoked");
-    openEventDetail(eventId);
-  }).catch(function(e) { showToast("Error: " + e.message, true); });
-};
+  // Get event title and member info for notification
+  Promise.all([
+    db.collection("education").doc(eventId).get(),
+    db.collection("education").doc(eventId).collection("attendance").doc(uid).get()
+  ]).then(function(results) {
+    var evTitle = results[0].exists ? (results[0].data().title||"class") : "class";
+    var memberName = results[1].exists ? (results[1].data().name||results[1].data().unit||"") : "";
 
-window.approveAllCE = function(eventId) {
-  if (!eduIsAdmin) { showToast("Admin access required", true); return; }
-  db.collection("education").doc(eventId).collection("attendance").where("ceApproved","==",false).get().then(function(snap) {
-    if (snap.empty) { showToast("No pending approvals"); return; }
-    var year = new Date().getFullYear().toString();
     var batch = db.batch();
-    snap.forEach(function(d) {
-      var r = d.data();
-      if (!r.ceHours || r.ceHours <= 0) return;
-      batch.update(d.ref, { ceApproved: true, approvedBy: currentUserUnit||currentUser.email, approvedAt: new Date().toISOString() });
-      var cmeUpdate = {};
-      cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(r.ceHours);
-      cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
-      batch.update(db.collection("users").doc(d.id), cmeUpdate);
+    batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), {
+      ceApproved: true, ceDecision: "approved",
+      approvedBy: approvedBy, approvedAt: new Date().toISOString()
     });
+    var cmeUpdate = {};
+    cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(ceHours);
+    cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
+    batch.update(db.collection("users").doc(uid), cmeUpdate);
+
     batch.commit().then(function() {
-      showToast("✓ All CE hours approved (" + snap.size + " members)");
+      showToast("✓ " + ceHours + " CE hours approved for " + (memberName||uid));
+      // Send notification
+      sendCENotification(uid,
+        "✅ CE Hours Approved",
+        ceHours + " CE hour" + (ceHours !== 1 ? "s" : "") + " from \"" + evTitle + "\" have been approved by " + approvedBy + " and added to your record."
+      );
       openEventDetail(eventId);
     }).catch(function(e) { showToast("Error: " + e.message, true); });
   });
 };
+
+window.openDenyCE = function(eventId, uid, ceHours, memberName, unit, eventTitle) {
+  ceDenyContext = { eventId: eventId, uid: uid, ceHours: ceHours, memberName: memberName, unit: unit, eventTitle: eventTitle };
+  var infoEl = document.getElementById("ce-deny-member-info");
+  var reasonEl = document.getElementById("ce-deny-reason");
+  var msgEl = document.getElementById("ce-deny-msg");
+  if (infoEl) infoEl.innerHTML = '<strong>' + (unit||"") + '</strong> ' + (memberName||"") + ' &nbsp;·&nbsp; ' + ceHours + ' CE hrs &nbsp;·&nbsp; ' + (eventTitle||"");
+  if (reasonEl) reasonEl.value = "";
+  if (msgEl) { msgEl.className = "form-msg"; msgEl.textContent = ""; }
+  document.getElementById("ce-deny-modal").style.display = "flex";
+};
+
+window.closeDenyModal = function() {
+  document.getElementById("ce-deny-modal").style.display = "none";
+  ceDenyContext = null;
+};
+
+window.submitDenyCE = function() {
+  if (!ceDenyContext) return;
+  var reason = (document.getElementById("ce-deny-reason").value||"").trim();
+  var msgEl = document.getElementById("ce-deny-msg");
+  if (!reason) { msgEl.className = "form-msg error"; msgEl.textContent = "Please enter a reason for the denial."; return; }
+  msgEl.className = "form-msg"; msgEl.textContent = "";
+
+  var ctx = ceDenyContext;
+  var deniedBy = currentUserUnit || currentUser.email;
+
+  db.collection("education").doc(ctx.eventId).collection("attendance").doc(ctx.uid).update({
+    ceApproved: false, ceDecision: "denied",
+    deniedBy: deniedBy, deniedAt: new Date().toISOString(), denialReason: reason
+  }).then(function() {
+    window.closeDenyModal();
+    showToast("CE hours denied — notification sent");
+    sendCENotification(ctx.uid,
+      "✗ CE Hours Denied",
+      "Your " + ctx.ceHours + " CE hour" + (ctx.ceHours !== 1 ? "s" : "") + " from \"" + (ctx.eventTitle||"class") + "\" were not approved.\n\nReason: " + reason + "\n\nIf you have questions, please contact " + deniedBy + "."
+    );
+    openEventDetail(ctx.eventId);
+  }).catch(function(e) { msgEl.className = "form-msg error"; msgEl.textContent = "Error: " + e.message; });
+};
+
+window.rejectCE = function(eventId, uid, ceHours) {
+  // Now opens the deny modal for revoking already-approved hours
+  if (!eduIsAdmin) { showToast("Admin access required", true); return; }
+  db.collection("education").doc(eventId).collection("attendance").doc(uid).get().then(function(snap) {
+    var r = snap.exists ? snap.data() : {};
+    db.collection("education").doc(eventId).get().then(function(evSnap) {
+      var evTitle = evSnap.exists ? (evSnap.data().title||"class") : "class";
+      window.openDenyCE(eventId, uid, ceHours, r.name||"", r.unit||"", evTitle);
+    });
+  });
+};
+
+window.approveAllCE = function(eventId) {
+  if (!eduIsAdmin) { showToast("Admin access required", true); return; }
+  db.collection("education").doc(eventId).get().then(function(evSnap) {
+    var evTitle = evSnap.exists ? (evSnap.data().title||"class") : "class";
+    db.collection("education").doc(eventId).collection("attendance")
+      .where("ceApproved","==",false).get().then(function(snap) {
+      // Filter only those without a decision (not already denied)
+      var pending = [];
+      snap.forEach(function(d){ if (!d.data().ceDecision || d.data().ceDecision === "") pending.push(d); });
+      if (!pending.length) { showToast("No pending approvals"); return; }
+      var year = new Date().getFullYear().toString();
+      var approvedBy = currentUserUnit || currentUser.email;
+      var batch = db.batch();
+      pending.forEach(function(d) {
+        var r = d.data();
+        if (!r.ceHours || r.ceHours <= 0) return;
+        batch.update(d.ref, { ceApproved: true, ceDecision: "approved", approvedBy: approvedBy, approvedAt: new Date().toISOString() });
+        var cmeUpdate = {};
+        cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(r.ceHours);
+        cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
+        batch.update(db.collection("users").doc(d.id), cmeUpdate);
+      });
+      batch.commit().then(function() {
+        showToast("✓ Approved " + pending.length + " members");
+        pending.forEach(function(d) {
+          var r = d.data();
+          sendCENotification(d.id, "✅ CE Hours Approved",
+            r.ceHours + " CE hour" + (r.ceHours !== 1 ? "s" : "") + " from \"" + evTitle + "\" have been approved by " + approvedBy + " and added to your record."
+          );
+        });
+        openEventDetail(eventId);
+      }).catch(function(e) { showToast("Error: " + e.message, true); });
+    });
+  });
+};
+
+// ── PENDING CE TAB ──
+function renderPendingCE(el) {
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0">Loading...</div>';
+  // Fetch all education events, then find all pending attendance across all events
+  db.collection("education").get().then(function(evSnap) {
+    var events = {};
+    evSnap.forEach(function(d){ events[d.id] = d.data(); });
+    var eventIds = Object.keys(events);
+    if (!eventIds.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0">No events found.</div>'; return; }
+
+    // Query all attendance subcollections for pending (ceApproved==false, ceHours>0, no denial)
+    var promises = eventIds.map(function(eid) {
+      return db.collection("education").doc(eid).collection("attendance")
+        .where("ceApproved","==",false).get()
+        .then(function(aSnap){ return { eid: eid, docs: aSnap.docs }; })
+        .catch(function(){ return { eid: eid, docs: [] }; });
+    });
+
+    Promise.all(promises).then(function(results) {
+      var pending = [];
+      results.forEach(function(res) {
+        res.docs.forEach(function(d) {
+          var r = d.data();
+          if (!r.ceHours || r.ceHours <= 0) return;
+          if (r.ceDecision === "denied") return; // already decided
+          pending.push(Object.assign({ uid: d.id, eventId: res.eid, eventTitle: (events[res.eid]||{}).title||"Unknown" }, r));
+        });
+      });
+
+      // Update badge
+      var badge = document.getElementById("edu-pending-badge");
+      if (badge) { badge.textContent = pending.length; badge.style.display = pending.length ? "inline" : "none"; }
+
+      if (!pending.length) {
+        el.innerHTML = '<div style="color:#7dedb5;font-size:0.9rem;padding:24px 0;text-align:center">✓ No pending CE hours — all caught up!</div>';
+        return;
+      }
+
+      el.innerHTML = '<div style="font-size:0.72rem;color:var(--gray);margin-bottom:14px">Members pending CE hour approval across all events</div>' +
+        pending.map(function(r) {
+          var dt = r.timestamp ? new Date(r.timestamp).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
+          return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px">' +
+            '<div>' +
+              '<div style="font-family:\'Oswald\',sans-serif;font-weight:700;color:#7ab8f5">' + (r.unit||r.uid) + ' <span style="color:var(--white);font-weight:400;font-size:0.85rem">' + (r.name||"") + '</span></div>' +
+              '<div style="font-size:0.72rem;color:var(--gray);margin-top:2px">' + r.eventTitle + ' · ' + dt + (r.distanceMeters ? ' · ' + r.distanceMeters + 'm' : '') + '</div>' +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
+              '<span style="color:#ffc84a;font-family:\'Oswald\',sans-serif;font-weight:700;font-size:0.9rem">' + r.ceHours + ' CE</span>' +
+              '<button onclick="window.approveCE(\'' + r.eventId + '\',\'' + r.uid + '\',' + r.ceHours + ')" style="background:rgba(76,175,128,0.12);border:1px solid rgba(76,175,128,0.4);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;padding:5px 10px;cursor:pointer">✓ Approve</button>' +
+              '<button onclick="window.openDenyCE(\'' + r.eventId + '\',\'' + r.uid + '\',' + r.ceHours + ',\'' + (r.name||"").replace(/'/g,"\\'") + '\',\'' + (r.unit||"") + '\',\'' + (r.eventTitle||"").replace(/'/g,"\\'") + '\')" style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);border-radius:6px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;padding:5px 10px;cursor:pointer">✗ Deny</button>' +
+            '</div>' +
+          '</div>';
+        }).join("");
+    });
+  });
+}
+
+
+function loadPendingCEBadge() {
+  db.collection("education").get().then(function(evSnap) {
+    var promises = evSnap.docs.map(function(d) {
+      return db.collection("education").doc(d.id).collection("attendance")
+        .where("ceApproved","==",false).get()
+        .then(function(a){ return a.docs.filter(function(r){ return r.data().ceHours>0 && r.data().ceDecision !== "denied"; }).length; })
+        .catch(function(){ return 0; });
+    });
+    Promise.all(promises).then(function(counts) {
+      var total = counts.reduce(function(a,b){return a+b;},0);
+      var badge = document.getElementById("edu-pending-badge");
+      if (badge) { badge.textContent = total; badge.style.display = total > 0 ? "inline" : "none"; }
+    });
+  });
+}
 
 function submitRSVP(eventId, status) {
   if (!currentUser) return;
@@ -6260,12 +6454,10 @@ function selectDDCall(callId, keepSection) {
           var val = times[t.key] || '';
           var isLast = ti === TIMELINE.length - 1;
           return '<div style="display:flex;gap:8px;align-items:flex-start;' + (isLast ? '' : 'margin-bottom:0') + '">' +
-            // Dot + line
             '<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">' +
               '<div style="width:24px;height:24px;border-radius:50%;border:2px solid ' + (val ? t.color : 'rgba(255,255,255,0.12)') + ';background:' + (val ? 'rgba(' + hexToRgb(t.color) + ',0.15)' : 'transparent') + ';display:flex;align-items:center;justify-content:center;font-size:0.65rem">' + (val ? t.icon : '') + '</div>' +
               (!isLast ? '<div style="width:2px;flex:1;min-height:16px;background:' + (val ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)') + ';margin:2px 0"></div>' : '') +
             '</div>' +
-            // Label + time
             '<div style="padding-bottom:' + (isLast ? '0' : '10px') + '">' +
               '<div style="font-size:0.65rem;color:' + (val ? 'var(--white)' : 'var(--gray)') + ';font-family:\'Oswald\',sans-serif;font-weight:' + (val ? '700' : '400') + '">' + t.label + '</div>' +
               (val ? '<div style="font-size:0.78rem;font-weight:700;color:' + t.color + ';font-family:\'Oswald\',sans-serif;letter-spacing:0.05em">' + val + '</div>' : '<div style="font-size:0.65rem;color:rgba(255,255,255,0.2)">—</div>') +
@@ -6273,6 +6465,24 @@ function selectDDCall(callId, keepSection) {
           '</div>';
         }).join('') +
       '</div>';
+
+      // ── CALL ACTION LOG ──
+      var actionLog = buildCallActionLog(call);
+      var actionLogHTML = '';
+      if (actionLog.length) {
+        actionLogHTML = '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--card-border)">' +
+          '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">📋 Call Log</div>' +
+          actionLog.map(function(entry) {
+            return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px">' +
+              '<div style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;color:' + entry.color + ';flex-shrink:0;min-width:36px;padding-top:1px">' + (entry.time||'') + '</div>' +
+              '<div>' +
+                '<div style="font-size:0.72rem;color:var(--white);line-height:1.4">' + entry.icon + ' ' + entry.text + '</div>' +
+                (entry.sub ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:1px">' + entry.sub + '</div>' : '') +
+              '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>';
+      }
 
       rightContent.innerHTML =
         (svUrl ? '<img src="' + svUrl + '" style="width:100%;height:130px;object-fit:cover;display:block;border-bottom:1px solid var(--card-border)" onerror="this.style.display=\'none\'">' : '') +
@@ -6288,14 +6498,101 @@ function selectDDCall(callId, keepSection) {
           '</div>' +
           (call.notes ? '<div style="font-size:0.72rem;color:var(--gray);padding:8px 10px;background:rgba(255,255,255,0.04);border-radius:6px;line-height:1.5;border:1px solid var(--card-border);margin-bottom:0">' + call.notes + '</div>' : '') +
           timelineHTML +
+          actionLogHTML +
         '</div>';
     }
     renderDDSidebar(call, keepSection);
   });
 }
 
+function buildCallActionLog(call) {
+  var entries = [];
+  var times = call.times || {};
+  var unitDetails = call.unitDetails || {};
+  var crews = call.crews || [];
+
+  var STATUS_LOG = {
+    enroute_scene:    { icon:"🚗", text:"En Route to Scene",      color:"#7ab8f5" },
+    on_scene_direct:  { icon:"📍", text:"On Scene",               color:"#7dedb5" },
+    picking_up_ambo:  { icon:"🔑", text:"Picking Up Rig",          color:"#ffc84a" },
+    ambo_responding:  { icon:"🚑", text:"Rig Responding",          color:"#ffc84a" },
+    on_scene_ambo:    { icon:"📍", text:"On Scene with Rig",       color:"#7dedb5" },
+    rma_scene:        { icon:"✋", text:"RMA on Scene",            color:"#7dedb5" },
+    transporting:     { icon:"🚑", text:"Transporting",            color:"#ffc84a" },
+    at_facility:      { icon:"🏥", text:"Arrived at Hospital",     color:"#ff9090" },
+    clearing_facility:{ icon:"✓",  text:"Clearing Hospital",       color:"#7dedb5" },
+    back_at_base:     { icon:"🏠", text:"Back at Base",            color:"var(--gray)" }
+  };
+
+  // 1. Call dispatched
+  if (times.dispatched) {
+    entries.push({ time: times.dispatched, icon:"📟", text:"Call Dispatched", color:"#7ab8f5", sub: call.createdBy||"" });
+  }
+
+  // 2. Unit assignments & status changes
+  crews.forEach(function(crew, ci) {
+    Object.keys(crew||{}).forEach(function(role) {
+      if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
+      var unit = crew[role];
+      var det = unitDetails[ci + "_" + role] || {};
+      // Assignment
+      entries.push({ time: det.assignedAt||times.dispatched||"", icon:"👤", text: unit + " assigned", color:"var(--white)", sub: det.responseDir === "scene" ? "Direct to scene" : det.responseDir === "rig" ? "Picked up rig" : "" });
+      // Status
+      if (det.status) {
+        var s = STATUS_LOG[det.status];
+        if (s) entries.push({ time: det.statusAt||"", icon:s.icon, text: unit + " — " + s.text, color:s.color });
+      }
+    });
+  });
+
+  // 3. Key time milestones not already in the unit flow
+  if (times.first_on_scene) entries.push({ time: times.first_on_scene, icon:"📍", text:"First Unit On Scene", color:"#7dedb5" });
+  if (times.enroute)        entries.push({ time: times.enroute,        icon:"🚑", text:"Ambulance En Route from Scene", color:"#ffc84a" });
+  if (times.at_hospital)    entries.push({ time: times.at_hospital,    icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" });
+
+  // 4. ALS
+  if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon:"🚨", text:"ALS Activated", color:"#ff9090", sub: [call.alsProvider, call.alsUnit, call.alsEta ? "ETA "+call.alsEta+"min" : ""].filter(Boolean).join(" · ") });
+
+  // 5. PD
+  if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
+
+  // 6. Call notes
+  (call.callNotes||[]).forEach(function(n) {
+    if (n && n.text) entries.push({ time: n.time||"", icon:"📝", text: n.by ? n.by + ": " + n.text : n.text, color:"var(--gray)" });
+  });
+
+  // 7. Disposition
+  var disp = call.disposition || {};
+  if (disp.type === "transport") entries.push({ time: times.at_hospital||"", icon:"🏥", text:"Transported to " + (disp.hospital||"hospital"), color:"#7ab8f5" });
+  else if (disp.type === "rma")   entries.push({ time: "", icon:"✋", text:"RMA — " + (disp.rmaBy||""), color:"#7dedb5" });
+  else if (disp.type === "cancelled") entries.push({ time: "", icon:"✕", text:"Cancelled", color:"var(--gray)" });
+
+  // 8. Completed
+  if (call.completedAt) entries.push({ time: (function(){ var d=new Date(call.completedAt); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); })(), icon:"✓", text:"Call Closed", color:"var(--gray)", sub: call.completedBy||"" });
+
+  // Sort by time, blank times go at end
+  entries = entries.filter(function(e){ return e.text; });
+  entries.sort(function(a, b) {
+    if (!a.time && !b.time) return 0;
+    if (!a.time) return 1;
+    if (!b.time) return -1;
+    return a.time.localeCompare(b.time);
+  });
+
+  // De-duplicate adjacent identical entries
+  var seen = {};
+  entries = entries.filter(function(e) {
+    var key = e.time + "|" + e.text;
+    if (seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+
+  return entries;
+}
+window.buildCallActionLog = buildCallActionLog;
+
 function showDDStreetView(lat, lng) {
-  if (!ddStreetView) return;
   var svService = new google.maps.StreetViewService();
   svService.getPanorama({ location: { lat: lat, lng: lng }, radius: 100 }, function(data, status) {
     var toggle = document.getElementById("dd-sv-toggle");
@@ -6362,18 +6659,32 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
   // ── ALS BANNER ──
   var alsNatures = ["01","02","03","04","06","07","08","09","11","12","13","14","16","18","20","23"];
   var isALSNature = call.callNature && alsNatures.some(function(n){return (call.callNature||"").indexOf(n+" -")===0;});
+  var addr2 = (call.address||"").toLowerCase();
+  var isMedCentral = addr2.indexOf("highland park")!==-1||addr2.indexOf("new brunswick")!==-1||addr2.indexOf("north brunswick")!==-1||addr2.indexOf("east brunswick")!==-1||addr2.indexOf("south brunswick")!==-1||addr2.indexOf("piscataway")!==-1;
+  var sugProv = isMedCentral ? "Med-Central" : "JFK ALS";
+  var sugPhone = isMedCentral ? "8488005053" : "7322875235";
+  var sugPhoneDisplay = isMedCentral ? "848-800-5053" : "732-287-5235";
   var alsBanner = "";
-  if (isALSNature && !call.alsActivated) {
-    var addr2 = (call.address||"").toLowerCase();
-    var isMedCentral = addr2.indexOf("highland park")!==-1||addr2.indexOf("new brunswick")!==-1||addr2.indexOf("north brunswick")!==-1||addr2.indexOf("east brunswick")!==-1||addr2.indexOf("south brunswick")!==-1||addr2.indexOf("piscataway")!==-1;
-    var sugProv = isMedCentral ? "Med-Central" : "JFK ALS";
-    var sugPhone = isMedCentral ? "8488005053" : "7322875235";
-    var sugPhoneDisplay = isMedCentral ? "848-800-5053" : "732-287-5235";
+
+  if (call.alsActivated) {
+    // ALS already active — static confirmation banner
+    alsBanner =
+      '<div style="background:rgba(224,85,85,0.08);border:1px solid rgba(224,85,85,0.4);border-radius:8px;padding:8px 12px;margin-bottom:6px">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between">' +
+          '<div>' +
+            '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:2px">🚨 ALS Active</div>' +
+            '<div style="font-size:0.78rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta?" · ETA "+call.alsEta+"min":"") + '</div>' +
+          '</div>' +
+          '<button onclick="cancelALS(\'' + call.id + '\')" style="background:none;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:rgba(255,255,255,0.3);font-size:0.58rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px 7px;cursor:pointer;letter-spacing:0.05em;flex-shrink:0">✕ Cancel</button>' +
+        '</div>' +
+      '</div>';
+  } else if (isALSNature) {
+    // Protocol recommends ALS — FLASHING urgent banner
     alsBanner =
       '<div style="background:rgba(224,85,85,0.12);border:2px solid rgba(224,85,85,0.7);border-radius:8px;padding:8px 12px;margin-bottom:6px;animation:als-flash 0.9s ease-in-out infinite">' +
         '<div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">' +
           '<div style="width:7px;height:7px;border-radius:50%;background:#ff4444;animation:pulse-red 0.7s infinite;flex-shrink:0"></div>' +
-          '<span style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700">ALS Recommended</span>' +
+          '<span style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700">ALS Recommended by Protocol</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
           '<span style="font-size:0.78rem;color:var(--white);font-weight:700">' + sugProv + '</span>' +
@@ -6381,16 +6692,18 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
         '</div>' +
         '<button onclick="openALSModal(\'' + call.id + '\',\'' + sugProv + '\')" style="width:100%;background:rgba(224,85,85,0.25);border:1px solid rgba(224,85,85,0.6);border-radius:6px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;padding:5px;cursor:pointer;letter-spacing:0.05em">Activate ALS</button>' +
       '</div>';
-  } else if (call.alsActivated) {
+  } else {
+    // No protocol recommendation — always visible, red border no fill
     alsBanner =
-      '<div style="background:rgba(224,85,85,0.08);border:1px solid rgba(224,85,85,0.4);border-radius:8px;padding:8px 12px;margin-bottom:6px">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between">' +
-          '<div>' +
-            '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:2px">ALS Active</div>' +
-            '<div style="font-size:0.78rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta?" · ETA "+call.alsEta+"min":"") + '</div>' +
-          '</div>' +
-          '<button onclick="cancelALS(\'' + call.id + '\')" style="background:none;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:rgba(255,255,255,0.3);font-size:0.58rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px 7px;cursor:pointer;letter-spacing:0.05em;flex-shrink:0">✕ Cancel</button>' +
+      '<div style="background:transparent;border:1px solid rgba(224,85,85,0.45);border-radius:8px;padding:8px 12px;margin-bottom:6px">' +
+        '<div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">' +
+          '<span style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700">ALS</span>' +
         '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+          '<span style="font-size:0.78rem;color:var(--white);font-weight:700">' + sugProv + '</span>' +
+          '<a href="tel:' + sugPhone + '" style="display:inline-flex;align-items:center;gap:3px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:4px 9px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;text-decoration:none;white-space:nowrap">📞 ' + sugPhoneDisplay + '</a>' +
+        '</div>' +
+        '<button onclick="openALSModal(\'' + call.id + '\',\'' + sugProv + '\')" style="width:100%;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.35);border-radius:6px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;padding:5px;cursor:pointer;letter-spacing:0.05em">Activate ALS</button>' +
       '</div>';
   }
 
@@ -6644,7 +6957,7 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
             'style="width:100%;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:5px;border-radius:5px;cursor:pointer;border:1px solid rgba(125,237,181,0.4);background:rgba(125,237,181,0.08);color:#7dedb5">On Scene with Ambulance</button>';
 
       } else if (currentStatus === 'on_scene_ambo') {
-        var isERV = det.pickedAmboIsERV || false;
+        var isERV = (pickedAmbo && pickedAmbo.toString().indexOf('ERV') !== -1) || false;
         html +=
           '<div style="margin-top:3px;padding:4px 8px;border-radius:5px;border:1px solid #7dedb5;background:rgba(125,237,181,0.1);color:#7dedb5;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700">On Scene' + (isERV ? ' (ERV — no transport)' : ' with Rig') + '</div>' +
           '<div style="text-align:center;color:var(--gray);font-size:0.7rem;margin:2px 0">↓</div>' +
@@ -6929,6 +7242,7 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
     section("times", "🕐", "Call Times",  timesHTML, true) +
     section("units", "👥", "Units",       unitsHTML, true) +
     section("notes", "📝", "Call Notes",  notesHTML, false) +
+    section("disposition", "📋", "Disposition", dispHTML, true) +
     '<div style="display:flex;gap:5px;margin-top:8px">' +
       '<a href="' + (call.mapsLink||"#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center;font-size:0.68rem">🗺 Map</a>' +
       '<button onclick="completeCall(\'' + call.id + '\')" class="call-action-btn danger" style="flex:1;font-size:0.68rem">✓ Done</button>' +
@@ -6936,8 +7250,6 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
 }
 
 </script>
-
-</body>
 
 
 <!-- EDUCATION PAGE -->
@@ -6950,11 +7262,11 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
     </div>
   </div>
 
-  <!-- Tabs -->
   <div style="display:flex;border-bottom:1px solid var(--card-border);padding:0 20px;gap:0">
     <button id="edu-tab-upcoming" onclick="window.setEduTab('upcoming')" class="edu-tab edu-tab-active">Upcoming</button>
     <button id="edu-tab-past" onclick="window.setEduTab('past')" class="edu-tab">Past</button>
     <button id="edu-tab-cme" onclick="window.setEduTab('cme')" class="edu-tab">CME Hours</button>
+    <button id="edu-tab-pending" onclick="window.setEduTab('pending')" class="edu-tab" style="display:none">Pending CE <span id="edu-pending-badge" style="background:#ff9090;color:#fff;font-family:'Oswald',sans-serif;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px;display:none">0</span></button>
   </div>
 
   <!-- Content -->
@@ -7060,6 +7372,28 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
 
 <!-- QR CODE MODAL -->
 <div id="edu-qr-modal" style="display:none;position:fixed;inset:0;z-index:800;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:20px">
+
+<!-- CE DENY MODAL -->
+<div id="ce-deny-modal" style="display:none;position:fixed;inset:0;z-index:900;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:20px">
+  <div style="background:#122040;border:1px solid var(--card-border);border-radius:14px;width:100%;max-width:440px;animation:fadeUp 0.2s ease both">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--card-border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090">✗ Deny CE Hours</span>
+      <button onclick="window.closeDenyModal()" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+      <div id="ce-deny-member-info" style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 14px;font-size:0.82rem;color:var(--white)"></div>
+      <div>
+        <label style="display:block;font-size:0.65rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px">Reason for Denial <span style="color:#ff9090">*</span></label>
+        <textarea id="ce-deny-reason" rows="4" placeholder="Explain why these CE hours are being denied..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.88rem;resize:vertical;outline:none;box-sizing:border-box"></textarea>
+      </div>
+      <div id="ce-deny-msg" class="form-msg"></div>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--card-border);display:flex;gap:8px">
+      <button onclick="window.submitDenyCE()" style="flex:1;background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:8px;color:#ff9090;font-family:'Oswald',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:11px;cursor:pointer">Send Denial</button>
+      <button onclick="window.closeDenyModal()" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:11px 18px;cursor:pointer">Cancel</button>
+    </div>
+  </div>
+</div>
   <div style="background:#122040;border:1px solid var(--card-border);border-radius:16px;padding:28px;width:100%;max-width:420px;text-align:center;animation:fadeUp 0.2s ease both">
     <div style="font-family:'Oswald',sans-serif;font-size:0.9rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px" id="edu-qr-event-name">Event QR Code</div>
     <div style="font-size:0.75rem;color:var(--gray);margin-bottom:16px" id="edu-qr-subtitle">Members must be within the geo-lock radius to check in</div>
@@ -7140,5 +7474,7 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
     <div id="cl-detail-body" style="padding:20px;overflow-y:auto;flex:1"></div>
   </div>
 </div>
+
+
 </body>
 </html>
