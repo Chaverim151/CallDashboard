@@ -2078,7 +2078,129 @@ function activatePD(callId) {
 }
 window.activatePD = activatePD;
 
-// ── CANCEL CALL ──
+// ── CALL INFO EDIT (fill in blank fields from right sidebar) ──
+window.openCallInfoEdit = function(callId) {
+  var panel = document.getElementById("call-info-edit-panel");
+  if (!panel) return;
+  if (panel.style.display === "block") { panel.style.display = "none"; return; }
+
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data();
+    var NATURES = ["01 - Cardiac","02 - Respiratory","03 - CVA / Stroke","04 - Altered Mental Status","05 - Allergic Reaction","06 - Diabetic Emergency","07 - Seizure","08 - Unconscious/Syncope","09 - Trauma","10 - OB/GYN","11 - Abdominal Pain","12 - Chest Pain","13 - Back Pain","14 - Burns","15 - Eye Injury","16 - Behavioral/Psych","17 - Choking","18 - Overdose/Poisoning","19 - General Illness","20 - Headache","21 - Weakness/Dizziness","22 - Pediatric Emergency","23 - Multi-Casualty","24 - Unknown/Other"];
+    var rows = [];
+
+    if (!call.callNature) rows.push(
+      '<div style="margin-bottom:8px">' +
+        '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px">Call Nature</div>' +
+        '<select id="cie-nature" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;outline:none">' +
+          '<option value="">Select…</option>' + NATURES.map(function(n){ return '<option value="'+n+'">'+n+'</option>'; }).join("") +
+        '</select></div>');
+
+    if (!call.patientAge || !call.patientAgeNum) rows.push(
+      '<div style="margin-bottom:8px;display:flex;gap:6px">' +
+        '<div style="flex:1">' +
+          '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px">Age</div>' +
+          '<input id="cie-age-num" type="text" placeholder="e.g. 72" value="' + (call.patientAgeNum||"") + '" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;outline:none;box-sizing:border-box">' +
+        '</div>' +
+        '<div style="flex:1">' +
+          '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px">Sex</div>' +
+          '<select id="cie-sex" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;outline:none">' +
+            '<option value="">—</option>' +
+            '<option value="male"' + (call.patientSex==="male"?" selected":"") + '>Male</option>' +
+            '<option value="female"' + (call.patientSex==="female"?" selected":"") + '>Female</option>' +
+          '</select>' +
+        '</div>' +
+      '</div>');
+
+    if (!call.callbackNumber) rows.push(
+      '<div style="margin-bottom:8px">' +
+        '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px">📞 Callback Number</div>' +
+        '<input id="cie-callback" type="tel" placeholder="Caller\'s phone" value="' + (call.callbackNumber||"") + '" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;outline:none;box-sizing:border-box">' +
+      '</div>');
+
+    if (!call.accessCode) rows.push(
+      '<div style="margin-bottom:8px">' +
+        '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px">🔑 Access Code</div>' +
+        '<input id="cie-access" type="text" placeholder="Gate / door code" value="' + (call.accessCode||"") + '" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;outline:none;box-sizing:border-box">' +
+      '</div>');
+
+    if (!call.dispatchNotes) rows.push(
+      '<div style="margin-bottom:8px">' +
+        '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px">📝 Dispatch Notes</div>' +
+        '<textarea id="cie-notes" rows="2" placeholder="Floor, apt, instructions…" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;outline:none;resize:none;box-sizing:border-box">' + (call.dispatchNotes||"") + '</textarea>' +
+      '</div>');
+
+    if (!rows.length) { panel.style.display = "none"; return; }
+
+    panel.innerHTML =
+      '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:8px;padding:10px 11px;margin-bottom:4px">' +
+        '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Add Missing Info</div>' +
+        rows.join("") +
+        '<button onclick="window.saveCallInfoEdit(\'' + callId + '\')" style="width:100%;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:6px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:6px;cursor:pointer">Save</button>' +
+      '</div>';
+    panel.style.display = "block";
+  });
+};
+
+window.saveCallInfoEdit = function(callId) {
+  var update = { updatedAt: new Date().toISOString() };
+  var nature  = document.getElementById("cie-nature");
+  var ageNum  = document.getElementById("cie-age-num");
+  var sex     = document.getElementById("cie-sex");
+  var callback = document.getElementById("cie-callback");
+  var access  = document.getElementById("cie-access");
+  var notes   = document.getElementById("cie-notes");
+  if (nature   && nature.value)   update.callNature     = nature.value;
+  if (ageNum   && ageNum.value.trim())  update.patientAgeNum  = ageNum.value.trim();
+  if (sex      && sex.value)      update.patientSex     = sex.value;
+  if (callback && callback.value.trim()) update.callbackNumber = callback.value.trim();
+  if (access   && access.value.trim())  update.accessCode    = access.value.trim();
+  if (notes    && notes.value.trim())   update.dispatchNotes  = notes.value.trim();
+  db.collection("activeCalls").doc(callId).update(update)
+    .then(function() {
+      showToast("✓ Info updated");
+      selectDDCall(callId);
+    }).catch(function(e){ showToast("Error: " + e.message, true); });
+};
+// ── UNIT DIVERT ──
+window.confirmDivert = function(unit, fromCallId, fromAddr, toCallId, crewIdx, role) {
+  if (!confirm("⚠ " + unit + " is currently assigned to:\n" + fromAddr + "\n\nDivert to this call?")) return;
+
+  var d = new Date();
+  var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  var by = currentUserUnit || "Dispatcher";
+
+  // 1. Remove from old call
+  db.collection("activeCalls").doc(fromCallId).get().then(function(snap) {
+    if (!snap.exists) return Promise.resolve();
+    var data = snap.data();
+    var crews = data.crews || [];
+    crews.forEach(function(crew) {
+      Object.keys(crew||{}).forEach(function(k) {
+        if (crew[k] === unit) delete crew[k];
+      });
+    });
+    var notes = data.callNotes || [];
+    notes.push({ text: unit + " diverted to another call", time: timeStr, by: by, createdAt: new Date().toISOString() });
+    return db.collection("activeCalls").doc(fromCallId).update({ crews: crews, callNotes: notes, updatedAt: new Date().toISOString() });
+  }).then(function() {
+    return db.collection("activeCalls").doc(toCallId).get();
+  }).then(function(snap) {
+    if (!snap.exists) return;
+    var data = snap.data();
+    var crews = data.crews || [{}];
+    while (crews.length <= crewIdx) crews.push({});
+    crews[crewIdx][role] = unit;
+    var notes = data.callNotes || [];
+    notes.push({ text: unit + " diverted from " + fromAddr, time: timeStr, by: by, createdAt: new Date().toISOString() });
+    return db.collection("activeCalls").doc(toCallId).update({ crews: crews, callNotes: notes, updatedAt: new Date().toISOString() });
+  }).then(function() {
+    showToast("✓ " + unit + " diverted");
+    selectDDCall(toCallId, "units");
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+};
+
 window.openCancelCallModal = function(callId) {
   var el = document.getElementById("cancel-call-id");
   if (el) el.value = callId;
@@ -7098,7 +7220,20 @@ function selectDDCall(callId, keepSection) {
             (age ? '<span style="font-size:0.62rem;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:5px;padding:2px 7px;color:var(--white)">' + age + '</span>' : '') +
             (nature ? '<span style="font-size:0.62rem;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:5px;padding:2px 7px;color:var(--gold)">' + nature + '</span>' : '') +
             (call.alsActivated ? '<span style="font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:5px;padding:2px 7px;color:#ff9090">🚨 ALS: ' + (call.alsProvider||"Active") + '</span>' : '') +
+            (function() {
+              // Show + Info pill if any supplemental fields are blank
+              var missing = [];
+              if (!call.callNature) missing.push("nature");
+              if (!call.patientAge) missing.push("age");
+              if (!call.patientSex) missing.push("sex");
+              if (!call.dispatchNotes) missing.push("notes");
+              if (!call.accessCode) missing.push("access");
+              if (!call.callbackNumber) missing.push("callback");
+              if (!missing.length) return '';
+              return '<button onclick="window.openCallInfoEdit(\'' + call.id + '\')" style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:5px;padding:2px 8px;color:var(--gray);cursor:pointer">+ Info</button>';
+            })() +
           '</div>' +
+          '<div id="call-info-edit-panel" style="display:none;margin-bottom:8px"></div>' +
           (call.notes ? '<div style="font-size:0.72rem;color:var(--gray);padding:8px 10px;background:rgba(255,255,255,0.04);border-radius:6px;line-height:1.5;border:1px solid var(--card-border);margin-bottom:0">' + call.notes + '</div>' : '') +
           timelineHTML +
           actionLogHTML +
@@ -7232,14 +7367,43 @@ function renderDDSidebar(call, keepSection) {
   if (empty) empty.style.display = "none";
   el.style.display = "block";
   currentManagedCallId = call.id;
-  loadAmbulancesCache()
-    .then(function(ambs) { renderDDSidebarContent(call, ambs, keepSection); })
-    .catch(function() { renderDDSidebarContent(call, [], keepSection); });
+  Promise.all([
+    loadAmbulancesCache().catch(function(){ return []; }),
+    db.collection("activeCalls").where("status","==","active").get().catch(function(){ return {docs:[]}; })
+  ]).then(function(results) {
+    var ambs = results[0];
+    var snap = results[1];
+    // Build unit → call map (excluding current call)
+    // Only flag units that are ACTIVELY engaged (not clearing/done)
+    var DONE_STATUSES = ["clearing_facility","back_at_base","rma_scene","at_facility"];
+    var unitCallMap = {}; // { "MC-16": { id, address } }
+    (snap.docs||[]).forEach(function(d) {
+      if (d.id === call.id) return;
+      var data = d.data();
+      var addr = (data.address||"").split("—")[0].trim();
+      var unitDetails = data.unitDetails || {};
+      (data.crews||[]).forEach(function(crew, ci) {
+        Object.keys(crew||{}).forEach(function(k) {
+          if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+          var unit = crew[k];
+          // Check their status on the other call
+          var detKey = ci + "_" + k;
+          var det = unitDetails[detKey] || {};
+          var status = det.status || "";
+          // If clearing/done, they're free to take another call — no conflict
+          if (DONE_STATUSES.indexOf(status) !== -1) return;
+          unitCallMap[unit] = { id: d.id, address: addr, status: status };
+        });
+      });
+    });
+    renderDDSidebarContent(call, ambs, keepSection, unitCallMap);
+  });
 }
 
-function renderDDSidebarContent(call, ambulances, keepSection) {
+function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   var el = document.getElementById("dd-sidebar-content");
   if (!el) return;
+  unitCallMap = unitCallMap || {};
   try {
   var nature = call.callNature ? stripNatureNumber(call.callNature) : "";
   var age = call.patientAge === "pediatric" ? "👶 Pediatric" : call.patientAge === "adult" ? "🧑 Adult" : "";
@@ -7707,11 +7871,17 @@ function renderDDSidebarContent(call, ambulances, keepSection) {
       items.map(function(item) {
         var v = item.unit || "";
         var isThis = currentVal === v;
-        return '<button onclick="assignCrewMember(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',\'' + v + '\')" ' +
+        var conflict = !isThis && unitCallMap[v]; // on another active call
+        var btnColor = conflict ? 'rgba(255,144,144,0.5)' : (isThis ? color : 'var(--gray)');
+        var btnBorder = conflict ? 'rgba(255,144,144,0.35)' : (isThis ? color : 'var(--card-border)');
+        var btnBg = conflict ? 'rgba(255,144,144,0.06)' : (isThis ? 'rgba(' + rgb + ',0.2)' : 'rgba(255,255,255,0.02)');
+        var label = v + (conflict ? ' ⚠' : '');
+        var onclick = conflict
+          ? 'window.confirmDivert(\'' + v + '\',\'' + conflict.id + '\',\'' + conflict.address.replace(/'/g,"\\'") + '\',\'' + callId + '\',' + crewIdx + ',\'' + role + '\')'
+          : 'assignCrewMember(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',\'' + v + '\')';
+        return '<button onclick="' + onclick + '" title="' + (conflict ? '⚠ On another call: ' + conflict.address : v) + '" ' +
           'style="font-size:0.62rem;font-family:\'Oswald\',sans-serif;padding:2px 6px;border-radius:5px;cursor:pointer;' +
-          'border:1px solid ' + (isThis ? color : 'var(--card-border)') + ';' +
-          'background:' + (isThis ? 'rgba(' + rgb + ',0.2)' : 'rgba(255,255,255,0.02)') + ';' +
-          'color:' + (isThis ? color : 'var(--gray)') + '">' + v + '</button>';
+          'border:1px solid ' + btnBorder + ';background:' + btnBg + ';color:' + btnColor + '">' + label + '</button>';
       }).join('') +
     '</div>';
   }
