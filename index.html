@@ -1127,6 +1127,7 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
         <button onclick="confirmActivateALS()" style="flex:1;background:#e05555;color:#fff;border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:12px;cursor:pointer">Confirm ALS &amp; Notify</button>
         <button onclick="closeALSModal()" style="flex:0.4;background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:8px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.85rem;letter-spacing:0.07em;text-transform:uppercase;cursor:pointer">Cancel</button>
       </div>
+      <button onclick="confirmNoALSAvailable()" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:10px;cursor:pointer;color:var(--gray);margin-bottom:8px">No ALS Available</button>
 
       <div class="form-msg" id="als-modal-msg" style="margin-top:10px"></div>
     </div>
@@ -1162,6 +1163,31 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
         <button onclick="closeBLSModal()" style="flex:0.4;background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:8px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.85rem;letter-spacing:0.07em;text-transform:uppercase;cursor:pointer">Cancel</button>
       </div>
       <div class="form-msg" id="bls-modal-msg" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CANCEL ALS MODAL -->
+<div id="cancel-als-modal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.8);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#122040;border:1px solid rgba(255,144,144,0.4);border-radius:16px;width:100%;max-width:400px;animation:fadeUp 0.2s ease both;overflow:hidden">
+    <div style="background:rgba(255,144,144,0.1);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,144,144,0.2)">
+      <div style="font-family:'Oswald',sans-serif;font-size:0.92rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090">✕ Cancel ALS</div>
+      <button onclick="document.getElementById('cancel-als-modal').style.display='none'" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer;padding:0 4px">×</button>
+    </div>
+    <div style="padding:16px 20px">
+      <div style="font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Reason</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+        <button onclick="selectALSCancelReason(this,'Cancelled due to proximity')" data-reason="Cancelled due to proximity" class="als-cancel-pill cancel-reason-pill">Cancelled Due to Proximity</button>
+        <button onclick="selectALSCancelReason(this,'Not indicated')" data-reason="Not indicated" class="als-cancel-pill cancel-reason-pill">Not Indicated</button>
+        <button onclick="selectALSCancelReason(this,'No ALS available')" data-reason="No ALS available" class="als-cancel-pill cancel-reason-pill">No ALS Available</button>
+        <button onclick="selectALSCancelReason(this,'Other')" data-reason="Other" class="als-cancel-pill cancel-reason-pill">Other</button>
+      </div>
+      <input type="text" id="als-cancel-other-input" placeholder="Describe reason…" style="display:none;width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,144,144,0.35);border-radius:7px;padding:8px 11px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.85rem;outline:none;box-sizing:border-box;margin-bottom:10px">
+      <div style="display:flex;gap:8px">
+        <button id="als-cancel-confirm-btn" onclick="confirmCancelALS()" style="flex:1;background:rgba(255,144,144,0.15);border:1px solid rgba(255,144,144,0.4);border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;padding:11px;cursor:pointer;color:#ff9090;opacity:0.4;pointer-events:none">Confirm Cancel</button>
+        <button onclick="document.getElementById('cancel-als-modal').style.display='none'" style="flex:0.4;background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:8px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.85rem;cursor:pointer">Back</button>
+      </div>
+      <div class="form-msg" id="als-cancel-msg" style="margin-top:8px"></div>
     </div>
   </div>
 </div>
@@ -2054,21 +2080,74 @@ window.openALSModal = openALSModal;
 window.closeALSModal = closeALSModal;
 window.confirmActivateALS = confirmActivateALS;
 
+function confirmNoALSAvailable() {
+  var callId = (document.getElementById("als-call-id")||{}).value || ddSelectedCallId;
+  var d = new Date();
+  var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var notes = snap.data().callNotes || [];
+    notes.push({ text: "No ALS Available", time: timeStr, by: currentUserUnit || "Dispatcher", createdAt: new Date().toISOString() });
+    return db.collection("activeCalls").doc(callId).set({
+      alsActivated: true,
+      alsProvider: "No ALS Available",
+      alsUnit: "", alsEta: "",
+      callNotes: notes,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  }).then(function() {
+    closeALSModal();
+    showToast("Logged: No ALS Available");
+    selectDDCall(callId);
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+}
+window.confirmNoALSAvailable = confirmNoALSAvailable;
+
 function cancelALS(callId) {
-  var reason = prompt("Reason for cancelling ALS:");
-  if (reason === null) return; // user hit Cancel
-  var note = "ALS Cancelled" + (reason.trim() ? ": " + reason.trim() : "");
+  window.openCancelALSModal(callId);
+}
+window.cancelALS = cancelALS;
+
+window.openCancelALSModal = function(callId) {
+  var modal = document.getElementById("cancel-als-modal");
+  if (!modal) return;
+  modal.dataset.callId = callId;
+  document.querySelectorAll(".als-cancel-pill").forEach(function(p){ p.classList.remove("active"); });
+  var other = document.getElementById("als-cancel-other-input");
+  if (other) { other.style.display = "none"; other.value = ""; }
+  var msg = document.getElementById("als-cancel-msg"); if (msg) { msg.className="form-msg"; msg.textContent=""; }
+  var btn = document.getElementById("als-cancel-confirm-btn");
+  if (btn) { btn.style.opacity="0.4"; btn.style.pointerEvents="none"; }
+  modal.style.display = "flex";
+};
+
+window.selectALSCancelReason = function(pill, reason) {
+  document.querySelectorAll(".als-cancel-pill").forEach(function(p){ p.classList.remove("active"); });
+  pill.classList.add("active");
+  var other = document.getElementById("als-cancel-other-input");
+  if (other) { other.style.display = reason === "Other" ? "block" : "none"; if (reason !== "Other") other.value = ""; }
+  var btn = document.getElementById("als-cancel-confirm-btn");
+  if (btn) { btn.style.opacity="1"; btn.style.pointerEvents="auto"; }
+};
+
+window.confirmCancelALS = function() {
+  var modal = document.getElementById("cancel-als-modal");
+  var callId = modal.dataset.callId;
+  var activePill = document.querySelector(".als-cancel-pill.active");
+  var reason = activePill ? activePill.dataset.reason : "";
+  if (reason === "Other") {
+    var otherVal = ((document.getElementById("als-cancel-other-input")||{}).value||"").trim();
+    if (!otherVal) { var msg=document.getElementById("als-cancel-msg"); if(msg){msg.className="form-msg error";msg.textContent="Please describe the reason.";} return; }
+    reason = otherVal;
+  }
+  var note = "ALS Cancelled" + (reason ? ": " + reason : "");
   var d = new Date();
   var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
   db.collection("activeCalls").doc(callId).update({
-    alsActivated: false,
-    alsProvider: "",
-    alsUnit: "",
-    alsEta: "",
-    alsCancel: { reason: reason.trim(), time: timeStr, by: currentUser ? currentUser.email : "" },
+    alsActivated: false, alsProvider: "", alsUnit: "", alsEta: "",
+    alsCancel: { reason: reason, time: timeStr, by: currentUserUnit || "" },
     updatedAt: new Date().toISOString()
   }).then(function() {
-    // Add a call note recording the cancellation
     return db.collection("activeCalls").doc(callId).get();
   }).then(function(snap) {
     if (!snap.exists) return;
@@ -2076,11 +2155,11 @@ function cancelALS(callId) {
     notes.push({ text: note, time: timeStr, by: currentUserUnit || "Dispatcher", createdAt: new Date().toISOString() });
     return db.collection("activeCalls").doc(callId).update({ callNotes: notes });
   }).then(function() {
+    modal.style.display = "none";
     showToast("ALS cancelled");
     selectDDCall(callId);
   }).catch(function(e) { showToast("Error: " + e.message, true); });
-}
-window.cancelALS = cancelALS;
+};
 
 function activatePD(callId) {
   if (!callId) callId = ddSelectedCallId || "";
@@ -6372,10 +6451,21 @@ window.initMapsAutocomplete = function() {
       scored.sort(function(a, b) { return a.score !== b.score ? a.score - b.score : a.origIdx - b.origIdx; });
       var sortedPreds = scored.map(function(s) { return s.pred; });
 
-      // Codes first, then Google results (deduped by address)
-      var googleAddrs = sortedPreds.map(function(p){ return p.description.toLowerCase(); });
-      var filteredCodes = codePredictions.filter(function(cp){
-        return googleAddrs.indexOf(cp.description.toLowerCase()) === -1;
+      // Codes first, then Google results — dedup by normalizing addresses
+      function normalizeAddr(s) {
+        return s.toLowerCase()
+          .replace(/\bavenue\b/g,'ave').replace(/\bstreet\b/g,'st')
+          .replace(/\broad\b/g,'rd').replace(/\bboulevard\b/g,'blvd')
+          .replace(/\bdrive\b/g,'dr').replace(/\blane\b/g,'ln')
+          .replace(/\bplace\b/g,'pl').replace(/\bcourt\b/g,'ct')
+          .replace(/[,.\s]+/g,' ').trim();
+      }
+      var filteredCodes = codePredictions.filter(function(cp) {
+        var cpN = normalizeAddr(cp.description);
+        return !sortedPreds.some(function(gp) {
+          var gpN = normalizeAddr(gp.description);
+          return gpN.indexOf(cpN) !== -1 || cpN.indexOf(gpN.split(' nj')[0].trim()) !== -1;
+        });
       });
       var allPreds = filteredCodes.concat(sortedPreds);
       currentPredictions = allPreds;
@@ -7927,13 +8017,13 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   if (call.alsActivated) {
     // ALS already active — static confirmation banner
     alsBanner =
-      '<div style="background:rgba(224,85,85,0.08);border:1px solid rgba(224,85,85,0.4);border-radius:8px;padding:8px 12px;margin-bottom:6px">' +
+      '<div style="background:rgba(224,85,85,0.08);border:1px solid ' + (call.alsProvider === "No ALS Available" ? "rgba(255,255,255,0.12)" : "rgba(224,85,85,0.4)") + ';border-radius:8px;padding:8px 12px;margin-bottom:6px">' +
         '<div style="display:flex;align-items:center;justify-content:space-between">' +
           '<div>' +
-            '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:2px">🚨 ALS Active</div>' +
-            '<div style="font-size:0.78rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta?" · ETA "+call.alsEta+"min":"") + '</div>' +
+            '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (call.alsProvider === "No ALS Available" ? "var(--gray)" : "#ff9090") + ';font-weight:700;margin-bottom:2px">' + (call.alsProvider === "No ALS Available" ? "⚠ No ALS Available" : "🚨 ALS Active") + '</div>' +
+            (call.alsProvider !== "No ALS Available" ? '<div style="font-size:0.78rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta?" · ETA "+call.alsEta+"min":"") + '</div>' : '') +
           '</div>' +
-          '<button onclick="cancelALS(\'' + call.id + '\')" style="background:none;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:rgba(255,255,255,0.3);font-size:0.58rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px 7px;cursor:pointer;letter-spacing:0.05em;flex-shrink:0">✕ Cancel</button>' +
+          '<button onclick="' + (call.alsProvider === "No ALS Available" ? "openALSModal('" + call.id + "')" : "cancelALS('" + call.id + "')") + '" style="background:none;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:rgba(255,255,255,0.3);font-size:0.58rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px 7px;cursor:pointer;letter-spacing:0.05em;flex-shrink:0">' + (call.alsProvider === "No ALS Available" ? "Activate ALS" : "✕ Cancel") + '</button>' +
         '</div>' +
       '</div>';
   } else if (isALSNature) {
