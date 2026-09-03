@@ -2084,17 +2084,21 @@ function confirmNoALSAvailable() {
   var callId = (document.getElementById("als-call-id")||{}).value || ddSelectedCallId;
   var d = new Date();
   var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
-  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+  // Write alsActivated + alsProvider only — Cloud Function sends the push notification
+  // Note is logged separately so it doesn't race with the ALS trigger
+  db.collection("activeCalls").doc(callId).update({
+    alsActivated: true,
+    alsProvider: "No ALS Available",
+    alsUnit: "", alsEta: "",
+    updatedAt: new Date().toISOString()
+  }).then(function() {
+    // Add note after ALS update so triggers don't race
+    return db.collection("activeCalls").doc(callId).get();
+  }).then(function(snap) {
     if (!snap.exists) return;
     var notes = snap.data().callNotes || [];
     notes.push({ text: "No ALS Available", time: timeStr, by: currentUserUnit || "Dispatcher", createdAt: new Date().toISOString() });
-    return db.collection("activeCalls").doc(callId).set({
-      alsActivated: true,
-      alsProvider: "No ALS Available",
-      alsUnit: "", alsEta: "",
-      callNotes: notes,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
+    return db.collection("activeCalls").doc(callId).update({ callNotes: notes });
   }).then(function() {
     closeALSModal();
     showToast("Logged: No ALS Available");
@@ -2140,20 +2144,12 @@ window.confirmCancelALS = function() {
     if (!otherVal) { var msg=document.getElementById("als-cancel-msg"); if(msg){msg.className="form-msg error";msg.textContent="Please describe the reason.";} return; }
     reason = otherVal;
   }
-  var note = "ALS Cancelled" + (reason ? ": " + reason : "");
   var d = new Date();
   var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
   db.collection("activeCalls").doc(callId).update({
     alsActivated: false, alsProvider: "", alsUnit: "", alsEta: "",
     alsCancel: { reason: reason, time: timeStr, by: currentUserUnit || "" },
     updatedAt: new Date().toISOString()
-  }).then(function() {
-    return db.collection("activeCalls").doc(callId).get();
-  }).then(function(snap) {
-    if (!snap.exists) return;
-    var notes = snap.data().callNotes || [];
-    notes.push({ text: note, time: timeStr, by: currentUserUnit || "Dispatcher", createdAt: new Date().toISOString() });
-    return db.collection("activeCalls").doc(callId).update({ callNotes: notes });
   }).then(function() {
     modal.style.display = "none";
     showToast("ALS cancelled");
@@ -5520,7 +5516,7 @@ function saveCodesEditor() {
 
 // ── MAPS ──
 var mapsAutocomplete = null, selectedAddress = "", selectedPlaceName = "", selectedNearestAddress = "", selectedMapsLink = "", selectedLat = null, selectedLng = null, coverageZones = null;
-var MY_MAPS_ID = "13hxXQsFF_27s8FVhtyIrTGtynNZ85s8";
+var MY_MAPS_ID = "1L7DREIDpkjKlvYcxBRhehG94gk14h_8";
 // ── EXACT COVERAGE POLYGONS (from Hatzolah MC Coverage Area KML) ──
 var COVERAGE_ZONES = [
   {
