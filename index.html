@@ -6439,27 +6439,36 @@ window.initMapsAutocomplete = function() {
       locationBias: { center: new google.maps.LatLng(MC_CENTER.lat, MC_CENTER.lng), radius: MC_RADIUS_METERS }
     }, function(predictions, status) {
       var googlePreds = (status === "OK" && predictions) ? predictions : [];
-      // Re-rank local results to top
-      var localTowns = ["edison","highland park","new brunswick","south plainfield","piscataway",
-        "south river","sayreville","north brunswick","east brunswick","metuchen","woodbridge",
-        "perth amboy","south amboy","old bridge","monroe","plainsboro","spotswood","milltown",
-        "carteret","colonia","avenel","fords","sewaren","dunellen","middlesex","cranbury",
-        "highland pk","kendall park","franklin park","franklin township","somerset",
+
+      // Zone-aware ranking: Primary (0) → Secondary (1) → NJ outside zone (2) → Out of state (3)
+      var PRIMARY_TOWNS = ["edison","highland park","new brunswick","south plainfield","piscataway",
+        "metuchen","woodbridge","perth amboy","south amboy","carteret","colonia","avenel","fords",
+        "sewaren","iselin","menlo park","keasbey","north brunswick","milltown","spotswood",
+        "dunellen","middlesex","bound brook","raritan","manville","highland pk"];
+      var SECONDARY_TOWNS = ["sayreville","old bridge","monroe","plainsboro","cranbury",
+        "kendall park","franklin park","franklin township","somerset","south river",
+        "east brunswick","parlin","laurence harbor","matawan","cliffwood","old bridge township",
+        "aberdeen","manalapan","marlboro","freehold","englishtown","jamesburg","helmetta",
+        "west windsor","princeton junction","robbinsville","hightstown","east windsor",
         "north plainfield","plainfield","scotch plains","westfield","fanwood","clark",
-        "rahway","linden","colonia","iselin","menlo park","keasbey","parlin","laurence harbor",
-        "matawan","cliffwood","old bridge township","aberdeen","manalapan","marlboro",
-        "freehold","englishtown","jamesburg","helmetta","west windsor","princeton junction",
-        "robbinsville","hightstown","east windsor","bound brook","raritan","manville",
-        "somerville","green brook","watchung","bridgewater","martinsville","warren",
-        "nj, usa","new jersey"];
+        "rahway","linden","green brook","watchung","bridgewater","martinsville","warren",
+        "somerville","nj, usa","new jersey"];
+
+      function zoneScore(desc) {
+        var d = desc.toLowerCase();
+        for (var i = 0; i < PRIMARY_TOWNS.length; i++) {
+          if (d.indexOf(PRIMARY_TOWNS[i]) !== -1) return 0;
+        }
+        for (var j = 0; j < SECONDARY_TOWNS.length; j++) {
+          if (d.indexOf(SECONDARY_TOWNS[j]) !== -1) return 1;
+        }
+        if (d.indexOf("nj") !== -1 || d.indexOf("new jersey") !== -1) return 2;
+        return 3;
+      }
+
       var scored = [];
       for (var pi = 0; pi < googlePreds.length; pi++) {
-        var desc = (googlePreds[pi].description || "").toLowerCase();
-        var isLocal = false;
-        for (var ti = 0; ti < localTowns.length; ti++) {
-          if (desc.indexOf(localTowns[ti]) !== -1) { isLocal = true; break; }
-        }
-        scored.push({ pred: googlePreds[pi], score: isLocal ? 0 : 1, origIdx: pi });
+        scored.push({ pred: googlePreds[pi], score: zoneScore(googlePreds[pi].description||""), origIdx: pi });
       }
       scored.sort(function(a, b) { return a.score !== b.score ? a.score - b.score : a.origIdx - b.origIdx; });
       var sortedPreds = scored.map(function(s) { return s.pred; });
@@ -7443,6 +7452,73 @@ function addExtraUnitRole(callId, crewIdx, role) {
       .then(function() { selectDDCall(callId, "units"); showToast("✓ " + role.charAt(0).toUpperCase() + role.slice(1) + " slot added"); });
   });
 }
+window.toggleSupOther = function(inpId, btn) {
+  var panel = document.getElementById(inpId);
+  if (!panel) return;
+  var show = panel.style.display === 'none';
+  panel.style.display = show ? 'flex' : 'none';
+  if (show) { var i = panel.querySelector('input'); if (i) i.focus(); }
+};
+
+window.assignOtherUnit = function(callId, crewIdx, role, val) {
+  if (!val) return;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [];
+    while (crews.length <= crewIdx) crews.push({});
+    crews[crewIdx][role] = val;
+    var allUnits = [];
+    crews.forEach(function(c) {
+      Object.keys(c).forEach(function(k) { if (k !== "rig" && c[k] && c[k] !== "__added__") allUnits.push(c[k]); });
+    });
+    return db.collection("activeCalls").doc(callId).update({
+      crews: crews,
+      assignedUnits: allUnits.filter(function(u,i){ return allUnits.indexOf(u)===i; }),
+      updatedAt: new Date().toISOString()
+    });
+  }).then(function() {
+    selectDDCall(callId, "units");
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+};
+
+window.toggleSupervisorInput = function(crewIdx, callId) {
+  var panel = document.getElementById("sup-role-input-" + crewIdx);
+  if (!panel) return;
+  panel.style.display = panel.style.display === "none" ? "block" : "none";
+  if (panel.style.display === "block") {
+    var inp = document.getElementById("sup-role-val-" + crewIdx);
+    if (inp) { inp.select(); inp.focus(); }
+  }
+};
+
+window.confirmSupervisorRole = function(crewIdx, callId) {
+  var inp = document.getElementById("sup-role-val-" + crewIdx);
+  var label = ((inp && inp.value) || "Supervisor").trim() || "Supervisor";
+  var panel = document.getElementById("sup-role-input-" + crewIdx);
+  if (panel) panel.style.display = "none";
+
+  // Use "supervisor" key for "Supervisor", otherwise sanitize into a custom key
+  var key = label.toLowerCase() === "supervisor" ? "supervisor"
+    : "sup_" + label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [];
+    while (crews.length <= crewIdx) crews.push({});
+    var baseKey = key, n = 0;
+    while (crews[crewIdx][key] !== undefined) { n++; key = baseKey + n; }
+    crews[crewIdx][key] = "__added__";
+    var update = { crews: crews };
+    if (label.toLowerCase() !== "supervisor") {
+      update["unitDetails." + crewIdx + "_" + key + ".customLabel"] = label;
+    }
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).then(function() {
+    selectDDCall(callId, "units");
+    showToast("✓ " + label + " slot added");
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+};
+
 window.toggleExtraUnitMenu = toggleExtraUnitMenu;
 window.addExtraUnitRole = addExtraUnitRole;
 
@@ -8275,10 +8351,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
     var r = (u.roles||[]).map(function(x){return x.toLowerCase();});
     return r.indexOf("observer") !== -1;
   });
-  var supervisorPool = allRespondersCache.filter(function(u) {
-    var r = (u.roles||[]).map(function(x){return x.toLowerCase();});
-    return r.indexOf("captain") !== -1 || r.indexOf("chief") !== -1;
-  });
+  var supervisorPool = allRespondersCache; // any member can act as supervisor for this incident
 
   function getRolePool(role, currentVal) {
     var pool;
@@ -8498,7 +8571,9 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
     var facility = det.facility || '';
     var rmaApprovedBy = det.rmaApprovedBy || '';
     var response = det.response || '';
-    var pool = getRolePool(role, currentVal);
+    var isOther = role === 'other' || role.replace(/\d+$/,'') === 'other';
+    var isSup = role === 'supervisor' || role.replace(/\d+$/,'') === 'supervisor' || role.indexOf('sup_') === 0;
+    var pool = (isOther || isSup) ? [] : getRolePool(role, currentVal);
     var rgb = hexToRgb(color);
     var hasUnit = currentVal && currentVal !== '__added__';
     var removeBtn = hasUnit
@@ -8507,17 +8582,53 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       : '<button onclick="removeUnitSlot(\'' + callId + '\',' + crewIdx + ',\'' + role + '\')" ' +
         'title="Remove slot" style="background:none;border:none;color:rgba(224,85,85,0.5);font-size:0.68rem;cursor:pointer;padding:0 2px;line-height:1">✕</button>';
 
+    var assignSection;
+    if (isOther) {
+      assignSection = '<div style="display:flex;gap:5px;margin-top:4px">' +
+        '<input type="text" placeholder="Unit ID (e.g. MC-99, SPEN-12…)" value="' + (hasUnit ? currentVal : '') + '" ' +
+          'onchange="window.assignOtherUnit(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',this.value.trim())" ' +
+          'onkeydown="if(event.key===\'Enter\')window.assignOtherUnit(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',this.value.trim())" ' +
+          'style="flex:1;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:5px 8px;color:var(--white);font-family:\'Oswald\',sans-serif;font-size:0.78rem;outline:none">' +
+      '</div>';
+    } else if (isSup) {
+      // Supervisor: roster pills + Other option
+      var supPool = allRespondersCache;
+      var supPills = supPool.map(function(item) {
+        var v = item.unit || "";
+        var isThis = currentVal === v;
+        var conflict = !isThis && unitCallMap[v];
+        var btnColor = conflict ? 'rgba(255,144,144,0.5)' : (isThis ? '#e8a0ff' : 'var(--gray)');
+        var btnBorder = conflict ? 'rgba(255,144,144,0.35)' : (isThis ? '#e8a0ff' : 'var(--card-border)');
+        var btnBg = conflict ? 'rgba(255,144,144,0.06)' : (isThis ? 'rgba(232,160,255,0.2)' : 'rgba(255,255,255,0.02)');
+        var label = v + (conflict ? ' ⚠' : '');
+        var onclick = conflict
+          ? 'window.confirmDivert(\'' + v + '\',\'' + conflict.id + '\',\'' + conflict.address.replace(/'/g,"\\'") + '\',\'' + callId + '\',' + crewIdx + ',\'' + role + '\')'
+          : 'assignCrewMember(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',\'' + v + '\')';
+        return '<button onclick="' + onclick + '" style="font-size:0.62rem;font-family:\'Oswald\',sans-serif;padding:2px 6px;border-radius:5px;cursor:pointer;border:1px solid ' + btnBorder + ';background:' + btnBg + ';color:' + btnColor + '">' + label + '</button>';
+      }).join('');
+      // Other pill
+      var otherActive = hasUnit && !supPool.some(function(u){ return u.unit === currentVal; });
+      var supOtherInpId = 'sup-other-inp-' + crewIdx + '-' + role;
+      supPills += '<button onclick="window.toggleSupOther(\'' + supOtherInpId + '\',this)" style="font-size:0.62rem;font-family:\'Oswald\',sans-serif;padding:2px 6px;border-radius:5px;cursor:pointer;border:1px solid ' + (otherActive?'#e8a0ff':'var(--card-border)') + ';background:' + (otherActive?'rgba(232,160,255,0.2)':'rgba(255,255,255,0.02)') + ';color:' + (otherActive?'#e8a0ff':'var(--gray)') + '">Other' + (otherActive?' (' + currentVal + ')':'') + '</button>';
+      supPills += '<div id="' + supOtherInpId + '" style="display:' + (otherActive?'flex':'none') + ';gap:4px;margin-top:4px;width:100%">' +
+        '<input type="text" placeholder="Unit ID…" value="' + (otherActive ? currentVal : '') + '" ' +
+          'onkeydown="if(event.key===\'Enter\')window.assignOtherUnit(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',this.value.trim())" ' +
+          'style="flex:1;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:5px;padding:4px 7px;color:var(--white);font-family:\'Oswald\',sans-serif;font-size:0.75rem;outline:none">' +
+        '<button onclick="var i=this.previousSibling;window.assignOtherUnit(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',i.value.trim())" style="background:rgba(232,160,255,0.15);border:1px solid rgba(232,160,255,0.3);border-radius:5px;color:#e8a0ff;font-size:0.65rem;padding:4px 7px;cursor:pointer;font-family:\'Oswald\',sans-serif;font-weight:700">Add</button>' +
+      '</div>';
+      assignSection = '<div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:3px">' + supPills + '</div>';
+    } else {
+      assignSection = assignPills(callId, crewIdx, role, currentVal, color, pool);
+    }
+
     return '<div style="margin-bottom:8px;padding:7px 9px;background:rgba(255,255,255,0.02);border-left:2px solid ' + color + ';border-radius:0 6px 6px 0">' +
-      // Header row: label + assigned unit + remove
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">' +
         '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;letter-spacing:0.08em;text-transform:uppercase;color:' + color + '">' + label + '</span>' +
         '<div style="display:flex;align-items:center;gap:3px">' +
-          (hasUnit
-            ? '<span style="font-size:0.65rem;font-weight:700;color:' + color + ';background:rgba(' + rgb + ',0.15);border:1px solid rgba(' + rgb + ',0.4);border-radius:5px;padding:1px 6px">' + currentVal + '</span>'
-            : '<span style="font-size:0.6rem;color:var(--gray);font-style:italic">unassigned</span>') +
+          (hasUnit ? '<span style="font-size:0.65rem;font-weight:700;color:' + color + ';background:rgba(' + rgb + ',0.15);border:1px solid rgba(' + rgb + ',0.4);border-radius:5px;padding:1px 6px">' + currentVal + '</span>' : '<span style="font-size:0.6rem;color:var(--gray);font-style:italic">unassigned</span>') +
           removeBtn +
         '</div>' +
-      '</div>' +
+      '</div>' + +
       // Responding to toggle — locked once flow has started
       ('<div style="margin-bottom:4px">' +
           '<div style="font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Responding to</div>' +
@@ -8542,8 +8653,8 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
                 'color:' + (response==='rig'?'#e8a0ff':'var(--gray)') + '">🚑 Picking Up Ambulance</button>' +
             '</div>') +
         '</div>') +
-      assignPills(callId, crewIdx, role, hasUnit ? currentVal : '', color, pool) +
-      (hasUnit ? statusPills(callId, crewIdx, role, status, facility, rmaApprovedBy, response, det.pickedAmbo || '') : '') +
+      assignSection +
+      (hasUnit && !isOther ? statusPills(callId, crewIdx, role, status, facility, rmaApprovedBy, response, det.pickedAmbo || '') : '') +
     '</div>';
   }
 
@@ -8588,12 +8699,15 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       if (fixedSet[key]) return;
       var val = crew[key];
       if (val === undefined || val === null) return;
-      var baseRole = key.replace(/\d+$/, '');
-      var col = extraColorMap[baseRole] || '#8a9ab5';
+      var baseRole = key.replace(/\d+$/, '').replace(/^other_.*$/, 'other').replace(/^sup_.*$/, 'supervisor');
+      var col = baseRole === 'other' ? '#8a9ab5' : (extraColorMap[baseRole] || '#8a9ab5');
       roleCounters[baseRole] = (roleCounters[baseRole] || 0) + 1;
       var roleNum = roleCounters[baseRole];
-      var baseLbl = extraLabelMap[baseRole] || (baseRole.charAt(0).toUpperCase()+baseRole.slice(1));
-      var lbl = baseLbl + (roleCounters[baseRole] > 1 || Object.keys(roleCounters).filter(function(k){return k===baseRole;}).length > 0 ? ' ' + roleNum : '');
+      // Custom label for other_ keys
+      var det0 = unitDetails[idx + '_' + key] || {};
+      var customLabel = det0.customLabel || '';
+      var baseLbl = customLabel || extraLabelMap[baseRole] || (baseRole.charAt(0).toUpperCase()+baseRole.slice(1));
+      var lbl = baseLbl + (roleCounters[baseRole] > 1 ? ' ' + roleNum : '');
       if (val && val !== '__added__') unitNum++;
       extraRows += unitBlock(call.id, idx, key, lbl, col, val === '__added__' ? '' : val);
     });
@@ -8624,7 +8738,20 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
   var addBtns = ''
     + ('<button onclick="addExtraUnitRole(\''+call.id+'\','+lastIdx+',\'responder\')" style="flex:1;background:rgba(122,184,245,0.07);border:1px solid rgba(122,184,245,0.25);border-radius:7px;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 4px;cursor:pointer">+ Responder</button>')
-    + ('<button onclick="addExtraUnitRole(\''+call.id+'\','+lastIdx+',\'supervisor\')" style="flex:1;background:rgba(232,160,255,0.07);border:1px solid rgba(232,160,255,0.25);border-radius:7px;color:#e8a0ff;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 4px;cursor:pointer">+ Supervisor</button>')
+    + ('<div style="flex:1;position:relative" id="sup-pill-wrap-'+lastIdx+'">' +
+       '<button onclick="window.toggleSupervisorInput('+lastIdx+',\''+call.id+'\')" style="width:100%;background:rgba(232,160,255,0.07);border:1px solid rgba(232,160,255,0.25);border-radius:7px;color:#e8a0ff;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 4px;cursor:pointer">+ Supervisor</button>' +
+       '<div id="sup-role-input-'+lastIdx+'" style="display:none;position:absolute;bottom:calc(100% + 4px);left:0;right:0;background:#1a2d4a;border:1px solid var(--card-border);border-radius:8px;padding:8px;z-index:50;min-width:170px">' +
+         '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:5px">Role Title</div>' +
+         '<input list="sup-role-list-'+lastIdx+'" id="sup-role-val-'+lastIdx+'" value="Supervisor" style="width:100%;background:rgba(255,255,255,0.07);border:1px solid var(--card-border);border-radius:5px;padding:5px 8px;color:var(--white);font-size:0.8rem;outline:none;box-sizing:border-box" onkeydown="if(event.key===\'Enter\')window.confirmSupervisorRole('+lastIdx+',\''+call.id+'\')">' +
+         '<datalist id="sup-role-list-'+lastIdx+'">' +
+           '<option value="Supervisor"><option value="Command"><option value="Safety Officer"><option value="Staging"><option value="Rehab"><option value="Scribe">' +
+         '</datalist>' +
+         '<div style="display:flex;gap:5px;margin-top:6px">' +
+           '<button onclick="window.confirmSupervisorRole('+lastIdx+',\''+call.id+'\')" style="flex:1;background:rgba(232,160,255,0.12);border:1px solid rgba(232,160,255,0.3);border-radius:5px;color:#e8a0ff;font-family:\'Oswald\',sans-serif;font-size:0.65rem;font-weight:700;padding:5px;cursor:pointer">Add</button>' +
+           '<button onclick="document.getElementById(\'sup-role-input-'+lastIdx+'\').style.display=\'none\'" style="flex:0.5;background:none;border:1px solid var(--card-border);border-radius:5px;color:var(--gray);font-size:0.65rem;padding:5px;cursor:pointer">✕</button>' +
+         '</div>' +
+       '</div>' +
+     '</div>')
     + ('<button onclick="addExtraUnitRole(\''+call.id+'\','+lastIdx+',\'observer\')" style="flex:1;background:rgba(138,154,181,0.07);border:1px solid rgba(138,154,181,0.25);border-radius:7px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 4px;cursor:pointer">+ Observer</button>')
     + ('<button onclick="addCrewToCall(\''+call.id+'\')" style="flex:1;background:rgba(201,168,76,0.07);border:1px solid rgba(201,168,76,0.25);border-radius:7px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 4px;cursor:pointer">+ Crew &amp; Rig</button>');
 
