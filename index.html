@@ -3481,6 +3481,15 @@ function loadContacts() {
     renderContacts(allContacts);
   });
 }
+function formatPhone(phone) {
+  if (!phone) return "";
+  var d = phone.replace(/\D/g, "");
+  if (d.length === 10) return "(" + d.slice(0,3) + ") " + d.slice(3,6) + "-" + d.slice(6);
+  if (d.length === 11 && d[0] === "1") return "+1 (" + d.slice(1,4) + ") " + d.slice(4,7) + "-" + d.slice(7);
+  return phone; // return as-is if unrecognized format
+}
+window.formatPhone = formatPhone;
+
 function getFirstPhone(phone) {
   if (!phone) return "";
   var raw = phone.split(/[\/|]/)[0].trim().replace(/\D/g, "");
@@ -3779,6 +3788,44 @@ function sendClickSendSMS(toNumbers, message) {
   }).then(function(r) { return r.json(); })
     .catch(function(e){ console.warn("SMS send failed:", e); });
 }
+window.sendCallbackSMS = function(callId) {
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data();
+    if (!call.callbackNumber) { showToast("No callback number on this call", true); return; }
+    var crews = call.crews || [];
+    var unitDetails = call.unitDetails || {};
+    var ON_SCENE = ["on_scene_direct","on_scene_ambo","rma_scene","transporting","at_facility"];
+    // Collect units that are on scene
+    var onSceneUnits = [];
+    crews.forEach(function(crew, ci) {
+      Object.keys(crew||{}).forEach(function(role) {
+        if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
+        var det = unitDetails[ci + "_" + role] || {};
+        if (ON_SCENE.indexOf(det.status||"") !== -1) onSceneUnits.push(crew[role]);
+      });
+    });
+    // Fallback to all assigned if none are specifically on scene yet
+    var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
+    if (!targetUnits.length) { showToast("No units assigned", true); return; }
+    var addr = (call.address||"").split(",")[0];
+    var msg = "📞 Callback # for " + addr + ":\n" + formatPhone(call.callbackNumber);
+    db.collection("users").get().then(function(uSnap) {
+      var phones = [];
+      uSnap.forEach(function(doc) {
+        var d = doc.data();
+        if (targetUnits.indexOf(d.unit) !== -1) {
+          var phone = getFirstPhone(d.phone);
+          if (phone) phones.push(phone);
+        }
+      });
+      if (!phones.length) { showToast("No phone numbers found", true); return; }
+      sendClickSendSMS(phones, msg);
+      showToast("📱 Callback # pushed to " + targetUnits.join(", "));
+    });
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+};
+
 window.sendCallUpdateSMS = function(callId, message) {
   // Send SMS to all assigned units on this call
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
@@ -3910,6 +3957,13 @@ window.toggleSysTestMode = function() {
     }
     showToast("🧪 System Testing Mode ON — calls logged as TEST records", false);
     showSysTestBanner(true);
+    // Auto-enable email and SMS testing modes
+    TESTING_MODE = true;
+    SMS_TESTING_MODE = true;
+    var emailToggle = document.getElementById("testing-mode-toggle");
+    if (emailToggle) { emailToggle.checked = true; toggleTestingMode(); }
+    var smsToggle = document.getElementById("sms-testing-mode-toggle");
+    if (smsToggle) { smsToggle.checked = true; toggleSMSTestingMode(); }
   } else {
     track.style.background = "rgba(255,255,255,0.1)"; track.style.borderColor = "var(--card-border)";
     thumb.style.background = "var(--gray)"; thumb.style.left = "2px";
@@ -3921,6 +3975,13 @@ window.toggleSysTestMode = function() {
     }
     showToast("System Testing Mode OFF");
     showSysTestBanner(false);
+    // Auto-disable email and SMS testing modes
+    TESTING_MODE = false;
+    SMS_TESTING_MODE = false;
+    var emailToggle2 = document.getElementById("testing-mode-toggle");
+    if (emailToggle2) { emailToggle2.checked = false; toggleTestingMode(); }
+    var smsToggle2 = document.getElementById("sms-testing-mode-toggle");
+    if (smsToggle2) { smsToggle2.checked = false; toggleSMSTestingMode(); }
   }
 };
 
@@ -8163,6 +8224,17 @@ function selectDDCall(callId, keepSection) {
             })() +
           '</div>' +
           '<div id="call-info-edit-panel" style="display:none;margin-bottom:8px"></div>' +
+          (call.callbackNumber ?
+            '<div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:7px;padding:7px 10px;margin-bottom:8px">' +
+              '<div>' +
+                '<div style="font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:2px">📞 Callback</div>' +
+                '<div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:var(--white)">' + formatPhone(call.callbackNumber) + '</div>' +
+              '</div>' +
+              '<div style="display:flex;gap:5px">' +
+                '<a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="display:inline-flex;align-items:center;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:4px 9px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;text-decoration:none">📞 Call</a>' +
+                '<button onclick="window.sendCallbackSMS(\'' + call.id + '\')" style="display:inline-flex;align-items:center;background:rgba(74,144,217,0.15);border:1px solid rgba(74,144,217,0.4);border-radius:6px;padding:4px 9px;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;cursor:pointer">📱 SMS</button>' +
+              '</div>' +
+            '</div>' : '') +
           (call.notes ? '<div style="font-size:0.72rem;color:var(--gray);padding:8px 10px;background:rgba(255,255,255,0.04);border-radius:6px;line-height:1.5;border:1px solid var(--card-border);margin-bottom:0">' + call.notes + '</div>' : '') +
           timelineHTML +
           actionLogHTML +
@@ -8515,9 +8587,12 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:' + (call.accessCode?'6':'0') + 'px">' +
           '<div>' +
             '<div style="font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:2px">📞 Callback</div>' +
-            '<div style="font-family:\'Oswald\',sans-serif;font-size:0.88rem;font-weight:700;color:var(--white)">' + call.callbackNumber + '</div>' +
+            '<div style="font-family:\'Oswald\',sans-serif;font-size:0.88rem;font-weight:700;color:var(--white)">' + formatPhone(call.callbackNumber) + '</div>' +
           '</div>' +
-          '<a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="display:inline-flex;align-items:center;gap:3px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:4px 9px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;text-decoration:none;flex-shrink:0">📞 Call</a>' +
+          '<div style="display:flex;gap:5px;flex-shrink:0">' +
+            '<a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="display:inline-flex;align-items:center;gap:3px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:4px 9px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;text-decoration:none">📞 Call</a>' +
+            '<button onclick="window.sendCallbackSMS(\'' + call.id + '\')" style="display:inline-flex;align-items:center;gap:3px;background:rgba(74,144,217,0.15);border:1px solid rgba(74,144,217,0.4);border-radius:6px;padding:4px 9px;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;cursor:pointer">📱 SMS CB#</button>' +
+          '</div>' +
         '</div>' : '') +
       (call.accessCode ?
         '<div>' +
