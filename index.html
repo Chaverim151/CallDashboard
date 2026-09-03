@@ -2067,9 +2067,15 @@ function confirmActivateALS() {
   var eta = ((document.getElementById("als-eta")||{}).value||"").trim();
   var msg = document.getElementById("als-modal-msg");
   if (!provider) { if(msg){msg.className="form-msg error";msg.textContent="Select a provider.";} return; }
+  var now = new Date();
+  var activatedISO = now.toISOString();
+  var activatedHHMM = String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
   db.collection("activeCalls").doc(callId).set({
-    alsActivated: true, alsProvider: provider, alsUnit: unit||"", alsEta: eta||"",
-    updatedAt: new Date().toISOString()
+    alsActivated: true, alsProvider: provider, alsUnit: unit||"",
+    alsEta: eta||"", alsEtaMinutes: eta ? parseInt(eta)||0 : 0,
+    alsActivatedISO: activatedISO, alsActivatedAt: activatedHHMM,
+    alsOnScene: false, alsOnSceneAt: "",
+    updatedAt: activatedISO
   }, { merge: true }).then(function() {
     closeALSModal();
     showToast("ALS activated!");
@@ -2078,6 +2084,18 @@ function confirmActivateALS() {
 }
 window.openALSModal = openALSModal;
 window.closeALSModal = closeALSModal;
+window.markALSOnScene = function(callId) {
+  var d = new Date();
+  var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  clearInterval(window._alsEtaTicker);
+  db.collection("activeCalls").doc(callId).update({
+    alsOnScene: true, alsOnSceneAt: timeStr, updatedAt: d.toISOString()
+  }).then(function() {
+    logCallEvent(callId, "ALS On Scene", "✓", "#7dedb5");
+    showToast("✓ ALS On Scene");
+    selectDDCall(callId);
+  }).catch(function(e){ showToast("Error: " + e.message, true); });
+};
 window.confirmActivateALS = confirmActivateALS;
 
 function confirmNoALSAvailable() {
@@ -2092,14 +2110,8 @@ function confirmNoALSAvailable() {
     alsUnit: "", alsEta: "",
     updatedAt: new Date().toISOString()
   }).then(function() {
-    // Add note after ALS update so triggers don't race
-    return db.collection("activeCalls").doc(callId).get();
-  }).then(function(snap) {
-    if (!snap.exists) return;
-    var notes = snap.data().callNotes || [];
-    notes.push({ text: "No ALS Available", time: timeStr, by: currentUserUnit || "Dispatcher", createdAt: new Date().toISOString() });
-    return db.collection("activeCalls").doc(callId).update({ callNotes: notes });
-  }).then(function() {
+    // Log as timeline event, not a call note
+    logCallEvent(callId, "No ALS Available", "⚠️", "#ff9090");
     closeALSModal();
     showToast("Logged: No ALS Available");
     selectDDCall(callId);
@@ -2147,7 +2159,8 @@ window.confirmCancelALS = function() {
   var d = new Date();
   var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
   db.collection("activeCalls").doc(callId).update({
-    alsActivated: false, alsProvider: "", alsUnit: "", alsEta: "",
+    alsActivated: false, alsProvider: "", alsUnit: "", alsEta: "", alsEtaMinutes: 0,
+    alsActivatedISO: "", alsOnScene: false, alsOnSceneAt: "",
     alsCancel: { reason: reason, time: timeStr, by: currentUserUnit || "" },
     updatedAt: new Date().toISOString()
   }).then(function() {
@@ -2162,19 +2175,11 @@ function activatePD(callId) {
   if (!callId) return;
   db.collection("activeCalls").doc(callId).update({
     pdActivated: true,
+    pdActivatedAt: (function(){ var d=new Date(); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); })(),
     updatedAt: new Date().toISOString()
   }).then(function() {
-    // Auto-add timestamped call note
-    return db.collection("activeCalls").doc(callId).get();
-  }).then(function(snap) {
-    if (!snap.exists) return;
-    var d = new Date();
-    var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
-    var notes = snap.data().callNotes || [];
-    notes.push({ text: "PD Activated", time: timeStr, by: currentUserUnit || "Dispatcher", createdAt: new Date().toISOString() });
-    return db.collection("activeCalls").doc(callId).update({ callNotes: notes });
-  }).then(function() {
-    showToast("PD Activated");
+    logCallEvent(callId, "PD Notified", "🚔", "#7ab8f5");
+    showToast("PD Notified");
     selectDDCall(callId);
   }).catch(function(e) { showToast("Error: " + e.message, true); });
 }
@@ -2540,10 +2545,9 @@ window.confirmDivert = function(unit, fromCallId, fromAddr, toCallId, crewIdx, r
         if (crew[k] === unit) delete crew[k];
       });
     });
-    var notes = data.callNotes || [];
-    notes.push({ text: unit + " diverted to another call", time: timeStr, by: by, createdAt: new Date().toISOString() });
-    return db.collection("activeCalls").doc(fromCallId).update({ crews: crews, callNotes: notes, updatedAt: new Date().toISOString() });
+    return db.collection("activeCalls").doc(fromCallId).update({ crews: crews, updatedAt: new Date().toISOString() });
   }).then(function() {
+    logCallEvent(fromCallId, unit + " diverted to another call", "↗", "#ffc84a", by);
     return db.collection("activeCalls").doc(toCallId).get();
   }).then(function(snap) {
     if (!snap.exists) return;
@@ -2551,10 +2555,9 @@ window.confirmDivert = function(unit, fromCallId, fromAddr, toCallId, crewIdx, r
     var crews = data.crews || [{}];
     while (crews.length <= crewIdx) crews.push({});
     crews[crewIdx][role] = unit;
-    var notes = data.callNotes || [];
-    notes.push({ text: unit + " diverted from " + fromAddr, time: timeStr, by: by, createdAt: new Date().toISOString() });
-    return db.collection("activeCalls").doc(toCallId).update({ crews: crews, callNotes: notes, updatedAt: new Date().toISOString() });
+    return db.collection("activeCalls").doc(toCallId).update({ crews: crews, updatedAt: new Date().toISOString() });
   }).then(function() {
+    logCallEvent(toCallId, unit + " diverted from " + fromAddr, "↙", "#ffc84a", by);
     showToast("✓ " + unit + " diverted");
     selectDDCall(toCallId, "units");
   }).catch(function(e) { showToast("Error: " + e.message, true); });
@@ -2625,6 +2628,19 @@ window.codesAddrSelect = function(el, sec, idx) {
   });
 };
 // ── END CODES ADDRESS AUTOCOMPLETE ──
+
+// ── LOG CALL EVENT (system events → timeline, not call notes) ──
+function logCallEvent(callId, text, icon, color, sub) {
+  var d = new Date();
+  var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var events = snap.data().callEvents || [];
+    events.push({ text: text, icon: icon||"⚡", color: color||"var(--gray)", sub: sub||"", time: timeStr, by: currentUserUnit||"Dispatcher", createdAt: new Date().toISOString() });
+    return db.collection("activeCalls").doc(callId).update({ callEvents: events, updatedAt: new Date().toISOString() });
+  }).catch(function(e){ console.error("logCallEvent error:", e); });
+}
+window.logCallEvent = logCallEvent;
 
 window.openCancelCallModal = function(callId) {
   var el = document.getElementById("cancel-call-id");
@@ -2754,34 +2770,24 @@ function confirmActivateBLS() {
   var eta      = ((document.getElementById("bls-eta")||{}).value||"").trim();
   var msg      = document.getElementById("bls-modal-msg");
   if (!provider) { if(msg){msg.className="form-msg error";msg.textContent="Enter a provider.";} return; }
-  db.collection("activeCalls").doc(callId).get().then(function(snap) {
-    if (!snap.exists) return;
-    var d = new Date();
-    var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
-    var notes = snap.data().callNotes || [];
-    notes.push({ text: "BLS Mutual Aid Requested — " + provider + (unit?" · "+unit:"") + (eta?" · ETA "+eta+"min":""), time: timeStr, by: currentUserUnit||"Dispatcher", createdAt: new Date().toISOString() });
-    return db.collection("activeCalls").doc(callId).set({
-      blsActivated: true, blsProvider: provider, blsUnit: unit, blsEta: eta,
-      callNotes: notes, updatedAt: new Date().toISOString()
-    }, { merge: true });
+  var d = new Date();
+  var blsAt = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  db.collection("activeCalls").doc(callId).update({
+    blsActivated: true, blsProvider: provider, blsUnit: unit, blsEta: eta,
+    blsActivatedAt: blsAt, updatedAt: new Date().toISOString()
   }).then(function() {
+    logCallEvent(callId, "BLS Mutual Aid — " + provider + (unit?" · "+unit:"") + (eta?" · ETA "+eta+"min":""), "🔵", "#a78bfa");
     closeBLSModal();
     showToast("BLS Mutual Aid requested");
     selectDDCall(callId);
   }).catch(function(e) { if(msg){msg.className="form-msg error";msg.textContent="Error: "+e.message;} });
 }
 function cancelBLS(callId) {
-  db.collection("activeCalls").doc(callId).get().then(function(snap) {
-    if (!snap.exists) return;
-    var d = new Date();
-    var timeStr = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
-    var notes = snap.data().callNotes || [];
-    notes.push({ text: "BLS Mutual Aid Cancelled", time: timeStr, by: currentUserUnit||"Dispatcher", createdAt: new Date().toISOString() });
-    return db.collection("activeCalls").doc(callId).set({
-      blsActivated: false, blsProvider: "", blsUnit: "", blsEta: "",
-      callNotes: notes, updatedAt: new Date().toISOString()
-    }, { merge: true });
+  db.collection("activeCalls").doc(callId).update({
+    blsActivated: false, blsProvider: "", blsUnit: "", blsEta: "",
+    updatedAt: new Date().toISOString()
   }).then(function() {
+    logCallEvent(callId, "BLS Mutual Aid Cancelled", "✕", "var(--gray)");
     showToast("BLS Mutual Aid cancelled");
     selectDDCall(callId);
   }).catch(function(e) { showToast("Error: " + e.message, true); });
@@ -5818,7 +5824,8 @@ function checkAccessCodeOnFile(formattedAddress, placeName) {
                "street","avenue","blvd","road","drive","lane","way","nj","usa",
                "ave","st","rd","dr","and","main","with","from","then",
                "building","side","door","back","clear","enter","code",
-               "press","together","behind","dorm","offices","classrooms"];
+               "press","together","behind","dorm","offices","classrooms",
+               "washington","lincoln","franklin","central","church","broad","oak","elm","maple"];
   function isNoise(w) { return NOISE.indexOf(w) !== -1 || w.length < 2; }
 
   // Haversine distance in meters
@@ -5834,31 +5841,39 @@ function checkAccessCodeOnFile(formattedAddress, placeName) {
   function scoreEntry(entry) {
     if (!entry.code) return 0;
     var score = 0;
+    var hasGeo = entry.lat && entry.lng && selectedLat && selectedLng;
+    var hasAddr = !!entry.address;
 
     // If entry has geocoded lat/lng and we have the call's coordinates — use distance
-    if (entry.lat && entry.lng && selectedLat && selectedLng) {
+    if (hasGeo) {
       var dist = distMeters(selectedLat, selectedLng, entry.lat, entry.lng);
-      if (dist <= 50)  return 100; // within 50m — definitive match
-      if (dist <= 150) score += 20;
-      if (dist <= 400) score += 10;
-      if (dist > 400)  return 0;   // geocoded but too far — skip
+      if (dist <= 30)  return 100; // within 30m — definitive match
+      if (dist <= 80)  score += 20;
+      if (dist <= 150) score += 10;
+      if (dist > 150)  return 0;   // geocoded but too far — no match
     }
 
-    // Text matching fallback (no lat/lng on entry)
+    // Text matching
     var nameClean = (entry.name||"").toLowerCase();
-    var nameWords = nameClean.split(/[\s,()/&\-]+/).filter(function(w){ return !isNoise(w) && w.length >= 2; });
+    var nameWords = nameClean.split(/[\s,()/&\-]+/).filter(function(w){ return !isNoise(w) && w.length >= 3; }); // min 3 chars to avoid noise
     nameWords.forEach(function(w) { if (haystack.indexOf(w) !== -1) score += 4; });
     var nameStripped = nameClean.replace(/[^a-z0-9 ]/g,'').trim();
     if (nameStripped.length > 4 && haystack.indexOf(nameStripped) !== -1) score += 6;
 
-    if (entry.address) {
+    if (hasAddr) {
       var entryAddrLower = entry.address.toLowerCase();
       var numMatch = entryAddrLower.match(/^\d+/);
-      if (numMatch && addrLower.indexOf(numMatch[0] + " ") !== -1) score += 4;
-      var eWords = entryAddrLower.split(/[\s,]+/).filter(function(w){ return !isNoise(w) && w.length >= 3; });
+      var hasNumMatch = numMatch && addrLower.indexOf(numMatch[0] + " ") !== -1;
+      if (hasNumMatch) score += 6; // street number match is strong signal
+      var eWords = entryAddrLower.split(/[\s,]+/).filter(function(w){ return !isNoise(w) && w.length >= 4; });
       eWords.forEach(function(w) { if (addrLower.indexOf(w) !== -1) score += 2; });
       if (entryAddrLower.length > 8 && addrLower.indexOf(entryAddrLower) !== -1) score += 10;
+      // Without a geo hit, address-only entries MUST match the street number
+      if (!hasGeo && !hasNumMatch) return 0;
     }
+
+    // Entries with no address and no coords need a strong name match
+    if (!hasGeo && !hasAddr && score < 10) return 0;
 
     return score;
   }
@@ -5867,8 +5882,10 @@ function checkAccessCodeOnFile(formattedAddress, placeName) {
   var match = null, bestScore = 0;
   allEntries.forEach(function(entry) {
     var s = scoreEntry(entry);
+    if (s > 0) console.log("AccessCode score:", entry.name, "→", s, "| addr:", entry.address, "| lat:", entry.lat);
     if (s > bestScore) { bestScore = s; match = entry; }
   });
+  console.log("AccessCode best match:", match && match.name, "score:", bestScore, "| haystack:", haystack);
 
   if (match && bestScore >= 4) {
     window._accessCodeSuggestion = match;
@@ -7562,8 +7579,8 @@ function buildDDMap() {
           scale: 1.8, anchor: new google.maps.Point(12, 22)
         } : {
           url: iconUrl,
-          scaledSize: new google.maps.Size(32, 32),
-          anchor: new google.maps.Point(16, 32)
+          scaledSize: new google.maps.Size(36, 36),
+          anchor: new google.maps.Point(18, 36)
         },
         zIndex: isBase ? 200 : 150
       });
@@ -7575,25 +7592,9 @@ function buildDDMap() {
       marker.addListener("click", function() { iw.open(ddMap, marker); });
     }
 
-    var emojiUrl = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><text y="26" font-size="26">🏥</text></svg>');
+    var emojiUrl = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36"><text y="28" font-size="28">🏥</text></svg>');
 
-    if (isBase) { placeMarker(emojiUrl); return; }
-
-    // Try to get the real Google Places icon
-    var placesService = new google.maps.places.PlacesService(ddMap);
-    placesService.nearbySearch({
-      location: { lat: lm.lat, lng: lm.lng },
-      radius: 100,
-      type: "hospital",
-      keyword: lm.name
-    }, function(results, status) {
-      if (status === "OK" && results && results[0] && results[0].icon) {
-        // Use Google's icon but tint it — wrap in an img-based marker
-        placeMarker(results[0].icon);
-      } else {
-        placeMarker(emojiUrl);
-      }
-    });
+    placeMarker(isBase ? null : emojiUrl);
   });
   var svDiv = document.getElementById("dd-street-view");
   if (svDiv) ddStreetView = new google.maps.StreetViewPanorama(svDiv, { visible: false, disableDefaultUI: true, zoomControl: true });
@@ -7739,7 +7740,7 @@ function selectDDCall(callId, keepSection) {
       var actionLogHTML = '';
       if (actionLog.length) {
         actionLogHTML = '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--card-border)">' +
-          '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">📋 Call Log</div>' +
+          '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">⚡ Call Updates</div>' +
           actionLog.map(function(entry) {
             return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px">' +
               '<div style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;color:' + entry.color + ';flex-shrink:0;min-width:36px;padding-top:1px">' + (entry.time||'') + '</div>' +
@@ -7832,14 +7833,18 @@ function buildCallActionLog(call) {
   if (times.at_hospital)    entries.push({ time: times.at_hospital,    icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" });
 
   // 4. ALS
-  if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon:"🚨", text:"ALS Activated", color:"#ff9090", sub: [call.alsProvider, call.alsUnit, call.alsEta ? "ETA "+call.alsEta+"min" : ""].filter(Boolean).join(" · ") });
+  if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon:"🚨", text: call.alsProvider === "No ALS Available" ? "No ALS Available" : "ALS Activated", color:"#ff9090", sub: call.alsProvider !== "No ALS Available" ? [call.alsProvider, call.alsUnit, call.alsEta ? "ETA "+call.alsEta+"min" : ""].filter(Boolean).join(" · ") : "" });
+  if (call.alsCancel && call.alsCancel.reason) entries.push({ time: call.alsCancel.time||"", icon:"✕", text:"ALS Cancelled — " + call.alsCancel.reason, color:"var(--gray)", sub: call.alsCancel.by||"" });
 
-  // 5. PD
+  // 5. BLS
+  if (call.blsActivated) entries.push({ time: call.blsActivatedAt||"", icon:"🔵", text:"BLS Mutual Aid", color:"#a78bfa", sub: [call.blsProvider, call.blsUnit, call.blsEta ? "ETA "+call.blsEta+"min" : ""].filter(Boolean).join(" · ") });
+
+  // 6. PD
   if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
 
-  // 6. Call notes
-  (call.callNotes||[]).forEach(function(n) {
-    if (n && n.text) entries.push({ time: n.time||"", icon:"📝", text: n.by ? n.by + ": " + n.text : n.text, color:"var(--gray)" });
+  // 7. System call events (ALS/BLS/PD/divert — NOT dispatcher notes)
+  (call.callEvents||[]).forEach(function(ev) {
+    if (ev && ev.text) entries.push({ time: ev.time||"", icon: ev.icon||"⚡", text: ev.text, color: ev.color||"var(--gray)", sub: ev.sub||"" });
   });
 
   // 7. Disposition
@@ -8011,17 +8016,75 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   var alsBanner = "";
 
   if (call.alsActivated) {
-    // ALS already active — static confirmation banner
+    var isNoALS = call.alsProvider === "No ALS Available";
+    // Calculate remaining ETA
+    var etaDisplay = "";
+    if (!isNoALS && call.alsEtaMinutes && call.alsActivatedISO) {
+      var activatedMs = new Date(call.alsActivatedISO).getTime();
+      var etaMs = activatedMs + (parseInt(call.alsEtaMinutes)||0) * 60000;
+      var etaDate = new Date(etaMs);
+      var etaHHMM = String(etaDate.getHours()).padStart(2,"0") + ":" + String(etaDate.getMinutes()).padStart(2,"0");
+      var remainMs = etaMs - Date.now();
+      var remainMin = Math.round(remainMs / 60000);
+      if (remainMs <= 0) {
+        etaDisplay = '<span id="als-eta-live" style="color:#ff9090;font-weight:700">ETA ' + etaHHMM + ' — Arrived</span>';
+      } else if (remainMin <= 1) {
+        etaDisplay = '<span id="als-eta-live" style="color:#ff9090;font-weight:700">ETA 1 Minute · Expected ' + etaHHMM + '</span>';
+      } else {
+        etaDisplay = '<span id="als-eta-live" style="color:#ffc84a">' + remainMin + ' min remaining · Expected ' + etaHHMM + '</span>';
+      }
+    } else if (!isNoALS && call.alsEta) {
+      etaDisplay = '<span id="als-eta-live" style="color:var(--gray)">ETA ' + call.alsEta + ' min</span>';
+    }
     alsBanner =
-      '<div style="background:rgba(224,85,85,0.08);border:1px solid ' + (call.alsProvider === "No ALS Available" ? "rgba(255,255,255,0.12)" : "rgba(224,85,85,0.4)") + ';border-radius:8px;padding:8px 12px;margin-bottom:6px">' +
+      '<div style="background:rgba(224,85,85,0.08);border:1px solid ' + (isNoALS ? "rgba(255,255,255,0.12)" : "rgba(224,85,85,0.4)") + ';border-radius:8px;padding:8px 12px;margin-bottom:6px">' +
         '<div style="display:flex;align-items:center;justify-content:space-between">' +
           '<div>' +
-            '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (call.alsProvider === "No ALS Available" ? "var(--gray)" : "#ff9090") + ';font-weight:700;margin-bottom:2px">' + (call.alsProvider === "No ALS Available" ? "⚠ No ALS Available" : "🚨 ALS Active") + '</div>' +
-            (call.alsProvider !== "No ALS Available" ? '<div style="font-size:0.78rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta?" · ETA "+call.alsEta+"min":"") + '</div>' : '') +
+            '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (isNoALS ? "var(--gray)" : "#ff9090") + ';font-weight:700;margin-bottom:2px">' + (isNoALS ? "⚠ No ALS Available" : "🚨 ALS Active") + '</div>' +
+            (!isNoALS ? '<div style="font-size:0.78rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + '</div>' +
+            (!call.alsOnScene && etaDisplay ? '<div style="font-size:0.7rem;margin-top:2px">' + etaDisplay + '</div>' : '') : '') +
           '</div>' +
-          '<button onclick="' + (call.alsProvider === "No ALS Available" ? "openALSModal('" + call.id + "')" : "cancelALS('" + call.id + "')") + '" style="background:none;border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:rgba(255,255,255,0.3);font-size:0.58rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px 7px;cursor:pointer;letter-spacing:0.05em;flex-shrink:0">' + (call.alsProvider === "No ALS Available" ? "Activate ALS" : "✕ Cancel") + '</button>' +
         '</div>' +
+        (!isNoALS ?
+          '<div style="display:flex;gap:5px;margin-top:7px">' +
+            (!call.alsOnScene ?
+              '<button onclick="window.markALSOnScene(\'' + call.id + '\')" style="flex:1;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.35);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:6px;cursor:pointer">✓ On Scene</button>' : '') +
+            '<button onclick="cancelALS(\'' + call.id + '\')" style="flex:1;background:rgba(255,144,144,0.08);border:1px solid rgba(255,144,144,0.3);border-radius:6px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:6px;cursor:pointer">✕ Cancel ALS</button>' +
+          '</div>' : '') +
+        (isNoALS ?
+          '<button onclick="openALSModal(\'' + call.id + '\')" style="width:100%;margin-top:7px;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.35);border-radius:6px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:6px;cursor:pointer">Request ALS</button>' : '') +
+        (call.alsOnScene ?
+          '<div style="margin-top:5px;font-size:0.62rem;color:#7dedb5;text-align:center;letter-spacing:0.05em">✓ ALS On Scene' + (call.alsOnSceneAt ? ' · ' + call.alsOnSceneAt : '') + '</div>' : '') +
       '</div>';
+
+    // Start live ETA ticker (updates every 30s)
+    if (!isNoALS && !call.alsOnScene && call.alsEtaMinutes && call.alsActivatedISO) {
+      clearInterval(window._alsEtaTicker);
+      window._alsEtaTicker = setInterval(function() {
+        var span = document.getElementById("als-eta-live");
+        if (!span) { clearInterval(window._alsEtaTicker); return; }
+        var activatedMs2 = new Date(call.alsActivatedISO).getTime();
+        var etaMs2 = activatedMs2 + (parseInt(call.alsEtaMinutes)||0) * 60000;
+        var etaDate2 = new Date(etaMs2);
+        var etaHHMM2 = String(etaDate2.getHours()).padStart(2,"0") + ":" + String(etaDate2.getMinutes()).padStart(2,"0");
+        var remainMs2 = etaMs2 - Date.now();
+        var remainMin2 = Math.round(remainMs2 / 60000);
+        if (remainMs2 <= 0) {
+          span.textContent = "ETA " + etaHHMM2 + " — Arrived";
+          span.style.color = "#ff9090";
+          span.style.fontWeight = "700";
+          clearInterval(window._alsEtaTicker);
+        } else if (remainMin2 <= 1) {
+          span.textContent = "ETA 1 Minute · Expected " + etaHHMM2;
+          span.style.color = "#ff9090";
+          span.style.fontWeight = "700";
+        } else {
+          span.textContent = remainMin2 + " min remaining · Expected " + etaHHMM2;
+          span.style.color = "#ffc84a";
+          span.style.fontWeight = "";
+        }
+      }, 30000);
+    }
   } else if (isALSNature) {
     // Protocol recommends ALS — FLASHING urgent banner
     alsBanner =
