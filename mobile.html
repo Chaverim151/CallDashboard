@@ -1667,13 +1667,37 @@ function mSendTokenToSW() {
 
 function mRequestPush() {
   if (!("Notification" in window)) { mToast("Notifications not supported on this browser", true); return; }
+  if (!mCurrentUser) { mToast("Not signed in", true); return; }
+
+  // If already enabled — toggle OFF by removing token from Firestore
+  if (Notification.permission === "granted") {
+    db.collection("pushTokens").doc(mCurrentUser.uid).delete()
+      .then(function() {
+        // Also delete FCM token from messaging
+        try {
+          var msg = mFCMMessaging || firebase.messaging();
+          msg.deleteToken().catch(function(){});
+        } catch(e) {}
+        mToast("🔕 Alerts disabled");
+        // Override permission check — use a local flag
+        window._mAlertsDisabled = true;
+        mUpdateAlertBtn();
+      })
+      .catch(function(e) { mToast("Error: " + e.message, true); });
+    return;
+  }
+
+  // If manually disabled but permission still granted, re-enable
+  if (window._mAlertsDisabled) {
+    window._mAlertsDisabled = false;
+  }
+
   if (!FCM_VAPID_KEY) { mToast("Push not configured", true); return; }
   if (!("serviceWorker" in navigator)) { mToast("Service worker not supported", true); return; }
 
   Notification.requestPermission().then(function(p) {
     if (p !== "granted") { mToast("Notifications blocked — check Settings", true); return; }
 
-    // Wait for SW to be ready
     navigator.serviceWorker.ready.then(function(reg) {
       mSWReg = reg;
       try {
@@ -1681,7 +1705,6 @@ function mRequestPush() {
         msg.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg })
           .then(function(token) {
             if (!token) { mToast("Could not get push token — try again", true); return; }
-            if (!mCurrentUser) { mToast("Not signed in", true); return; }
             return db.collection("pushTokens").doc(mCurrentUser.uid).set({
               token: token,
               unit: mCurrentUserUnit || "",
@@ -1706,15 +1729,14 @@ function mRequestPush() {
 }
 
 function mUpdateAlertBtn() {
-  var on = Notification.permission === "granted";
+  var on = Notification.permission === "granted" && !window._mAlertsDisabled;
   var color = on ? "#7dedb5" : "var(--gray)";
   var trackBg = on ? "rgba(125,237,181,0.3)" : "rgba(255,255,255,0.1)";
   var trackBorder = on ? "rgba(125,237,181,0.5)" : "var(--card-border)";
   var thumbBg = on ? "#7dedb5" : "var(--gray)";
   var thumbLeft = on ? "18px" : "2px";
-  var labelText = on ? "Alerts On" : "Enable Alerts";
+  var labelText = on ? "Alerts On" : "Alerts Off";
 
-  // Topbar toggle
   var track = document.getElementById("m-alert-track");
   var thumb = document.getElementById("m-alert-thumb");
   var label = document.getElementById("m-alert-label");
@@ -1722,7 +1744,6 @@ function mUpdateAlertBtn() {
   if (thumb) { thumb.style.background = thumbBg; thumb.style.left = thumbLeft; }
   if (label) { label.style.color = color; label.textContent = labelText; }
 
-  // Standalone toggle
   var track2 = document.getElementById("m-alert-track-2");
   var thumb2 = document.getElementById("m-alert-thumb-2");
   var label2 = document.getElementById("m-alert-label-2");
@@ -1730,7 +1751,6 @@ function mUpdateAlertBtn() {
   if (thumb2) { thumb2.style.background = thumbBg; thumb2.style.left = thumbLeft; }
   if (label2) { label2.style.color = color; label2.textContent = labelText; }
 
-  // Show standalone row only when calls section is hidden
   var callsVisible = document.getElementById("m-calls-section") &&
                      document.getElementById("m-calls-section").style.display !== "none";
   var row = document.getElementById("m-alerts-row");
