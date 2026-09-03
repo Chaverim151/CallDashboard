@@ -1005,7 +1005,15 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
         <input type="hidden" id="transport-facility-value">
       </div>
 
-      <!-- Non-transport status -->
+      <!-- ALS Transport Status (shown only when ALS was on scene) -->
+      <div id="transport-als-section" style="display:none;padding-top:10px;border-top:1px solid var(--card-border);margin-bottom:12px">
+        <div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:6px">🚨 ALS — Transport Status</div>
+        <div style="display:flex;gap:6px">
+          <button onclick="window.setALSTransportStatus('with_als')" id="als-transport-with" style="flex:1;font-family:'Oswald',sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px;border-radius:7px;border:1px solid rgba(255,144,144,0.3);background:rgba(255,144,144,0.06);color:#ff9090;cursor:pointer">🚑 Transporting With ALS</button>
+          <button onclick="window.setALSTransportStatus('triaged_bls')" id="als-transport-bls" style="flex:1;font-family:'Oswald',sans-serif;font-size:0.65rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px;border-radius:7px;border:1px solid rgba(125,237,181,0.3);background:rgba(125,237,181,0.06);color:#7dedb5;cursor:pointer">✓ Triaged to BLS</button>
+        </div>
+        <input type="hidden" id="transport-als-status" value="">
+      </div>
       <div style="padding-top:10px;border-top:1px solid var(--card-border);margin-bottom:12px">
         <div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px">Non-transporting units — set status:</div>
         <div style="display:flex;gap:6px">
@@ -1794,6 +1802,10 @@ function renderCallCard(call, i) {
     ? '<span class="call-pill zone-secondary">Load a Rig</span>'
     : '<span class="call-pill zone-outside">Outside Zone</span>';
 
+  var testBadge = call.testMode
+    ? '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.08em;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.4);border-radius:4px;padding:2px 7px;color:#f0a500">🧪 TEST</span>'
+    : '';
+
   var time = call.createdAt ? new Date(call.createdAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
 
   var alsPill = call.alsActivated
@@ -1913,7 +1925,7 @@ function renderCallCard(call, i) {
     '<div style="display:flex;gap:12px">' +
       '<div style="flex:1;min-width:0">' +
         '<div style="display:flex;align-items:center;margin-bottom:6px">' +
-          zoneBadge +
+          zoneBadge + testBadge +
           (!svThumb ? '<span style="font-size:0.68rem;color:var(--gray);margin-left:auto">' + time + '</span>' : '') +
         '</div>' +
         '<div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;color:var(--white);line-height:1.3">' + (call.address||"Unknown Location") + '</div>' +
@@ -1979,13 +1991,6 @@ window.hexToRgb = hexToRgb;
 function createActiveCall(lat, lng, address, crossStreet, zone, mapsLink, placeName, callNature, patientAge, patientAgeNum, patientSex, accessCode, dispatchNotes, callbackNumber) {
   if (!currentUser) return Promise.resolve();
 
-  // System testing mode — simulate but don't save
-  if (SYS_TESTING_MODE) {
-    showToast("🧪 TEST MODE — Call not saved to live system", false);
-    closeNewCallForm();
-    return Promise.resolve({ id: "TEST-" + Date.now() });
-  }
-
   return db.collection("users").doc(currentUser.uid).get().then(function(snap) {
     var d = snap.exists ? snap.data() : {};
     var createdBy = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
@@ -2013,6 +2018,8 @@ function createActiveCall(lat, lng, address, crossStreet, zone, mapsLink, placeN
       pdActivated: false,
       blsActivated: false, blsProvider:"", blsUnit:"", blsEta:"",
       status: "active",
+      testMode: SYS_TESTING_MODE ? true : false,
+      testModeUnit: SYS_TESTING_MODE ? (currentUserUnit||"") : "",
       createdBy: createdBy,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -3719,6 +3726,52 @@ function sendClickSendEmail(opts) {
     body: JSON.stringify({ to: [{ email: opts.toEmail, name: opts.toEmail }], subject: opts.subject, body: opts.htmlBody })
   }).then(function(r) { return r.json(); });
 }
+
+function sendClickSendSMS(toNumbers, message) {
+  if (!toNumbers || !toNumbers.length || !message) return Promise.resolve();
+  // In testing mode, only send to admin's own number
+  var recipients = toNumbers;
+  if (SYS_TESTING_MODE) {
+    db.collection("users").doc(currentUser.uid).get().then(function(snap) {
+      if (!snap.exists) return;
+      var phone = getFirstPhone(snap.data().phone);
+      if (!phone) return;
+      fetch(CLICKSEND_WORKER, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-App-Secret": APP_SHARED_SECRET },
+        body: JSON.stringify({ type: "sms", messages: [{ to: phone, body: "[TEST] " + message }] })
+      }).catch(function(e){ console.warn("SMS test send failed:", e); });
+    });
+    return Promise.resolve();
+  }
+  return fetch(CLICKSEND_WORKER, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-App-Secret": APP_SHARED_SECRET },
+    body: JSON.stringify({ type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
+  }).then(function(r) { return r.json(); })
+    .catch(function(e){ console.warn("SMS send failed:", e); });
+}
+window.sendCallUpdateSMS = function(callId, message) {
+  // Send SMS to all assigned units on this call
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var assignedUnits = snap.data().assignedUnits || [];
+    if (!assignedUnits.length) return;
+    db.collection("users").get().then(function(uSnap) {
+      var phones = [];
+      uSnap.forEach(function(doc) {
+        var d = doc.data();
+        if (assignedUnits.indexOf(d.unit) !== -1) {
+          var phone = getFirstPhone(d.phone);
+          if (phone) phones.push(phone);
+        }
+      });
+      if (phones.length) sendClickSendSMS(phones, "🚨 Hatzolah MC Update\n" + message);
+    });
+  });
+};
+
+window.sendClickSendSMS = sendClickSendSMS;
 function sendTicketEmail(opts) {
   var pe = { urgent: "🚨", high: "🔴", medium: "🟡", low: "🟢" }[opts.priority] || "";
   var appUrl = window.location.href.split("?")[0];
@@ -3749,17 +3802,39 @@ window.toggleSysTestMode = function() {
     thumb.style.background = "#f0a500"; thumb.style.left = "22px";
     label.style.color = "#ffc84a"; label.textContent = "ON";
     if (banner) banner.style.display = "block";
-    // Save to user doc so it persists across sessions
-    if (currentUser) db.collection("users").doc(currentUser.uid).set({ sysTestingMode: true }, { merge: true });
-    showToast("🧪 System Testing Mode ON — actions not saved", false);
-    // Show persistent banner in topbar
+    if (currentUser) {
+      db.collection("users").doc(currentUser.uid).set({ sysTestingMode: true }, { merge: true });
+      // Register this unit's push token so Cloud Functions only notify them during test
+      db.collection("pushTokens").doc(currentUser.uid).get().then(function(snap) {
+        var token = snap.exists ? snap.data().token : null;
+        db.collection("appdata").doc("testMode").set({
+          active: true,
+          uid: currentUser.uid,
+          unit: currentUserUnit || "",
+          token: token || "",
+          enabledAt: new Date().toISOString()
+        });
+      }).catch(function() {
+        db.collection("appdata").doc("testMode").set({
+          active: true,
+          uid: currentUser.uid,
+          unit: currentUserUnit || "",
+          token: "",
+          enabledAt: new Date().toISOString()
+        });
+      });
+    }
+    showToast("🧪 System Testing Mode ON — calls logged as TEST records", false);
     showSysTestBanner(true);
   } else {
     track.style.background = "rgba(255,255,255,0.1)"; track.style.borderColor = "var(--card-border)";
     thumb.style.background = "var(--gray)"; thumb.style.left = "2px";
     label.style.color = "var(--gray)"; label.textContent = "OFF";
     if (banner) banner.style.display = "none";
-    if (currentUser) db.collection("users").doc(currentUser.uid).set({ sysTestingMode: false }, { merge: true });
+    if (currentUser) {
+      db.collection("users").doc(currentUser.uid).set({ sysTestingMode: false }, { merge: true });
+      db.collection("appdata").doc("testMode").set({ active: false });
+    }
     showToast("System Testing Mode OFF");
     showSysTestBanner(false);
   }
@@ -3772,7 +3847,7 @@ function showSysTestBanner(show) {
       var b = document.createElement("div");
       b.id = "sys-test-global-banner";
       b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9990;background:#f0a500;color:#000;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-align:center;padding:5px 10px;cursor:pointer";
-      b.textContent = "🧪 SYSTEM TESTING MODE — Actions not saved to live system";
+      b.textContent = "🧪 SYSTEM TESTING MODE — Calls logged as TEST records";
       b.onclick = function() { goTo("admin"); };
       document.body.insertBefore(b, document.body.firstChild);
     }
@@ -6721,12 +6796,28 @@ function postCall() {
   createActiveCall(selectedLat, selectedLng, selectedAddress, crossStreet, zone, selectedMapsLink, selectedPlaceName, callNature, patientAgeFallback, patientAgeNum, patientSex, accessCode, dispatchNotes, callbackNumber)
     .then(function(docRef) {
       var newCallId = docRef.id;
-      showToast("✓ Call posted!");
-      // Show share panel briefly for WhatsApp option
+      showToast(SYS_TESTING_MODE ? "🧪 TEST CALL logged — flagged as system test" : "✓ Call posted!");
+
+      // Send SMS to all members
+      var rawAddr2 = selectedAddress || "";
+      var addrParts2 = (selectedPlaceName ? selectedPlaceName + " — " + rawAddr2 : rawAddr2).split("—");
+      var smsAddr = addrParts2.length > 1
+        ? addrParts2[1].trim().split(",")[0] + " (" + addrParts2[0].trim() + ")"
+        : rawAddr2.split(",")[0];
+      var nature2 = callNature ? callNature.replace(/^\d+\s*-\s*/, "") : "";
+      var zonePrefix2 = zone === "secondary" ? "Load a Rig — " : zone === "outside" ? "Outside Zone — " : "";
+      var smsBody = "🚨 Hatzolah MC\n" + zonePrefix2 + smsAddr + (nature2 ? " | " + nature2 : "") + "\n" + (selectedMapsLink || "");
+      db.collection("users").get().then(function(snap) {
+        var phones = [];
+        snap.forEach(function(doc) {
+          var phone = getFirstPhone(doc.data().phone);
+          if (phone) phones.push(phone);
+        });
+        if (phones.length) sendClickSendSMS(phones, smsBody);
+      });
+
       document.getElementById("maps-result").style.display = "block";
-      // Navigate to call management page
       setTimeout(function() {
-        // Call posted — go back to dashboard and select the new call
         if (document.getElementById('dd-call-cards')) { selectDDCall(newCallId); closeNewCallForm(); }
       }, 400);
     })
@@ -6937,6 +7028,19 @@ function openTransportModal(callId) {
       if (crew.rig) items.push({ id: idx + '_rig', label: '🚑 ' + crew.rig + ' (Rig · Crew ' + (idx+1) + ')', crewIdx: idx, role: 'rig', isAmbo: true });
     });
 
+    // Show ALS transport options if ALS was on scene
+    var alsSection = document.getElementById("transport-als-section");
+    var alsStatusInp = document.getElementById("transport-als-status");
+    if (alsSection) {
+      var showALS = call.alsActivated && call.alsOnScene;
+      alsSection.style.display = showALS ? "block" : "none";
+      if (alsStatusInp) alsStatusInp.value = "";
+      var withBtn = document.getElementById("als-transport-with");
+      var blsBtn  = document.getElementById("als-transport-bls");
+      if (withBtn) { withBtn.style.background="rgba(255,144,144,0.06)"; withBtn.style.borderColor="rgba(255,144,144,0.3)"; withBtn.style.color="#ff9090"; }
+      if (blsBtn)  { blsBtn.style.background="rgba(125,237,181,0.06)"; blsBtn.style.borderColor="rgba(125,237,181,0.3)"; blsBtn.style.color="#7dedb5"; }
+    }
+
     if (!items.length) {
       list.innerHTML = '<div style="color:var(--gray);font-size:0.8rem">No units assigned to this call yet.</div>';
       return;
@@ -6981,6 +7085,15 @@ function setNonTransportStatus(status) {
     btn.style.color = active ? "#7dedb5" : "var(--gray)";
   });
 }
+window.setALSTransportStatus = function(val) {
+  var inp = document.getElementById("transport-als-status");
+  if (inp) inp.value = val;
+  var withBtn = document.getElementById("als-transport-with");
+  var blsBtn  = document.getElementById("als-transport-bls");
+  if (withBtn) { withBtn.style.background = val==="with_als" ? "rgba(255,144,144,0.2)" : "rgba(255,144,144,0.06)"; withBtn.style.borderColor = val==="with_als" ? "rgba(255,144,144,0.6)" : "rgba(255,144,144,0.3)"; }
+  if (blsBtn)  { blsBtn.style.background  = val==="triaged_bls" ? "rgba(125,237,181,0.2)" : "rgba(125,237,181,0.06)"; blsBtn.style.borderColor = val==="triaged_bls" ? "rgba(125,237,181,0.6)" : "rgba(125,237,181,0.3)"; }
+};
+
 window.setNonTransportStatus = setNonTransportStatus;
 
 function confirmTransport() {
@@ -6990,8 +7103,10 @@ function confirmTransport() {
   var now = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
   var checkedBoxes = document.querySelectorAll("#transport-unit-list input[type=checkbox]:checked");
   var uncheckedBoxes = document.querySelectorAll("#transport-unit-list input[type=checkbox]:not(:checked)");
+  var alsTransportStatus = ((document.getElementById("transport-als-status") || {}).value || "");
   var update = { "disposition.type": "transport", updatedAt: new Date().toISOString() };
   if (facility) update["disposition.hospital"] = facility;
+  if (alsTransportStatus) update["alsTransportStatus"] = alsTransportStatus;
 
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
@@ -7009,6 +7124,12 @@ function confirmTransport() {
     });
     return db.collection("activeCalls").doc(callId).update(update);
   }).then(function() {
+    if (alsTransportStatus) {
+      var evText = alsTransportStatus === "with_als" ? "Transporting With ALS" : "ALS Triaged to BLS";
+      var evIcon = alsTransportStatus === "with_als" ? "🚨" : "✓";
+      var evColor = alsTransportStatus === "with_als" ? "#ff9090" : "#7dedb5";
+      logCallEvent(callId, evText, evIcon, evColor);
+    }
     closeTransportModal();
     showToast("🚑 Transport confirmed" + (facility ? " → " + facility : ""));
     selectDDCall(callId);
@@ -7055,26 +7176,72 @@ function setCallTime(callId, key, val) {
 function setUnitStatus(callId, crewIdx, role, status) {
   var d = new Date();
   var now = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
-  var detailKey = "unitDetails." + crewIdx + "_" + role + ".status";
   var update = {};
-  update[detailKey] = status;
+  update["unitDetails." + crewIdx + "_" + role + ".status"] = status;
 
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
-    var times = snap.data().times || {};
+    var data = snap.data();
+    var times = data.times || {};
+    var unitDetails = data.unitDetails || {};
+    var crews = data.crews || [];
+
     if ((status === "on_scene_ambo" || status === "on_scene_direct") && !times.first_on_scene) {
       update["times.first_on_scene"] = now;
     }
     if (status === "transporting" && !times.enroute) {
       update["times.enroute"] = now;
     }
-    if (status === "at_facility" && !times.at_hospital) {
-      update["times.at_hospital"] = now;
+    if (status === "at_facility") {
+      if (!times.at_hospital) update["times.at_hospital"] = now;
+      // All units in the same crew that are still "transporting" arrive together
+      var crew = crews[crewIdx] || {};
+      Object.keys(crew).forEach(function(k) {
+        if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+        var det = unitDetails[crewIdx + "_" + k] || {};
+        if (k !== role && det.status === "transporting") {
+          update["unitDetails." + crewIdx + "_" + k + ".status"] = "at_facility";
+        }
+      });
     }
+    if (status === "clearing_facility") {
+      // All units in the same crew that are "at_facility" clear together
+      var crew2 = crews[crewIdx] || {};
+      Object.keys(crew2).forEach(function(k) {
+        if (k === "rig" || !crew2[k] || crew2[k] === "__added__") return;
+        var det2 = unitDetails[crewIdx + "_" + k] || {};
+        if (k !== role && det2.status === "at_facility") {
+          update["unitDetails." + crewIdx + "_" + k + ".status"] = "clearing_facility";
+        }
+      });
+    }
+    // back_at_base — driver is done, status already set above
+    // No additional sync needed; non-drivers cleared independently at clearing_facility
+
     return db.collection("activeCalls").doc(callId).update(update);
   }).then(function() {
     if (status === "transporting") {
       setTimeout(function() { openTransportModal(callId); }, 200);
+    } else if (status === "back_at_base") {
+      logCallEvent(callId, "Rig Back at Base", "🏠", "#4a90d9");
+      // Check if all units in the crew are now cleared
+      db.collection("activeCalls").doc(callId).get().then(function(snap) {
+        if (!snap.exists) return;
+        var data = snap.data();
+        var unitDetails = data.unitDetails || {};
+        var crews = data.crews || [];
+        var CLEARED = ["clearing_facility","back_at_base","rma_scene"];
+        var allCleared = true;
+        crews.forEach(function(crew, ci) {
+          Object.keys(crew||{}).forEach(function(k) {
+            if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+            var det = unitDetails[ci + "_" + k] || {};
+            if (!det.status || CLEARED.indexOf(det.status) === -1) allCleared = false;
+          });
+        });
+        selectDDCall(callId, "units");
+        if (allCleared) showToast("🏠 Rig back at base — all units cleared. Ready to close call.", false);
+      });
     } else {
       selectDDCall(callId, "units");
     }
@@ -7460,6 +7627,17 @@ window.toggleSupOther = function(inpId, btn) {
   if (show) { var i = panel.querySelector('input'); if (i) i.focus(); }
 };
 
+window.setCrewRig = function(callId, crewIdx, rigId) {
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [];
+    while (crews.length <= crewIdx) crews.push({});
+    crews[crewIdx].rig = rigId;
+    return db.collection("activeCalls").doc(callId).update({ crews: crews, updatedAt: new Date().toISOString() });
+  }).then(function() { selectDDCall(callId, "units"); })
+    .catch(function(e) { showToast("Error: " + e.message, true); });
+};
+
 window.assignOtherUnit = function(callId, crewIdx, role, val) {
   if (!val) return;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
@@ -7816,16 +7994,47 @@ function selectDDCall(callId, keepSection) {
       var actionLogHTML = '';
       if (actionLog.length) {
         actionLogHTML = '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--card-border)">' +
-          '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">⚡ Call Updates</div>' +
-          actionLog.map(function(entry) {
-            return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px">' +
-              '<div style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;color:' + entry.color + ';flex-shrink:0;min-width:36px;padding-top:1px">' + (entry.time||'') + '</div>' +
-              '<div>' +
-                '<div style="font-size:0.72rem;color:var(--white);line-height:1.4">' + entry.icon + ' ' + entry.text + '</div>' +
-                (entry.sub ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:1px">' + entry.sub + '</div>' : '') +
+          '<div style="font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:10px">⚡ Call Updates</div>' +
+          '<div style="position:relative">' +
+          actionLog.map(function(entry, ei) {
+            var isLast = ei === actionLog.length - 1 && (!entry.children || !entry.children.length);
+            var childrenHtml = '';
+            if (entry.children && entry.children.length) {
+              childrenHtml = '<div style="margin-top:6px;margin-left:14px;border-left:1px solid rgba(255,255,255,0.07);padding-left:10px">' +
+                entry.children.map(function(child, ci) {
+                  var isLastChild = ci === entry.children.length - 1;
+                  return '<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:' + (isLastChild?'0':'6') + 'px;animation:fadeUp 0.2s ease ' + (0.05*(ci+1)) + 's both">' +
+                    '<div style="flex-shrink:0;width:20px;text-align:center;font-size:0.7rem;padding-top:1px">' + child.icon + '</div>' +
+                    '<div style="flex:1;min-width:0">' +
+                      '<div style="font-size:0.72rem;font-weight:600;color:' + child.color + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + child.text + '</div>' +
+                      (child.sub ? '<div style="font-size:0.6rem;color:var(--gray);margin-top:1px">' + child.sub + '</div>' : '') +
+                    '</div>' +
+                  '</div>';
+                }).join('') +
+              '</div>';
+            }
+            return '<div style="display:flex;align-items:flex-start;gap:0;margin-bottom:' + (isLast?'0':'8') + 'px;animation:fadeUp 0.15s ease ' + (0.04*ei) + 's both">' +
+              // Time column
+              '<div style="flex-shrink:0;width:38px;text-align:right;padding-right:8px;padding-top:2px">' +
+                '<span style="font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;color:' + entry.color + ';opacity:0.8">' + (entry.time||'') + '</span>' +
+              '</div>' +
+              // Dot + line
+              '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;width:16px">' +
+                '<div style="width:7px;height:7px;border-radius:50%;background:' + entry.color + ';flex-shrink:0;margin-top:4px;box-shadow:0 0 6px ' + entry.color + '55"></div>' +
+                (!isLast ? '<div style="width:1px;flex:1;min-height:12px;background:linear-gradient(to bottom,' + entry.color + '40,rgba(255,255,255,0.06));margin-top:2px"></div>' : '') +
+              '</div>' +
+              // Content
+              '<div style="flex:1;min-width:0;padding-left:8px;padding-bottom:' + (isLast?'0':'2') + 'px">' +
+                '<div style="display:flex;align-items:center;gap:5px">' +
+                  '<span style="font-size:0.78rem;line-height:1">' + entry.icon + '</span>' +
+                  '<span style="font-size:0.72rem;font-weight:600;color:var(--white);line-height:1.3">' + entry.text + '</span>' +
+                '</div>' +
+                (entry.sub ? '<div style="font-size:0.6rem;color:var(--gray);margin-top:2px;padding-left:1px">' + entry.sub + '</div>' : '') +
+                childrenHtml +
               '</div>' +
             '</div>';
           }).join('') +
+          '</div>' +
         '</div>';
       }
 
@@ -7872,8 +8081,8 @@ function buildCallActionLog(call) {
   var STATUS_LOG = {
     enroute_scene:    { icon:"🚗", text:"En Route to Scene",      color:"#7ab8f5" },
     on_scene_direct:  { icon:"📍", text:"On Scene",               color:"#7dedb5" },
-    picking_up_ambo:  { icon:"🔑", text:"Picking Up Rig",          color:"#ffc84a" },
-    ambo_responding:  { icon:"🚑", text:"Rig Responding",          color:"#ffc84a" },
+    picking_up_ambo:  { icon:"🔑", text:"Picking Up Rig",  color:"#ffc84a" },
+    ambo_responding:  { icon:"🚑", text:"Rig Responding",  color:"#ffc84a" },
     on_scene_ambo:    { icon:"📍", text:"On Scene with Rig",       color:"#7dedb5" },
     rma_scene:        { icon:"✋", text:"RMA on Scene",            color:"#7dedb5" },
     transporting:     { icon:"🚑", text:"Transporting",            color:"#ffc84a" },
@@ -7887,29 +8096,163 @@ function buildCallActionLog(call) {
     entries.push({ time: times.dispatched, icon:"📟", text:"Call Dispatched", color:"#7ab8f5", sub: call.createdBy||"" });
   }
 
-  // 2. Unit assignments & status changes
+  // 2. Unit assignments & status changes — emit every step, group transport under rig
+  var TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","back_at_base"];
+  var STATUS_ORDER = ["enroute_scene","picking_up_ambo","ambo_responding","on_scene_direct","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","back_at_base"];
+  var seenUnits = {}; // prevent duplicate entries for same unit
+
   crews.forEach(function(crew, ci) {
+    var rigId = crew.rig || "";
+    var transportingUnits = [];
+    // Build address once per crew
+    var rawAddr = call.address || "scene";
+    var addrParts = rawAddr.split("—");
+    var callAddr = addrParts.length > 1
+      ? addrParts[1].trim().split(",")[0] + " (" + addrParts[0].trim() + ")"
+      : rawAddr.split(",")[0];
+
     Object.keys(crew||{}).forEach(function(role) {
       if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
       var unit = crew[role];
+      if (seenUnits[unit]) return; // already processed this unit
+      seenUnits[unit] = true;
       var det = unitDetails[ci + "_" + role] || {};
-      // Assignment
-      entries.push({ time: det.assignedAt||times.dispatched||"", icon:"👤", text: unit + " assigned", color:"var(--white)", sub: det.responseDir === "scene" ? "Direct to scene" : det.responseDir === "rig" ? "Picked up rig" : "" });
-      // Status
-      if (det.status) {
-        var s = STATUS_LOG[det.status];
-        if (s) entries.push({ time: det.statusAt||"", icon:s.icon, text: unit + " — " + s.text, color:s.color });
+      var isDriver = role === "rigUnit" || role.indexOf("rigUnit") === 0 || det.response === "rig";
+      var curStatus = det.status || "";
+      var isTransporting = TRANSPORT_STATUSES.indexOf(curStatus) !== -1;
+      var rigId = det.pickedAmbo || crew.rig || "";
+
+      // Assignment + responding
+      entries.push({ time: det.assignedAt||times.dispatched||"", icon:"👤",
+        text: unit + " assigned — " + (det.response === "rig" ? "responding to Base to pick up " + (rigId||"rig") : "responding to " + callAddr),
+        color:"var(--white)" });
+
+      if (!isTransporting) {
+        // Show every pre-transport status step
+        var steps = STATUS_ORDER.slice(0, STATUS_ORDER.indexOf(curStatus) + 1).filter(function(s){ return STATUS_LOG[s] && TRANSPORT_STATUSES.indexOf(s) === -1; });
+        steps.forEach(function(s) {
+          var sl = STATUS_LOG[s];
+          if (!sl) return;
+          var txt;
+          if (s === "picking_up_ambo") {
+            txt = unit + " responding to Base to pick up " + (rigId || "rig");
+          } else if (s === "ambo_responding") {
+            txt = unit + " responding from Base with " + (rigId || "rig") + " to " + callAddr;
+          } else if (s === "enroute_scene") {
+            txt = unit + " responding to " + callAddr;
+          } else {
+            txt = unit + " — " + sl.text;
+          }
+          entries.push({ time: det.statusAt||"", icon:sl.icon, text: txt, color:sl.color });
+        });
+      } else {
+        // Show pre-transport steps too
+        var preSteps = STATUS_ORDER.slice(0, STATUS_ORDER.indexOf(curStatus)).filter(function(s){ return STATUS_LOG[s] && TRANSPORT_STATUSES.indexOf(s) === -1; });
+        preSteps.forEach(function(s) {
+          var sl = STATUS_LOG[s];
+          if (!sl) return;
+          var txt;
+          if (s === "picking_up_ambo") {
+            txt = unit + " responding to Base to pick up " + (rigId || "rig");
+          } else if (s === "ambo_responding") {
+            txt = unit + " responding from Base with " + (rigId || "rig") + " to " + callAddr;
+          } else if (s === "enroute_scene") {
+            txt = unit + " responding to " + callAddr;
+          } else {
+            txt = unit + " — " + sl.text;
+          }
+          entries.push({ time: det.statusAt||"", icon:sl.icon, text: txt, color:sl.color });
+        });
+        // Collect for rig grouping (show all transport steps reached)
+        var reachedSteps = TRANSPORT_STATUSES.slice(0, TRANSPORT_STATUSES.indexOf(curStatus) + 1);
+        transportingUnits.push({ unit: unit, status: curStatus, statusLabel: STATUS_LOG[curStatus] ? STATUS_LOG[curStatus].text : curStatus, isDriver: isDriver, role: role, reachedSteps: reachedSteps });
       }
     });
+
+    // Render transport group under rig — one entry per transport step reached
+    if (transportingUnits.length) {
+      var rigStatusLabels = { transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Clearing Facility", back_at_base:"Back at Base" };
+      var rigColors = { transporting:"#ffc84a", at_facility:"#ff9090", clearing_facility:"#7dedb5", back_at_base:"#4a90d9" };
+      var rigIcons = { transporting:"🚑", at_facility:"🏥", clearing_facility:"🔄", back_at_base:"🏠" };
+
+      // Find all steps any unit has reached
+      var maxStepIdx = 0;
+      transportingUnits.forEach(function(u) {
+        var idx = TRANSPORT_STATUSES.indexOf(u.status);
+        if (idx > maxStepIdx) maxStepIdx = idx;
+      });
+
+      // Emit one entry per reached transport step, with units nested
+      TRANSPORT_STATUSES.slice(0, maxStepIdx + 1).forEach(function(step) {
+        var unitsAtOrPast = transportingUnits.filter(function(u){ return TRANSPORT_STATUSES.indexOf(u.status) >= TRANSPORT_STATUSES.indexOf(step); });
+        if (!unitsAtOrPast.length) return;
+        var hospital = (call.disposition && call.disposition.hospital) || "facility";
+        var rigLabel = rigId || "Rig";
+        var txt, icon, color;
+
+        if (step === "transporting") {
+          // 3: [Rig] transporting from [scene] to [facility]
+          txt = rigLabel + " transporting from " + callAddr + " to " + hospital;
+          icon = "🚑"; color = "#ffc84a";
+        } else if (step === "at_facility") {
+          // 4: [Rig] at [facility]
+          txt = rigLabel + " at " + hospital;
+          icon = "🏥"; color = "#ff9090";
+        } else if (step === "clearing_facility") {
+          // 5: [Rig] clearing [facility]
+          txt = rigLabel + " clearing " + hospital;
+          icon = "🔄"; color = "#7dedb5";
+        } else if (step === "back_at_base") {
+          // 6: [Rig] back at Base
+          txt = rigLabel + " back at Base";
+          icon = "🏠"; color = "#4a90d9";
+        }
+
+        entries.push({
+          time: step === "transporting" ? (times.enroute||"") : step === "at_facility" ? (times.at_hospital||"") : "",
+          icon: icon,
+          text: txt,
+          color: color,
+          children: unitsAtOrPast.map(function(u) {
+            var uColor, uLabel;
+            if (step === "back_at_base") {
+              // Everyone cleared at back at base (driver's final step)
+              uColor = "#7dedb5"; uLabel = "Cleared";
+            } else if (step === "clearing_facility") {
+              // Non-drivers cleared at facility; driver still onboard
+              if (u.isDriver) { uColor = "#ffc84a"; uLabel = "Onboard"; }
+              else { uColor = "#7dedb5"; uLabel = "Cleared"; }
+            } else {
+              // Transporting / at_facility — everyone onboard
+              uColor = color || "#ffc84a"; uLabel = "Onboard";
+            }
+            return { icon: u.isDriver ? "🔑" : "👤", text: u.unit, color: uColor, sub: uLabel };
+          })
+        });
+      });
+    }
   });
 
-  // 3. Key time milestones not already in the unit flow
-  if (times.first_on_scene) entries.push({ time: times.first_on_scene, icon:"📍", text:"First Unit On Scene", color:"#7dedb5" });
-  if (times.enroute)        entries.push({ time: times.enroute,        icon:"🚑", text:"Ambulance En Route from Scene", color:"#ffc84a" });
-  if (times.at_hospital)    entries.push({ time: times.at_hospital,    icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" });
+  // 3. Key time milestones — only show if no transport group covered them
+  var hasTransportGroup = crews.some(function(crew) {
+    return Object.keys(crew||{}).some(function(role) {
+      if (role === "rig") return false;
+      var det = unitDetails[Object.keys(crews).indexOf(crew) + "_" + role] || {};
+      return ["transporting","at_facility","clearing_facility","back_at_base"].indexOf((det.status||"")) !== -1;
+    });
+  });
+  if (!hasTransportGroup) {
+    if (times.first_on_scene) entries.push({ time: times.first_on_scene, icon:"📍", text:"First Unit On Scene", color:"#7dedb5" });
+    if (times.enroute)        entries.push({ time: times.enroute,        icon:"🚑", text:"Ambulance En Route from Scene", color:"#ffc84a" });
+    if (times.at_hospital)    entries.push({ time: times.at_hospital,    icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" });
+  } else {
+    // Still show first on scene if not in transport flow
+    if (times.first_on_scene) entries.push({ time: times.first_on_scene, icon:"📍", text:"First Unit On Scene", color:"#7dedb5" });
+  }
 
   // 4. ALS
   if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon:"🚨", text: call.alsProvider === "No ALS Available" ? "No ALS Available" : "ALS Activated", color:"#ff9090", sub: call.alsProvider !== "No ALS Available" ? [call.alsProvider, call.alsUnit, call.alsEta ? "ETA "+call.alsEta+"min" : ""].filter(Boolean).join(" · ") : "" });
+  if (call.alsOnScene) entries.push({ time: call.alsOnSceneAt||"", icon:"✓", text:"ALS On Scene", color:"#7dedb5" });
   if (call.alsCancel && call.alsCancel.reason) entries.push({ time: call.alsCancel.time||"", icon:"✕", text:"ALS Cancelled — " + call.alsCancel.reason, color:"var(--gray)", sub: call.alsCancel.by||"" });
 
   // 5. BLS
@@ -7918,16 +8261,30 @@ function buildCallActionLog(call) {
   // 6. PD
   if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
 
-  // 7. System call events (ALS/BLS/PD/divert — NOT dispatcher notes)
+  // 7. System call events — skip transport duplicates AND legacy unit-responding entries
+  var TRANSPORT_EVENT_TEXTS = ["Rig Back at Base","Back at Base"];
   (call.callEvents||[]).forEach(function(ev) {
-    if (ev && ev.text) entries.push({ time: ev.time||"", icon: ev.icon||"⚡", text: ev.text, color: ev.color||"var(--gray)", sub: ev.sub||"" });
+    if (!ev || !ev.text) return;
+    if (hasTransportGroup && TRANSPORT_EVENT_TEXTS.indexOf(ev.text) !== -1) return;
+    // Skip legacy "MC-xx responding to..." entries now computed from unitDetails
+    if (/^MC-\d+\s+responding/.test(ev.text)) return;
+    entries.push({ time: ev.time||"", icon: ev.icon||"⚡", text: ev.text, color: ev.color||"var(--gray)", sub: ev.sub||"" });
   });
 
-  // 7. Disposition
+  // 8. Dispatcher call notes
+  (call.callNotes||[]).forEach(function(n) {
+    if (n && n.text) entries.push({ time: n.time||"", icon:"📝", text: n.text, color:"var(--gray)", sub: n.by||"" });
+  });
+
+  // Disposition — only RMA and Cancelled; transport is shown via rig group
   var disp = call.disposition || {};
-  if (disp.type === "transport") entries.push({ time: times.at_hospital||"", icon:"🏥", text:"Transported to " + (disp.hospital||"hospital"), color:"#7ab8f5" });
-  else if (disp.type === "rma")   entries.push({ time: "", icon:"✋", text:"RMA — " + (disp.rmaBy||""), color:"#7dedb5" });
+  if (disp.type === "rma")       entries.push({ time: "", icon:"✋", text:"RMA — " + (disp.rmaBy||""), color:"#7dedb5" });
   else if (disp.type === "cancelled") entries.push({ time: "", icon:"✕", text:"Cancelled", color:"var(--gray)" });
+  // ALS transport status as standalone note if not already in rig group
+  if (disp.type === "transport" && call.alsTransportStatus && !hasTransportGroup) {
+    var alsTransSub = call.alsTransportStatus === "with_als" ? "🚨 Transporting With ALS" : "✓ ALS Triaged to BLS";
+    entries.push({ time: times.at_hospital||"", icon:"🏥", text:"Transported to " + (disp.hospital||"hospital"), color:"#7ab8f5", sub: alsTransSub });
+  }
 
   // 8. Completed
   if (call.completedAt) entries.push({ time: (function(){ var d=new Date(call.completedAt); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); })(), icon:"✓", text:"Call Closed", color:"var(--gray)", sub: call.completedBy||"" });
@@ -7941,10 +8298,10 @@ function buildCallActionLog(call) {
     return a.time.localeCompare(b.time);
   });
 
-  // De-duplicate adjacent identical entries
+  // De-duplicate — key on icon+text to catch blank-time dupes too
   var seen = {};
   entries = entries.filter(function(e) {
-    var key = e.time + "|" + e.text;
+    var key = (e.time||"") + "|" + e.icon + "|" + e.text;
     if (seen[key]) return false;
     seen[key] = true;
     return true;
@@ -8510,6 +8867,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
             'style="width:100%;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:5px;border-radius:5px;cursor:pointer;border:1px solid rgba(255,144,144,0.4);background:rgba(255,144,144,0.08);color:#ff9090">🏨 At Facility</button>';
 
       } else if (currentStatus === 'at_facility') {
+        var isDriver = (r === 'rigUnit' || r.indexOf('rigUnit') === 0) || response === 'rig';
         html +=
           '<div style="margin-top:3px;padding:4px 8px;border-radius:5px;border:1px solid #ff9090;background:rgba(255,144,144,0.1);color:#ff9090;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700">🏨 At Facility'+(currentFacility?' — '+currentFacility:'')+' </div>' +
           '<div style="text-align:center;color:var(--gray);font-size:0.7rem;margin:2px 0">↓</div>' +
@@ -8517,11 +8875,17 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
             'style="width:100%;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:5px;border-radius:5px;cursor:pointer;border:1px solid rgba(138,154,181,0.4);background:rgba(138,154,181,0.08);color:var(--gray)">🔄 Clearing Facility</button>';
 
       } else if (currentStatus === 'clearing_facility') {
+        // Driver = rigUnit role OR any unit whose response direction is 'rig'
+        var isDriver2 = (r === 'rigUnit' || r.indexOf('rigUnit') === 0) || response === 'rig';
         html +=
-          '<div style="margin-top:3px;padding:4px 8px;border-radius:5px;border:1px solid #8a9ab5;background:rgba(138,154,181,0.1);color:#8a9ab5;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700">🔄 Clearing Facility</div>' +
-          '<div style="text-align:center;color:var(--gray);font-size:0.7rem;margin:2px 0">↓</div>' +
-          '<button onclick="'+db_+',\'back_at_base\')" ' +
-            'style="width:100%;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:5px;border-radius:5px;cursor:pointer;border:1px solid rgba(74,144,217,0.4);background:rgba(74,144,217,0.08);color:#4a90d9">🏠 Ambulance Back at Base</button>';
+          '<div style="margin-top:3px;padding:4px 8px;border-radius:5px;border:1px solid #8a9ab5;background:rgba(138,154,181,0.1);color:#8a9ab5;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700">🔄 Clearing Facility</div>';
+        if (isDriver2) {
+          html +=
+            '<div style="text-align:center;color:var(--gray);font-size:0.7rem;margin:2px 0">↓</div>' +
+            '<button onclick="'+db_+',\'back_at_base\')" ' +
+              'style="width:100%;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:5px;border-radius:5px;cursor:pointer;border:1px solid rgba(74,144,217,0.4);background:rgba(74,144,217,0.08);color:#4a90d9">🏠 Rig Back at Base</button>';
+        }
+        // Non-drivers: clearing is the final state
 
       } else if (currentStatus === 'back_at_base') {
         html += '<div style="margin-top:3px;padding:4px 8px;border-radius:5px;border:1px solid #4a90d9;background:rgba(74,144,217,0.1);color:#4a90d9;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700">🏠 Ambulance Back at Base</div>';
@@ -8628,7 +8992,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
           (hasUnit ? '<span style="font-size:0.65rem;font-weight:700;color:' + color + ';background:rgba(' + rgb + ',0.15);border:1px solid rgba(' + rgb + ',0.4);border-radius:5px;padding:1px 6px">' + currentVal + '</span>' : '<span style="font-size:0.6rem;color:var(--gray);font-style:italic">unassigned</span>') +
           removeBtn +
         '</div>' +
-      '</div>' + +
+      '</div>' +
       // Responding to toggle — locked once flow has started
       ('<div style="margin-bottom:4px">' +
           '<div style="font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Responding to</div>' +
@@ -8663,12 +9027,18 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
     var rigItems = ambulances.length ? ambulances : [];
     var extraLabelMap = {observer:'Observer',supervisor:'Supervisor',responder:'Responder',other:'Other'};
     var extraColorMap = {observer:'#8a9ab5',supervisor:'#e8a0ff',responder:'#7ab8f5',other:'#8a9ab5'};
-    var unitRows = ''; var unitNum = 0;
+    var unitNum = 0;
     var fixedSlots = [
       {role:'primary', color:'#7dedb5'},
       {role:'backup',  color:'#7ab8f5'},
       {role:'rigUnit', color:'#e8a0ff'}
     ];
+
+    // Separate units into: rig-responding (nested under rig) vs scene-direct
+    var rigUnits = []; // units responding with rig
+    var sceneUnits = []; // units going direct to scene
+    var extraUnits = []; // observer/supervisor/etc
+
     fixedSlots.forEach(function(s) {
       if (!(s.role in crew)) return;
       var val = crew[s.role]; var hasVal = val && val !== '__added__';
@@ -8678,13 +9048,17 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       var lbl = hasVal
         ? 'Unit ' + unitNum + (resp2 === 'rig' ? ' → w/ Ambo' : resp2 === 'scene' ? ' → Scene' : '')
         : (s.role === 'rigUnit' ? 'Unit 3' : s.role === 'backup' ? 'Unit 2' : 'Unit 1');
-      unitRows += unitBlock(call.id, idx, s.role, lbl, s.color, val || '');
+      var block = unitBlock(call.id, idx, s.role, lbl, s.color, val || '');
+      if (resp2 === 'rig' || s.role === 'rigUnit') {
+        rigUnits.push(block);
+      } else {
+        sceneUnits.push(block);
+      }
     });
-    var extraRows = '';
+
+    // Extra roles
     var fixedSet = {primary:1,backup:1,rigUnit:1,rig:1};
-    // Count each extra role type for sequential numbering
     var roleCounters = {};
-    // Sort keys to ensure consistent ordering (responder, responder1, responder2...)
     var extraKeys = Object.keys(crew).filter(function(k){ return !fixedSet[k]; }).sort(function(a,b){
       var ORDER = {responder:0, supervisor:1, observer:2, other:3};
       var aBase = a.replace(/\d+$/, ''), bBase = b.replace(/\d+$/, '');
@@ -8703,23 +9077,60 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       var col = baseRole === 'other' ? '#8a9ab5' : (extraColorMap[baseRole] || '#8a9ab5');
       roleCounters[baseRole] = (roleCounters[baseRole] || 0) + 1;
       var roleNum = roleCounters[baseRole];
-      // Custom label for other_ keys
       var det0 = unitDetails[idx + '_' + key] || {};
       var customLabel = det0.customLabel || '';
       var baseLbl = customLabel || extraLabelMap[baseRole] || (baseRole.charAt(0).toUpperCase()+baseRole.slice(1));
       var lbl = baseLbl + (roleCounters[baseRole] > 1 ? ' ' + roleNum : '');
       if (val && val !== '__added__') unitNum++;
-      extraRows += unitBlock(call.id, idx, key, lbl, col, val === '__added__' ? '' : val);
+      extraUnits.push(unitBlock(call.id, idx, key, lbl, col, val === '__added__' ? '' : val));
     });
-    var placeholder = (!unitRows && !extraRows)
+
+    // Build rig section — rig picker + nested units
+    var rigSection = '';
+    if ('rig' in crew || rigUnits.length) {
+      var rigVal = crew.rig || '';
+      var rigHasVal = rigVal && rigVal !== '__added__';
+      var rigPickerHtml = '<div style="margin-bottom:6px">' +
+        '<div style="font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Ambulance</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:3px">';
+      if (rigItems.length) {
+        rigItems.forEach(function(a) {
+          var av = a.id || a.docId || '';
+          var isOOS = a.isOOS || false;
+          var isSel = rigVal === av;
+          var albl = av + (a.description ? ' — ' + a.description : '') + (a.type==='erv'?' ERV':'') + (isOOS?' OOS':'');
+          if (isOOS) {
+            rigPickerHtml += '<button disabled style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;padding:2px 7px;border-radius:5px;opacity:0.35;border:1px solid rgba(255,144,144,0.3);background:rgba(255,144,144,0.05);color:#ff9090">🔴 '+albl+'</button>';
+          } else {
+            rigPickerHtml += '<button onclick="setCrewRig(\''+call.id+'\','+idx+',\''+av+'\')" style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;padding:2px 7px;border-radius:5px;cursor:pointer;border:1px solid '+(isSel?'#ffc84a':'var(--card-border)')+';background:'+(isSel?'rgba(255,200,74,0.2)':'rgba(255,255,255,0.03)')+';color:'+(isSel?'#ffc84a':'var(--gray)')+'">'+albl+'</button>';
+          }
+        });
+      } else {
+        rigPickerHtml += '<span style="font-size:0.6rem;color:var(--gray);font-style:italic">No rigs in vehicle list</span>';
+      }
+      rigPickerHtml += '</div></div>';
+
+      rigSection =
+        '<div style="background:rgba(255,200,74,0.04);border:1px solid rgba(255,200,74,0.2);border-radius:7px;padding:7px 9px;margin-bottom:6px">' +
+          '<div style="font-size:0.58rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#ffc84a;margin-bottom:6px">🚑 Ambulance Response' + (rigHasVal ? ' — ' + rigVal : '') + '</div>' +
+          rigPickerHtml +
+          (rigUnits.length ? '<div style="border-top:1px solid rgba(255,200,74,0.15);padding-top:6px;margin-top:2px">' + rigUnits.join('') + '</div>' : '') +
+        '</div>';
+    }
+
+    var sceneSection = sceneUnits.join('');
+    var extraSection = extraUnits.join('');
+
+    var placeholder = (!rigSection && !sceneSection && !extraSection)
       ? '<div style="font-size:0.73rem;color:var(--gray);font-style:italic;padding:6px 2px;text-align:center">No units added yet</div>'
       : '';
+
     return '<div style="background:rgba(255,255,255,0.025);border:1px solid var(--card-border);border-radius:8px;padding:9px;margin-bottom:8px">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">' +
         '<span style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold)">🚑 Crew ' + (idx+1) + '</span>' +
         (canRemove ? '<button onclick="removeCrewFromCall(\''+call.id+'\','+idx+')" style="background:none;border:none;color:var(--gray);font-size:0.7rem;cursor:pointer">✕ Remove Crew</button>' : '') +
       '</div>' +
-      placeholder + unitRows + extraRows +
+      placeholder + sceneSection + rigSection + extraSection +
     '</div>';
   }
 
