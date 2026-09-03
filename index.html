@@ -896,6 +896,30 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
     </div>
 
     <div class="admin-section">
+      <div class="admin-section-title">📱 SMS Testing</div>
+      <div class="add-user-form" style="max-width:480px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div style="font-family:'Oswald',sans-serif;font-size:0.9rem;color:var(--white);">SMS Testing Mode</div>
+            <div style="font-size:0.75rem;color:var(--gray);margin-top:2px">When ON — all SMS messages go only to you</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <div style="position:relative">
+              <input type="checkbox" id="sms-testing-mode-toggle" onchange="toggleSMSTestingMode()" style="opacity:0;position:absolute;width:0;height:0">
+              <div id="sms-toggle-track" style="width:44px;height:24px;background:rgba(255,255,255,0.1);border:1px solid var(--card-border);border-radius:12px;transition:all 0.25s;position:relative">
+                <div id="sms-toggle-thumb" style="position:absolute;top:2px;left:2px;width:18px;height:18px;background:var(--gray);border-radius:50%;transition:all 0.25s"></div>
+              </div>
+            </div>
+            <span id="sms-testing-mode-label" style="font-family:'Oswald',sans-serif;font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Off</span>
+          </label>
+        </div>
+        <div id="sms-testing-mode-banner" style="display:none;background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.35);border-radius:7px;padding:8px 12px;font-size:0.78rem;color:#ffc84a;margin-bottom:14px">⚠ SMS Testing Mode is ON — messages go only to you</div>
+        <button class="submit-btn" id="test-sms-btn" onclick="sendTestSMS()">📱 Send Test SMS</button>
+        <div class="form-msg" id="test-sms-msg"></div>
+      </div>
+    </div>
+
+    <div class="admin-section">
       <div class="admin-section-title">🧪 System Testing Mode</div>
       <div class="add-user-form" style="max-width:480px">
         <p style="color:var(--gray);font-size:0.82rem;margin-bottom:14px;line-height:1.6">
@@ -1050,11 +1074,11 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
             <option value="07 - AMS">07 - AMS (Altered Mental Status)</option>
             <option value="08 - Unconscious">08 - Unconscious</option>
             <option value="09 - Diabetic Emergency">09 - Diabetic Emergency</option>
-            <option value="11 - Major Trauma">11 - Major Trauma (CODE 1)</option>
-            <option value="12 - Full Trauma Situation">12 - Full Trauma Situation (CODE 26)</option>
-            <option value="13 - Full Trauma / Active Labor">13 - Full Trauma / Active Labor / Childbirth (CODE 25)</option>
+            <option value="11 - Major Trauma (CODE 1)">11 - Major Trauma (CODE 1)</option>
+            <option value="12 - Full Trauma Situation (CODE 26)">12 - Full Trauma Situation (CODE 26)</option>
+            <option value="13 - Full Trauma / Active Labor / Childbirth (CODE 25)">13 - Full Trauma / Active Labor / Childbirth (CODE 25)</option>
             <option value="14 - Stroke / CVA">14 - Stroke or CVA</option>
-            <option value="16 - EDP">16 - EDP - Emotionally Disturbed Person (CODE 44)</option>
+            <option value="16 - EDP - Emotionally Disturbed Person (CODE 44)">16 - EDP - Emotionally Disturbed Person (CODE 44)</option>
             <option value="18 - Anaphylaxis">18 - Anaphylaxis</option>
             <option value="20 - Pedestrian Struck">20 - Pedestrian Struck</option>
             <option value="23 - OD / Overdose">23 - OD (Overdose)</option>
@@ -1066,7 +1090,7 @@ letter-spacing:0.1em;text-transform:uppercase;padding:14px 20px;border-top:1px s
             <option value="19 - MVA">19 - MVA (Motor Vehicle Accident)</option>
             <option value="21 - Lifeline Alert / No Patient Contact">21 - Lifeline Alert / No Patient Contact</option>
             <option value="22 - Syncope">22 - Syncope</option>
-            <option value="24 - Intoxicated">24 - Intoxicated (CODE 100)</option>
+            <option value="24 - Intoxicated (CODE 100)">24 - Intoxicated (CODE 100)</option>
             <option value="25 - Sick / General Medical">25 - Sick / General Medical</option>
             <option value="26 - Please Call the Base">26 - Please Call the Base</option>
           </optgroup>
@@ -3459,7 +3483,12 @@ function loadContacts() {
 }
 function getFirstPhone(phone) {
   if (!phone) return "";
-  return phone.split(/[\/|]/)[0].trim().replace(/\D/g, "");
+  var raw = phone.split(/[\/|]/)[0].trim().replace(/\D/g, "");
+  if (!raw) return "";
+  // ClickSend requires E.164 — prepend +1 for US numbers if no country code
+  if (raw.length === 10) return "+1" + raw;
+  if (raw.length === 11 && raw[0] === "1") return "+" + raw;
+  return "+" + raw;
 }
 function renderContacts(list) {
   var el = document.getElementById("g-contacts"); if (!el) return;
@@ -3729,9 +3758,8 @@ function sendClickSendEmail(opts) {
 
 function sendClickSendSMS(toNumbers, message) {
   if (!toNumbers || !toNumbers.length || !message) return Promise.resolve();
-  // In testing mode, only send to admin's own number
-  var recipients = toNumbers;
-  if (SYS_TESTING_MODE) {
+  // In SMS testing mode OR system testing mode — only send to admin's own number
+  if (SYS_TESTING_MODE || SMS_TESTING_MODE) {
     db.collection("users").doc(currentUser.uid).get().then(function(snap) {
       if (!snap.exists) return;
       var phone = getFirstPhone(snap.data().phone);
@@ -3783,6 +3811,62 @@ function sendTicketEmail(opts) {
 }
 var TESTING_MODE = false;
 var SYS_TESTING_MODE = false;
+
+var SMS_TESTING_MODE = false;
+function toggleSMSTestingMode() {
+  SMS_TESTING_MODE = document.getElementById("sms-testing-mode-toggle").checked;
+  var track = document.getElementById("sms-toggle-track");
+  var thumb = document.getElementById("sms-toggle-thumb");
+  var label = document.getElementById("sms-testing-mode-label");
+  var banner = document.getElementById("sms-testing-mode-banner");
+  if (SMS_TESTING_MODE) {
+    track.style.background = "rgba(240,165,0,0.3)"; track.style.borderColor = "rgba(240,165,0,0.5)";
+    thumb.style.background = "#f0a500"; thumb.style.left = "22px";
+    label.style.color = "#ffc84a"; label.textContent = "ON";
+    if (banner) banner.style.display = "block";
+    showToast("📱 SMS Testing Mode ON — messages go only to you");
+  } else {
+    track.style.background = "rgba(255,255,255,0.1)"; track.style.borderColor = "var(--card-border)";
+    thumb.style.background = "var(--gray)"; thumb.style.left = "2px";
+    label.style.color = "var(--gray)"; label.textContent = "Off";
+    if (banner) banner.style.display = "none";
+    showToast("SMS Testing Mode OFF");
+  }
+}
+window.toggleSMSTestingMode = toggleSMSTestingMode;
+
+function sendTestSMS() {
+  var btn = document.getElementById("test-sms-btn");
+  var msg = document.getElementById("test-sms-msg");
+  if (!currentUser) { if (msg) { msg.className = "form-msg error"; msg.textContent = "Not logged in."; } return; }
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  if (msg) { msg.className = "form-msg"; msg.textContent = ""; }
+  db.collection("users").doc(currentUser.uid).get().then(function(snap) {
+    if (!snap.exists) throw new Error("User not found");
+    var phone = getFirstPhone(snap.data().phone);
+    if (!phone) throw new Error("No phone number on your account — add one in your profile");
+    console.log("Sending test SMS to:", phone);
+    var testBody = "[TEST] 🚨 Hatzolah MC\nTest SMS from " + (currentUserUnit||"MC-16") + " — system test\nhttps://chaverim151.github.io/CallDashboard/mobile.html";
+    return fetch(CLICKSEND_WORKER, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-App-Secret": APP_SHARED_SECRET },
+      body: JSON.stringify({ type: "sms", messages: [{ to: phone, body: testBody }] })
+    }).then(function(r) {
+      return r.json().then(function(data) {
+        console.log("ClickSend SMS response:", JSON.stringify(data));
+        return data;
+      });
+    });
+  }).then(function(result) {
+    if (msg) { msg.className = "form-msg success"; msg.textContent = "✓ Test SMS sent! Check console for ClickSend response."; }
+    showToast("📱 Test SMS sent!");
+  }).catch(function(e) {
+    if (msg) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; }
+  }).finally(function() {
+    if (btn) { btn.disabled = false; btn.textContent = "📱 Send Test SMS"; }
+  });
+}
+window.sendTestSMS = sendTestSMS;
 
 function toggleTestingMode() {
   TESTING_MODE = document.getElementById("testing-mode-toggle").checked;
@@ -5689,12 +5773,12 @@ var CALL_NATURES = [
   { value: "08 - Unconscious", label: "08 - Unconscious", als: true },
   { value: "09 - Diabetic Emergency", label: "09 - Diabetic Emergency", als: true },
   { value: "10 - Trauma", label: "10 - Trauma (non life-threatening)", als: false },
-  { value: "11 - Major Trauma", label: "11 - Major Trauma (CODE 1)", als: true },
-  { value: "12 - Full Trauma Situation", label: "12 - Full Trauma Situation (CODE 26)", als: true },
-  { value: "13 - Full Trauma / Active Labor", label: "13 - Full Trauma / Active Labor / Childbirth (CODE 25)", als: true },
+  { value: "11 - Major Trauma (CODE 1)", label: "11 - Major Trauma (CODE 1)", als: true },
+  { value: "12 - Full Trauma Situation (CODE 26)", label: "12 - Full Trauma Situation (CODE 26)", als: true },
+  { value: "13 - Full Trauma / Active Labor / Childbirth (CODE 25)", label: "13 - Full Trauma / Active Labor / Childbirth (CODE 25)", als: true },
   { value: "14 - Stroke / CVA", label: "14 - Stroke or CVA", als: true },
   { value: "15 - Seizures", label: "15 - Seizures", als: false },
-  { value: "16 - EDP", label: "16 - EDP - Emotionally Disturbed Person (CODE 44)", als: true },
+  { value: "16 - EDP - Emotionally Disturbed Person (CODE 44)", label: "16 - EDP - Emotionally Disturbed Person (CODE 44)", als: true },
   { value: "17 - Allergic Reaction", label: "17 - Allergic Reaction", als: false },
   { value: "18 - Anaphylaxis", label: "18 - Anaphylaxis", als: true },
   { value: "19 - MVA", label: "19 - MVA (Motor Vehicle Accident)", als: false },
@@ -5702,7 +5786,7 @@ var CALL_NATURES = [
   { value: "21 - Lifeline Alert / No Patient Contact", label: "21 - Lifeline Alert / No Patient Contact", als: false },
   { value: "22 - Syncope", label: "22 - Syncope", als: false },
   { value: "23 - OD / Overdose", label: "23 - OD (Overdose)", als: true },
-  { value: "24 - Intoxicated", label: "24 - Intoxicated (CODE 100)", als: false },
+  { value: "24 - Intoxicated (CODE 100)", label: "24 - Intoxicated (CODE 100)", als: false },
   { value: "25 - Sick / General Medical", label: "25 - Sick / General Medical", als: false },
   { value: "26 - Please Call the Base", label: "26 - Please Call the Base", als: false }
 ];
@@ -6800,13 +6884,29 @@ function postCall() {
 
       // Send SMS to all members
       var rawAddr2 = selectedAddress || "";
-      var addrParts2 = (selectedPlaceName ? selectedPlaceName + " — " + rawAddr2 : rawAddr2).split("—");
-      var smsAddr = addrParts2.length > 1
-        ? addrParts2[1].trim().split(",")[0] + " (" + addrParts2[0].trim() + ")"
-        : rawAddr2.split(",")[0];
-      var nature2 = callNature ? callNature.replace(/^\d+\s*-\s*/, "") : "";
-      var zonePrefix2 = zone === "secondary" ? "Load a Rig — " : zone === "outside" ? "Outside Zone — " : "";
-      var smsBody = "🚨 Hatzolah MC\n" + zonePrefix2 + smsAddr + (nature2 ? " | " + nature2 : "") + "\n" + (selectedMapsLink || "");
+      var poiName2 = selectedPlaceName ? selectedPlaceName.trim() : "";
+      var streetAddr2 = rawAddr2.split(",").slice(0, 3).join(",").trim();
+      var nature2 = (function() {
+        if (!callNature) return "";
+        var codeMatch = callNature.match(/\(CODE\s*(25|26|44|100)\)/i);
+        if (codeMatch) return "Code " + codeMatch[1];
+        return callNature.replace(/^\d+\s*-\s*/, "");
+      })();
+      var ageStr2 = patientAgeNum ? patientAgeNum + " YO" : (patientAgeFallback === "pediatric" ? "Ped" : patientAgeFallback === "adult" ? "Adult" : patientAgeFallback === "uto" ? "UTO" : "");
+      var sexStr2 = patientSex === "male" ? "M" : patientSex === "female" ? "F" : "";
+      var patientStr2 = [ageStr2, sexStr2].filter(Boolean).join(" ");
+      var naturePatient2 = [nature2, patientStr2].filter(Boolean).join(" | ");
+      var now2 = new Date();
+      var timeStamp2 = now2.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) +
+        " " + now2.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
+      var zonePrefix2 = zone === "secondary" ? "🚑 LOAD A RIG\n" : zone === "outside" ? "⚠ OUTSIDE ZONE\n" : "";
+      var smsBody = "🚨 NEW CALL\n" +
+        zonePrefix2 +
+        (poiName2 ? poiName2 + "\n" : "") +
+        streetAddr2 + "\n" +
+        (naturePatient2 ? naturePatient2 + "\n" : "") +
+        (selectedMapsLink ? selectedMapsLink + "\n" : "") +
+        timeStamp2;
       db.collection("users").get().then(function(snap) {
         var phones = [];
         snap.forEach(function(doc) {
