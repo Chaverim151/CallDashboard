@@ -687,8 +687,21 @@ auth.onAuthStateChanged(function(user) {
 function mEnterHome() {
   mGoTo("home");
   mStartCallsListener();
-  mUpdateAlertBtn();
-  if (Notification.permission === "granted") setTimeout(mSendTokenToSW, 1000);
+
+  // Check pushTokens doc to restore accurate alert state
+  if (mCurrentUser) {
+    db.collection("pushTokens").doc(mCurrentUser.uid).get().then(function(snap) {
+      window._mAlertsDisabled = !snap.exists || !snap.data().token;
+      mUpdateAlertBtn();
+    }).catch(function() {
+      window._mAlertsDisabled = true;
+      mUpdateAlertBtn();
+    });
+  } else {
+    mUpdateAlertBtn();
+  }
+
+  if (Notification.permission === "granted" && !window._mAlertsDisabled) setTimeout(mSendTokenToSW, 1000);
 
   // Request permissions on first login
   setTimeout(mRequestPermissions, 800);
@@ -1669,35 +1682,24 @@ function mRequestPush() {
   if (!("Notification" in window)) { mToast("Notifications not supported on this browser", true); return; }
   if (!mCurrentUser) { mToast("Not signed in", true); return; }
 
-  // If already enabled — toggle OFF by removing token from Firestore
-  if (Notification.permission === "granted") {
+  // Toggle OFF — remove token from Firestore
+  if (Notification.permission === "granted" && !window._mAlertsDisabled) {
     db.collection("pushTokens").doc(mCurrentUser.uid).delete()
       .then(function() {
-        // Also delete FCM token from messaging
-        try {
-          var msg = mFCMMessaging || firebase.messaging();
-          msg.deleteToken().catch(function(){});
-        } catch(e) {}
-        mToast("🔕 Alerts disabled");
-        // Override permission check — use a local flag
+        try { var msg = mFCMMessaging || firebase.messaging(); msg.deleteToken().catch(function(){}); } catch(e) {}
         window._mAlertsDisabled = true;
+        mToast("🔕 Alerts disabled");
         mUpdateAlertBtn();
       })
       .catch(function(e) { mToast("Error: " + e.message, true); });
     return;
   }
 
-  // If manually disabled but permission still granted, re-enable
-  if (window._mAlertsDisabled) {
-    window._mAlertsDisabled = false;
-  }
-
+  // Toggle ON — register FCM token
   if (!FCM_VAPID_KEY) { mToast("Push not configured", true); return; }
   if (!("serviceWorker" in navigator)) { mToast("Service worker not supported", true); return; }
 
-  Notification.requestPermission().then(function(p) {
-    if (p !== "granted") { mToast("Notifications blocked — check Settings", true); return; }
-
+  function registerToken() {
     navigator.serviceWorker.ready.then(function(reg) {
       mSWReg = reg;
       try {
@@ -1713,19 +1715,27 @@ function mRequestPush() {
               updatedAt: new Date().toISOString()
             });
           })
-          .then(function() { mToast("🔔 Alerts enabled!"); mUpdateAlertBtn(); })
-          .catch(function(e) {
-            console.error("FCM getToken error:", e);
-            mToast("Alert error: " + (e.message || e.code || "unknown"), true);
-          });
+          .then(function() {
+            window._mAlertsDisabled = false;
+            mToast("🔔 Alerts enabled!");
+            mUpdateAlertBtn();
+          })
+          .catch(function(e) { mToast("Alert error: " + (e.message || e.code || "unknown"), true); });
       } catch(e) {
-        console.error("firebase.messaging() error:", e);
-        mToast("Messaging error: " + e.message, true);
+        mToast("Alert error: " + e.message, true);
       }
-    }).catch(function(e) {
-      mToast("SW not ready — try reloading the app", true);
     });
-  });
+  }
+
+  // If permission already granted just re-register token, otherwise request first
+  if (Notification.permission === "granted") {
+    registerToken();
+  } else {
+    Notification.requestPermission().then(function(p) {
+      if (p !== "granted") { mToast("Notifications blocked — check browser Settings", true); return; }
+      registerToken();
+    });
+  }
 }
 
 function mUpdateAlertBtn() {
