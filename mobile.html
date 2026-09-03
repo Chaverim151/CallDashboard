@@ -608,14 +608,14 @@ function mSignIn() {
   var btn = document.getElementById("m-signin-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Signing in..."; }
 
-  db.collection("users").where("unit","==",unitFormatted).limit(1).get()
+  db.collection("unitLookup").doc(unitFormatted).get()
     .then(function(snap) {
-      if (snap.empty) {
+      if (!snap.exists) {
         err.textContent = "Unit not found. Check your unit number."; err.classList.add("show");
         if (btn) { btn.disabled = false; btn.textContent = "Sign In"; }
         return Promise.reject(null);
       }
-      var email = snap.docs[0].data().email;
+      var email = snap.data().email;
       if (!email) {
         err.textContent = "No email on file for this unit."; err.classList.add("show");
         if (btn) { btn.disabled = false; btn.textContent = "Sign In"; }
@@ -633,9 +633,9 @@ function mForgotPw() {
   var unit = (document.getElementById("m-unit-input").value || "").trim();
   if (!unit) { document.getElementById("m-err").textContent = "Enter your unit number first."; return; }
   var unitFormatted = "MC-" + unit.replace(/^MC-/i, "");
-  db.collection("users").where("unit","==",unitFormatted).limit(1).get().then(function(snap) {
-    if (snap.empty) { mToast("Unit not found", true); return; }
-    var email = snap.docs[0].data().email;
+  db.collection("unitLookup").doc(unitFormatted).get().then(function(snap) {
+    if (!snap.exists) { mToast("Unit not found", true); return; }
+    var email = snap.data().email;
     return auth.sendPasswordResetEmail(email);
   }).then(function() { mToast("Reset email sent"); })
   .catch(function(e) { mToast(e.message, true); });

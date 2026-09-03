@@ -1380,10 +1380,11 @@ window.doLogin = function() {
   var unit = "MC-" + num;
   btn.disabled = true; btn.textContent = "Signing in…";
   authPersistenceReady.then(function() {
-    return db.collection("users").where("unit", "==", unit).get();
+    // Use unitLookup (public, thin collection) instead of users (protected, has PII)
+    return db.collection("unitLookup").doc(unit).get();
   }).then(function(snap) {
     var email;
-    if (!snap.empty) { email = snap.docs[0].data().email; }
+    if (snap.exists) { email = snap.data().email; }
     else if (unit === "MC-16") { email = SUPER_ADMIN; }
     else { showErr("Unit not found. Check your number or contact an admin."); btn.disabled = false; btn.textContent = "Sign In"; return Promise.reject({ code: "no-unit" }); }
     if (!email) { showErr("No email on file. Contact an admin."); btn.disabled = false; btn.textContent = "Sign In"; return Promise.reject({ code: "no-email" }); }
@@ -1422,9 +1423,9 @@ window.doReset = function() {
   var msg = document.getElementById("reset-msg");
   msg.style.display = "none";
   if (!num) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Enter your unit number."; return; }
-  db.collection("users").where("unit", "==", "MC-" + num).get().then(function(snap) {
-    if (snap.empty) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Unit not found."; return; }
-    var email = snap.docs[0].data().email;
+  db.collection("unitLookup").doc("MC-" + num).get().then(function(snap) {
+    if (!snap.exists) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Unit not found."; return; }
+    var email = snap.data().email;
     if (!email) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "No email on file."; return; }
     return auth.sendPasswordResetEmail(email).then(function() { msg.style.display = "block"; msg.style.color = "#7dedb5"; msg.textContent = "✓ Reset email sent."; });
   }).catch(function(e) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Error: " + e.message; });
@@ -2946,9 +2947,9 @@ function doReset() {
   var msg = document.getElementById("reset-msg");
   msg.style.display = "none";
   if (!num) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Enter your unit number."; return; }
-  db.collection("users").where("unit", "==", "MC-" + num).get().then(function(snap) {
-    if (snap.empty) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Unit not found."; return; }
-    var email = snap.docs[0].data().email;
+  db.collection("unitLookup").doc("MC-" + num).get().then(function(snap) {
+    if (!snap.exists) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Unit not found."; return; }
+    var email = snap.data().email;
     if (!email) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "No email on file."; return; }
     return auth.sendPasswordResetEmail(email).then(function() { msg.style.display = "block"; msg.style.color = "#7dedb5"; msg.textContent = "✓ Reset email sent."; });
   }).catch(function(e) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Error: " + e.message; });
@@ -2986,6 +2987,9 @@ function addUser() {
     var uid = cred.user.uid;
     return firebase.auth(app2).signOut().then(function() {
       return db.collection("users").doc(uid).set({ firstName: fname, lastName: lname, unit: unit, phone: phone, email: email, roles: opRoles, role: isAdminCheck ? "admin" : "responder", mustChangePassword: true, createdAt: new Date().toISOString() });
+    }).then(function() {
+      // Sync unitLookup — thin public collection for pre-auth login lookup
+      return db.collection("unitLookup").doc(unit).set({ unit: unit, email: email, updatedAt: new Date().toISOString() });
     });
   }).then(function() {
     msg.className = "form-msg success"; msg.textContent = "✓ " + fname + " " + lname + " added.";
@@ -3027,7 +3031,7 @@ function userRow(u) {
   if (u.email !== SUPER_ADMIN) actions += ' <button class="del-btn" onclick="deleteUser(\'' + u.uid + '\',\'' + u.email + '\')">Remove</button>';
   return '<tr>' +
     '<td style="font-family:\'Oswald\',sans-serif;color:var(--gold);font-size:0.85rem">' + (u.unit || "—") + '</td>' +
-    '<td>' + (u.firstName || "") + " " + (u.lastName || "") + '</td>' +
+    '<td>' + escapeHtml((u.firstName || "") + " " + (u.lastName || "")) + '</td>' +
     '<td style="color:var(--gray);font-size:0.8rem">' + (u.phone || "—") + '</td>' +
     '<td style="color:var(--gray);font-size:0.8rem">' + (u.email || "") + '</td>' +
     '<td>' + roleBadges + '</td>' +
@@ -3051,7 +3055,7 @@ function renderUsersTable(rows) {
     html += '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px 16px;">' +
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
         '<div style="width:38px;height:38px;border-radius:50%;background:var(--navy-light);border:1px solid var(--card-border);display:flex;align-items:center;justify-content:center;font-family:\'Oswald\',sans-serif;font-size:0.72rem;color:var(--gold);flex-shrink:0">' + initials + '</div>' +
-        '<div style="flex:1;min-width:0"><div style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;color:var(--white)">' + (u.firstName || "") + " " + (u.lastName || "") + '</div>' +
+        '<div style="flex:1;min-width:0"><div style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;color:var(--white)">' + escapeHtml((u.firstName || "") + " " + (u.lastName || "")) + '</div>' +
         '<div style="font-size:0.72rem;color:var(--gold);letter-spacing:0.05em">' + (u.unit || "—") + '</div></div>' +
         '<button class="edit-row-btn" onclick="openEdit(\'' + u.uid + '\')" style="padding:6px 12px">Edit</button>' +
       '</div>' +
@@ -3175,6 +3179,9 @@ function saveEdit() {
   if (!fname || !lname) { msg.className = "form-msg error"; msg.textContent = "Name required."; return; }
   if (!opRoles.length) { msg.className = "form-msg error"; msg.textContent = "Select at least one role."; return; }
   db.collection("users").doc(uid).set({ firstName: fname, lastName: lname, unit: unit, phone: phone, email: email, roles: opRoles, role: isAdminCheck ? "admin" : "responder" }, { merge: true })
+    .then(function() {
+      return db.collection("unitLookup").doc(unit).set({ unit: unit, email: email, updatedAt: new Date().toISOString() });
+    })
     .then(function() { msg.className = "form-msg success"; msg.textContent = "✓ Saved!"; setTimeout(function() { closeEdit(); loadUsers(); }, 800); })
     .catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
 }
@@ -3481,6 +3488,17 @@ function loadContacts() {
     renderContacts(allContacts);
   });
 }
+function escapeHtml(s) {
+  if (s === null || s === undefined) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+window.escapeHtml = escapeHtml;
+
 function formatPhone(phone) {
   if (!phone) return "";
   var d = phone.replace(/\D/g, "");
@@ -3518,7 +3536,7 @@ function renderContacts(list) {
     html += '<div class="contact-card" style="animation-delay:' + (i * 25) + 'ms">' +
       '<div class="contact-avatar">' + initials + '</div>' +
       '<div class="contact-info">' +
-        '<div class="contact-name">' + (u.firstName || "") + " " + (u.lastName || "") + '</div>' +
+        '<div class="contact-name">' + escapeHtml((u.firstName || "") + " " + (u.lastName || "")) + '</div>' +
         '<div class="contact-unit">' + (u.unit || "") + '</div>' +
         (u.phone ? '<div class="contact-phone">' + u.phone + '</div>' : "") +
         '<div class="contact-roles">' + roleBadges + '</div>' +
