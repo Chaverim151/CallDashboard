@@ -715,21 +715,57 @@ function mEnterHome() {
 }
 
 function mRequestPermissions() {
-  // Step 1: Notification permission
   if ("Notification" in window && Notification.permission === "default") {
     Notification.requestPermission().then(function(p) {
       if (p === "granted") {
-        mUpdateAlertBtn();
-        setTimeout(mSendTokenToSW, 500);
-        mToast("🔔 Alerts enabled");
+        // Auto-register FCM token on first grant
+        mRegisterFCMToken();
       }
-      // Step 2: Location permission (after notification, or if already decided)
       mRequestLocation();
     });
+  } else if (Notification.permission === "granted") {
+    // Already granted — ensure token is registered if not already
+    if (mCurrentUser) {
+      db.collection("pushTokens").doc(mCurrentUser.uid).get().then(function(snap) {
+        if (!snap.exists || !snap.data().token) {
+          mRegisterFCMToken();
+        } else {
+          window._mAlertsDisabled = false;
+          mUpdateAlertBtn();
+        }
+      }).catch(function() {});
+    }
+    mRequestLocation();
   } else {
-    // Notification already decided — just request location
     mRequestLocation();
   }
+}
+
+function mRegisterFCMToken() {
+  if (!FCM_VAPID_KEY || !mCurrentUser) return;
+  navigator.serviceWorker.ready.then(function(reg) {
+    mSWReg = reg;
+    try {
+      var msg = mFCMMessaging || firebase.messaging();
+      msg.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg })
+        .then(function(token) {
+          if (!token) return;
+          return db.collection("pushTokens").doc(mCurrentUser.uid).set({
+            token: token,
+            unit: mCurrentUserUnit || "",
+            uid: mCurrentUser.uid,
+            platform: /iPhone|iPad|iPod/.test(navigator.userAgent) ? "ios" : "android",
+            updatedAt: new Date().toISOString()
+          });
+        })
+        .then(function() {
+          window._mAlertsDisabled = false;
+          mUpdateAlertBtn();
+          mToast("🔔 Alerts enabled");
+        })
+        .catch(function(e) { console.warn("FCM token error:", e.message); });
+    } catch(e) { console.warn("FCM init error:", e.message); }
+  }).catch(function() {});
 }
 
 function mRequestLocation() {
@@ -1695,45 +1731,17 @@ function mRequestPush() {
     return;
   }
 
-  // Toggle ON — register FCM token
+  // Toggle ON
   if (!FCM_VAPID_KEY) { mToast("Push not configured", true); return; }
-  if (!("serviceWorker" in navigator)) { mToast("Service worker not supported", true); return; }
 
-  function registerToken() {
-    navigator.serviceWorker.ready.then(function(reg) {
-      mSWReg = reg;
-      try {
-        var msg = mFCMMessaging || firebase.messaging();
-        msg.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg })
-          .then(function(token) {
-            if (!token) { mToast("Could not get push token — try again", true); return; }
-            return db.collection("pushTokens").doc(mCurrentUser.uid).set({
-              token: token,
-              unit: mCurrentUserUnit || "",
-              uid: mCurrentUser.uid,
-              platform: /iPhone|iPad|iPod/.test(navigator.userAgent) ? "ios" : "android",
-              updatedAt: new Date().toISOString()
-            });
-          })
-          .then(function() {
-            window._mAlertsDisabled = false;
-            mToast("🔔 Alerts enabled!");
-            mUpdateAlertBtn();
-          })
-          .catch(function(e) { mToast("Alert error: " + (e.message || e.code || "unknown"), true); });
-      } catch(e) {
-        mToast("Alert error: " + e.message, true);
-      }
-    });
-  }
-
-  // If permission already granted just re-register token, otherwise request first
   if (Notification.permission === "granted") {
-    registerToken();
+    // Permission already granted — just re-register token
+    mRegisterFCMToken();
   } else {
+    // Request permission first
     Notification.requestPermission().then(function(p) {
       if (p !== "granted") { mToast("Notifications blocked — check browser Settings", true); return; }
-      registerToken();
+      mRegisterFCMToken();
     });
   }
 }
