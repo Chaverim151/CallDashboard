@@ -674,6 +674,7 @@ auth.onAuthStateChanged(function(user) {
       mEnterHome();
     }).catch(function(e) { mToast("Error: " + e.message, true); auth.signOut(); });
   } else {
+    if (mLocWatchId !== null) mStopLocationStream(true);
     mCurrentUser = null;
     mCurrentUserUnit = "";
     mGoTo("login");
@@ -778,6 +779,65 @@ function mRequestLocation() {
   );
 }
 
+// ── LOCATION STREAM (on while assigned to an active call) ──
+var mLocWatchId = null, mLocLastWrite = 0, mLocLastPos = null, mLocCallId = null;
+var DONE_STATUSES_M = ["clearing_facility","back_at_base","rma_scene","cleared_scene","other_status"];
+function mDistM(a, b, c2, d) { var R=6371000, dLat=(c2-a)*Math.PI/180, dLng=(d-b)*Math.PI/180; var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a*Math.PI/180)*Math.cos(c2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2); return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)); }
+function mWriteLocation(pos, force) {
+  if (!mCurrentUser || !mLocCallId) return;
+  var now = Date.now();
+  var lat = pos.coords.latitude, lng = pos.coords.longitude;
+  var moved = mLocLastPos ? mDistM(mLocLastPos.lat, mLocLastPos.lng, lat, lng) : 9999;
+  // Throttle: write if forced, or ≥5s and moved ≥15m, or ≥30s regardless
+  if (!force && !((now - mLocLastWrite >= 5000 && moved >= 15) || now - mLocLastWrite >= 30000)) return;
+  mLocLastWrite = now; mLocLastPos = { lat: lat, lng: lng };
+  db.collection("unitLocations").doc(mCurrentUser.uid).set({
+    unit: mCurrentUserUnit || "", uid: mCurrentUser.uid, callId: mLocCallId,
+    lat: lat, lng: lng,
+    heading: (pos.coords.heading != null && !isNaN(pos.coords.heading)) ? Math.round(pos.coords.heading) : null,
+    speed: (pos.coords.speed != null && !isNaN(pos.coords.speed)) ? Math.round(pos.coords.speed * 2.23694) : null, // mph
+    accuracy: Math.round(pos.coords.accuracy || 0),
+    active: true, updatedAt: new Date().toISOString()
+  }).catch(function(e){ console.warn("loc write failed:", e.message); });
+}
+function mStartLocationStream(callId) {
+  if (!("geolocation" in navigator) || !mCurrentUser) return;
+  if (mLocWatchId !== null && mLocCallId === callId) return;
+  mStopLocationStream(true);
+  mLocCallId = callId; mLocLastWrite = 0; mLocLastPos = null;
+  mLocWatchId = navigator.geolocation.watchPosition(
+    function(pos) { mWriteLocation(pos, mLocLastWrite === 0); },
+    function(err) { console.warn("geo watch:", err.message); },
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+  );
+  mToast("📍 Sharing location with dispatch");
+}
+function mStopLocationStream(silent) {
+  if (mLocWatchId !== null) { try { navigator.geolocation.clearWatch(mLocWatchId); } catch(e) {} mLocWatchId = null; }
+  if (mLocCallId && mCurrentUser) {
+    db.collection("unitLocations").doc(mCurrentUser.uid).set({ active: false, callId: mLocCallId, unit: mCurrentUserUnit || "", uid: mCurrentUser.uid, updatedAt: new Date().toISOString() }, { merge: true }).catch(function(){});
+    if (!silent) mToast("📍 Location sharing stopped");
+  }
+  mLocCallId = null;
+}
+// Decide from the live call list whether this unit should be streaming
+function mSyncLocationStream(calls) {
+  if (!mCurrentUserUnit) return;
+  var activeAssignment = null;
+  calls.forEach(function(call) {
+    (call.crews || []).forEach(function(crew, ci) {
+      Object.keys(crew || {}).forEach(function(k) {
+        if (k === "rig" || crew[k] !== mCurrentUserUnit) return;
+        var det = (call.unitDetails || {})[ci + "_" + k] || {};
+        if (DONE_STATUSES_M.indexOf(det.status || "") === -1) activeAssignment = call.id;
+      });
+    });
+  });
+  if (activeAssignment) mStartLocationStream(activeAssignment);
+  else if (mLocWatchId !== null) mStopLocationStream(false);
+}
+window.addEventListener("beforeunload", function() { if (mLocWatchId !== null) mStopLocationStream(true); });
+
 // ── CALLS LISTENER ──
 function mStartCallsListener() {
   if (mCallsListener) return;
@@ -789,6 +849,7 @@ function mStartCallsListener() {
       snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
       mCheckNewCall(calls);
       mRenderCalls(calls);
+      mSyncLocationStream(calls);
     }, function() {
       // Fallback without orderBy
       mCallsListener = db.collection("activeCalls")
@@ -799,6 +860,7 @@ function mStartCallsListener() {
           calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
           mCheckNewCall(calls);
           mRenderCalls(calls);
+          mSyncLocationStream(calls);
         });
     });
 }
