@@ -32,6 +32,25 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 @keyframes pulse-red{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.2)}}
 @keyframes als-flash{0%,100%{background:rgba(224,85,85,0.15)}50%{background:rgba(224,85,85,0.35)}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes mFlashRed{0%,100%{background-color:rgba(224,85,85,0.55);border-color:#ff9090;color:#fff;box-shadow:0 0 10px rgba(224,85,85,0.7)}50%{background-color:rgba(224,85,85,0.08);border-color:rgba(255,144,144,0.35);color:#ff9090;box-shadow:0 0 0 rgba(224,85,85,0)}}
+@keyframes mPulseGreen{0%,100%{box-shadow:0 0 0 0 rgba(125,237,181,0.6)}50%{box-shadow:0 0 0 6px rgba(125,237,181,0)}}
+@keyframes mPulseBlue{0%,100%{box-shadow:0 0 0 0 rgba(122,184,245,0.6)}50%{box-shadow:0 0 0 6px rgba(122,184,245,0)}}
+@keyframes mPulseGold{0%,100%{box-shadow:0 0 0 0 rgba(201,168,76,0.6)}50%{box-shadow:0 0 0 6px rgba(201,168,76,0)}}
+.m-flash{animation:mFlashRed 1s ease-in-out infinite !important;}
+.m-pulse-green{animation:mPulseGreen 1.4s ease-in-out infinite !important;}
+.m-pulse-blue{animation:mPulseBlue 1.4s ease-in-out infinite !important;}
+.m-pulse-gold{animation:mPulseGold 1.4s ease-in-out infinite !important;}
+.m-disp-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:all 0.15s;}
+.m-disp-card:active{transform:scale(0.98);opacity:0.9;}
+.m-disp-zone{font-family:'Oswald',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:2px 8px;border-radius:5px;display:inline-block;}
+.m-disp-sheet-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:800;}
+.m-disp-sheet-backdrop.show{display:block;}
+.m-disp-sheet{position:fixed;left:0;right:0;bottom:0;background:var(--navy);border-top:1px solid var(--card-border);border-radius:16px 16px 0 0;z-index:801;max-height:85vh;overflow-y:auto;padding:16px 16px calc(20px + env(safe-area-inset-bottom));display:none;animation:slideUp 0.25s ease;}
+.m-disp-sheet.show{display:block;}
+.m-disp-input{width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;color:var(--white);font-size:0.9rem;outline:none;box-sizing:border-box;}
+.m-disp-label{font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:5px;font-family:'Oswald',sans-serif;}
+.m-disp-btn{font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;border-radius:8px;cursor:pointer;padding:10px;font-size:0.72rem;border:1px solid var(--card-border);background:rgba(255,255,255,0.04);color:var(--white);}
+.m-disp-unit-box{background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:10px;padding:10px;margin-bottom:8px;}
 
 /* ── PAGES ── */
 .page{display:none;position:relative;z-index:1;height:100%;overflow:hidden;}
@@ -398,6 +417,13 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <span class="m-tile-sub">Member directory</span>
         </div>
       </button>
+      <button class="m-tile" id="m-dispatch-tile" onclick="mOpenDispatch()" style="display:none">
+        <div class="m-tile-inner">
+          <span class="m-tile-icon">🗺️</span>
+          <span class="m-tile-label">Dispatch</span>
+          <span class="m-tile-sub">Manage active calls</span>
+        </div>
+      </button>
       <button class="m-tile" id="m-edu-tile" onclick="mGoTo('education')" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🎓</span>
@@ -540,7 +566,8 @@ var db = firebase.firestore();
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
 // ── STATE ──
-var mCurrentUser = null, mCurrentRole = null, mCurrentUserRoles = [], mCurrentUserUnit = "";
+var mCurrentUser = null, mCurrentRole = null, mCurrentUserRoles = [], mCurrentUserUnit = "", mCurrentUserDisplayName = "";
+var mAllRespondersCache = [];
 var mCallsListener = null, mKnownCallIds = {}, mInitialLoadDone = false;
 var mSWReg = null, mToneCtx = null, mFCMMessaging = null;
 var FCM_VAPID_KEY = "BHiVdlY2FxPJn_pWsg8Ydz7LGH2-Amp0DnSNyopkOvIB_ki3lEPEeITHXx2bv7gm50vofMC_ADeAujS16rqjgqg";
@@ -669,9 +696,11 @@ auth.onAuthStateChanged(function(user) {
       mCurrentRole = d.role || "responder";
       mCurrentUserRoles = d.roles || [];
       mCurrentUserUnit = d.unit || "";
+      mCurrentUserDisplayName = ((d.firstName||"") + " " + (d.lastName||"")).trim();
       document.getElementById("m-topbar-unit").textContent = mCurrentUserUnit;
       if (d.mustChangePassword) { mGoTo("force-pw"); return; }
       mEnterHome();
+      mLoadAllResponders();
     }).catch(function(e) { mToast("Error: " + e.message, true); auth.signOut(); });
   } else {
     mCurrentUser = null;
@@ -712,6 +741,10 @@ function mEnterHome() {
   var eduTile = document.getElementById("m-edu-tile");
   if (eduTile) eduTile.style.display = canEdu ? "" : "none";
 
+  // Show Dispatch tile for dispatcher-capable roles
+  var canDispatch = mCurrentRole==="admin"||roles.includes("dispatcher")||roles.includes("captain")||roles.includes("chief");
+  var dispatchTile = document.getElementById("m-dispatch-tile");
+  if (dispatchTile) dispatchTile.style.display = canDispatch ? "" : "none";
 }
 
 function mRequestPermissions() {
@@ -1774,7 +1807,1220 @@ function mUpdateAlertBtn() {
   var row = document.getElementById("m-alerts-row");
   if (row) row.style.display = callsVisible ? "none" : "flex";
 }
+
+var M_COVERAGE_ZONES = [
+  {
+    name: "MC Primary Response Area",
+    points: [
+      {lat:40.5019267,lng:-74.4406403},
+      {lat:40.488742,lng:-74.4339455},
+      {lat:40.4878281,lng:-74.4307698},
+      {lat:40.4879913,lng:-74.4207276},
+      {lat:40.4910593,lng:-74.4167794},
+      {lat:40.4931481,lng:-74.4128312},
+      {lat:40.497358,lng:-74.411372},
+      {lat:40.4998708,lng:-74.4074238},
+      {lat:40.4991855,lng:-74.4057501},
+      {lat:40.4992834,lng:-74.4029177},
+      {lat:40.5002298,lng:-74.3990553},
+      {lat:40.5013393,lng:-74.3909443},
+      {lat:40.5043741,lng:-74.3984545},
+      {lat:40.5070498,lng:-74.3988837},
+      {lat:40.5110305,lng:-74.401244},
+      {lat:40.5143258,lng:-74.403261},
+      {lat:40.5173926,lng:-74.4055785},
+      {lat:40.5202635,lng:-74.4111575},
+      {lat:40.5019267,lng:-74.4406403}
+    ]
+  },
+  {
+    name: "Secondary Response Area",
+    points: [
+      {lat:40.42918,lng:-74.4156316},
+      {lat:40.4632762,lng:-74.3323758},
+      {lat:40.5153669,lng:-74.3270544},
+      {lat:40.5500716,lng:-74.3486836},
+      {lat:40.5578018,lng:-74.3865721},
+      {lat:40.5619792,lng:-74.4253663},
+      {lat:40.560671,lng:-74.4593565},
+      {lat:40.5536283,lng:-74.4830458},
+      {lat:40.5327565,lng:-74.5053617},
+      {lat:40.5036557,lng:-74.5069067},
+      {lat:40.4835479,lng:-74.5039858},
+      {lat:40.4683368,lng:-74.4990056},
+      {lat:40.4528622,lng:-74.485449},
+      {lat:40.4382307,lng:-74.4518034},
+      {lat:40.42918,lng:-74.4156316}
+    ]
+  },
+  {
+    name: "Secondary Response Area (Extended)",
+    points: [
+      {lat:40.5711535,lng:-74.5847614},
+      {lat:40.5393298,lng:-74.6115406},
+      {lat:40.4881715,lng:-74.6094807},
+      {lat:40.3857377,lng:-74.5813281},
+      {lat:40.365337,lng:-74.5469958},
+      {lat:40.3826055,lng:-74.4855563},
+      {lat:40.3763194,lng:-74.3969589},
+      {lat:40.3799823,lng:-74.3392831},
+      {lat:40.3899232,lng:-74.3234958},
+      {lat:40.3942352,lng:-74.3174888},
+      {lat:40.4338367,lng:-74.2970535},
+      {lat:40.454741,lng:-74.2826365},
+      {lat:40.469887,lng:-74.2654681},
+      {lat:40.4918201,lng:-74.2738835},
+      {lat:40.5163632,lng:-74.2531084},
+      {lat:40.5234105,lng:-74.2489883},
+      {lat:40.5349274,lng:-74.2523133},
+      {lat:40.5527814,lng:-74.2525419},
+      {lat:40.561503,lng:-74.2314816},
+      {lat:40.5601331,lng:-74.2186962},
+      {lat:40.5712816,lng:-74.2120868},
+      {lat:40.5860166,lng:-74.2129375},
+      {lat:40.5982701,lng:-74.2331979},
+      {lat:40.6071328,lng:-74.353361},
+      {lat:40.5935777,lng:-74.5030504},
+      {lat:40.5711535,lng:-74.5847614}
+    ]
+  }
+];
+
+// ═══════════════════════════════════════════════════════════
+// MOBILE DISPATCHER CONSOLE
+// ═══════════════════════════════════════════════════════════
+
+var M_CALL_NATURES = [
+  { value: "01 - Respiratory Distress", label: "01 - Respiratory Distress / Difficulty Breathing", als: true },
+  { value: "02 - Cardiac", label: "02 - Cardiac", als: true },
+  { value: "03 - Cardiac Arrest", label: "03 - Cardiac Arrest / Possible Code", als: true },
+  { value: "04 - Choking", label: "04 - Choking", als: true },
+  { value: "05 - Partial Obstruction", label: "05 - Partial Obstruction", als: false },
+  { value: "06 - Drowning", label: "06 - Drowning", als: true },
+  { value: "07 - AMS", label: "07 - AMS (Altered Mental Status)", als: true },
+  { value: "08 - Unconscious", label: "08 - Unconscious", als: true },
+  { value: "09 - Diabetic Emergency", label: "09 - Diabetic Emergency", als: true },
+  { value: "10 - Trauma", label: "10 - Trauma (non life-threatening)", als: false },
+  { value: "11 - Major Trauma (CODE 1)", label: "11 - Major Trauma (CODE 1)", als: true },
+  { value: "12 - Full Trauma Situation (CODE 26)", label: "12 - Full Trauma Situation (CODE 26)", als: false },
+  { value: "13 - Full Trauma / Active Labor / Childbirth (CODE 25)", label: "13 - Full Trauma / Active Labor / Childbirth (CODE 25)", als: false },
+  { value: "14 - Stroke / CVA", label: "14 - Stroke or CVA", als: true },
+  { value: "15 - Seizures", label: "15 - Seizures", als: true },
+  { value: "16 - EDP - Emotionally Disturbed Person (CODE 44)", label: "16 - EDP - Emotionally Disturbed Person (CODE 44 · Code Gray)", als: false },
+  { value: "17 - Allergic Reaction", label: "17 - Allergic Reaction", als: false },
+  { value: "18 - Anaphylaxis", label: "18 - Anaphylaxis", als: true },
+  { value: "19 - MVA", label: "19 - MVA (Motor Vehicle Accident)", als: false },
+  { value: "20 - Pedestrian Struck", label: "20 - Pedestrian Struck", als: true },
+  { value: "21 - Lifeline Alert / No Patient Contact", label: "21 - Lifeline Alert / No Patient Contact", als: false },
+  { value: "22 - Syncope", label: "22 - Syncope", als: false },
+  { value: "23 - OD / Overdose", label: "23 - OD (Overdose)", als: true },
+  { value: "24 - Intoxicated (CODE 100)", label: "24 - Intoxicated (CODE 100)", als: false },
+  { value: "25 - Sick / General Medical", label: "25 - Sick / General Medical", als: false },
+  { value: "26 - Please Call the Base", label: "26 - Please Call the Base", als: false }
+];
+var M_HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
+var M_STATUS_LOG = {
+  cleared_scene:    { icon:"✓", text:"Cleared Scene", color:"#7dedb5" },
+  other_status:     { icon:"•", text:"Other", color:"#e8a0ff" },
+  enroute_scene:    { icon:"🚗", text:"En Route to Scene",  color:"#7ab8f5" },
+  on_scene_direct:  { icon:"📍", text:"On Scene",           color:"#7dedb5" },
+  picking_up_ambo:  { icon:"🔑", text:"Picking Up Rig",     color:"#ffc84a" },
+  ambo_responding:  { icon:"🚑", text:"Rig Responding",     color:"#ffc84a" },
+  on_scene_ambo:    { icon:"📍", text:"On Scene with Rig",  color:"#7dedb5" },
+  rma_scene:        { icon:"✋", text:"RMA on Scene",        color:"#7dedb5" },
+  transporting:     { icon:"🚑", text:"Transporting",        color:"#ffc84a" },
+  at_facility:      { icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" },
+  clearing_facility:{ icon:"✓",  text:"Clearing Hospital",   color:"#7dedb5" },
+  back_at_base:     { icon:"🏠", text:"Back at Base",        color:"var(--gray)" }
+};
+var M_TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","back_at_base"];
+var M_ONSCENE_STATUSES = ["on_scene_direct","on_scene_ambo"];
+
+function mPointInPolygon(point, polygon) {
+  var inside = false;
+  var px = point.lng, py = point.lat;
+  for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    var xi = polygon[i].lng, yi = polygon[i].lat;
+    var xj = polygon[j].lng, yj = polygon[j].lat;
+    var intersect = ((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function mDetectZone(lat, lng) {
+  if (!lat || !lng) return null;
+  var pt = { lat: lat, lng: lng };
+  var inPrimary = false, inSecondary = false;
+  M_COVERAGE_ZONES.forEach(function(zone) {
+    if (mPointInPolygon(pt, zone.points)) {
+      if (/primary/i.test(zone.name)) inPrimary = true;
+      else if (/secondary/i.test(zone.name)) inSecondary = true;
+      else inPrimary = true;
+    }
+  });
+  return inPrimary ? "primary" : inSecondary ? "secondary" : "outside";
+}
+
+// ── Access code fuzzy matching (mirrors desktop's checkAccessCodeOnFile) ──
+var mLiveCodes = { buildings: [], shuls: [] };
+var mLiveCodesLoaded = false;
+function mLoadLiveCodes() {
+  if (mLiveCodesLoaded) return Promise.resolve(mLiveCodes);
+  return db.collection("appdata").doc("codes").get().then(function(snap) {
+    var sec = (snap.exists && snap.data().sections) || {};
+    mLiveCodes = { buildings: sec.buildings || [], shuls: sec.shuls || [] };
+    mLiveCodesLoaded = true;
+    return mLiveCodes;
+  }).catch(function() { return mLiveCodes; });
+}
+var M_NOISE = ["highland","park","edison","brunswick","piscataway","plainfield",
+  "woodbridge","metuchen","carteret","rahway","avenel","iselin",
+  "colonia","fords","new","east","north","south","old","the",
+  "street","avenue","blvd","road","drive","lane","way","nj","usa",
+  "ave","st","rd","dr","and","main","with","from","then",
+  "building","side","door","back","clear","enter","code",
+  "press","together","behind","dorm","offices","classrooms",
+  "washington","lincoln","franklin","central","church","broad","oak","elm","maple"];
+function mIsNoiseWord(w) { return M_NOISE.indexOf(w) !== -1 || w.length < 2; }
+function mDistMeters(lat1, lng1, lat2, lng2) {
+  var R = 6371000;
+  var dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function mScoreCodeEntry(entry, addrLower, haystack, selLat, selLng) {
+  if (!entry.code) return 0;
+  var score = 0;
+  var hasGeo = entry.lat && entry.lng && selLat && selLng;
+  var hasAddr = !!entry.address;
+  if (hasGeo) {
+    var dist = mDistMeters(selLat, selLng, entry.lat, entry.lng);
+    if (dist <= 30) return 100;
+    if (dist <= 80) score += 20;
+    if (dist <= 150) score += 10;
+    if (dist > 150) return 0;
+  }
+  var nameClean = (entry.name||"").toLowerCase();
+  var nameWords = nameClean.split(/[\s,()\/&\-]+/).filter(function(w){ return !mIsNoiseWord(w) && w.length >= 3; });
+  nameWords.forEach(function(w) { if (haystack.indexOf(w) !== -1) score += 4; });
+  var nameStripped = nameClean.replace(/[^a-z0-9 ]/g,'').trim();
+  if (nameStripped.length > 4 && haystack.indexOf(nameStripped) !== -1) score += 6;
+  if (hasAddr) {
+    var entryAddrLower = entry.address.toLowerCase();
+    var numMatch = entryAddrLower.match(/^\d+/);
+    var hasNumMatch = numMatch && addrLower.indexOf(numMatch[0] + " ") !== -1;
+    if (hasNumMatch) score += 6;
+    var eWords = entryAddrLower.split(/[\s,]+/).filter(function(w){ return !mIsNoiseWord(w) && w.length >= 4; });
+    eWords.forEach(function(w) { if (addrLower.indexOf(w) !== -1) score += 2; });
+    if (entryAddrLower.length > 8 && addrLower.indexOf(entryAddrLower) !== -1) score += 10;
+    if (!hasGeo && !hasNumMatch) return 0;
+  }
+  if (!hasGeo && !hasAddr && score < 10) return 0;
+  return score;
+}
+var mAccessCodeSuggestion = null;
+function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
+  var banner = document.getElementById("m-nc-code-suggestion");
+  if (!banner) return;
+  var addrLower = (formattedAddress||"").toLowerCase();
+  var placeLower = (placeName||"").toLowerCase();
+  var haystack = (addrLower + " " + placeLower).trim();
+  var allEntries = (mLiveCodes.buildings||[]).concat(mLiveCodes.shuls||[]);
+  var match = null, bestScore = 0;
+  allEntries.forEach(function(entry) {
+    var s = mScoreCodeEntry(entry, addrLower, haystack, lat, lng);
+    if (s > bestScore) { bestScore = s; match = entry; }
+  });
+  if (match && bestScore >= 4) {
+    mAccessCodeSuggestion = match;
+    document.getElementById("m-nc-code-suggestion-text").textContent = (match.name||"") + " — " + (match.code||"") + (match.note ? " ("+match.note+")" : "");
+    banner.style.display = "flex";
+  } else {
+    mAccessCodeSuggestion = null;
+    banner.style.display = "none";
+  }
+}
+function mApplyAccessCodeSuggestion() {
+  if (!mAccessCodeSuggestion) return;
+  document.getElementById("m-nc-accesscode").value = mAccessCodeSuggestion.code + (mAccessCodeSuggestion.note ? " (" + mAccessCodeSuggestion.note + ")" : "");
+  document.getElementById("m-nc-code-suggestion").style.display = "none";
+}
+
+var mDispatchListener = null;
+var mDispatchDetailListener = null;
+var mDispSelectedCallId = null;
+var mDispCallCache = {};
+var mNcAddressTouched = false;
+var mNcZone = "primary", mNcAge = "adult", mNcSex = "";
+var mAssignSheetCrewIdx = 0, mAssignSheetRole = null, mAssignSheetMode = "unit";
+
+function mNowHHMM() {
+  var d = new Date();
+  return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+
+// ── ROSTER (for unit assignment picker) ──
+function mLoadAllResponders() {
+  db.collection("users").get().then(function(snap) {
+    var list = [];
+    snap.forEach(function(d) { var u = d.data(); if (u.unit) list.push({ unit: u.unit }); });
+    list.sort(function(a,b){ return a.unit.localeCompare(b.unit, undefined, {numeric:true}); });
+    mAllRespondersCache = list;
+  }).catch(function() {});
+}
+
+// ── ENTRY ──
+function mOpenDispatch() {
+  mGoTo("dispatch");
+  mLoadLiveCodes();
+  if (!mDispatchListener) {
+    mDispatchListener = db.collection("activeCalls").where("status","==","active")
+      .onSnapshot(function(snap) {
+        var calls = [];
+        snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
+        calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
+        mRenderDispatchList(calls);
+      }, function(e) { mToast("Dispatch listener error: " + e.message, true); });
+  }
+}
+
+// ── ACTIVE CALLS LIST ──
+function mRenderDispatchList(calls) {
+  var el = document.getElementById("m-dispatch-list");
+  if (!calls.length) { el.innerHTML = '<div style="text-align:center;color:var(--gray);padding:40px 20px;font-size:0.85rem">No active calls</div>'; return; }
+  el.innerHTML = calls.map(function(call) {
+    var zoneColor = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
+    var zoneLabel = call.zone === "primary" ? "Standard" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
+    var nature = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "").split(" (")[0] : "";
+    var patient = [call.patientAgeNum ? call.patientAgeNum+"y" : (call.patientAge||""), call.patientSex==="male"?"M":call.patientSex==="female"?"F":""].filter(Boolean).join(" ");
+    var unitCount = (call.assignedUnits||[]).length;
+    var addr = (call.address||"Unknown").split(",")[0];
+    return '<div class="m-disp-card" onclick="mOpenDispatchCall(\'' + call.id + '\')">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+        '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + zoneLabel + '</span>' +
+        '<span style="font-size:0.7rem;color:var(--gray)">' + (call.times&&call.times.dispatched||"") + '</span>' +
+      '</div>' +
+      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.98rem;font-weight:700;color:var(--white)">' + addr + '</div>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-top:4px;font-size:0.75rem;color:var(--gray)">' +
+        (nature ? '<span style="color:' + zoneColor + '">' + nature + '</span>' : '') +
+        (patient ? '<span>' + patient + '</span>' : '') +
+        (call.alsActivated ? '<span style="color:#ff9090">🚨 ALS</span>' : '') +
+        '<span style="margin-left:auto">👥 ' + unitCount + '</span>' +
+      '</div>' +
+    '</div>';
+  }).join("");
+}
+
+// ── NEW CALL FORM ──
+function mOpenNewCallForm() {
+  mGoTo("dispatch-newcall");
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = "adult"; mNcSex = "";
+  document.getElementById("m-nc-address").value = "";
+  document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
+  document.getElementById("m-nc-age-num").value = "";
+  document.getElementById("m-nc-callback").value = "";
+  document.getElementById("m-nc-accesscode").value = "";
+  document.getElementById("m-nc-notes").value = "";
+  document.getElementById("m-nc-code-suggestion").style.display = "none";
+  document.getElementById("m-nc-zone-banner").style.display = "none";
+  mSetNcZone("primary", true); mSetNcAge("adult");
+  var natSel = document.getElementById("m-nc-nature");
+  if (!natSel.options.length) {
+    natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("");
+    natSel.onchange = function() {
+      var found = M_CALL_NATURES.find(function(n){ return n.value === natSel.value; });
+      document.getElementById("m-nc-als-hint").style.display = (found && found.als) ? "block" : "none";
+      document.getElementById("m-nc-als-hint-spacer").style.display = (found && found.als) ? "none" : "block";
+    };
+  }
+  natSel.value = "";
+  document.getElementById("m-nc-als-hint").style.display = "none";
+  document.getElementById("m-nc-als-hint-spacer").style.display = "block";
+  mLoadLiveCodes();
+  mInitNcAddressAutocomplete();
+}
+function mSetNcZone(z, isAuto) {
+  mNcZone = z;
+  document.querySelectorAll("#m-nc-zone-toggle button").forEach(function(b) {
+    var bz = b.getAttribute("data-zone");
+    var col = bz === "primary" ? "#7dedb5" : bz === "secondary" ? "#ffc84a" : "#ff9090";
+    var isThis = bz === z;
+    b.style.borderColor = isThis ? col : "var(--card-border)";
+    b.style.background = isThis ? col + "26" : "rgba(255,255,255,0.04)";
+    b.style.color = isThis ? col : "var(--white)";
+  });
+  if (!isAuto) mShowNcZoneBanner(z);
+}
+function mShowNcZoneBanner(zone) {
+  var banner = document.getElementById("m-nc-zone-banner");
+  if (!banner) return;
+  var icon, label, sub, bg, border, color, extra;
+  extra = "";
+  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area"; bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
+  else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area"; bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
+  else {
+    icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
+    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area. Consider Statewide Hatzolah: <a href="tel:2016131111" style="color:#fff;font-weight:700">(201) 613-1111</a></div>';
+  }
+  banner.style.display = "block";
+  banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
+  banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:1.4rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:' + color + '">' + label + '</div><div style="font-size:0.7rem;color:' + color + ';opacity:0.85">' + sub + '</div></div></div>' + extra;
+}
+function mSetNcAge(a) {
+  mNcAge = a;
+  document.querySelectorAll("#m-nc-age-toggle button").forEach(function(b) {
+    var isThis = b.getAttribute("data-age") === a;
+    b.style.borderColor = isThis ? "#7ab8f5" : "var(--card-border)";
+    b.style.background = isThis ? "rgba(122,184,245,0.15)" : "rgba(255,255,255,0.04)";
+    b.style.color = isThis ? "#7ab8f5" : "var(--white)";
+  });
+}
+function mSetNcSex(s) {
+  mNcSex = mNcSex === s ? "" : s;
+  document.querySelectorAll("[data-sex]").forEach(function(b) {
+    var isThis = b.getAttribute("data-sex") === mNcSex;
+    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
+    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
+    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
+  });
+}
+var mNcAutocomplete = null;
+function mInitNcAddressAutocomplete() {
+  if (window.google && window.google.maps && window.google.maps.places) { mBindNcAutocomplete(); return; }
+  if (document.getElementById("m-maps-script")) return;
+  var s = document.createElement("script");
+  s.id = "m-maps-script";
+  s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=mBindNcAutocomplete";
+  document.head.appendChild(s);
+}
+window.mBindNcAutocomplete = function() {
+  if (mNcAutocomplete || !window.google || !google.maps.places) return;
+  var input = document.getElementById("m-nc-address");
+  mNcAutocomplete = new google.maps.places.Autocomplete(input, { componentRestrictions: { country: "us" } });
+  mNcAutocomplete.addListener("place_changed", function() {
+    var place = mNcAutocomplete.getPlace();
+    if (!place.geometry) return;
+    var lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
+    document.getElementById("m-nc-lat").value = lat;
+    document.getElementById("m-nc-lng").value = lng;
+    document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
+    var placeName = (place.name && place.name !== place.formatted_address) ? place.name : "";
+    var zone = mDetectZone(lat, lng);
+    if (zone) mSetNcZone(zone, false);
+    mCheckAccessCode(place.formatted_address || input.value, placeName, lat, lng);
+  });
+};
+function mPostNewCall() {
+  var address = document.getElementById("m-nc-address").value.trim();
+  if (!address) { mToast("Enter an address", true); return; }
+  var nature = document.getElementById("m-nc-nature").value;
+  var btn = document.getElementById("m-nc-post-btn");
+  btn.disabled = true; btn.textContent = "Posting…";
+  var now = new Date();
+  var call = {
+    status: "active",
+    address: address,
+    lat: parseFloat(document.getElementById("m-nc-lat").value) || null,
+    lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
+    mapsLink: document.getElementById("m-nc-mapslink").value || "",
+    zone: mNcZone,
+    callNature: nature,
+    patientAge: mNcAge,
+    patientAgeNum: document.getElementById("m-nc-age-num").value.trim(),
+    patientSex: mNcSex,
+    callbackNumber: document.getElementById("m-nc-callback").value.trim(),
+    accessCode: document.getElementById("m-nc-accesscode").value.trim(),
+    dispatchNotes: document.getElementById("m-nc-notes").value.trim(),
+    crews: [{}],
+    unitDetails: {},
+    assignedUnits: [],
+    times: { dispatched: mNowHHMM() },
+    disposition: {},
+    alsActivated: false, blsActivated: false, pdActivated: false,
+    callEvents: [], callNotes: [],
+    createdAt: now.toISOString(),
+    createdBy: ((mCurrentUserUnit||"") + " " + (mCurrentUserDisplayName||"")).trim(),
+    updatedAt: now.toISOString()
+  };
+  db.collection("activeCalls").add(call).then(function(ref) {
+    mToast("🚑 Call posted!");
+    btn.disabled = false; btn.textContent = "🚑 Post Call";
+    mOpenDispatchCall(ref.id);
+  }).catch(function(e) {
+    mToast("Error: " + e.message, true);
+    btn.disabled = false; btn.textContent = "🚑 Post Call";
+  });
+}
+
+// ── CALL DETAIL ──
+function mOpenDispatchCall(callId) {
+  mDispSelectedCallId = callId;
+  mGoTo("dispatch-detail");
+  if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
+  mDispatchDetailListener = db.collection("activeCalls").doc(callId).onSnapshot(function(snap) {
+    if (!snap.exists) { mToast("Call closed"); mCloseDispatchDetail(); return; }
+    var call = Object.assign({id:snap.id}, snap.data());
+    if (!call.crews || !call.crews.length) call.crews = [{}];
+    mDispCallCache[callId] = call;
+    mRenderDispatchDetail(call);
+  }, function(e) { mToast("Call listener error: " + e.message, true); });
+}
+function mCloseDispatchDetail() {
+  if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
+  mDispSelectedCallId = null;
+  document.getElementById("m-dd-menu").style.display = "none";
+  mGoTo("dispatch");
+}
+function mToggleDispMenu() {
+  var m = document.getElementById("m-dd-menu");
+  m.style.display = m.style.display === "none" ? "block" : "none";
+}
+
+// ── Multi-crew helpers ──
+function mCrewOf(call, idx) { return (call.crews && call.crews[idx]) || {}; }
+function mUdKey(crewIdx, role) { return crewIdx + "_" + role; }
+function mUdOf(call, crewIdx, role) { return (call.unitDetails || {})[mUdKey(crewIdx, role)] || {}; }
+function mIsDriverRole(call, crewIdx, role) {
+  var det = mUdOf(call, crewIdx, role);
+  return role === "rigUnit" || role.indexOf("rigUnit") === 0 || det.response === "rig";
+}
+function mRequiredRolesOfCrew(crew) {
+  return Object.keys(crew||{}).filter(function(k){ return k!=="rig" && crew[k] && crew[k]!=="__added__" && k.indexOf("supervisor")!==0 && k.indexOf("sup_")!==0 && k.indexOf("observer")!==0; });
+}
+function mAllOnSceneCheck(call) {
+  var any = false, allOk = true;
+  var onOrPast = M_ONSCENE_STATUSES.concat(M_TRANSPORT_STATUSES).concat(["rma_scene","cleared_scene","other_status"]);
+  (call.crews||[]).forEach(function(crew, ci) {
+    mRequiredRolesOfCrew(crew).forEach(function(r) {
+      any = true;
+      if (onOrPast.indexOf(mUdOf(call, ci, r).status || "") === -1) allOk = false;
+    });
+  });
+  return any && allOk;
+}
+function mFindDriverRole(call) {
+  var found = null;
+  (call.crews||[]).forEach(function(crew, ci) {
+    Object.keys(crew||{}).forEach(function(k) {
+      if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+      if (mIsDriverRole(call, ci, k)) found = { crewIdx: ci, role: k };
+    });
+  });
+  return found;
+}
+
+function mRenderDispatchDetail(call) {
+  document.getElementById("m-dd-header-addr").textContent = (call.address||"Call").split(",")[0];
+  var content = "";
+
+  // Call info
+  var zoneColor = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
+  var natureLabel = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "") : "";
+  content += '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:12px">' +
+    '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + (call.address||"Unknown") + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+      (natureLabel ? '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + natureLabel + '</span>' : '') +
+      (call.patientAge ? '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + call.patientAge + (call.patientAgeNum?" "+call.patientAgeNum+"y":"") + (call.patientSex?" "+(call.patientSex==="male"?"M":"F"):"") + '</span>' : '') +
+    '</div>' +
+    (call.dispatchNotes ? '<div style="margin-top:8px;font-size:0.78rem;color:var(--gray)">📝 ' + call.dispatchNotes + '</div>' : '') +
+    (call.accessCode ? '<div style="margin-top:4px;font-size:0.78rem;color:var(--gray)">🔑 ' + call.accessCode + '</div>' : '') +
+    (call.callbackNumber ? '<div style="margin-top:8px;display:flex;gap:8px"><a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="flex:1;text-align:center;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.35);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;padding:6px;text-decoration:none">📞 ' + call.callbackNumber + '</a></div>' : '') +
+  '</div>';
+
+  // ALS / BLS / PD banners
+  content += mBuildAlsBanner(call);
+  content += mBuildBlsBanner(call);
+  content += mBuildPdBanner(call);
+
+  // Units — one block per crew
+  content += '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin:14px 0 8px">👥 Units</div>';
+  (call.crews||[]).forEach(function(crew, ci) {
+    content += mBuildCrewBlock(call, crew, ci);
+  });
+  content += '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(201,168,76,0.4);color:var(--gold);margin-bottom:14px" onclick="mAddCrew()">+ Crew &amp; Rig</button>';
+
+  // Disposition
+  var needDisp = mAllOnSceneCheck(call) && !call.disposition.type;
+  content += '<div style="border-top:1px solid var(--card-border);padding-top:12px;margin-bottom:14px">';
+  content += needDisp
+    ? '<div class="m-flash" style="display:inline-block;font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:8px">Set Call Disposition</div>'
+    : '<div class="m-disp-label">Call Disposition</div>';
+  content += '<div style="display:flex;gap:8px">' +
+    '<button onclick="mSetDispositionRMA()" style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='rma'?'rgba(125,237,181,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='rma'?'rgba(125,237,181,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='rma'?'#7dedb5':'var(--gray)') + '">RMA</button>' +
+    '<button onclick="mOpenTransportSheet()" style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='transport'?'rgba(122,184,245,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='transport'?'rgba(122,184,245,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='transport'?'#7ab8f5':'var(--gray)') + '">🚑 Transport' + (call.disposition.type==='transport'&&call.disposition.hospital?' ✓':'') + '</button>' +
+  '</div>';
+  if (call.disposition.type === 'rma') {
+    content += '<div style="margin-top:8px"><div class="m-disp-label">RMA Approved By</div>' +
+      '<input type="text" class="m-disp-input" placeholder="Name or unit…" value="' + (call.disposition.rmaBy||"") + '" onchange="mSetRmaBy(this.value)"></div>';
+  }
+  if (call.disposition.type === 'transport' && call.disposition.hospital) {
+    content += '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px;font-size:0.78rem;color:#7ab8f5">🏥 ' + call.disposition.hospital + '</div>';
+  }
+  content += '</div>';
+
+  // Notes
+  content += '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">📝 Call Notes</div>';
+  (call.callNotes||[]).forEach(function(n) {
+    content += '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:8px 10px;margin-bottom:6px">' +
+      '<div style="font-size:0.6rem;color:var(--gray);margin-bottom:2px">' + (n.time||"") + ' · ' + (n.by||"") + '</div>' +
+      '<div style="font-size:0.82rem;color:var(--white)">' + n.text + '</div>' +
+    '</div>';
+  });
+  content += '<div style="display:flex;gap:6px;margin-bottom:16px">' +
+    '<input type="text" id="m-dd-note-input" class="m-disp-input" placeholder="' + ((call.callNotes||[]).length?"Add a note…":"Create call notes…") + '">' +
+    '<button onclick="mAddDispNote()" style="flex-shrink:0;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-weight:700;padding:0 16px;cursor:pointer">Add</button>' +
+  '</div>';
+
+  // Timeline
+  content += mBuildDispTimeline(call);
+
+  document.getElementById("m-dd-content").innerHTML = content;
+}
+
+// ── CREW BLOCK (groups fixed + extra roles for one crew, shows rig header) ──
+function mBuildCrewBlock(call, crew, crewIdx) {
+  var html = '<div style="border:1px solid var(--card-border);border-radius:10px;padding:10px;margin-bottom:10px;background:rgba(255,255,255,0.015)">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+    '<span style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold)">🚑 Crew ' + (crewIdx+1) + (crew.rig ? ' — ' + crew.rig : '') + '</span>' +
+    (call.crews.length > 1 ? '<button onclick="mRemoveCrew(' + crewIdx + ')" style="background:none;border:none;color:var(--gray);font-size:0.7rem;cursor:pointer">✕ Remove</button>' : '') +
+  '</div>';
+
+  var fixedRoles = [
+    { role: "primary", label: "Unit 1" },
+    { role: "backup",  label: "Unit 2" },
+    { role: "rigUnit", label: "Unit 3 → Rig" }
+  ];
+  var lastFilled = -1;
+  fixedRoles.forEach(function(r, i) { if (crew[r.role]) lastFilled = i; });
+  fixedRoles.forEach(function(r, i) {
+    if (crew[r.role] || i === lastFilled + 1) html += mBuildUnitBox(call, crewIdx, r.role, r.label);
+  });
+  Object.keys(crew).forEach(function(k) {
+    if (["primary","backup","rigUnit","rig"].indexOf(k) !== -1) return;
+    var label = k.indexOf("supervisor")===0||k.indexOf("sup_")===0 ? "Supervisor" : k.indexOf("observer")===0 ? "Observer" : "Responder";
+    html += mBuildUnitBox(call, crewIdx, k, label);
+  });
+  html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
+    '<button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">+ Responder</button>' +
+    '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.3);color:#e8a0ff" onclick="mAddExtraRole(' + crewIdx + ',\'supervisor\')">+ Supervisor</button>' +
+    '<button class="m-disp-btn" style="flex:1;border-color:rgba(138,154,181,0.3);color:var(--gray)" onclick="mAddExtraRole(' + crewIdx + ',\'observer\')">+ Observer</button>' +
+  '</div>';
+  html += '</div>';
+  return html;
+}
+
+// ── UNIT BOX ──
+function mBuildUnitBox(call, crewIdx, role, label) {
+  var crew = mCrewOf(call, crewIdx);
+  var unit = crew[role];
+  var hasUnit = unit && unit !== "__added__";
+  var det = mUdOf(call, crewIdx, role);
+  var status = det.status || "";
+  var isDriver = mIsDriverRole(call, crewIdx, role);
+  var html = '<div class="m-disp-unit-box">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+    '<span class="m-disp-label" style="margin-bottom:0">' + label + '</span>' +
+    (hasUnit
+      ? '<span style="display:flex;align-items:center;gap:6px"><span style="font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--white);background:rgba(255,255,255,0.08);border-radius:5px;padding:2px 8px">' + unit + '</span><button onclick="mRemoveUnitSlot(' + crewIdx + ',\'' + role + '\')" style="background:none;border:none;color:var(--gray);font-size:0.85rem;cursor:pointer">✕</button></span>'
+      : '<span class="m-flash" style="font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5)">Assign Unit</span>') +
+  '</div>';
+
+  if (!hasUnit) {
+    html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(201,168,76,0.4);color:var(--gold)" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'unit\')">+ Assign Unit</button>';
+    html += '</div>';
+    return html;
+  }
+
+  if (!det.response) {
+    html += '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Response Mode</div>';
+    html += '<div style="display:flex;gap:6px">' +
+      '<button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.4);color:#7ab8f5" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Scene</button>' +
+      '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.4);color:#e8a0ff" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">🚑 Picking Up Ambulance</button>' +
+    '</div></div>';
+    return html;
+  }
+
+  var sl = M_STATUS_LOG[status];
+  if (sl) html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.icon + ' ' + unit + ' ' + sl.text + (status==="on_scene_ambo"&&crew.rig ? " with "+crew.rig : "") + '</div>';
+
+  if (isDriver && !crew.rig && (status === "picking_up_ambo")) {
+    html += '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Rig</div>';
+    html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.4);color:#ffc84a;margin-bottom:6px" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'rig\')">🚑 Choose Rig</button>';
+  }
+
+  var nextBtn = mNextStepButton(call, crewIdx, role, unit);
+  if (nextBtn) html += nextBtn;
+
+  html += '</div>';
+  return html;
+}
+
+function mNextStepButton(call, crewIdx, role, unit) {
+  var det = mUdOf(call, crewIdx, role);
+  var status = det.status || "";
+  var isDriver = mIsDriverRole(call, crewIdx, role);
+  var crew = mCrewOf(call, crewIdx);
+  function btn(label, next, color, flash) {
+    return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetUnitStatus(' + crewIdx + ',\'' + role + '\',\'' + next + '\')">' + label + '</button>';
+  }
+  if (!isDriver) {
+    if (status === "enroute_scene") return btn("Mark " + unit + " On Scene", "on_scene_direct", "#7dedb5", "green");
+    if (status === "on_scene_direct") return btn("Mark " + unit + " Clearing the Scene", "cleared_scene", "#7dedb5", null);
+    return "";
+  }
+  if (status === "picking_up_ambo") {
+    if (!crew.rig) return "";
+    return btn("Mark " + crew.rig + " Responding to Scene", "ambo_responding", "#ffc84a", "gold");
+  }
+  if (status === "ambo_responding") return btn("Mark " + unit + " On Scene with " + (crew.rig||"Rig"), "on_scene_ambo", "#7dedb5", "green");
+  if (status === "on_scene_ambo") return "";
+  if (status === "rma_scene") return btn("Mark " + (crew.rig||"Rig") + " Back at Base", "back_at_base", "#7ab8f5", "blue");
+  if (status === "transporting") return btn("Mark " + (crew.rig||"Rig") + " At " + (call.disposition.hospital||"Facility"), "at_facility", "#ff9090", "gold");
+  if (status === "at_facility") return btn("Mark " + (crew.rig||"Rig") + " Clearing " + (call.disposition.hospital||"Facility"), "clearing_facility", "#7dedb5", "green");
+  if (status === "clearing_facility") return btn("Mark " + (crew.rig||"Rig") + " Back at Base", "back_at_base", "#7ab8f5", "blue");
+  return "";
+}
+
+// ── UNIT ACTIONS ──
+function mOpenAssignSheet(crewIdx, role, mode) {
+  mAssignSheetCrewIdx = crewIdx; mAssignSheetRole = role; mAssignSheetMode = mode || "unit";
+  document.getElementById("m-assign-title").textContent = mode === "rig" ? "Choose Rig" : "Assign Unit";
+  document.getElementById("m-assign-flash").textContent = mode === "rig" ? "Select a rig" : "Select a unit";
+  document.getElementById("m-assign-custom").placeholder = mode === "rig" ? "e.g. MC-01, ERV-2…" : "e.g. MC-30…";
+  document.getElementById("m-assign-custom").value = "";
+  var roster = document.getElementById("m-assign-roster");
+  roster.innerHTML = (mAllRespondersCache || []).map(function(u) {
+    return '<button class="m-disp-btn" style="padding:6px 10px" onclick="mConfirmAssignRoster(\'' + u.unit + '\')">' + u.unit + '</button>';
+  }).join("") || '<div style="font-size:0.75rem;color:var(--gray)">No roster loaded — type below</div>';
+  mOpenSheet("m-sheet-assign");
+}
+function mConfirmAssignRoster(unitId) { mDoAssign(unitId); }
+function mConfirmAssignCustom() {
+  var v = document.getElementById("m-assign-custom").value.trim();
+  if (!v) return;
+  mDoAssign(v);
+}
+function mDoAssign(unitId) {
+  var callId = mDispSelectedCallId, crewIdx = mAssignSheetCrewIdx, role = mAssignSheetRole;
+  if (!callId || role === null) return;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data();
+    var crews = call.crews || [{}];
+    while (crews.length <= crewIdx) crews.push({});
+    if (mAssignSheetMode === "rig") {
+      crews[crewIdx].rig = unitId;
+      var ud = call.unitDetails || {};
+      ud[mUdKey(crewIdx, role)] = Object.assign({}, ud[mUdKey(crewIdx, role)]||{}, { pickedAmbo: unitId, pickedAmboIsERV: false });
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString() });
+    } else {
+      crews[crewIdx][role] = unitId;
+      var assignedUnits = [];
+      crews.forEach(function(c) { Object.keys(c).forEach(function(k) { if (k!=="rig" && c[k] && c[k]!=="__added__") assignedUnits.push(c[k]); }); });
+      assignedUnits = assignedUnits.filter(function(u,i){ return assignedUnits.indexOf(u)===i; });
+      var ud2 = call.unitDetails || {};
+      ud2[mUdKey(crewIdx, role)] = Object.assign({}, ud2[mUdKey(crewIdx, role)]||{}, { assignedAt: mNowHHMM() });
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, assignedUnits: assignedUnits, unitDetails: ud2, updatedAt: new Date().toISOString() });
+    }
+  }).then(function() { mCloseAllSheets(); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mRemoveUnitSlot(crewIdx, role) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data();
+    var crews = call.crews || [{}];
+    var removedUnit = crews[crewIdx] ? crews[crewIdx][role] : null;
+    if (crews[crewIdx]) delete crews[crewIdx][role];
+    var ud = call.unitDetails || {};
+    delete ud[mUdKey(crewIdx, role)];
+    var assignedUnits = (call.assignedUnits||[]).filter(function(u){ return u !== removedUnit; });
+    return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assignedUnits, updatedAt: new Date().toISOString() });
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mAddExtraRole(crewIdx, base) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [{}];
+    while (crews.length <= crewIdx) crews.push({});
+    var key = base, n = 1;
+    while (crews[crewIdx][key] !== undefined) { key = base + n; n++; }
+    crews[crewIdx][key] = "__added__";
+    return db.collection("activeCalls").doc(callId).update({ crews: crews, updatedAt: new Date().toISOString() });
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mAddCrew() {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var crews = snap.data().crews || [{}];
+    crews.push({});
+    return db.collection("activeCalls").doc(callId).update({ crews: crews, updatedAt: new Date().toISOString() });
+  }).then(function(){ mToast("✓ Crew added"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mRemoveCrew(crewIdx) {
+  if (!confirm("Remove Crew " + (crewIdx+1) + " from this call?")) return;
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data();
+    var crews = call.crews || [];
+    if (crews.length <= 1) { mToast("Must have at least one crew", true); return; }
+    var removedUnits = Object.keys(crews[crewIdx]||{}).filter(function(k){ return k!=="rig"; }).map(function(k){ return crews[crewIdx][k]; });
+    crews.splice(crewIdx, 1);
+    var ud = call.unitDetails || {};
+    Object.keys(ud).forEach(function(k) { if (k.indexOf(crewIdx + "_") === 0) delete ud[k]; });
+    var assignedUnits = (call.assignedUnits||[]).filter(function(u){ return removedUnits.indexOf(u) === -1; });
+    return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assignedUnits, updatedAt: new Date().toISOString() });
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mSetUnitResponse(crewIdx, role, response) {
+  var callId = mDispSelectedCallId;
+  var initialStatus = response === "scene" ? "enroute_scene" : "picking_up_ambo";
+  var key = "unitDetails." + mUdKey(crewIdx, role);
+  var update = {};
+  update[key + ".response"] = response;
+  update[key + ".status"] = initialStatus;
+  update[key + ".statusAt"] = mNowHHMM();
+  update.updatedAt = new Date().toISOString();
+  db.collection("activeCalls").doc(callId).update(update).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mSetUnitStatus(crewIdx, role, status) {
+  var callId = mDispSelectedCallId;
+  var key = "unitDetails." + mUdKey(crewIdx, role);
+  var now = mNowHHMM();
+  var update = {};
+  update[key + ".status"] = status;
+  update[key + ".statusAt"] = now;
+  update.updatedAt = new Date().toISOString();
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (snap.exists) {
+      var times = snap.data().times || {};
+      if ((status === "on_scene_direct" || status === "on_scene_ambo") && !times.first_on_scene) update["times.first_on_scene"] = now;
+      if (status === "transporting" && !times.enroute) update["times.enroute"] = now;
+      if (status === "at_facility" && !times.at_hospital) update["times.at_hospital"] = now;
+    }
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+
+// ── ALS / BLS / PD ──
+function mBuildAlsBanner(call) {
+  if (!call.alsActivated) {
+    return '<button class="m-disp-btn m-pulse-red-btn" style="width:100%;margin-bottom:8px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.1);animation:mFlashRed 1.4s ease-in-out infinite" onclick="mOpenSheet(\'m-sheet-als\')">🚨 Activate ALS</button>';
+  }
+  var onScene = call.alsOnScene;
+  return '<div style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.4);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
+    '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:2px">🚨 ALS Active</div>' +
+    '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta&&!onScene?" · ETA "+call.alsEta+"min":"") + '</div>' +
+    (onScene ? '<div style="font-size:0.7rem;color:#7dedb5;margin-top:4px">✓ On Scene</div>' :
+      '<button class="m-disp-btn m-pulse-green" style="width:100%;margin-top:8px;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">✓ Mark ALS On Scene</button>') +
+  '</div>';
+}
+function mAlsPromptCheck() {
+  var p = document.getElementById("m-als-provider").value.trim();
+  var e = document.getElementById("m-als-eta").value.trim();
+  document.getElementById("m-als-unit-prompt").className = p ? "m-disp-label" : "m-disp-label m-flash";
+  document.getElementById("m-als-eta-prompt").className = e ? "m-disp-label" : "m-disp-label m-flash";
+}
+window.mAlsPromptCheck = mAlsPromptCheck;
+function mConfirmALS() {
+  var provider = document.getElementById("m-als-provider").value.trim();
+  var eta = document.getElementById("m-als-eta").value.trim();
+  if (!provider) { mAlsPromptCheck(); return; }
+  var now = new Date();
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({
+    alsActivated: true, alsProvider: provider, alsEta: eta,
+    alsActivatedAt: mNowHHMM(), alsActivatedISO: now.toISOString(),
+    alsOnScene: false, updatedAt: now.toISOString()
+  }).then(function() { mCloseAllSheets(); mToast("🚨 ALS Activated"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mMarkAlsOnScene() {
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ alsOnScene: true, alsOnSceneAt: mNowHHMM(), updatedAt: new Date().toISOString() })
+    .catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mBuildBlsBanner(call) {
+  if (!call.blsActivated) {
+    return '<button class="m-disp-btn" style="width:100%;margin-bottom:8px;border-color:rgba(167,139,250,0.4);color:#a78bfa;background:rgba(167,139,250,0.08)" onclick="mOpenSheet(\'m-sheet-bls\')">🔵 Request BLS Mutual Aid</button>';
+  }
+  return '<div style="background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.4);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
+    '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:#a78bfa;font-weight:700;margin-bottom:2px">🔵 BLS Mutual Aid</div>' +
+    '<div style="font-size:0.85rem;color:var(--white)">' + (call.blsProvider||"") + (call.blsEta?" · ETA "+call.blsEta+"min":"") + '</div>' +
+  '</div>';
+}
+function mConfirmBLS() {
+  var provider = document.getElementById("m-bls-provider").value.trim();
+  var eta = document.getElementById("m-bls-eta").value.trim();
+  if (!provider) { mToast("Enter a provider", true); return; }
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({
+    blsActivated: true, blsProvider: provider, blsEta: eta, blsActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString()
+  }).then(function() { mCloseAllSheets(); mToast("🔵 BLS Requested"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mBuildPdBanner(call) {
+  if (call.pdActivated) {
+    return '<div style="background:rgba(122,184,245,0.1);border:1px solid rgba(122,184,245,0.4);border-radius:9px;padding:8px 12px;margin-bottom:8px;font-size:0.8rem;color:#7ab8f5">🚔 PD Notified</div>';
+  }
+  return '<button class="m-disp-btn" style="width:100%;margin-bottom:8px;border-color:rgba(122,184,245,0.4);color:#7ab8f5;background:rgba(122,184,245,0.08)" onclick="mActivatePD()">🚔 Notify PD</button>';
+}
+function mActivatePD() {
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ pdActivated: true, pdActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString() })
+    .then(function(){ mToast("🚔 PD Notified"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+
+// ── DISPOSITION / TRANSPORT ──
+function mSetDispositionRMA() {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data();
+    if (!call.crews) call.crews = [{}];
+    var current = (call.disposition||{}).type || "";
+    var newType = current === "rma" ? "" : "rma";
+    var driver = mFindDriverRole(call);
+    var update = { disposition: { type: newType, hospital:"", rmaBy:"", rmaCustom:"" }, updatedAt: new Date().toISOString() };
+    if (newType === "rma" && driver) update["unitDetails." + mUdKey(driver.crewIdx, driver.role) + ".status"] = "rma_scene";
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mSetRmaBy(val) {
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ "disposition.rmaBy": val, updatedAt: new Date().toISOString() })
+    .catch(function(e){ mToast("Error: "+e.message, true); });
+}
+
+var mTmNonMap = {}; // { "crewIdx_role": { status: "on_scene_direct"|"cleared_scene"|"other", label } }
+function mOpenTransportSheet() {
+  var call = mDispCallCache[mDispSelectedCallId];
+  if (!call) return;
+  mTmNonMap = {};
+  var hospSel = document.getElementById("m-tr-hospital");
+  hospSel.innerHTML = '<option value="">Select hospital…</option>' + M_HOSPITALS.map(function(h){ return '<option value="'+h+'">'+h+'</option>'; }).join("");
+  hospSel.value = "";
+  var checks = document.getElementById("m-tr-unit-checks");
+  var rows = [];
+  (call.crews||[]).forEach(function(crew, ci) {
+    Object.keys(crew).forEach(function(k) {
+      if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+      rows.push({ crewIdx: ci, role: k, unit: crew[k] });
+    });
+  });
+  checks.innerHTML = rows.map(function(r) {
+    return '<label style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:0.85rem;color:var(--white)"><input type="checkbox" data-crew="' + r.crewIdx + '" data-role="' + r.role + '" checked onchange="mTmUnitsTouched=true;mTmRenderNonList();mUpdateTransportPrompts()" style="width:18px;height:18px;accent-color:#7ab8f5"> ' + r.unit + '</label>';
+  }).join("");
+  mTmUnitsTouched = false;
+  mOpenSheet("m-sheet-transport");
+  mTmRenderNonList();
+  mUpdateTransportPrompts();
+}
+var mTmUnitsTouched = false;
+function mUpdateTransportPrompts() {
+  var hosp = document.getElementById("m-tr-hospital").value;
+  document.getElementById("m-tr-dest-flash").className = hosp ? "m-disp-label" : "m-disp-label m-flash";
+  var checked = document.querySelectorAll("#m-tr-unit-checks input:checked").length;
+  var total = document.querySelectorAll("#m-tr-unit-checks input").length;
+  var unchecked = total - checked;
+  var unitsFlashOn = checked === total; // all still checked (nothing unselected yet) — prompt to review
+  document.getElementById("m-tr-units-flash").className = unitsFlashOn ? "m-disp-label m-flash" : "m-disp-label";
+  document.getElementById("m-tr-units-flash").textContent = unitsFlashOn ? "Unselect any unit not transporting" : "Units Transporting to the Hospital";
+  var nonSection = document.getElementById("m-tr-non-section");
+  if (nonSection) nonSection.style.display = unchecked > 0 ? "block" : "none";
+}
+window.mUpdateTransportPrompts = mUpdateTransportPrompts;
+
+function mTmNonBtn(id, val, cur, txt, color) {
+  var on = cur && cur.status === val;
+  return '<button onclick="mTmSetNon(\'' + id + '\',\'' + val + '\')" style="flex:1;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;padding:5px 3px;border-radius:5px;cursor:pointer;border:1px solid ' + (on ? color : 'var(--card-border)') + ';background:' + (on ? color.replace(')', ',0.18)').replace('rgb(', 'rgba(') : 'rgba(255,255,255,0.03)') + ';color:' + (on ? color : 'var(--gray)') + '">' + txt + '</button>';
+}
+function mTmRenderNonList() {
+  var list = document.getElementById("m-tr-non-list");
+  if (!list) return;
+  var boxes = document.querySelectorAll("#m-tr-unit-checks input[type=checkbox]:not(:checked)");
+  var html = "";
+  boxes.forEach(function(cb) {
+    var id = cb.getAttribute("data-crew") + "_" + cb.getAttribute("data-role");
+    var unit = (cb.parentElement && cb.parentElement.textContent || "").trim() || id;
+    var cur = mTmNonMap[id] || null;
+    html += '<div style="background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:7px;padding:8px;margin-bottom:6px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">' +
+        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.75rem;font-weight:700;color:var(--white)">' + unit + '</span>' +
+        (cur ? '<span style="font-size:0.6rem;color:var(--gray)">' + (cur.status === "other" ? (cur.label || "Other") : cur.status === "on_scene_direct" ? "On Scene" : "Cleared Scene") + '</span>'
+             : '<span class="m-flash" style="font-size:0.52rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 5px;border-radius:3px;border:1px solid rgba(255,144,144,0.5)">Set Status</span>') +
+      '</div>' +
+      '<div style="display:flex;gap:4px">' +
+        mTmNonBtn(id, "on_scene_direct", cur, "On Scene", "rgb(125,237,181)") +
+        mTmNonBtn(id, "cleared_scene",   cur, "Cleared",  "rgb(122,184,245)") +
+        mTmNonBtn(id, "other",           cur, "Other",    "rgb(232,160,255)") +
+      '</div>' +
+      (cur && cur.status === "other"
+        ? '<input type="text" placeholder="Describe status…" value="' + ((cur.label||"").replace(/"/g,"&quot;")) + '" oninput="mTmNonMap[\'' + id + '\'].label=this.value" onchange="mUpdateTransportPrompts()" style="width:100%;margin-top:6px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:5px;padding:6px 8px;color:var(--white);font-size:0.78rem;outline:none;box-sizing:border-box">'
+        : '') +
+    '</div>';
+  });
+  list.innerHTML = html;
+}
+window.mTmRenderNonList = mTmRenderNonList;
+function mTmSetNon(id, status) {
+  var prev = mTmNonMap[id] || {};
+  mTmNonMap[id] = { status: status, label: status === "other" ? (prev.label || "") : "" };
+  mTmRenderNonList(); mUpdateTransportPrompts();
+  if (status === "other") { var inp = document.querySelector("#m-tr-non-list input[type=text]"); if (inp) inp.focus(); }
+}
+window.mTmSetNon = mTmSetNon;
+function mTmSetAllNon(status) {
+  document.querySelectorAll("#m-tr-unit-checks input[type=checkbox]:not(:checked)").forEach(function(cb) {
+    var id = cb.getAttribute("data-crew") + "_" + cb.getAttribute("data-role");
+    var prev = mTmNonMap[id] || {};
+    mTmNonMap[id] = { status: status, label: status === "other" ? (prev.label || "") : "" };
+  });
+  mTmRenderNonList(); mUpdateTransportPrompts();
+}
+window.mTmSetAllNon = mTmSetAllNon;
+
+function mConfirmTransport() {
+  var hospital = document.getElementById("m-tr-hospital").value;
+  if (!hospital) { mUpdateTransportPrompts(); return; }
+  var checkedBoxes = Array.prototype.slice.call(document.querySelectorAll("#m-tr-unit-checks input:checked"));
+  var uncheckedBoxes = Array.prototype.slice.call(document.querySelectorAll("#m-tr-unit-checks input:not(:checked)"));
+  // Every unchecked unit must have a status chosen (Other requires text)
+  var allSet = uncheckedBoxes.every(function(cb) {
+    var id = cb.getAttribute("data-crew") + "_" + cb.getAttribute("data-role");
+    var m = mTmNonMap[id];
+    return m && (m.status !== "other" || (m.label||"").trim());
+  });
+  if (!allSet) { mTmRenderNonList(); mToast("Set a status for every non-transporting unit", true); return; }
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var now = new Date(), nowT = mNowHHMM();
+    var ud = snap.data().unitDetails || {};
+    var times = snap.data().times || {};
+    checkedBoxes.forEach(function(cb) {
+      var id = cb.getAttribute("data-crew") + "_" + cb.getAttribute("data-role");
+      ud[id] = Object.assign({}, ud[id]||{}, { status: "transporting", statusAt: nowT });
+    });
+    uncheckedBoxes.forEach(function(cb) {
+      var id = cb.getAttribute("data-crew") + "_" + cb.getAttribute("data-role");
+      var m = mTmNonMap[id] || { status: "cleared_scene" };
+      if (m.status === "other") ud[id] = Object.assign({}, ud[id]||{}, { status: "other_status", customStatus: (m.label||"").trim() || "Other", statusAt: nowT });
+      else ud[id] = Object.assign({}, ud[id]||{}, { status: m.status, statusAt: nowT });
+    });
+    var update = { unitDetails: ud, disposition: { type: "transport", hospital: hospital, rmaBy:"", rmaCustom:"" }, updatedAt: now.toISOString() };
+    if (!times.enroute) update["times.enroute"] = nowT;
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).then(function() { mCloseAllSheets(); mToast("🚑 Transport confirmed → " + hospital); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+
+// ── NOTES ──
+function mAddDispNote() {
+  var inp = document.getElementById("m-dd-note-input");
+  var text = inp.value.trim();
+  if (!text) return;
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var notes = snap.data().callNotes || [];
+    notes.push({ text: text, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch" });
+    return db.collection("activeCalls").doc(callId).update({ callNotes: notes, updatedAt: new Date().toISOString() });
+  }).then(function() { inp.value = ""; }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+
+// ── TIMELINE (simplified mobile version, multi-crew aware) ──
+function mBuildDispTimeline(call) {
+  var entries = [];
+  var t = call.times || {};
+  if (t.dispatched) entries.push({ time:t.dispatched, icon:"📟", text:"Call Dispatched", color:"#7ab8f5" });
+  (call.crews||[]).forEach(function(crew, ci) {
+    Object.keys(crew).forEach(function(role) {
+      if (role === "rig" || !crew[role] || crew[role]==="__added__") return;
+      var det = mUdOf(call, ci, role);
+      if (det.assignedAt) entries.push({ time: det.assignedAt, icon:"👤", text: crew[role] + " assigned", color:"var(--white)" });
+      if (det.status && M_STATUS_LOG[det.status]) entries.push({ time: det.statusAt||"", icon:M_STATUS_LOG[det.status].icon, text: crew[role] + " — " + (det.status==="other_status" ? (det.customStatus||"Other") : M_STATUS_LOG[det.status].text), color:M_STATUS_LOG[det.status].color });
+    });
+  });
+  if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon:"🚨", text:"ALS Activated — "+(call.alsProvider||""), color:"#ff9090" });
+  if (call.alsOnScene) entries.push({ time: call.alsOnSceneAt||"", icon:"✓", text:"ALS On Scene", color:"#7dedb5" });
+  if (call.blsActivated) entries.push({ time: call.blsActivatedAt||"", icon:"🔵", text:"BLS Requested", color:"#a78bfa" });
+  if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
+  if (call.disposition && call.disposition.type === "transport" && call.disposition.hospital) entries.push({ time: t.enroute||"", icon:"🏥", text:"Transport → "+call.disposition.hospital, color:"#7ab8f5" });
+  if (call.disposition && call.disposition.type === "rma") entries.push({ time:"", icon:"✋", text:"RMA"+(call.disposition.rmaBy?" — "+call.disposition.rmaBy:""), color:"#7dedb5" });
+
+  if (!entries.length) return "";
+  var html = '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px;padding-top:10px;border-top:1px solid var(--card-border)">⚡ Call Updates</div>';
+  html += entries.map(function(e) {
+    return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px">' +
+      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;color:' + e.color + ';flex-shrink:0;min-width:34px">' + (e.time||"") + '</div>' +
+      '<div style="font-size:0.72rem;color:var(--white)">' + e.icon + ' ' + e.text + '</div>' +
+    '</div>';
+  }).join("");
+  return html;
+}
+
+// ── COMPLETE / CANCEL ──
+function mCompleteCall() {
+  document.getElementById("m-dd-menu").style.display = "none";
+  if (!confirm("Mark this call as complete?")) return;
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({
+    status: "complete", completedAt: new Date().toISOString(), completedBy: mCurrentUserUnit || ""
+  }).then(function() { mToast("✓ Call complete"); mCloseDispatchDetail(); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mCancelCallPrompt() {
+  document.getElementById("m-dd-menu").style.display = "none";
+  if (!confirm("Cancel this call?")) return;
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({
+    status: "cancelled", disposition: { type: "cancelled" }, cancelledAt: new Date().toISOString()
+  }).then(function() { mToast("✕ Call cancelled"); mCloseDispatchDetail(); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+
+// ── SHEETS ──
+function mOpenSheet(id) {
+  document.getElementById("m-sheet-backdrop").classList.add("show");
+  document.getElementById(id).classList.add("show");
+}
+function mCloseAllSheets() {
+  document.getElementById("m-sheet-backdrop").classList.remove("show");
+  document.querySelectorAll(".m-disp-sheet").forEach(function(s){ s.classList.remove("show"); });
+}
 </script>
+<!-- ═══ DISPATCH: Active Calls List ═══ -->
+<div class="page" id="m-pg-dispatch">
+  <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
+      <span class="m-page-title">Dispatch</span>
+    </div>
+    <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
+  </div>
+  <div class="m-scroll" id="m-dispatch-list-scroll">
+    <div id="m-dispatch-list"></div>
+  </div>
+</div>
+
+<!-- ═══ DISPATCH: New Call Form ═══ -->
+<div class="page" id="m-pg-dispatch-newcall">
+  <div class="m-subpage-header">
+    <button class="m-back-btn" onclick="mGoTo('dispatch')">← Cancel</button>
+    <span class="m-page-title">New Call</span>
+  </div>
+  <div class="m-scroll">
+    <div class="m-disp-label">Location</div>
+    <input type="text" id="m-nc-address" class="m-disp-input" placeholder="Start typing address…" style="margin-bottom:10px" oninput="mNcAddressTouched=true">
+    <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
+    <div id="m-nc-zone-banner" style="display:none"></div>
+
+    <div class="m-disp-label">Zone</div>
+    <div style="display:flex;gap:6px;margin-bottom:12px" id="m-nc-zone-toggle">
+      <button type="button" class="m-disp-btn" data-zone="primary" onclick="mSetNcZone('primary')" style="flex:1;border-color:#7dedb5;background:rgba(125,237,181,0.15);color:#7dedb5">Primary</button>
+      <button type="button" class="m-disp-btn" data-zone="secondary" onclick="mSetNcZone('secondary')" style="flex:1">Secondary</button>
+      <button type="button" class="m-disp-btn" data-zone="outside" onclick="mSetNcZone('outside')" style="flex:1">Outside</button>
+    </div>
+
+    <div class="m-disp-label">Call Nature</div>
+    <select id="m-nc-nature" class="m-disp-input" style="margin-bottom:4px"></select>
+    <div id="m-nc-als-hint" style="display:none;font-size:0.68rem;color:#ff9090;margin-bottom:12px">🚨 ALS recommended by protocol for this nature</div>
+    <div id="m-nc-als-hint-spacer" style="height:12px"></div>
+
+    <div class="m-disp-label">Patient</div>
+    <div style="display:flex;gap:6px;margin-bottom:8px" id="m-nc-age-toggle">
+      <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1;border-color:#7ab8f5;background:rgba(122,184,245,0.15);color:#7ab8f5">Adult</button>
+      <button type="button" class="m-disp-btn" data-age="pediatric" onclick="mSetNcAge('pediatric')" style="flex:1">Pediatric</button>
+      <button type="button" class="m-disp-btn" data-age="uto" onclick="mSetNcAge('uto')" style="flex:1">UTO</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <input type="number" id="m-nc-age-num" class="m-disp-input" placeholder="Age (optional)" style="flex:1">
+      <button type="button" class="m-disp-btn" data-sex="male" onclick="mSetNcSex('male')" style="flex:1">♂ Male</button>
+      <button type="button" class="m-disp-btn" data-sex="female" onclick="mSetNcSex('female')" style="flex:1">♀ Female</button>
+    </div>
+
+    <div class="m-disp-label">Callback Number</div>
+    <input type="tel" id="m-nc-callback" class="m-disp-input" placeholder="Caller's phone number" style="margin-bottom:12px">
+
+    <div id="m-nc-code-suggestion" style="display:none;align-items:center;gap:8px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.4);border-radius:8px;padding:8px 10px;margin-bottom:10px">
+      <span style="font-size:1rem">🔑</span>
+      <span id="m-nc-code-suggestion-text" style="flex:1;font-size:0.75rem;color:var(--gold)"></span>
+      <button onclick="mApplyAccessCodeSuggestion()" style="flex-shrink:0;background:rgba(201,168,76,0.2);border:1px solid rgba(201,168,76,0.5);border-radius:6px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.62rem;font-weight:700;padding:5px 10px;cursor:pointer">Apply</button>
+    </div>
+    <div class="m-disp-label">Access Code</div>
+    <input type="text" id="m-nc-accesscode" class="m-disp-input" placeholder="Gate / door / building code" style="margin-bottom:12px">
+
+    <div class="m-disp-label">Dispatch Notes</div>
+    <textarea id="m-nc-notes" class="m-disp-input" rows="3" placeholder="Floor, apartment, special instructions…" style="margin-bottom:16px;resize:vertical"></textarea>
+
+    <button onclick="mPostNewCall()" id="m-nc-post-btn" style="width:100%;background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:14px;cursor:pointer">🚑 Post Call</button>
+  </div>
+</div>
+
+<!-- ═══ DISPATCH: Call Detail ═══ -->
+<div class="page" id="m-pg-dispatch-detail">
+  <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+      <button class="m-back-btn" onclick="mCloseDispatchDetail()">← Back</button>
+      <span class="m-page-title" id="m-dd-header-addr" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px">Call</span>
+    </div>
+    <button onclick="mToggleDispMenu()" style="background:none;border:none;color:var(--gray);font-size:1.3rem;cursor:pointer;padding:4px 8px">⋮</button>
+  </div>
+  <div id="m-dd-menu" style="display:none;position:absolute;right:12px;top:52px;background:#16283f;border:1px solid var(--card-border);border-radius:8px;z-index:50;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.5)">
+    <button onclick="mCompleteCall()" style="display:block;width:100%;text-align:left;padding:10px 16px;background:none;border:none;color:#7dedb5;font-size:0.8rem;cursor:pointer;white-space:nowrap">✓ Mark Call Complete</button>
+    <button onclick="mCancelCallPrompt()" style="display:block;width:100%;text-align:left;padding:10px 16px;background:none;border:none;color:#ff9090;font-size:0.8rem;cursor:pointer;white-space:nowrap;border-top:1px solid var(--card-border)">✕ Cancel Call</button>
+  </div>
+  <div class="m-scroll" id="m-dd-scroll">
+    <div id="m-dd-content"></div>
+  </div>
+</div>
+
+<!-- ═══ Bottom Sheets ═══ -->
+<div class="m-disp-sheet-backdrop" id="m-sheet-backdrop" onclick="mCloseAllSheets()"></div>
+
+<div class="m-disp-sheet" id="m-sheet-als">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:14px">🚨 Activate ALS</div>
+  <div class="m-disp-label" id="m-als-unit-prompt">ALS Provider</div>
+  <input type="text" id="m-als-provider" class="m-disp-input" placeholder="e.g. Med-Central, JFK ALS…" style="margin-bottom:10px" oninput="mAlsPromptCheck()">
+  <div class="m-disp-label" id="m-als-eta-prompt">Estimated ETA (minutes)</div>
+  <input type="number" id="m-als-eta" class="m-disp-input" placeholder="e.g. 8" style="margin-bottom:16px" oninput="mAlsPromptCheck()">
+  <button onclick="mConfirmALS()" style="width:100%;background:#ff9090;color:#1a1215;border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Confirm ALS</button>
+</div>
+
+<div class="m-disp-sheet" id="m-sheet-bls">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#a78bfa;margin-bottom:14px">🔵 BLS Mutual Aid</div>
+  <div class="m-disp-label">Provider</div>
+  <input type="text" id="m-bls-provider" class="m-disp-input" placeholder="Mutual aid agency…" style="margin-bottom:10px">
+  <div class="m-disp-label">ETA (minutes)</div>
+  <input type="number" id="m-bls-eta" class="m-disp-input" placeholder="e.g. 10" style="margin-bottom:16px">
+  <button onclick="mConfirmBLS()" style="width:100%;background:#a78bfa;color:#1a1530;border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Confirm BLS</button>
+</div>
+
+<div class="m-disp-sheet" id="m-sheet-assign">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:6px" id="m-assign-title">Assign Unit</div>
+  <div class="m-disp-label" id="m-assign-flash" style="margin-bottom:10px">Select a unit</div>
+  <div id="m-assign-roster" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px"></div>
+  <div class="m-disp-label">Or enter unit / rig ID</div>
+  <div style="display:flex;gap:6px">
+    <input type="text" id="m-assign-custom" class="m-disp-input" placeholder="e.g. MC-30, SPEN-12…">
+    <button onclick="mConfirmAssignCustom()" style="flex-shrink:0;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--gold);font-family:'Oswald',sans-serif;font-weight:700;padding:0 16px;cursor:pointer">Add</button>
+  </div>
+</div>
+
+<div class="m-disp-sheet" id="m-sheet-transport">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:14px">🚑 Transporting Units</div>
+  <div class="m-disp-label" id="m-tr-dest-flash">Select Transport Destination</div>
+  <select id="m-tr-hospital" class="m-disp-input" style="margin-bottom:14px" onchange="mUpdateTransportPrompts()"></select>
+  <div class="m-disp-label" id="m-tr-units-flash">Units Transporting to the Hospital</div>
+  <div id="m-tr-unit-checks" style="margin-bottom:10px"></div>
+  <div id="m-tr-non-section" style="display:none;margin-bottom:14px">
+    <div class="m-disp-label">Non-Transporting Units — Set Status</div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="m-disp-btn" style="flex:1;font-size:0.6rem;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mTmSetAllNon('on_scene_direct')">All → On Scene</button>
+      <button class="m-disp-btn" style="flex:1;font-size:0.6rem;border-color:rgba(122,184,245,0.4);color:#7ab8f5" onclick="mTmSetAllNon('cleared_scene')">All → Cleared</button>
+      <button class="m-disp-btn" style="flex:1;font-size:0.6rem;border-color:rgba(232,160,255,0.4);color:#e8a0ff" onclick="mTmSetAllNon('other')">All → Other</button>
+    </div>
+    <div id="m-tr-non-list"></div>
+  </div>
+  <button onclick="mConfirmTransport()" style="width:100%;background:#7ab8f5;color:#0a1628;border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Confirm Transport</button>
+</div>
+
 </div><!-- #m-app -->
 </body>
 </html>
