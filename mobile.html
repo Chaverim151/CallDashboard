@@ -2261,6 +2261,123 @@ function mLoadAllResponders() {
   }).catch(function() {});
 }
 
+
+// ── DISPATCH MAP (mirrors desktop: call pins colored by zone, hospital pins with info) ──
+var M_LANDMARKS = [
+  { name: "Hatzolah Base", lat: 40.5077036, lng: -74.4133431, icon: "🚑", color: "#c9a84c", phone: "", address: "1587 NJ-27, Edison, NJ 08817", geo: "1587 NJ-27, Edison, NJ 08817" },
+  { name: "RWJ University Hospital", lat: 40.4974, lng: -74.4484, icon: "🏥", color: "#4a90d9", phone: "732-828-3000", address: "1 Robert Wood Johnson Pl, New Brunswick, NJ 08901", geo: "Robert Wood Johnson University Hospital, New Brunswick, NJ" },
+  { name: "RWJ Somerset", lat: 40.5654, lng: -74.6019, icon: "🏥", color: "#4a90d9", phone: "908-685-2200", address: "110 Rehill Ave, Somerville, NJ 08876", geo: "Robert Wood Johnson University Hospital Somerset, Somerville, NJ" },
+  { name: "St. Peters University Hospital", lat: 40.4859, lng: -74.4438, icon: "🏥", color: "#4a90d9", phone: "732-745-8600", address: "254 Easton Ave, New Brunswick, NJ 08901", geo: "Saint Peter's University Hospital, New Brunswick, NJ" },
+  { name: "JFK Medical Center", lat: 40.5686, lng: -74.3229, icon: "🏥", color: "#4a90d9", phone: "732-321-7000", address: "65 James St, Edison, NJ 08820", geo: "JFK University Medical Center, Edison, NJ" },
+  { name: "Overlook Medical Center", lat: 40.7007, lng: -74.3637, icon: "🏥", color: "#4a90d9", phone: "908-522-2000", address: "99 Beauvoir Ave, Summit, NJ 07901", geo: "Overlook Medical Center, Summit, NJ" },
+  { name: "Morristown Medical Center", lat: 40.7976, lng: -74.4815, icon: "🏥", color: "#4a90d9", phone: "973-971-5000", address: "100 Madison Ave, Morristown, NJ 07960", geo: "Morristown Medical Center, Morristown, NJ" },
+  { name: "Clara Maass Medical Center", lat: 40.8051, lng: -74.1555, icon: "🏥", color: "#4a90d9", phone: "973-450-2000", address: "1 Clara Maass Dr, Belleville, NJ 07109", geo: "Clara Maass Medical Center, Belleville, NJ" },
+  { name: "Trinitas Regional Medical Center", lat: 40.6501, lng: -74.2168, icon: "🏥", color: "#4a90d9", phone: "908-994-5000", address: "225 Williamson St, Elizabeth, NJ 07202", geo: "Trinitas Regional Medical Center, Elizabeth, NJ" },
+  { name: "Perth Amboy General Hospital", lat: 40.5154, lng: -74.2685, icon: "🏥", color: "#4a90d9", phone: "732-442-3700", address: "530 New Brunswick Ave, Perth Amboy, NJ 08861", geo: "Raritan Bay Medical Center, Perth Amboy, NJ" }
+];
+var mDispMap = null;
+var mMapCallMarkers = {};
+var mMapLandmarkMarkers = [];
+var mMapCallsListener = null;
+var mMapInfoOpenFor = null;
+
+function mOpenDispatchMap() {
+  mGoTo("dispatch-map");
+  if (mDispMap) { mDispMapStartCallsListener(); return; }
+  if (window.google && window.google.maps) { mInitDispMap(); return; }
+  if (document.getElementById("m-map-script")) return;
+  var s = document.createElement("script");
+  s.id = "m-map-script";
+  s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=mInitDispMap";
+  document.head.appendChild(s);
+}
+window.mInitDispMap = function() {
+  var el = document.getElementById("m-disp-map");
+  if (!el || mDispMap) return;
+  mDispMap = new google.maps.Map(el, {
+    center: { lat: 40.5077, lng: -74.4133 }, zoom: 12,
+    disableDefaultUI: true, zoomControl: true, clickableIcons: false,
+    styles: [
+      { featureType: "poi", stylers: [{ visibility: "off" }] },
+      { featureType: "transit", stylers: [{ visibility: "off" }] },
+      { elementType: "geometry", stylers: [{ color: "#0d1c33" }] },
+      { elementType: "labels.text.stroke", stylers: [{ color: "#0d1c33" }] },
+      { elementType: "labels.text.fill", stylers: [{ color: "#8a9ab5" }] },
+      { featureType: "road", elementType: "geometry", stylers: [{ color: "#1c3260" }] },
+      { featureType: "water", elementType: "geometry", stylers: [{ color: "#0a1628" }] }
+    ]
+  });
+  mPlaceLandmarks();
+  mDispMapStartCallsListener();
+};
+function mPlaceLandmarks() {
+  db.collection("appdata").doc("landmarkCoords").get().then(function(snap) {
+    var cache = (snap.exists && snap.data()) || {};
+    var places = google.maps.places ? new google.maps.places.PlacesService(mDispMap) : null;
+    M_LANDMARKS.forEach(function(lm) {
+      var key = lm.name.replace(/[^a-z0-9]/gi, "_");
+      if (cache[key] && cache[key].lat && cache[key].lng) { lm.lat = cache[key].lat; lm.lng = cache[key].lng; mDropLandmarkPin(lm); return; }
+      if (lm.name === "Hatzolah Base" || !places) { mDropLandmarkPin(lm); return; }
+      places.findPlaceFromQuery({ query: lm.geo || lm.address, fields: ["geometry"], locationBias: { center: new google.maps.LatLng(lm.lat, lm.lng), radius: 30000 } }, function(results, status) {
+        if (status === google.maps.places.PlacesServiceStatus.OK && results && results[0] && results[0].geometry) {
+          lm.lat = results[0].geometry.location.lat(); lm.lng = results[0].geometry.location.lng();
+        }
+        mDropLandmarkPin(lm);
+      });
+    });
+  }).catch(function() { M_LANDMARKS.forEach(mDropLandmarkPin); });
+}
+function mDropLandmarkPin(lm) {
+  var isBase = lm.name === "Hatzolah Base";
+  var pinSvg = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">' +
+      '<path d="M13 1C6.4 1 1 6.4 1 13c0 9 12 20 12 20s12-11 12-20C25 6.4 19.6 1 13 1z" fill="' + (isBase?"#c9a84c":"#4a90d9") + '" stroke="#fff" stroke-width="1.5"/>' +
+      (isBase ? '<text x="13" y="18" text-anchor="middle" font-size="13">🏠</text>' : '<rect x="9" y="8" width="8" height="10" rx="1" fill="#fff"/><rect x="11.5" y="9.5" width="3" height="7" fill="#4a90d9"/><rect x="10" y="11.5" width="6" height="3" fill="#4a90d9"/>') +
+    '</svg>');
+  var marker = new google.maps.Marker({ position: { lat: lm.lat, lng: lm.lng }, map: mDispMap, title: lm.name, icon: { url: pinSvg, scaledSize: new google.maps.Size(26,34), anchor: new google.maps.Point(13,34) }, zIndex: 100 });
+  marker.addListener("click", function() { mShowMapInfo(lm); });
+  mMapLandmarkMarkers.push(marker);
+}
+function mShowMapInfo(lm) {
+  var el = document.getElementById("m-disp-map-info");
+  mMapInfoOpenFor = lm.name;
+  el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">' +
+      '<span style="font-family:\'Oswald\',sans-serif;font-size:0.9rem;font-weight:700;color:var(--white)">' + lm.name + '</span>' +
+      '<button onclick="document.getElementById(\'m-disp-map-info\').style.display=\'none\'" style="background:none;border:none;color:var(--gray);font-size:1.1rem;cursor:pointer;line-height:1">×</button>' +
+    '</div>' +
+    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px">' + (lm.address||"") + '</div>' +
+    '<div style="display:flex;gap:8px">' +
+      (lm.phone ? '<a href="tel:'+lm.phone.replace(/\D/g,"")+'" style="flex:1;text-align:center;background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.4);border-radius:7px;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-size:0.7rem;font-weight:700;padding:8px;text-decoration:none">📞 '+lm.phone+'</a>' : '') +
+      '<a href="https://www.google.com/maps/dir/?api=1&destination='+lm.lat+','+lm.lng+'" target="_blank" style="flex:1;text-align:center;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:7px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.7rem;font-weight:700;padding:8px;text-decoration:none">🗺 Directions</a>' +
+    '</div>';
+  el.style.display = "block";
+}
+function mDispMapStartCallsListener() {
+  if (mMapCallsListener) return;
+  mMapCallsListener = db.collection("activeCalls").where("status","==","active").onSnapshot(function(snap) {
+    var seen = {};
+    snap.forEach(function(d) {
+      var call = Object.assign({ id: d.id }, d.data());
+      if (!call.lat || !call.lng) return;
+      seen[call.id] = true;
+      mUpsertCallPin(call);
+    });
+    Object.keys(mMapCallMarkers).forEach(function(id) { if (!seen[id]) { mMapCallMarkers[id].setMap(null); delete mMapCallMarkers[id]; } });
+  }, function(e) { mToast("Map listener error: " + e.message, true); });
+}
+function mUpsertCallPin(call) {
+  var color = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
+  if (mMapCallMarkers[call.id]) { mMapCallMarkers[call.id].setPosition({ lat: call.lat, lng: call.lng }); return; }
+  var pinSvg = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">' +
+      '<path d="M13 1C6.4 1 1 6.4 1 13c0 9 12 20 12 20s12-11 12-20C25 6.4 19.6 1 13 1z" fill="'+color+'" stroke="#fff" stroke-width="1.5"/>' +
+      '<circle cx="13" cy="13" r="4.5" fill="#fff"/>' +
+    '</svg>');
+  var marker = new google.maps.Marker({ position: { lat: call.lat, lng: call.lng }, map: mDispMap, icon: { url: pinSvg, scaledSize: new google.maps.Size(26,34), anchor: new google.maps.Point(13,34) }, zIndex: 200 });
+  marker.addListener("click", function() { mOpenDispatchCall(call.id); });
+  mMapCallMarkers[call.id] = marker;
+}
+
 // ── ENTRY ──
 function mOpenDispatch() {
   mGoTo("dispatch");
@@ -3829,6 +3946,7 @@ function mDrawerGoTo(page) {
     mGoTo("dispatch");
   }
   else if (page === "dispatch-newcall") mOpenNewCallForm();
+  else if (page === "dispatch-map") mOpenDispatchMap();
 }
 function mDrawerJump(section) {
   mCloseDispDrawer();
@@ -3948,6 +4066,23 @@ function mCloseAllSheets() {
   </div>
 </div>
 
+<!-- ═══ DISPATCH MAP ═══ -->
+<div class="page" id="m-pg-dispatch-map" style="flex-direction:column;height:100%">
+  <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:6px">
+      <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
+      <span class="m-page-title">Map</span>
+    </div>
+    <div style="display:flex;gap:6px">
+      <span style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#7dedb5"><span style="width:8px;height:8px;border-radius:50%;background:#7dedb5"></span>Std</span>
+      <span style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#ffc84a"><span style="width:8px;height:8px;border-radius:50%;background:#ffc84a"></span>Rig</span>
+      <span style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#ff9090"><span style="width:8px;height:8px;border-radius:50%;background:#ff9090"></span>Out</span>
+    </div>
+  </div>
+  <div id="m-disp-map" style="flex:1;min-height:0;background:#0a1628;position:relative"></div>
+  <div id="m-disp-map-info" style="display:none;position:absolute;left:12px;right:12px;bottom:16px;background:#0f1e38;border:1px solid rgba(201,168,76,0.4);border-radius:12px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,0.5);z-index:20"></div>
+</div>
+
 <!-- ═══ DISPATCH DRAWER (hideable side menu) ═══ -->
 <div id="m-disp-drawer-backdrop" onclick="mCloseDispDrawer()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:850"></div>
 <div id="m-disp-drawer" style="position:fixed;top:0;bottom:0;left:0;width:78%;max-width:300px;background:var(--navy);border-right:1px solid var(--card-border);z-index:851;transform:translateX(-100%);transition:transform 0.25s ease;overflow-y:auto;box-shadow:4px 0 24px rgba(0,0,0,0.5)">
@@ -3966,6 +4101,9 @@ function mCloseAllSheets() {
       <button onclick="mDrawerJump('disposition')" class="m-drawer-item">📋 Disposition</button>
       <button onclick="mDrawerJump('notes')" class="m-drawer-item">📝 Notes</button>
       <button onclick="mDrawerJump('timeline')" class="m-drawer-item">⚡ Updates</button>
+    </div>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--card-border)">
+      <button onclick="mDrawerGoTo('dispatch-map')" class="m-drawer-item">🗺️ Map View</button>
     </div>
   </div>
 </div>
