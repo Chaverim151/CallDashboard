@@ -548,7 +548,15 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <option value="secondary">Load a Rig</option>
       <option value="outside">Outside Zone</option>
     </select>
-    <button onclick="mLoadCallLogs()" style="flex-shrink:0;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;padding:0 14px;cursor:pointer">Filter</button>
+    <select id="m-cl-disp" class="m-disp-input" style="flex:1;min-width:100px">
+      <option value="">All Dispositions</option>
+      <option value="transport">Transport</option>
+      <option value="rma">RMA</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <input type="text" id="m-cl-unit" class="m-disp-input" placeholder="Unit (MC-##)" style="flex:1;min-width:100px">
+    <button onclick="mLoadCallLogs()" style="flex-shrink:0;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;padding:0 14px;cursor:pointer">Search</button>
+    <button onclick="mClearCLFilters()" style="flex-shrink:0;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;padding:0 14px;cursor:pointer">Clear</button>
   </div>
   <div class="m-scroll" id="m-cl-list">
     <div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading...</div>
@@ -2352,23 +2360,40 @@ function mLoadCallLogs() {
   var from = document.getElementById("m-cl-from").value;
   var to = document.getElementById("m-cl-to").value;
   var zone = document.getElementById("m-cl-zone").value;
+  var disp = document.getElementById("m-cl-disp").value;
+  var unit = (document.getElementById("m-cl-unit").value||"").trim().toUpperCase();
   function process(snap) {
     var logs = [];
     snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
     if (from) logs = logs.filter(function(l) { return (l.createdAt||"") >= from + "T00:00:00.000Z"; });
     if (to)   logs = logs.filter(function(l) { return (l.createdAt||"") <= to   + "T23:59:59.999Z"; });
     if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
+    if (disp) logs = logs.filter(function(l) { return (l.disposition||{}).type === disp; });
+    if (unit) logs = logs.filter(function(l) {
+      return (l.crews||[]).some(function(crew){ return Object.values(crew||{}).indexOf(unit) !== -1; }) || (l.assignedUnits||[]).indexOf(unit) !== -1;
+    });
     logs.sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
     mAllCallLogs = logs;
     mRenderCallLogs(logs);
   }
-  db.collection("activeCalls").where("status","in",["complete","cancelled"]).orderBy("createdAt","desc").limit(500).get()
+  // Matches desktop exactly: only status=="complete" is queried (cancelled calls aren't stored under this status)
+  db.collection("activeCalls").where("status","==","complete").orderBy("createdAt","desc").limit(500).get()
     .then(process)
     .catch(function() {
-      db.collection("activeCalls").where("status","in",["complete","cancelled"]).get()
+      db.collection("activeCalls").where("status","==","complete").get()
         .then(process)
         .catch(function(e) { el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
     });
+}
+function mClearCLFilters() {
+  var today = new Date();
+  var from = new Date(); from.setDate(today.getDate() - 30);
+  document.getElementById("m-cl-from").value = from.toISOString().split("T")[0];
+  document.getElementById("m-cl-to").value = today.toISOString().split("T")[0];
+  document.getElementById("m-cl-zone").value = "";
+  document.getElementById("m-cl-disp").value = "";
+  document.getElementById("m-cl-unit").value = "";
+  mLoadCallLogs();
 }
 function mRenderCallLogs(logs) {
   var el = document.getElementById("m-cl-list");
@@ -3362,7 +3387,7 @@ function mBuildAlsBanner(call) {
       (!isNoALS ? '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + '</div>' + etaLine : '') +
       (!isNoALS ? '<div style="display:flex;gap:6px;margin-top:8px">' +
           (!call.alsOnScene ? '<button class="m-disp-btn" style="flex:1;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">✓ On Scene</button>' : '') +
-          '<button class="m-disp-btn" style="flex:1;border-color:rgba(255,144,144,0.35);color:#ff9090" onclick="mCancelALS()">✕ Cancel ALS</button>' +
+          '<button class="m-disp-btn" style="flex:1;border-color:rgba(255,144,144,0.35);color:#ff9090" onclick="mOpenCancelAlsSheet()">✕ Cancel ALS</button>' +
         '</div>' : '') +
       (isNoALS ? '<button class="m-disp-btn" style="width:100%;margin-top:8px;border-color:rgba(224,85,85,0.4);color:#ff9090" onclick="mOpenALSSheet()">Request ALS</button>' : '') +
       (call.alsOnScene ? '<div style="margin-top:6px;font-size:0.68rem;color:#7dedb5;text-align:center">✓ ALS On Scene' + (call.alsOnSceneAt?' · '+call.alsOnSceneAt:'') + '</div>' : '') +
@@ -3382,25 +3407,27 @@ function mOpenALSSheet() {
   var call = mDispCallCache[mDispSelectedCallId];
   var sug = call ? mAlsSuggestion(call) : { prov: "" };
   document.getElementById("m-als-provider").value = sug.prov || "";
+  document.getElementById("m-als-unit").value = "";
   document.getElementById("m-als-eta").value = "";
-  document.getElementById("m-als-unit-prompt").className = "m-disp-label";
+  document.getElementById("m-als-unit-prompt").className = "m-disp-label m-flash";
   document.getElementById("m-als-eta-prompt").className = "m-disp-label m-flash";
   mOpenSheet("m-sheet-als");
 }
 function mAlsPromptCheck() {
-  var p = document.getElementById("m-als-provider").value.trim();
+  var u = document.getElementById("m-als-unit").value.trim();
   var e = document.getElementById("m-als-eta").value.trim();
-  document.getElementById("m-als-unit-prompt").className = p ? "m-disp-label" : "m-disp-label m-flash";
+  document.getElementById("m-als-unit-prompt").className = u ? "m-disp-label" : "m-disp-label m-flash";
   document.getElementById("m-als-eta-prompt").className = e ? "m-disp-label" : "m-disp-label m-flash";
 }
 window.mAlsPromptCheck = mAlsPromptCheck;
 function mConfirmALS() {
   var provider = document.getElementById("m-als-provider").value.trim();
+  var unit = document.getElementById("m-als-unit").value.trim();
   var eta = document.getElementById("m-als-eta").value.trim();
-  if (!provider) { mAlsPromptCheck(); return; }
+  if (!provider) { mToast("Enter a provider", true); return; }
   var now = new Date();
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
-    alsActivated: true, alsProvider: provider, alsUnit: "", alsEta: eta, alsEtaMinutes: eta ? parseInt(eta)||0 : 0,
+    alsActivated: true, alsProvider: provider, alsUnit: unit, alsEta: eta, alsEtaMinutes: eta ? parseInt(eta)||0 : 0,
     alsActivatedAt: mNowHHMM(), alsActivatedISO: now.toISOString(),
     alsOnScene: false, alsOnSceneAt: "", updatedAt: now.toISOString()
   }).then(function() { mCloseAllSheets(); mToast("🚨 ALS Activated"); }).catch(function(e){ mToast("Error: "+e.message, true); });
@@ -3415,13 +3442,43 @@ function mMarkAlsOnScene() {
   db.collection("activeCalls").doc(mDispSelectedCallId).update({ alsOnScene: true, alsOnSceneAt: mNowHHMM(), updatedAt: new Date().toISOString() })
     .then(function(){ mToast("✓ ALS On Scene"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
-function mCancelALS() {
-  if (!confirm("Cancel ALS for this call?")) return;
+// ── CANCEL ALS (reason picker, mirrors desktop exactly) ──
+var mAlsCancelReasonSelected = "";
+function mOpenCancelAlsSheet() {
+  mAlsCancelReasonSelected = "";
+  document.querySelectorAll(".m-als-cancel-pill").forEach(function(p){ p.style.borderColor="var(--card-border)"; p.style.background="rgba(255,255,255,0.04)"; p.style.color="var(--gray)"; });
+  document.getElementById("m-als-cancel-other-input").style.display = "none";
+  document.getElementById("m-als-cancel-other-input").value = "";
+  document.getElementById("m-als-cancel-confirm-btn").style.opacity = "0.4";
+  document.getElementById("m-als-cancel-confirm-btn").disabled = true;
+  mOpenSheet("m-sheet-cancel-als");
+}
+function mSelectAlsCancelReason(pill, reason) {
+  document.querySelectorAll(".m-als-cancel-pill").forEach(function(p){ p.style.borderColor="var(--card-border)"; p.style.background="rgba(255,255,255,0.04)"; p.style.color="var(--gray)"; });
+  pill.style.borderColor = "rgba(255,144,144,0.6)"; pill.style.background = "rgba(255,144,144,0.15)"; pill.style.color = "#ff9090";
+  mAlsCancelReasonSelected = reason;
+  var otherInp = document.getElementById("m-als-cancel-other-input");
+  if (reason === "Other") { otherInp.style.display = "block"; otherInp.focus(); } else { otherInp.style.display = "none"; otherInp.value = ""; }
+  document.getElementById("m-als-cancel-confirm-btn").style.opacity = "1";
+  document.getElementById("m-als-cancel-confirm-btn").disabled = false;
+}
+function mConfirmCancelAls() {
+  var reason = mAlsCancelReasonSelected;
+  if (reason === "Other") {
+    var otherVal = document.getElementById("m-als-cancel-other-input").value.trim();
+    if (!otherVal) { mToast("Please describe the reason", true); return; }
+    reason = otherVal;
+  }
+  if (!reason) { mToast("Select a reason", true); return; }
   clearInterval(window._mAlsEtaTicker);
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
-    alsActivated: false, alsProvider: "", alsUnit: "", alsEta: "", alsEtaMinutes: 0, alsOnScene: false, updatedAt: new Date().toISOString()
-  }).then(function(){ mToast("ALS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+    alsActivated: false, alsProvider: "", alsUnit: "", alsEta: "", alsEtaMinutes: 0,
+    alsActivatedISO: "", alsOnScene: false, alsOnSceneAt: "",
+    alsCancel: { reason: reason, time: mNowHHMM(), by: mCurrentUserUnit || "" },
+    updatedAt: new Date().toISOString()
+  }).then(function() { mCloseAllSheets(); mToast("ALS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
+
 
 // ── BLS BANNER (mirrors desktop: suggestion from MUTUAL_AID_911) ──
 function mBuildBlsBanner(call) {
@@ -3447,15 +3504,17 @@ function mOpenBLSSheet() {
   var call = mDispCallCache[mDispSelectedCallId];
   var hit = call ? mFindMutualAidHit(call) : null;
   document.getElementById("m-bls-provider").value = hit ? hit.bls.split(":")[0].trim() : "";
+  document.getElementById("m-bls-unit").value = "";
   document.getElementById("m-bls-eta").value = "";
   mOpenSheet("m-sheet-bls");
 }
 function mConfirmBLS() {
   var provider = document.getElementById("m-bls-provider").value.trim();
+  var unit = document.getElementById("m-bls-unit").value.trim();
   var eta = document.getElementById("m-bls-eta").value.trim();
   if (!provider) { mToast("Enter a provider", true); return; }
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
-    blsActivated: true, blsProvider: provider, blsEta: eta, blsActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString()
+    blsActivated: true, blsProvider: provider, blsUnit: unit, blsEta: eta, blsActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString()
   }).then(function() { mCloseAllSheets(); mToast("🔵 BLS Requested"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mCancelBLS() {
@@ -3684,12 +3743,60 @@ function mCompleteCall() {
     status: "complete", completedAt: new Date().toISOString(), completedBy: mCurrentUserUnit || ""
   }).then(function() { mToast("✓ Call complete"); mCloseDispatchDetail(); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
+// ── CANCEL CALL (reason picker, mirrors desktop exactly) ──
+var mCancelReasonSelected = "";
 function mCancelCallPrompt() {
   document.getElementById("m-dd-menu").style.display = "none";
-  if (!confirm("Cancel this call?")) return;
-  db.collection("activeCalls").doc(mDispSelectedCallId).update({
-    status: "cancelled", disposition: { type: "cancelled" }, cancelledAt: new Date().toISOString()
-  }).then(function() { mToast("✕ Call cancelled"); mCloseDispatchDetail(); }).catch(function(e){ mToast("Error: "+e.message, true); });
+  mCancelReasonSelected = "";
+  document.querySelectorAll(".m-cancel-reason-pill").forEach(function(p){ p.style.borderColor="var(--card-border)"; p.style.background="rgba(255,255,255,0.04)"; p.style.color="var(--gray)"; });
+  document.getElementById("m-cancel-other-input").style.display = "none";
+  document.getElementById("m-cancel-other-input").value = "";
+  document.getElementById("m-cancel-call-note").value = "";
+  document.getElementById("m-cancel-confirm-btn").style.opacity = "0.4";
+  document.getElementById("m-cancel-confirm-btn").disabled = true;
+  mOpenSheet("m-sheet-cancel-call");
+}
+function mSelectCancelReason(pill, reason) {
+  document.querySelectorAll(".m-cancel-reason-pill").forEach(function(p){ p.style.borderColor="var(--card-border)"; p.style.background="rgba(255,255,255,0.04)"; p.style.color="var(--gray)"; });
+  pill.style.borderColor = "rgba(255,144,144,0.6)"; pill.style.background = "rgba(255,144,144,0.15)"; pill.style.color = "#ff9090";
+  mCancelReasonSelected = reason;
+  var otherInp = document.getElementById("m-cancel-other-input");
+  if (reason === "Other") { otherInp.style.display = "block"; otherInp.focus(); } else { otherInp.style.display = "none"; otherInp.value = ""; }
+  document.getElementById("m-cancel-confirm-btn").style.opacity = "1";
+  document.getElementById("m-cancel-confirm-btn").disabled = false;
+}
+function mConfirmCancelCall() {
+  var reason = mCancelReasonSelected;
+  if (reason === "Other") {
+    var otherVal = document.getElementById("m-cancel-other-input").value.trim();
+    if (!otherVal) { mToast("Please describe the reason", true); return; }
+    reason = otherVal;
+  }
+  if (!reason) { mToast("Select a reason", true); return; }
+  var extraNote = document.getElementById("m-cancel-call-note").value.trim();
+  var callId = mDispSelectedCallId;
+  var now = new Date(), timeStr = mNowHHMM();
+  var noteText = "Call Cancelled — " + reason + (extraNote ? ": " + extraNote : "");
+  var cancelledBy = mCurrentUserUnit || (mCurrentUser ? mCurrentUser.email : "Dispatcher");
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return Promise.reject(new Error("Call not found"));
+    var data = snap.data();
+    var notes = data.callNotes || [];
+    notes.push({ text: noteText, time: timeStr, by: cancelledBy, createdAt: now.toISOString() });
+    var unitDetails = data.unitDetails || {};
+    var RESPONDING = ["enroute_scene","picking_up_ambo","ambo_responding"];
+    Object.keys(unitDetails).forEach(function(key) {
+      var det = unitDetails[key];
+      if (det && RESPONDING.indexOf(det.status) !== -1) unitDetails[key] = Object.assign({}, det, { status: "clearing_facility" });
+    });
+    return db.collection("activeCalls").doc(callId).set({
+      status: "cancelled", cancelReason: reason, cancelNote: extraNote, cancelledBy: cancelledBy,
+      cancelledAt: now.toISOString(), completedAt: now.toISOString(),
+      callNotes: notes, unitDetails: unitDetails, "disposition.type": "cancelled", updatedAt: now.toISOString()
+    }, { merge: true });
+  }).then(function() {
+    mCloseAllSheets(); mToast("✕ Call cancelled — " + reason); mCloseDispatchDetail();
+  }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
 
 // ── DISPATCH DRAWER (hideable side menu) ──
@@ -3869,8 +3976,10 @@ function mCloseAllSheets() {
 <div class="m-disp-sheet" id="m-sheet-als">
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
   <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:14px">🚨 Activate ALS</div>
-  <div class="m-disp-label" id="m-als-unit-prompt">ALS Provider</div>
+  <div class="m-disp-label">ALS Provider</div>
   <input type="text" id="m-als-provider" class="m-disp-input" placeholder="e.g. Med-Central, JFK ALS…" style="margin-bottom:10px" oninput="mAlsPromptCheck()">
+  <div class="m-disp-label" id="m-als-unit-prompt">ALS Unit</div>
+  <input type="text" id="m-als-unit" class="m-disp-input" placeholder="e.g. M-42, ALS-7…" style="margin-bottom:10px">
   <div class="m-disp-label" id="m-als-eta-prompt">Estimated ETA (minutes)</div>
   <input type="number" id="m-als-eta" class="m-disp-input" placeholder="e.g. 8" style="margin-bottom:16px" oninput="mAlsPromptCheck()">
   <button onclick="mConfirmALS()" style="width:100%;background:#ff9090;color:#1a1215;border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Confirm ALS</button>
@@ -3882,6 +3991,8 @@ function mCloseAllSheets() {
   <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#a78bfa;margin-bottom:14px">🔵 BLS Mutual Aid</div>
   <div class="m-disp-label">Provider</div>
   <input type="text" id="m-bls-provider" class="m-disp-input" placeholder="Mutual aid agency…" style="margin-bottom:10px">
+  <div class="m-disp-label">BLS Unit</div>
+  <input type="text" id="m-bls-unit" class="m-disp-input" placeholder="e.g. M-12, EMS-3…" style="margin-bottom:10px">
   <div class="m-disp-label">ETA (minutes)</div>
   <input type="number" id="m-bls-eta" class="m-disp-input" placeholder="e.g. 10" style="margin-bottom:16px">
   <button onclick="mConfirmBLS()" style="width:100%;background:#a78bfa;color:#1a1530;border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Confirm BLS</button>
@@ -3916,6 +4027,39 @@ function mCloseAllSheets() {
     <div id="m-tr-non-list"></div>
   </div>
   <button onclick="mConfirmTransport()" style="width:100%;background:#7ab8f5;color:#0a1628;border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Confirm Transport</button>
+</div>
+
+<div class="m-disp-sheet" id="m-sheet-cancel-call">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:14px">✕ Cancel Call</div>
+  <div class="m-disp-label">Reason for Cancellation</div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Caller Cancelled')">Caller Cancelled</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'PD On Scene')">PD On Scene</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'No Patient Found')">No Patient Found</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Duplicate Call')">Duplicate Call</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Patient Refused Response')">Patient Refused Response</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Other')">Other</button>
+  </div>
+  <input type="text" id="m-cancel-other-input" class="m-disp-input" placeholder="Describe reason…" style="display:none;margin-bottom:12px">
+  <div class="m-disp-label">Additional Notes <span style="color:var(--gray);text-transform:none;letter-spacing:0">(optional)</span></div>
+  <textarea id="m-cancel-call-note" class="m-disp-input" rows="2" placeholder="Any additional details…" style="margin-bottom:12px;resize:vertical"></textarea>
+  <div style="background:rgba(255,144,144,0.06);border:1px solid rgba(255,144,144,0.2);border-radius:7px;padding:9px 12px;margin-bottom:14px;font-size:0.72rem;color:var(--gray);line-height:1.5">This will mark the call cancelled and clear all responding units. The call will be saved to logs.</div>
+  <button id="m-cancel-confirm-btn" disabled onclick="mConfirmCancelCall()" style="width:100%;background:rgba(255,144,144,0.15);border:1px solid rgba(255,144,144,0.4);border-radius:9px;color:#ff9090;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer;opacity:0.4">Confirm Cancel</button>
+</div>
+
+<div class="m-disp-sheet" id="m-sheet-cancel-als">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:14px">✕ Cancel ALS</div>
+  <div class="m-disp-label">Reason</div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+    <button type="button" class="m-disp-btn m-als-cancel-pill" onclick="mSelectAlsCancelReason(this,'Cancelled due to proximity')">Cancelled Due to Proximity</button>
+    <button type="button" class="m-disp-btn m-als-cancel-pill" onclick="mSelectAlsCancelReason(this,'Not indicated')">Not Indicated</button>
+    <button type="button" class="m-disp-btn m-als-cancel-pill" onclick="mSelectAlsCancelReason(this,'No ALS available')">No ALS Available</button>
+    <button type="button" class="m-disp-btn m-als-cancel-pill" onclick="mSelectAlsCancelReason(this,'Other')">Other</button>
+  </div>
+  <input type="text" id="m-als-cancel-other-input" class="m-disp-input" placeholder="Describe reason…" style="display:none;margin-bottom:14px">
+  <button id="m-als-cancel-confirm-btn" disabled onclick="mConfirmCancelAls()" style="width:100%;background:rgba(255,144,144,0.15);border:1px solid rgba(255,144,144,0.4);border-radius:9px;color:#ff9090;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer;opacity:0.4">Confirm Cancel ALS</button>
 </div>
 
 </div><!-- #m-app -->
