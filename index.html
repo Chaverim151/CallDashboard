@@ -563,7 +563,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.15b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.16a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -8205,32 +8205,17 @@ function buildDDMap() {
   startDDCallsListener();
 }
 
-// ── LIVE UNIT LOCATIONS (from mobile app while assigned) ──
-var ddUnitMarkers = {}, ddUnitLocListener = null, ddUnitStaleTimer = null;
-var UNIT_LOC_STALE_MS = 3 * 60 * 1000;
-// Vehicle icon: top-down car (scene-direct) or ambulance (rig), unit number on the roof, rotated to heading
-function unitPinSvg(unit, color, isRig, heading) {
-  var W = 64, H = 64, rot = (heading != null && !isNaN(heading)) ? heading : 0;
-  var body = isRig
-    // ambulance: boxy, light bar, cross
-    ? '<rect x="22" y="8" width="20" height="46" rx="4" fill="' + color + '" stroke="#fff" stroke-width="2"/>' +
-      '<rect x="25" y="11" width="14" height="8" rx="2" fill="#0a1628" opacity="0.7"/>' +
-      '<rect x="24" y="9" width="4" height="3" fill="#ff5f5f"/><rect x="36" y="9" width="4" height="3" fill="#5f9fff"/>' +
-      '<rect x="30.5" y="40" width="3" height="10" fill="#fff"/><rect x="27" y="43.5" width="10" height="3" fill="#fff"/>'
-    // car: rounded hood + cabin
-    : '<path d="M24 14 Q24 8 32 8 Q40 8 40 14 L41 26 L41 50 Q41 55 32 55 Q23 55 23 50 L23 26 Z" fill="' + color + '" stroke="#fff" stroke-width="2"/>' +
-      '<path d="M26 16 Q32 13 38 16 L38 24 L26 24 Z" fill="#0a1628" opacity="0.7"/>' +
-      '<path d="M26 44 L38 44 L38 50 Q32 53 26 50 Z" fill="#0a1628" opacity="0.5"/>';
-  var plateW = Math.max(30, 6 + unit.length * 7);
-  return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
-      '<g transform="rotate(' + rot + ' 32 32)">' + body +
-        '<polygon points="32,2 28,7 36,7" fill="#fff" opacity="0.9"/>' +   // direction nose
-      '</g>' +
-      // roof plate with unit number (not rotated, always readable)
-      '<rect x="' + (32 - plateW/2) + '" y="26" width="' + plateW + '" height="13" rx="3" fill="#06101e" stroke="' + color + '" stroke-width="1.5"/>' +
-      '<text x="32" y="35.5" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="9.5" font-weight="700" fill="#fff">' + unit + '</text>' +
-    '</svg>');
+// ── Responder colouring helpers ──
+function unitRigLabel(d) {
+  var call = (ddLastCalls || []).find(function(x){ return x.id === d.callId; }); if (!call) return null;
+  var out = null;
+  (call.crews || []).forEach(function(crew, ci) { Object.keys(crew || {}).forEach(function(k) {
+    if (k === "rig" || crew[k] !== d.unit) return;
+    var det = (call.unitDetails || {})[ci + "_" + k] || {};
+    var withRig = ["ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility"].indexOf(det.status || "") !== -1;
+    if (withRig) out = det.pickedAmbo || crew.rig || null;
+  }); });
+  return out;
 }
 function unitIsRig(d) {
   var call = (ddLastCalls || []).find(function(x){ return x.id === d.callId; }); if (!call) return false;
@@ -8242,47 +8227,54 @@ function unitIsRig(d) {
   }); });
   return hit;
 }
-function unitColorForCall(callId) {
-  var c = (ddLastCalls || []).find(function(x){ return x.id === callId; });
-  if (!c) return "#7ab8f5";
-  return c.zone === "primary" ? "#7dedb5" : c.zone === "secondary" ? "#ffc84a" : "#ff9090";
+var UNIT_STATUS_COLORS = {
+  responding: "#7ab8f5",   // en route / picking up rig / rig responding
+  onscene:    "#7dedb5",   // on scene (direct or with rig)
+  transport:  "#ffc84a",   // transporting to facility
+  facility:   "#ff9090",   // at facility
+  clearing:   "#e8a0ff",   // clearing / returning
+  idle:       "#8a9ab5"    // assigned, no status yet
+};
+function unitStatusGroup(status) {
+  if (["enroute_scene","picking_up_ambo","ambo_responding"].indexOf(status) !== -1) return "responding";
+  if (["on_scene_direct","on_scene_ambo","rma_scene"].indexOf(status) !== -1) return "onscene";
+  if (status === "transporting") return "transport";
+  if (status === "at_facility") return "facility";
+  if (["clearing_facility","back_at_base","cleared_scene","other_status"].indexOf(status) !== -1) return "clearing";
+  return "idle";
 }
-function upsertUnitMarker(uid, d) {
-  if (!ddMap || !d || !d.lat || !d.lng) return;
-  var fresh = d.active && d.updatedAt && (Date.now() - new Date(d.updatedAt).getTime() < UNIT_LOC_STALE_MS);
-  if (!fresh) { removeUnitMarker(uid); return; }
-  var color = unitColorForCall(d.callId);
-  var title = (d.unit || "Unit") + (d.speed != null ? " · " + d.speed + " mph" : "") + (d.updatedAt ? " · " + new Date(d.updatedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "");
-  var isRig = unitIsRig(d);
-  var hdg = (d.heading != null) ? Math.round(d.heading / 15) * 15 : null; // quantize to limit icon churn
-  var iconKey = color + "|" + (isRig ? "R" : "C") + "|" + hdg;
-  var icon = { url: unitPinSvg(d.unit || "?", color, isRig, hdg), scaledSize: new google.maps.Size(48, 48), anchor: new google.maps.Point(24, 24) };
-  var m = ddUnitMarkers[uid];
-  if (m) {
-    m.setPosition({ lat: d.lat, lng: d.lng });
-    if (m._iconKey !== iconKey) { m.setIcon(icon); m._iconKey = iconKey; }
-    m.setTitle(title);
-  } else {
-    m = new google.maps.Marker({ position: { lat: d.lat, lng: d.lng }, map: ddMap, title: title, zIndex: 400, icon: icon });
-    m._iconKey = iconKey;
-    m.addListener("click", function() { if (d.callId) selectDDCall(d.callId); });
-    ddUnitMarkers[uid] = m;
-  }
-  m._data = d;
+function unitStatusOnCall(callId, unit) {
+  var call = (ddLastCalls || []).find(function(x){ return x.id === callId; }); if (!call) return "";
+  var st = "";
+  (call.crews || []).forEach(function(crew, ci) { Object.keys(crew || {}).forEach(function(k) {
+    if (k === "rig" || crew[k] !== unit) return;
+    st = ((call.unitDetails || {})[ci + "_" + k] || {}).status || st;
+  }); });
+  return st;
 }
-function removeUnitMarker(uid) { if (ddUnitMarkers[uid]) { ddUnitMarkers[uid].setMap(null); delete ddUnitMarkers[uid]; } }
-function startDDUnitLocationListener() {
-  if (ddUnitLocListener || !ddMap) return;
-  ddUnitLocListener = db.collection("unitLocations").onSnapshot(function(snap) {
-    snap.docChanges().forEach(function(ch) {
-      if (ch.type === "removed") removeUnitMarker(ch.doc.id);
-      else upsertUnitMarker(ch.doc.id, ch.doc.data());
+var RESPONDER_PALETTE = ["#7dedb5","#7ab8f5","#e8a0ff","#ffc84a","#ff9090","#5fe0e0","#ffa94d","#c9f06a","#ff7ad9","#9ad0ff"];
+var RESPONDER_ROLE_ORDER = { primary: 0, backup: 1, rigUnit: 2 };
+function responderIndexOnCall(call, unit) {
+  if (!call) return -1;
+  var order = [];
+  (call.crews || []).forEach(function(crew, ci) {
+    var keys = Object.keys(crew || {}).filter(function(k){ return k !== "rig" && crew[k] && crew[k] !== "__added__"; });
+    keys.sort(function(a, b) {
+      var ra = RESPONDER_ROLE_ORDER[a.replace(/\d+$/, "")], rb = RESPONDER_ROLE_ORDER[b.replace(/\d+$/, "")];
+      ra = ra === undefined ? 50 : ra; rb = rb === undefined ? 50 : rb;
+      return ra !== rb ? ra - rb : a.localeCompare(b);
     });
-  }, function(e) { console.warn("unitLocations listener:", e.message); });
-  // Sweep stale pins
-  if (!ddUnitStaleTimer) ddUnitStaleTimer = setInterval(function() {
-    Object.keys(ddUnitMarkers).forEach(function(uid) { var d = ddUnitMarkers[uid]._data; if (d) upsertUnitMarker(uid, d); });
-  }, 30000);
+    keys.forEach(function(k) { order.push(crew[k]); });
+  });
+  return order.indexOf(unit);
+}
+function responderColor(call, unit) {
+  var i = responderIndexOnCall(call, unit);
+  return i < 0 ? "#8a9ab5" : RESPONDER_PALETTE[i % RESPONDER_PALETTE.length];
+}
+function unitColorForCall(callId, unit) {
+  var call = (ddLastCalls || []).find(function(x){ return x.id === callId; });
+  return responderColor(call, unit);
 }
 
 function startDDCallsListener() {
@@ -8295,9 +8287,7 @@ function startDDCallsListener() {
       ddLastCalls = calls;
       renderDDCallCards(calls);
       updateDDCallMarkers(calls);
-      Object.keys(ddUnitMarkers).forEach(function(uid) { var d = ddUnitMarkers[uid]._data; if (d) upsertUnitMarker(uid, d); });
     }, function(e) { console.warn("DD calls listener error:", e); });
-  startDDUnitLocationListener();
 }
 var ddLastCalls = [];
 
@@ -9782,7 +9772,8 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       var lbl = hasVal
         ? 'Unit ' + unitNum + (resp2 === 'rig' ? ' → w/ Ambo' : resp2 === 'scene' ? ' → Scene' : '')
         : (s.role === 'rigUnit' ? 'Unit 3' : s.role === 'backup' ? 'Unit 2' : 'Unit 1');
-      var block = unitBlock(call.id, idx, s.role, lbl, s.color, val || '');
+      var slotColor = hasVal ? responderColor(call, val) : s.color;
+      var block = unitBlock(call.id, idx, s.role, lbl, slotColor, val || '');
       if (resp2 === 'rig' || s.role === 'rigUnit') {
         rigUnits.push(block);
       } else {
@@ -9816,7 +9807,8 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       var baseLbl = customLabel || extraLabelMap[baseRole] || (baseRole.charAt(0).toUpperCase()+baseRole.slice(1));
       var lbl = baseLbl + (roleCounters[baseRole] > 1 ? ' ' + roleNum : '');
       if (val && val !== '__added__') unitNum++;
-      extraUnits.push(unitBlock(call.id, idx, key, lbl, col, val === '__added__' ? '' : val));
+      var exColor = (val && val !== '__added__' && baseRole !== 'observer' && baseRole !== 'supervisor') ? responderColor(call, val) : col;
+      extraUnits.push(unitBlock(call.id, idx, key, lbl, exColor, val === '__added__' ? '' : val));
     });
 
     // Build rig section — rig picker + nested units
@@ -9992,7 +9984,13 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
     alsBanner +
     blsBanner +
     pdBanner +
-    section("units", "👥", "Units",       unitsHTML, true) +
+    section("units", "👥", "Units",       unitsHTML +
+      '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--card-border)">' +
+        (wfNeedDisp
+          ? '<div class="flash-unassigned" style="display:block;width:fit-content;white-space:nowrap;font-size:0.58rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.12);margin-bottom:6px">Set Call Disposition</div>'
+          : '<div style="font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);font-family:\'Oswald\',sans-serif;margin-bottom:6px">📋 Call Disposition</div>') +
+        dispHTML +
+      '</div>', true) +
     '<div style="display:flex;gap:5px;margin-top:8px">' +
       '<a href="' + (call.mapsLink||"#") + '" target="_blank" class="call-action-btn primary" style="flex:1;text-align:center;font-size:0.68rem">🗺 Map</a>' +
       '<button onclick="openCancelCallModal(\'' + call.id + '\')" style="flex:1;font-size:0.68rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;padding:8px;border-radius:7px;cursor:pointer;border:1px solid rgba(255,144,144,0.4);background:rgba(255,144,144,0.08);color:#ff9090">✕ Cancel</button>' +
