@@ -2062,7 +2062,41 @@ var M_CALL_NATURES = [
   { value: "25 - Sick / General Medical", label: "25 - Sick / General Medical", als: false },
   { value: "26 - Please Call the Base", label: "26 - Please Call the Base", als: false }
 ];
-var M_HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
+var M_HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"]; // fallback only
+var mLiveHospitals = [];
+var mLiveHospitalsLoaded = false;
+function mLoadLiveHospitals() {
+  if (mLiveHospitalsLoaded) return Promise.resolve(mLiveHospitals);
+  return db.collection("appdata").doc("codes").get().then(function(snap) {
+    var items = (snap.exists && snap.data().sections && snap.data().sections.hospital) || [];
+    mLiveHospitals = items.filter(function(h){ return h.name; });
+    mLiveHospitalsLoaded = true;
+    return mLiveHospitals;
+  }).catch(function(){ return mLiveHospitals; });
+}
+function mHospitalOptionsHTML() {
+  var names = mLiveHospitals.length ? mLiveHospitals.map(function(h){ return h.name; }) : M_HOSPITALS;
+  if (names.indexOf("Other") === -1) names = names.concat(["Other"]);
+  return names.map(function(h){ return '<option value="' + h.replace(/"/g,"&quot;") + '">' + h + '</option>'; }).join("");
+}
+
+// ── Live rig/vehicle fleet cache (mirrors desktop's loadAmbulancesCache) ──
+var mLiveRigs = [];
+function mLoadLiveRigs() {
+  return db.collection("vehicles").get().then(function(snap) {
+    var now = Date.now(), list = [];
+    snap.forEach(function(d) {
+      var v = d.data();
+      if (v.type !== "vehicle") return; // exclude ERVs, jump bags, storage, other — rig pickup is full ambulances only
+      var isOOS = v.serviceStatus === "out";
+      if (isOOS && v.outUntil && new Date(v.outUntil).getTime() < now) isOOS = false; // auto-expired OOS
+      list.push({ id: v.id || d.id, isOOS: isOOS, description: v.description || "" });
+    });
+    list.sort(function(a,b){ return a.id.localeCompare(b.id, undefined, {numeric:true}); });
+    mLiveRigs = list;
+    return list;
+  }).catch(function(){ mLiveRigs = []; return []; });
+}
 var M_STATUS_LOG = {
   cleared_scene:    { icon:"✓", text:"Cleared Scene", color:"#7dedb5" },
   other_status:     { icon:"•", text:"Other", color:"#e8a0ff" },
@@ -3091,17 +3125,33 @@ function mOpenAssignSheet(crewIdx, role, mode) {
   document.getElementById("m-assign-custom").placeholder = mode === "rig" ? "e.g. MC-01, ERV-2…" : "e.g. MC-30…";
   document.getElementById("m-assign-custom").value = "";
   var roster = document.getElementById("m-assign-roster");
-  roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">Loading roster…</div>';
+  roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">Loading…</div>';
   mOpenSheet("m-sheet-assign");
-  mLoadUnitConflicts(mDispSelectedCallId).then(function() {
-    roster.innerHTML = (mAllRespondersCache || []).map(function(u) {
-      var conflict = mUnitConflictMap[u.unit];
-      var style = conflict ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px";
-      var label = u.unit + (conflict ? " ⚠" : "");
-      var title = conflict ? ' title="On another call: ' + conflict.address + '"' : "";
-      return '<button class="m-disp-btn" style="' + style + '"' + title + ' onclick="mConfirmAssignRoster(\'' + u.unit + '\')">' + label + '</button>';
-    }).join("") || '<div style="font-size:0.75rem;color:var(--gray)">No roster loaded — type below</div>';
-  });
+  if (mode === "rig") {
+    mLoadLiveRigs().then(function(rigs) {
+      if (!rigs.length) { roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">No rigs on file — type below</div>'; return; }
+      roster.innerHTML = rigs.map(function(r) {
+        var style = r.isOOS ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px;border-color:rgba(255,200,74,0.4);color:#ffc84a";
+        var label = r.id + (r.isOOS ? " (OOS)" : "");
+        var onclick = r.isOOS ? 'mConfirmOosRig(\'' + r.id + '\')' : 'mConfirmAssignRoster(\'' + r.id + '\')';
+        return '<button class="m-disp-btn" style="' + style + '" onclick="' + onclick + '">' + label + '</button>';
+      }).join("");
+    });
+  } else {
+    mLoadUnitConflicts(mDispSelectedCallId).then(function() {
+      roster.innerHTML = (mAllRespondersCache || []).map(function(u) {
+        var conflict = mUnitConflictMap[u.unit];
+        var style = conflict ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px";
+        var label = u.unit + (conflict ? " ⚠" : "");
+        var title = conflict ? ' title="On another call: ' + conflict.address + '"' : "";
+        return '<button class="m-disp-btn" style="' + style + '"' + title + ' onclick="mConfirmAssignRoster(\'' + u.unit + '\')">' + label + '</button>';
+      }).join("") || '<div style="font-size:0.75rem;color:var(--gray)">No roster loaded — type below</div>';
+    });
+  }
+}
+function mConfirmOosRig(rigId) {
+  if (!confirm("⚠ " + rigId + " is marked Out of Service.\n\nUse it anyway?")) return;
+  mDoAssign(rigId);
 }
 function mConfirmAssignRoster(unitId) {
   var conflict = mUnitConflictMap[unitId];
@@ -3245,17 +3295,97 @@ function mSetUnitStatus(crewIdx, role, status) {
 }
 
 // ── ALS / BLS / PD ──
-function mBuildAlsBanner(call) {
-  if (!call.alsActivated) {
-    return '<button class="m-disp-btn m-pulse-red-btn" style="width:100%;margin-bottom:8px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.1);animation:mFlashRed 1.4s ease-in-out infinite" onclick="mOpenSheet(\'m-sheet-als\')">🚨 Activate ALS</button>';
+var M_MUTUAL_AID_911 = [
+  { match: ["edison","south plainfield"], borough: "Edison / South Plainfield", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-248-7400" },
+  { match: ["highland park"], borough: "Highland Park", bls: "Med-Central: 848-800-5053", als: "Med-Central: 848-800-5053", pd: "732-572-3800" },
+  { match: ["piscataway"], borough: "Piscataway", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-562-1100" },
+  { match: ["east brunswick"], borough: "East Brunswick", bls: "EBPD: 732-390-6900", als: "Med-Central: 848-800-5053", pd: "732-390-6900" },
+  { match: ["metuchen"], borough: "Metuchen", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-632-8500" },
+  { match: ["north brunswick"], borough: "North Brunswick", bls: "NBPD: 732-545-3200", als: "Med-Central: 848-800-5053", pd: "732-545-3200" },
+  { match: ["south brunswick"], borough: "South Brunswick", bls: "SBPD: 732-329-4646", als: "Med-Central: 848-800-5053", pd: "732-329-4646" },
+  { match: ["new brunswick"], borough: "New Brunswick", bls: "Med-Central: 848-800-5053", als: "Med-Central: 848-800-5053", pd: "732-745-5200" },
+  { match: ["carteret"], borough: "Carteret", bls: "Med-Central: 848-800-5053", als: "JFK: 732-287-5235", pd: "732-541-4181" },
+  { match: ["woodbridge","avenel","colonia","fords","iselin"], borough: "Woodbridge", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-634-7700" }
+];
+function mExtractPhoneDigits(text) {
+  var m = (text||"").match(/[\d-]{7,}/);
+  return m ? m[0].replace(/-/g, "") : "";
+}
+function mFindMutualAidHit(call) {
+  var addrLower = (call.address||"").toLowerCase();
+  for (var i = 0; i < M_MUTUAL_AID_911.length; i++) {
+    var entry = M_MUTUAL_AID_911[i];
+    for (var j = 0; j < entry.match.length; j++) { if (addrLower.indexOf(entry.match[j]) !== -1) return entry; }
   }
-  var onScene = call.alsOnScene;
-  return '<div style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.4);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
-    '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:2px">🚨 ALS Active</div>' +
-    '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsEta&&!onScene?" · ETA "+call.alsEta+"min":"") + '</div>' +
-    (onScene ? '<div style="font-size:0.7rem;color:#7dedb5;margin-top:4px">✓ On Scene</div>' :
-      '<button class="m-disp-btn m-pulse-green" style="width:100%;margin-top:8px;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">✓ Mark ALS On Scene</button>') +
+  return null;
+}
+
+// ── ALS BANNER (mirrors desktop exactly: recommended-nature flash, suggestion, live ETA ticker, No ALS Available) ──
+var M_ALS_NATURE_CODES = ["01","02","03","04","06","07","08","09","11","14","15","18","20","23"];
+function mIsAlsNature(call) {
+  return call.callNature && M_ALS_NATURE_CODES.some(function(n){ return (call.callNature||"").indexOf(n+" -") === 0; });
+}
+function mAlsSuggestion(call) {
+  var addr = (call.address||"").toLowerCase();
+  var isMedCentral = addr.indexOf("highland park")!==-1||addr.indexOf("new brunswick")!==-1||addr.indexOf("north brunswick")!==-1||addr.indexOf("east brunswick")!==-1||addr.indexOf("south brunswick")!==-1||addr.indexOf("piscataway")!==-1;
+  return isMedCentral ? { prov: "Med-Central", phone: "8488005053", display: "848-800-5053" } : { prov: "JFK ALS", phone: "7322875235", display: "732-287-5235" };
+}
+function mAlsEtaTick() {
+  var span = document.getElementById("m-als-eta-live");
+  var call = mDispCallCache[mDispSelectedCallId];
+  if (!span || !call || !call.alsEtaMinutes || !call.alsActivatedISO) { clearInterval(window._mAlsEtaTicker); return; }
+  var activatedMs = new Date(call.alsActivatedISO).getTime();
+  var etaMs = activatedMs + (parseInt(call.alsEtaMinutes)||0) * 60000;
+  var etaDate = new Date(etaMs);
+  var etaHHMM = String(etaDate.getHours()).padStart(2,"0") + ":" + String(etaDate.getMinutes()).padStart(2,"0");
+  var remainMs = etaMs - Date.now();
+  var remainMin = Math.round(remainMs / 60000);
+  if (remainMs <= 0) { span.textContent = "ETA " + etaHHMM + " — Arrived"; span.style.color = "#ff9090"; span.style.fontWeight = "700"; clearInterval(window._mAlsEtaTicker); }
+  else if (remainMin <= 1) { span.textContent = "ETA 1 Minute · Expected " + etaHHMM; span.style.color = "#ff9090"; span.style.fontWeight = "700"; }
+  else { span.textContent = remainMin + " min remaining · Expected " + etaHHMM; span.style.color = "#ffc84a"; span.style.fontWeight = ""; }
+}
+function mBuildAlsBanner(call) {
+  var sug = mAlsSuggestion(call);
+  if (call.alsActivated) {
+    var isNoALS = call.alsProvider === "No ALS Available";
+    var etaLine = "";
+    if (!isNoALS && call.alsEtaMinutes && call.alsActivatedISO && !call.alsOnScene) {
+      etaLine = '<div style="font-size:0.7rem;margin-top:2px"><span id="m-als-eta-live" style="color:#ffc84a">calculating…</span></div>';
+      clearInterval(window._mAlsEtaTicker);
+      window._mAlsEtaTicker = setInterval(mAlsEtaTick, 30000);
+      setTimeout(mAlsEtaTick, 50);
+    } else if (!isNoALS && call.alsEta && !call.alsOnScene) {
+      etaLine = '<div style="font-size:0.7rem;margin-top:2px;color:var(--gray)">ETA ' + call.alsEta + ' min</div>';
+    }
+    return '<div style="background:rgba(224,85,85,0.08);border:1px solid ' + (isNoALS?"rgba(255,255,255,0.12)":"rgba(224,85,85,0.4)") + ';border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
+      '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (isNoALS?"var(--gray)":"#ff9090") + ';font-weight:700;margin-bottom:2px">' + (isNoALS?"⚠ No ALS Available":"🚨 ALS Active") + '</div>' +
+      (!isNoALS ? '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + '</div>' + etaLine : '') +
+      (!isNoALS ? '<div style="display:flex;gap:6px;margin-top:8px">' +
+          (!call.alsOnScene ? '<button class="m-disp-btn" style="flex:1;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">✓ On Scene</button>' : '') +
+          '<button class="m-disp-btn" style="flex:1;border-color:rgba(255,144,144,0.35);color:#ff9090" onclick="mCancelALS()">✕ Cancel ALS</button>' +
+        '</div>' : '') +
+      (isNoALS ? '<button class="m-disp-btn" style="width:100%;margin-top:8px;border-color:rgba(224,85,85,0.4);color:#ff9090" onclick="mOpenALSSheet()">Request ALS</button>' : '') +
+      (call.alsOnScene ? '<div style="margin-top:6px;font-size:0.68rem;color:#7dedb5;text-align:center">✓ ALS On Scene' + (call.alsOnSceneAt?' · '+call.alsOnSceneAt:'') + '</div>' : '') +
+    '</div>';
+  }
+  var isRecommended = mIsAlsNature(call);
+  return '<div style="background:' + (isRecommended?'rgba(224,85,85,0.12)':'transparent') + ';border:' + (isRecommended?'2px solid rgba(224,85,85,0.7)':'1px solid rgba(224,85,85,0.45)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px' + (isRecommended?';animation:als-flash 0.9s ease-in-out infinite':'') + '">' +
+    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + (isRecommended?'ALS Recommended by Protocol':'ALS') + '</div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+      '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sug.prov + '</span>' +
+      '<a href="tel:' + sug.phone + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + sug.display + '</a>' +
+    '</div>' +
+    '<button class="m-disp-btn" style="width:100%;border-color:rgba(224,85,85,0.5);color:#ff9090;background:rgba(224,85,85,' + (isRecommended?'0.2':'0.1') + ')" onclick="mOpenALSSheet()">Activate ALS</button>' +
   '</div>';
+}
+function mOpenALSSheet() {
+  var call = mDispCallCache[mDispSelectedCallId];
+  var sug = call ? mAlsSuggestion(call) : { prov: "" };
+  document.getElementById("m-als-provider").value = sug.prov || "";
+  document.getElementById("m-als-eta").value = "";
+  document.getElementById("m-als-unit-prompt").className = "m-disp-label";
+  document.getElementById("m-als-eta-prompt").className = "m-disp-label m-flash";
+  mOpenSheet("m-sheet-als");
 }
 function mAlsPromptCheck() {
   var p = document.getElementById("m-als-provider").value.trim();
@@ -3270,23 +3400,55 @@ function mConfirmALS() {
   if (!provider) { mAlsPromptCheck(); return; }
   var now = new Date();
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
-    alsActivated: true, alsProvider: provider, alsEta: eta,
+    alsActivated: true, alsProvider: provider, alsUnit: "", alsEta: eta, alsEtaMinutes: eta ? parseInt(eta)||0 : 0,
     alsActivatedAt: mNowHHMM(), alsActivatedISO: now.toISOString(),
-    alsOnScene: false, updatedAt: now.toISOString()
+    alsOnScene: false, alsOnSceneAt: "", updatedAt: now.toISOString()
   }).then(function() { mCloseAllSheets(); mToast("🚨 ALS Activated"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
-function mMarkAlsOnScene() {
-  db.collection("activeCalls").doc(mDispSelectedCallId).update({ alsOnScene: true, alsOnSceneAt: mNowHHMM(), updatedAt: new Date().toISOString() })
-    .catch(function(e){ mToast("Error: "+e.message, true); });
+function mConfirmNoALSAvailable() {
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({
+    alsActivated: true, alsProvider: "No ALS Available", alsUnit: "", alsEta: "", updatedAt: new Date().toISOString()
+  }).then(function() { mCloseAllSheets(); mToast("Logged: No ALS Available"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
+function mMarkAlsOnScene() {
+  clearInterval(window._mAlsEtaTicker);
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ alsOnScene: true, alsOnSceneAt: mNowHHMM(), updatedAt: new Date().toISOString() })
+    .then(function(){ mToast("✓ ALS On Scene"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mCancelALS() {
+  if (!confirm("Cancel ALS for this call?")) return;
+  clearInterval(window._mAlsEtaTicker);
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({
+    alsActivated: false, alsProvider: "", alsUnit: "", alsEta: "", alsEtaMinutes: 0, alsOnScene: false, updatedAt: new Date().toISOString()
+  }).then(function(){ mToast("ALS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+
+// ── BLS BANNER (mirrors desktop: suggestion from MUTUAL_AID_911) ──
 function mBuildBlsBanner(call) {
-  if (!call.blsActivated) {
-    return '<button class="m-disp-btn" style="width:100%;margin-bottom:8px;border-color:rgba(167,139,250,0.4);color:#a78bfa;background:rgba(167,139,250,0.08)" onclick="mOpenSheet(\'m-sheet-bls\')">🔵 Request BLS Mutual Aid</button>';
+  var hit = mFindMutualAidHit(call);
+  var sugName = hit ? hit.bls.split(":")[0].trim() : "";
+  var sugPhone = hit ? hit.bls.split(":").slice(1).join(":").trim() : "";
+  var sugPhoneDigits = sugPhone ? mExtractPhoneDigits(sugPhone) : "";
+  if (call.blsActivated) {
+    return '<div style="background:rgba(232,160,255,0.08);border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
+      '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:2px">🚑 BLS Mutual Aid Active</div>' +
+      '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.blsProvider||"") + (call.blsEta?" · ETA "+call.blsEta+"min":"") + '</div></div>' +
+      '<button onclick="mCancelBLS()" style="background:none;border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:rgba(255,255,255,0.4);font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:4px 8px;cursor:pointer;flex-shrink:0">✕ Cancel</button>' +
+    '</div>';
   }
-  return '<div style="background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.4);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
-    '<div style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:#a78bfa;font-weight:700;margin-bottom:2px">🔵 BLS Mutual Aid</div>' +
-    '<div style="font-size:0.85rem;color:var(--white)">' + (call.blsProvider||"") + (call.blsEta?" · ETA "+call.blsEta+"min":"") + '</div>' +
+  return '<div style="background:transparent;border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
+    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:6px">BLS Mutual Aid</div>' +
+    (sugName ? '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sugName + '</span>' +
+      (sugPhoneDigits ? '<a href="tel:' + sugPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + sugPhone + '</a>' : '') + '</div>' : '') +
+    '<button class="m-disp-btn" style="width:100%;border-color:rgba(232,160,255,0.35);color:#e8a0ff;background:rgba(232,160,255,0.1)" onclick="mOpenBLSSheet()">Request BLS</button>' +
   '</div>';
+}
+function mOpenBLSSheet() {
+  var call = mDispCallCache[mDispSelectedCallId];
+  var hit = call ? mFindMutualAidHit(call) : null;
+  document.getElementById("m-bls-provider").value = hit ? hit.bls.split(":")[0].trim() : "";
+  document.getElementById("m-bls-eta").value = "";
+  mOpenSheet("m-sheet-bls");
 }
 function mConfirmBLS() {
   var provider = document.getElementById("m-bls-provider").value.trim();
@@ -3296,11 +3458,30 @@ function mConfirmBLS() {
     blsActivated: true, blsProvider: provider, blsEta: eta, blsActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString()
   }).then(function() { mCloseAllSheets(); mToast("🔵 BLS Requested"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
+function mCancelBLS() {
+  if (!confirm("Cancel BLS mutual aid for this call?")) return;
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ blsActivated: false, blsProvider: "", blsEta: "", updatedAt: new Date().toISOString() })
+    .then(function(){ mToast("BLS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+
+// ── PD BANNER (mirrors desktop: suggested department + phone from MUTUAL_AID_911) ──
 function mBuildPdBanner(call) {
+  var hit = mFindMutualAidHit(call);
+  var pdPhone = hit && hit.pd ? hit.pd : null;
+  var pdPhoneDigits = pdPhone ? mExtractPhoneDigits(pdPhone) : "";
+  var pdLabel = hit ? hit.borough + " PD" : "PD";
   if (call.pdActivated) {
-    return '<div style="background:rgba(122,184,245,0.1);border:1px solid rgba(122,184,245,0.4);border-radius:9px;padding:8px 12px;margin-bottom:8px;font-size:0.8rem;color:#7ab8f5">🚔 PD Notified</div>';
+    return '<div style="background:rgba(74,144,217,0.08);border:1px solid rgba(74,144,217,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
+      '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:2px">PD Active</div>' +
+      (pdPhone ? '<div style="font-size:0.75rem;color:var(--gray)">' + pdLabel + ' · ' + pdPhone + '</div>' : '') + '</div>' +
+      (pdPhone ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(74,144,217,0.15);border:1px solid rgba(74,144,217,0.4);border-radius:6px;padding:5px 10px;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none;flex-shrink:0">📞 Call</a>' : '') +
+    '</div>';
   }
-  return '<button class="m-disp-btn" style="width:100%;margin-bottom:8px;border-color:rgba(122,184,245,0.4);color:#7ab8f5;background:rgba(122,184,245,0.08)" onclick="mActivatePD()">🚔 Notify PD</button>';
+  return '<div style="background:rgba(74,144,217,0.05);border:1px solid rgba(74,144,217,0.25);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
+    '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:' + (pdPhone?'4':'0') + 'px">🚔 ' + pdLabel + '</div>' +
+    (pdPhone ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(74,144,217,0.15);border:1px solid rgba(74,144,217,0.4);border-radius:6px;padding:4px 9px;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + pdPhone + '</a>' : '') + '</div>' +
+    '<button class="m-disp-btn" style="border-color:rgba(74,144,217,0.4);color:#7ab8f5;background:rgba(74,144,217,0.12);flex-shrink:0" onclick="mActivatePD()">Notify</button>' +
+  '</div>';
 }
 function mActivatePD() {
   db.collection("activeCalls").doc(mDispSelectedCallId).update({ pdActivated: true, pdActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString() })
@@ -3333,8 +3514,9 @@ function mOpenTransportSheet() {
   if (!call) return;
   mTmNonMap = {};
   var hospSel = document.getElementById("m-tr-hospital");
-  hospSel.innerHTML = '<option value="">Select hospital…</option>' + M_HOSPITALS.map(function(h){ return '<option value="'+h+'">'+h+'</option>'; }).join("");
+  hospSel.innerHTML = '<option value="">Select hospital…</option>' + mHospitalOptionsHTML();
   hospSel.value = "";
+  mLoadLiveHospitals().then(function() { hospSel.innerHTML = '<option value="">Select hospital…</option>' + mHospitalOptionsHTML(); hospSel.value = ""; });
   var checks = document.getElementById("m-tr-unit-checks");
   var rows = [];
   (call.crews||[]).forEach(function(crew, ci) {
@@ -3476,7 +3658,7 @@ function mBuildDispTimeline(call) {
       if (det.status && M_STATUS_LOG[det.status]) entries.push({ time: det.statusAt||"", icon:M_STATUS_LOG[det.status].icon, text: crew[role] + " — " + (det.status==="other_status" ? (det.customStatus||"Other") : M_STATUS_LOG[det.status].text), color:M_STATUS_LOG[det.status].color });
     });
   });
-  if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon:"🚨", text:"ALS Activated — "+(call.alsProvider||""), color:"#ff9090" });
+  if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon: call.alsProvider==="No ALS Available"?"⚠️":"🚨", text: call.alsProvider==="No ALS Available" ? "No ALS Available" : "ALS Activated — "+(call.alsProvider||""), color:"#ff9090" });
   if (call.alsOnScene) entries.push({ time: call.alsOnSceneAt||"", icon:"✓", text:"ALS On Scene", color:"#7dedb5" });
   if (call.blsActivated) entries.push({ time: call.blsActivatedAt||"", icon:"🔵", text:"BLS Requested", color:"#a78bfa" });
   if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
@@ -3692,6 +3874,7 @@ function mCloseAllSheets() {
   <div class="m-disp-label" id="m-als-eta-prompt">Estimated ETA (minutes)</div>
   <input type="number" id="m-als-eta" class="m-disp-input" placeholder="e.g. 8" style="margin-bottom:16px" oninput="mAlsPromptCheck()">
   <button onclick="mConfirmALS()" style="width:100%;background:#ff9090;color:#1a1215;border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Confirm ALS</button>
+  <button onclick="mConfirmNoALSAvailable()" style="width:100%;margin-top:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.15);border-radius:9px;color:var(--gray);font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">No ALS Available</button>
 </div>
 
 <div class="m-disp-sheet" id="m-sheet-bls">
