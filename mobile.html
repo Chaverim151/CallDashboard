@@ -2095,10 +2095,18 @@ function mLoadLiveRigs() {
     var now = Date.now(), list = [];
     snap.forEach(function(d) {
       var v = d.data();
-      if (v.type !== "vehicle") return; // exclude ERVs, jump bags, storage, other — rig pickup is full ambulances only
+      var id = v.id || d.id || "";
+      var num = id.match(/(\d{3})/); // e.g. "MC-902" -> 902
+      var is900Series = num && parseInt(num[1], 10) >= 900 && parseInt(num[1], 10) <= 999;
+      var isTaggedVehicle = v.type === "vehicle";
+      var isKnownNonAmbulance = v.type === "erv" || v.type === "jumpbag" || v.type === "storage" || v.type === "other" || /^ERV/i.test(id);
+      // An ambulance is either explicitly tagged type:"vehicle", or matches the 900-series numbering —
+      // unless it's explicitly tagged as something else (ERV/jump bag/storage/other)
+      if (isKnownNonAmbulance) return;
+      if (!isTaggedVehicle && !is900Series) return;
       var isOOS = v.serviceStatus === "out";
       if (isOOS && v.outUntil && new Date(v.outUntil).getTime() < now) isOOS = false; // auto-expired OOS
-      list.push({ id: v.id || d.id, isOOS: isOOS, description: v.description || "" });
+      list.push({ id: id || d.id, isOOS: isOOS, description: v.description || "" });
     });
     list.sort(function(a,b){ return a.id.localeCompare(b.id, undefined, {numeric:true}); });
     mLiveRigs = list;
@@ -2251,9 +2259,13 @@ function mLoadAllResponders() {
     var list = [];
     snap.forEach(function(d) {
       var u = d.data(); if (!u.unit) return;
-      var r = (u.roles||[]).map(function(x){ return x.toLowerCase(); });
-      // Exclude pure-dispatcher-only members from field-unit assignment (mirrors desktop)
-      if (r.indexOf("dispatcher") !== -1 && r.length <= 1) return;
+      // Combine BOTH the primary role field and the additional-roles array — a pure dispatcher
+      // may be marked either way (role:"dispatcher" alone, or roles:["dispatcher"])
+      var r = (u.roles||[]).map(function(x){ return (x||"").toLowerCase().trim(); });
+      var primary = (u.role||"").toLowerCase().trim();
+      var allRoles = primary ? r.concat([primary]).filter(function(v,i,a){ return a.indexOf(v)===i; }) : r;
+      // Exclude pure-dispatcher-only members from field-unit assignment (mirrors desktop's intent)
+      if (allRoles.indexOf("dispatcher") !== -1 && allRoles.length <= 1) return;
       list.push({ unit: u.unit });
     });
     list.sort(function(a,b){ return a.unit.localeCompare(b.unit, undefined, {numeric:true}); });
