@@ -11,7 +11,7 @@
 // registrations that could be pinning an old shell (defensive, even though sw.js
 // itself does not cache HTML — some mobile browsers cache the navigation separately).
 (function () {
-  var BUILD = "1.01";
+  var BUILD = "1.03";
   try {
     var params = new URLSearchParams(location.search);
     if (params.get("v") !== BUILD) {
@@ -320,7 +320,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.01</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.03</div>
     </div>
   </div>
 </div>
@@ -351,7 +351,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.01</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.03</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2343,20 +2343,56 @@ window.mInitDispMap = function() {
   mPlaceLandmarks();
   mDispMapStartCallsListener();
 };
+var M_LANDMARK_GEO_VERSION = 3; // MUST match desktop's DD_LANDMARK_GEO_VERSION — same shared cache, same invalidation
 function mPlaceLandmarks() {
   db.collection("appdata").doc("landmarkCoords").get().then(function(snap) {
     var cache = (snap.exists && snap.data()) || {};
-    var places = google.maps.places ? new google.maps.places.PlacesService(mDispMap) : null;
+    if (cache._v !== M_LANDMARK_GEO_VERSION) cache = {}; // stale cache → re-resolve, exactly like desktop
+    var geocoder = google.maps.Geocoder ? new google.maps.Geocoder() : null;
+    var places = (google.maps.places && google.maps.places.PlacesService) ? new google.maps.places.PlacesService(mDispMap) : null;
+    var updates = { _v: M_LANDMARK_GEO_VERSION }, pending = 0;
+
+    function finish(lm, key, lat, lng, via) {
+      if (lat && lng) {
+        lm.lat = lat; lm.lng = lng;
+        updates[key] = { lat: lat, lng: lng, query: lm.geo || lm.address, via: via, resolvedAt: new Date().toISOString() };
+      }
+      mDropLandmarkPin(lm);
+      if (--pending === 0 && Object.keys(updates).length > 1) {
+        // write back so desktop and mobile share one resolved cache and neither pays to geocode twice
+        db.collection("appdata").doc("landmarkCoords").set(updates).catch(function(){});
+      }
+    }
+    // Resolve a named POI: Places text search first (accurate for hospitals), Geocoder as fallback — identical to desktop
+    function resolvePOI(lm, key) {
+      var q = lm.geo || (lm.name + ", " + lm.address);
+      var bias = new google.maps.LatLng(lm.lat || 40.5, lm.lng || -74.4);
+      function viaGeocoder() {
+        if (!geocoder) return finish(lm, key, null, null, "none");
+        geocoder.geocode({ address: q, region: "us" }, function(results, status) {
+          if (status === "OK" && results && results[0]) { var l = results[0].geometry.location; finish(lm, key, l.lat(), l.lng(), "geocoder"); }
+          else finish(lm, key, null, null, "none");
+        });
+      }
+      if (!places) return viaGeocoder();
+      places.findPlaceFromQuery({ query: q, fields: ["geometry", "name", "place_id"], locationBias: { center: bias, radius: 30000 } }, function(results, status) {
+        if (status === google.maps.places.PlacesServiceStatus.OK && results && results[0] && results[0].geometry) {
+          var l = results[0].geometry.location; finish(lm, key, l.lat(), l.lng(), "places:" + (results[0].name || ""));
+        } else viaGeocoder();
+      });
+    }
+
     M_LANDMARKS.forEach(function(lm) {
       var key = lm.name.replace(/[^a-z0-9]/gi, "_");
-      if (cache[key] && cache[key].lat && cache[key].lng) { lm.lat = cache[key].lat; lm.lng = cache[key].lng; mDropLandmarkPin(lm); return; }
-      if (lm.name === "Hatzolah Base" || !places) { mDropLandmarkPin(lm); return; }
-      places.findPlaceFromQuery({ query: lm.geo || lm.address, fields: ["geometry"], locationBias: { center: new google.maps.LatLng(lm.lat, lm.lng), radius: 30000 } }, function(results, status) {
-        if (status === google.maps.places.PlacesServiceStatus.OK && results && results[0] && results[0].geometry) {
-          lm.lat = results[0].geometry.location.lat(); lm.lng = results[0].geometry.location.lng();
-        }
+      if (cache[key] && cache[key].lat && cache[key].lng) {
+        lm.lat = cache[key].lat; lm.lng = cache[key].lng;
         mDropLandmarkPin(lm);
-      });
+      } else if (lm.name === "Hatzolah Base") {
+        mDropLandmarkPin(lm); // fixed known location
+      } else {
+        pending++;
+        resolvePOI(lm, key);
+      }
     });
   }).catch(function() { M_LANDMARKS.forEach(mDropLandmarkPin); });
 }
@@ -2395,12 +2431,73 @@ function mDispMapStartCallsListener() {
       seen[call.id] = true;
       mUpsertCallPin(call);
     });
-    Object.keys(mMapCallMarkers).forEach(function(id) { if (!seen[id]) { mMapCallMarkers[id].setMap(null); delete mMapCallMarkers[id]; } });
+    Object.keys(mMapCallMarkers).forEach(function(id) {
+      if (!seen[id]) {
+        mMapCallMarkers[id].setMap(null); delete mMapCallMarkers[id];
+        if (mMapCallFlags[id]) { mMapCallFlags[id].setMap(null); delete mMapCallFlags[id]; }
+      }
+    });
   }, function(e) { mToast("Map listener error: " + e.message, true); });
+}
+// ── Call flag overlay: info card floating above each call pin (ported from desktop) ──
+var mMapCallFlags = {};
+function mEscHtml(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function mMakeCallFlagClass() {
+  if (window.MCallFlagOverlay) return window.MCallFlagOverlay;
+  function MCallFlagOverlay(call, map) { this.call = call; this.div = null; this.setMap(map); }
+  MCallFlagOverlay.prototype = new google.maps.OverlayView();
+  MCallFlagOverlay.prototype.onAdd = function() {
+    var d = document.createElement("div");
+    d.style.cssText = "position:absolute;transform:translate(-50%,-100%);margin-top:-36px;pointer-events:auto;cursor:pointer;z-index:1000;white-space:nowrap";
+    d.innerHTML = this.render();
+    var self = this;
+    d.addEventListener("click", function(e) { e.stopPropagation(); mOpenDispatchCall(self.call.id); });
+    this.div = d;
+    this.getPanes().floatPane.appendChild(d);
+  };
+  MCallFlagOverlay.prototype.render = function() {
+    var call = this.call;
+    var zc = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
+    var rawA = call.address || "";
+    var poi = rawA.indexOf("—") !== -1 ? rawA.split("—")[0].trim() : "";
+    var addr = (rawA.indexOf("—") !== -1 ? rawA.split("—")[1] : rawA).split(",")[0].trim();
+    var nature = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "") : "";
+    var cm = nature.match(/\(CODE\s*(25|26|44|100)\)/i); if (cm) nature = "Code " + cm[1]; else nature = nature.split(" / ")[0].split(" (")[0];
+    var age = call.patientAgeNum ? call.patientAgeNum + "y" : call.patientAge === "pediatric" ? "Ped" : call.patientAge === "adult" ? "Adult" : "";
+    var sex = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
+    var pt = [age, sex].filter(Boolean).join(" ");
+    var units = (call.assignedUnits || []).length;
+    var tm = call.times && call.times.dispatched ? call.times.dispatched : (call.createdAt ? new Date(call.createdAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "");
+    return '<div style="position:relative;background:rgba(6,15,31,0.94);border:1.5px solid ' + zc + ';border-radius:8px;padding:5px 8px;box-shadow:0 4px 16px rgba(0,0,0,0.6)">' +
+      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.74rem;font-weight:700;color:#fff;line-height:1.1">' + mEscHtml(addr || poi || "Unknown") + '</div>' +
+      (poi && addr ? '<div style="font-size:0.58rem;color:#c9a84c;margin-top:1px">' + mEscHtml(poi) + '</div>' : '') +
+      '<div style="display:flex;gap:5px;align-items:center;margin-top:3px;font-size:0.6rem;color:#c9d3e6">' +
+        (nature ? '<span style="color:' + zc + ';font-weight:700">' + mEscHtml(nature) + '</span>' : '') +
+        (pt ? '<span>' + mEscHtml(pt) + '</span>' : '') +
+        (tm ? '<span style="color:#8a9ab5">' + tm + '</span>' : '') +
+        '<span style="color:#8a9ab5">👥 ' + units + '</span>' +
+      '</div>' +
+      '<div style="position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid ' + zc + '"></div>' +
+    '</div>';
+  };
+  MCallFlagOverlay.prototype.update = function(call) { this.call = call; if (this.div) this.div.innerHTML = this.render(); this.draw(); };
+  MCallFlagOverlay.prototype.draw = function() {
+    if (!this.div) return;
+    var proj = this.getProjection(); if (!proj) return;
+    var p = proj.fromLatLngToDivPixel(new google.maps.LatLng(this.call.lat, this.call.lng));
+    if (p) { this.div.style.left = p.x + "px"; this.div.style.top = p.y + "px"; }
+  };
+  MCallFlagOverlay.prototype.onRemove = function() { if (this.div && this.div.parentNode) this.div.parentNode.removeChild(this.div); this.div = null; };
+  window.MCallFlagOverlay = MCallFlagOverlay;
+  return MCallFlagOverlay;
 }
 function mUpsertCallPin(call) {
   var color = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
-  if (mMapCallMarkers[call.id]) { mMapCallMarkers[call.id].setPosition({ lat: call.lat, lng: call.lng }); return; }
+  if (mMapCallMarkers[call.id]) {
+    mMapCallMarkers[call.id].setPosition({ lat: call.lat, lng: call.lng });
+    if (mMapCallFlags[call.id]) mMapCallFlags[call.id].update(call); // keep flag info live (unit count, etc.)
+    return;
+  }
   var pinSvg = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">' +
       '<path d="M13 1C6.4 1 1 6.4 1 13c0 9 12 20 12 20s12-11 12-20C25 6.4 19.6 1 13 1z" fill="'+color+'" stroke="#fff" stroke-width="1.5"/>' +
@@ -2409,6 +2506,8 @@ function mUpsertCallPin(call) {
   var marker = new google.maps.Marker({ position: { lat: call.lat, lng: call.lng }, map: mDispMap, icon: { url: pinSvg, scaledSize: new google.maps.Size(26,34), anchor: new google.maps.Point(13,34) }, zIndex: 200 });
   marker.addListener("click", function() { mOpenDispatchCall(call.id); });
   mMapCallMarkers[call.id] = marker;
+  var Flag = mMakeCallFlagClass();
+  mMapCallFlags[call.id] = new Flag(call, mDispMap);
 }
 
 // ── ENTRY ──
@@ -4006,7 +4105,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.01</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.03</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
