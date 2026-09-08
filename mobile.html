@@ -857,6 +857,13 @@ auth.onAuthStateChanged(function(user) {
     mCurrentUserUnit = "";
     mGoTo("login");
     if (mCallsListener) { mCallsListener(); mCallsListener = null; }
+    if (mDispatchListener) { mDispatchListener(); mDispatchListener = null; }
+    if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
+    if (mMapCallsListener) { mMapCallsListener(); mMapCallsListener = null; }
+    clearInterval(window._mAlsEtaTicker);
+    mDispSelectedCallId = null;
+    mDispCallCache = {};
+    mAllRespondersCache = [];
     mKnownCallIds = {};
     mInitialLoadDone = false;
   }
@@ -2070,22 +2077,9 @@ var M_CALL_NATURES = [
   { value: "25 - Sick / General Medical", label: "25 - Sick / General Medical", als: false },
   { value: "26 - Please Call the Base", label: "26 - Please Call the Base", als: false }
 ];
-var M_HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"]; // fallback only
-var mLiveHospitals = [];
-var mLiveHospitalsLoaded = false;
-function mLoadLiveHospitals() {
-  if (mLiveHospitalsLoaded) return Promise.resolve(mLiveHospitals);
-  return db.collection("appdata").doc("codes").get().then(function(snap) {
-    var items = (snap.exists && snap.data().sections && snap.data().sections.hospital) || [];
-    mLiveHospitals = items.filter(function(h){ return h.name; });
-    mLiveHospitalsLoaded = true;
-    return mLiveHospitals;
-  }).catch(function(){ return mLiveHospitals; });
-}
+var M_HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"]; // matches desktop's exact hardcoded HOSPITALS list — same source, not a live query
 function mHospitalOptionsHTML() {
-  var names = mLiveHospitals.length ? mLiveHospitals.map(function(h){ return h.name; }) : M_HOSPITALS;
-  if (names.indexOf("Other") === -1) names = names.concat(["Other"]);
-  return names.map(function(h){ return '<option value="' + h.replace(/"/g,"&quot;") + '">' + h + '</option>'; }).join("");
+  return M_HOSPITALS.map(function(h){ return '<option value="' + h.replace(/"/g,"&quot;") + '">' + h + '</option>'; }).join("");
 }
 
 // ── Live rig/vehicle fleet cache (mirrors desktop's loadAmbulancesCache) ──
@@ -2254,11 +2248,16 @@ function mNowHHMM() {
 }
 
 // ── ROSTER (for unit assignment picker) ──
+function mIs7xxUnit(unit) {
+  var m = (unit||"").match(/(\d{3})/);
+  return !!(m && parseInt(m[1], 10) >= 700 && parseInt(m[1], 10) <= 799);
+}
 function mLoadAllResponders() {
   db.collection("users").get().then(function(snap) {
     var list = [];
     snap.forEach(function(d) {
       var u = d.data(); if (!u.unit) return;
+      if (mIs7xxUnit(u.unit)) return; // 700-series are dispatch console units — never field-assignable
       // Combine BOTH the primary role field and the additional-roles array — a pure dispatcher
       // may be marked either way (role:"dispatcher" alone, or roles:["dispatcher"])
       var r = (u.roles||[]).map(function(x){ return (x||"").toLowerCase().trim(); });
@@ -2875,7 +2874,7 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-notes").value = "";
   document.getElementById("m-nc-code-suggestion").style.display = "none";
   document.getElementById("m-nc-zone-banner").style.display = "none";
-  mSetNcZone("primary", true); mSetNcAge("adult");
+  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge("adult");
   var natSel = document.getElementById("m-nc-nature");
   if (!natSel.options.length) {
     natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
@@ -2896,15 +2895,7 @@ function mOpenNewCallForm() {
 }
 function mSetNcZone(z, isAuto) {
   mNcZone = z;
-  document.querySelectorAll("#m-nc-zone-toggle button").forEach(function(b) {
-    var bz = b.getAttribute("data-zone");
-    var col = bz === "primary" ? "#7dedb5" : bz === "secondary" ? "#ffc84a" : "#ff9090";
-    var isThis = bz === z;
-    b.style.borderColor = isThis ? col : "var(--card-border)";
-    b.style.background = isThis ? col + "26" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? col : "var(--white)";
-  });
-  if (!isAuto) mShowNcZoneBanner(z);
+  mShowNcZoneBanner(z); // always shown now — zone is fully automatic, no manual toggle to update
 }
 function mShowNcZoneBanner(zone) {
   var banner = document.getElementById("m-nc-zone-banner");
@@ -2979,7 +2970,7 @@ function mPostNewCall() {
     lat: parseFloat(document.getElementById("m-nc-lat").value) || null,
     lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
-    zone: mNcZone,
+    zone: mNcZone || "primary",
     callNature: nature,
     patientAge: mNcAge,
     patientAgeNum: document.getElementById("m-nc-age-num").value.trim(),
@@ -3329,6 +3320,7 @@ function mDivertAndAssign(unitId, fromCallId) {
 function mConfirmAssignCustom() {
   var v = document.getElementById("m-assign-custom").value.trim();
   if (!v) return;
+  if (mAssignSheetMode !== "rig" && mIs7xxUnit(v)) { mToast("700-series units are dispatch console units and can't be assigned to calls", true); return; }
   var conflict = mUnitConflictMap[v];
   if (conflict) {
     if (!confirm("⚠ " + v + " is currently assigned to:\n" + conflict.address + "\n\nDivert to this call?")) return;
@@ -3704,7 +3696,6 @@ function mOpenTransportSheet() {
   var hospSel = document.getElementById("m-tr-hospital");
   hospSel.innerHTML = '<option value="">Select hospital…</option>' + mHospitalOptionsHTML();
   hospSel.value = "";
-  mLoadLiveHospitals().then(function() { hospSel.innerHTML = '<option value="">Select hospital…</option>' + mHospitalOptionsHTML(); hospSel.value = ""; });
   var checks = document.getElementById("m-tr-unit-checks");
   var rows = [];
   (call.crews||[]).forEach(function(crew, ci) {
@@ -3868,8 +3859,11 @@ function mBuildDispTimeline(call) {
 function mCompleteCall() {
   document.getElementById("m-dd-menu").style.display = "none";
   if (!confirm("Mark this call as complete?")) return;
-  db.collection("activeCalls").doc(mDispSelectedCallId).update({
-    status: "complete", completedAt: new Date().toISOString(), completedBy: mCurrentUserUnit || ""
+  var callId = mDispSelectedCallId;
+  db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
+    var d = snap.exists ? snap.data() : {};
+    var completedBy = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim() || mCurrentUserUnit || "";
+    return db.collection("activeCalls").doc(callId).set({ status: "complete", completedAt: new Date().toISOString(), completedBy: completedBy }, { merge: true });
   }).then(function() { mToast("✓ Call complete"); mCloseDispatchDetail(); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 // ── CANCEL CALL (reason picker, mirrors desktop exactly) ──
@@ -4015,14 +4009,7 @@ function mCloseAllSheets() {
     <div class="m-disp-label">Location</div>
     <input type="text" id="m-nc-address" class="m-disp-input" placeholder="Start typing address…" style="margin-bottom:10px" oninput="mNcAddressTouched=true">
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
-    <div id="m-nc-zone-banner" style="display:none"></div>
-
-    <div class="m-disp-label">Zone</div>
-    <div style="display:flex;gap:6px;margin-bottom:12px" id="m-nc-zone-toggle">
-      <button type="button" class="m-disp-btn" data-zone="primary" onclick="mSetNcZone('primary')" style="flex:1;border-color:#7dedb5;background:rgba(125,237,181,0.15);color:#7dedb5">Primary</button>
-      <button type="button" class="m-disp-btn" data-zone="secondary" onclick="mSetNcZone('secondary')" style="flex:1">Secondary</button>
-      <button type="button" class="m-disp-btn" data-zone="outside" onclick="mSetNcZone('outside')" style="flex:1">Outside</button>
-    </div>
+    <div id="m-nc-zone-banner" style="display:none;margin-bottom:12px"></div>
 
     <div class="m-disp-label">Call Nature</div>
     <select id="m-nc-nature" class="m-disp-input" style="margin-bottom:4px"></select>
