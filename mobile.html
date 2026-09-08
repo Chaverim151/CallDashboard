@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.07";
+  var BUILD = "1.08";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -335,7 +335,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.07</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.08</div>
     </div>
   </div>
 </div>
@@ -366,7 +366,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.07</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.08</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2151,16 +2151,18 @@ var M_STATUS_LOG = {
   other_status:     { icon:"•", text:"Other", color:"#e8a0ff" },
   enroute_scene:    { icon:"🚗", text:"En Route to Scene",  color:"#7ab8f5" },
   on_scene_direct:  { icon:"📍", text:"On Scene",           color:"#7dedb5" },
-  picking_up_ambo:  { icon:"🔑", text:"Picking Up Rig",     color:"#ffc84a" },
+  picking_up_ambo:  { icon:"🏠", text:"Responding to Base", color:"#ffc84a" },
+  onboard_rig:      { icon:"🚑", text:"Onboard Rig",        color:"#ffc84a" },
   ambo_responding:  { icon:"🚑", text:"Rig Responding",     color:"#ffc84a" },
   on_scene_ambo:    { icon:"📍", text:"On Scene with Rig",  color:"#7dedb5" },
   rma_scene:        { icon:"✋", text:"RMA on Scene",        color:"#7dedb5" },
   transporting:     { icon:"🚑", text:"Transporting",        color:"#ffc84a" },
   at_facility:      { icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" },
-  clearing_facility:{ icon:"✓",  text:"Clearing Hospital",   color:"#7dedb5" },
+  clearing_facility:{ icon:"✓",  text:"Clearing Hospital → Base", color:"#7dedb5" },
+  returning_base:   { icon:"🏠", text:"Heading Back to Base",     color:"#7ab8f5" },
   back_at_base:     { icon:"🏠", text:"Back at Base",        color:"var(--gray)" }
 };
-var M_TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","back_at_base"];
+var M_TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","returning_base","back_at_base"];
 var M_ONSCENE_STATUSES = ["on_scene_direct","on_scene_ambo"];
 
 function mPointInPolygon(point, polygon) {
@@ -2962,7 +2964,7 @@ function mBroadcastNewCallSMS(call) {
 function mPushCallbackSMS() {
   var call = mDispCallCache[mDispSelectedCallId];
   if (!call || !call.callbackNumber) { mToast("No callback number on this call", true); return; }
-  var ON_SCENE = ["on_scene_direct","on_scene_ambo","rma_scene","transporting","at_facility"];
+  var ON_SCENE = ["on_scene_direct","on_scene_ambo","rma_scene","transporting","at_facility"]; // for callback push
   var onSceneUnits = [];
   (call.crews||[]).forEach(function(crew, ci) {
     Object.keys(crew||{}).forEach(function(role) {
@@ -3172,15 +3174,18 @@ function mCrewOf(call, idx) { return (call.crews && call.crews[idx]) || {}; }
 function mUdKey(crewIdx, role) { return crewIdx + "_" + role; }
 function mUdOf(call, crewIdx, role) { return (call.unitDetails || {})[mUdKey(crewIdx, role)] || {}; }
 function mIsDriverRole(call, crewIdx, role) {
+  // Rig path = any unit that chose to respond to base / ride the rig. The crew's rig is shared; no unit "owns" it.
   var det = mUdOf(call, crewIdx, role);
-  return role === "rigUnit" || role.indexOf("rigUnit") === 0 || det.response === "rig";
+  if (det.response === "rig") return true;
+  if (det.response === "scene") return false;
+  return role === "rigUnit" || role.indexOf("rigUnit") === 0;
 }
 function mRequiredRolesOfCrew(crew) {
   return Object.keys(crew||{}).filter(function(k){ return k!=="rig" && crew[k] && crew[k]!=="__added__" && k.indexOf("supervisor")!==0 && k.indexOf("sup_")!==0 && k.indexOf("observer")!==0; });
 }
 function mAllOnSceneCheck(call) {
   var any = false, allOk = true;
-  var onOrPast = M_ONSCENE_STATUSES.concat(M_TRANSPORT_STATUSES).concat(["rma_scene","cleared_scene","other_status"]);
+  var onOrPast = M_ONSCENE_STATUSES.concat(M_TRANSPORT_STATUSES).concat(["rma_scene","cleared_scene","other_status"]); // onboard_rig / picking_up_ambo are pre-scene
   (call.crews||[]).forEach(function(crew, ci) {
     mRequiredRolesOfCrew(crew).forEach(function(r) {
       any = true;
@@ -3281,12 +3286,77 @@ function mRenderDispatchDetail(call) {
 }
 
 // ── CREW BLOCK (groups fixed + extra roles for one crew, shows rig header) ──
+// Units in this crew that are on the rig path (excluding supervisors/observers and finished units)
+function mCrewRigUnits(call, crewIdx) {
+  var crew = mCrewOf(call, crewIdx), out = [];
+  Object.keys(crew).forEach(function(k) {
+    if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+    if (k.indexOf("supervisor")===0 || k.indexOf("sup_")===0 || k.indexOf("observer")===0) return;
+    var det = mUdOf(call, crewIdx, k);
+    if (det.response !== "rig") return;
+    if (["cleared_scene","other_status"].indexOf(det.status||"") !== -1) return;
+    out.push({ role: k, unit: crew[k], status: det.status || "" });
+  });
+  return out;
+}
+// Crew-level rig movement: the rig and everyone onboard move as one
+function mBuildCrewRigPanel(call, crewIdx) {
+  var crew = mCrewOf(call, crewIdx);
+  var rigUnits = mCrewRigUnits(call, crewIdx);
+  if (!rigUnits.length) return "";
+  var rig = crew.rig || "Rig";
+  var st = rigUnits.map(function(u){ return u.status; });
+  var every = function(s) { return st.every(function(x){ return x === s; }); };
+  var names = rigUnits.map(function(u){ return u.unit; }).join(", ");
+  var hosp = call.disposition && call.disposition.hospital ? call.disposition.hospital : "Facility";
+  function btn(label, next, color, flash) {
+    return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetCrewRigStatus(' + crewIdx + ',\'' + next + '\')">' + label + '</button>';
+  }
+  var body = "";
+  if (!crew.rig) {
+    body = '<div style="font-size:0.7rem;color:var(--gray)">Select the crew\'s rig above to begin the rig flow.</div>';
+  } else if (st.some(function(x){ return x === "" || x === "picking_up_ambo"; })) {
+    var waiting = rigUnits.filter(function(u){ return u.status === "" || u.status === "picking_up_ambo"; }).map(function(u){ return u.unit; });
+    body = '<div style="font-size:0.7rem;color:var(--gray);margin-bottom:6px">Waiting for units to board ' + mEscHtml(rig) + ': <b style="color:#ffc84a">' + mEscHtml(waiting.join(", ")) + '</b></div>' +
+      '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.35);color:#ffc84a;font-size:0.62rem" onclick="mMarkAllOnboard(' + crewIdx + ')">Mark all units onboard ' + mEscHtml(rig) + '</button>';
+  } else if (every("onboard_rig")) {
+    body = btn("Mark " + rig + " Responding — " + names + " onboard", "ambo_responding", "#ffc84a", "gold");
+  } else if (every("ambo_responding")) {
+    body = btn("Mark " + rig + " On Scene with units onboard", "on_scene_ambo", "#7dedb5", "green");
+  } else if (every("on_scene_ambo")) {
+    body = '<div style="font-size:0.7rem;color:var(--gray)">On scene — set the call disposition below (RMA or Transport).</div>';
+  } else if (every("rma_scene")) {
+    body = btn("Mark " + rig + " + units Heading Back to Base", "returning_base", "#7ab8f5", "blue");
+  } else if (every("transporting")) {
+    body = btn("Mark " + rig + " + units At " + hosp, "at_facility", "#ff9090", "gold");
+  } else if (every("at_facility")) {
+    body = btn("Mark " + rig + " + units Clearing " + hosp + " → Base", "clearing_facility", "#7dedb5", "green");
+  } else if (every("clearing_facility") || every("returning_base")) {
+    body = btn("Mark " + rig + " Back at Base — all units cleared", "back_at_base", "#7ab8f5", "blue");
+  } else if (every("back_at_base")) {
+    body = '<div style="font-size:0.7rem;color:#7dedb5">✓ ' + mEscHtml(rig) + ' back at base — all units cleared</div>';
+  } else {
+    body = '<div style="font-size:0.7rem;color:var(--gray)">Units are at different stages: ' + rigUnits.map(function(u){ return mEscHtml(u.unit) + " (" + (M_STATUS_LOG[u.status] ? M_STATUS_LOG[u.status].text : "—") + ")"; }).join(", ") + '</div>';
+  }
+  return '<div style="border:1px solid rgba(255,200,74,0.3);border-radius:8px;padding:8px 10px;margin:6px 0 8px;background:rgba(255,200,74,0.05)">' +
+    '<div style="font-family:\'Oswald\',sans-serif;font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:#ffc84a;margin-bottom:6px">🚑 ' + mEscHtml(rig) + ' — Rig Flow</div>' + body + '</div>';
+}
 function mBuildCrewBlock(call, crew, crewIdx) {
   var html = '<div style="border:1px solid var(--card-border);border-radius:10px;padding:10px;margin-bottom:10px;background:rgba(255,255,255,0.015)">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
     '<span style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold)">🚑 Crew ' + (crewIdx+1) + (crew.rig ? ' — ' + crew.rig : '') + '</span>' +
     (call.crews.length > 1 ? '<button onclick="mRemoveCrew(' + crewIdx + ')" style="background:none;border:none;color:var(--gray);font-size:0.7rem;cursor:pointer">✕ Remove</button>' : '') +
   '</div>';
+  // Crew-level rig: chosen once per crew, never asked per unit
+  if (!crew.rig) {
+    html += '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Crew Rig</div>';
+    html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.4);color:#ffc84a;margin-bottom:8px" onclick="mOpenAssignSheet(' + crewIdx + ',\'__crew__\',\'rig\')">🚑 Choose Rig for Crew ' + (crewIdx+1) + '</button>';
+  } else {
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;background:rgba(255,200,74,0.08);border:1px solid rgba(255,200,74,0.3);border-radius:6px;padding:5px 9px">' +
+      '<span style="font-family:\'Oswald\',sans-serif;font-size:0.75rem;font-weight:700;color:#ffc84a">🚑 ' + mEscHtml(crew.rig) + '</span>' +
+      '<button onclick="mOpenAssignSheet(' + crewIdx + ',\'__crew__\',\'rig\')" style="background:none;border:1px solid rgba(255,200,74,0.35);border-radius:4px;color:#ffc84a;font-size:0.6rem;cursor:pointer;padding:1px 6px">✎ change</button>' +
+    '</div>';
+  }
 
   var fixedRoles = [
     { role: "primary", label: "Unit 1" },
@@ -3303,6 +3373,7 @@ function mBuildCrewBlock(call, crew, crewIdx) {
     var label = k.indexOf("supervisor")===0||k.indexOf("sup_")===0 ? "Supervisor" : k.indexOf("observer")===0 ? "Observer" : "Responder";
     html += mBuildUnitBox(call, crewIdx, k, label);
   });
+  html += mBuildCrewRigPanel(call, crewIdx);
   html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
     '<button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">+ Responder</button>' +
     '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.3);color:#e8a0ff" onclick="mAddExtraRole(' + crewIdx + ',\'supervisor\')">+ Supervisor</button>' +
@@ -3336,7 +3407,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
 
   if (!det.response) {
     var isLoadRig = call.zone === "secondary";
-    var rigLbl = crew.rig ? "🚑 Ride with " + crew.rig : "🚑 Load Rig at Base";   // one ambulance per crew — reuse the crew's rig if already chosen
+    var rigLbl = "🏠 Respond to Base" + (crew.rig ? " → " + crew.rig : "");   // rig is chosen once per crew, never per unit
     if (isLoadRig) {
       // LOAD A RIG call: expected flow is Base → load rig → respond with rig. Direct-to-scene is the exception (close by only).
       html += '<div style="background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.45);border-radius:7px;padding:7px 9px;margin-bottom:8px">' +
@@ -3357,11 +3428,9 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   }
 
   var sl = M_STATUS_LOG[status];
-  if (sl) html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.icon + ' ' + unit + ' ' + sl.text + (status==="on_scene_ambo"&&crew.rig ? " with "+crew.rig : "") + '</div>';
-
-  if (isDriver && !crew.rig && (status === "picking_up_ambo")) {
-    html += '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Rig</div>';
-    html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.4);color:#ffc84a;margin-bottom:6px" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'rig\')">🚑 Choose Rig</button>';
+  if (sl) {
+    var withRig = isDriver && crew.rig && ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1;
+    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.icon + ' ' + unit + ' ' + sl.text + (withRig ? ' · ' + mEscHtml(crew.rig) : '') + '</div>';
   }
 
   var nextBtn = mNextStepButton(call, crewIdx, role, unit);
@@ -3384,22 +3453,54 @@ function mNextStepButton(call, crewIdx, role, unit) {
     if (status === "on_scene_direct") return btn("Mark " + unit + " Clearing the Scene", "cleared_scene", "#7dedb5", null);
     return "";
   }
+  // Rig path: the only per-unit step is boarding the rig. Everything after is crew-level (rig + units move as one).
   if (status === "picking_up_ambo") {
-    if (!crew.rig) return "";
-    return btn("Mark " + crew.rig + " Responding to Scene", "ambo_responding", "#ffc84a", "gold");
+    if (!crew.rig) return '<div style="font-size:0.66rem;color:var(--gray)">Select the crew rig to continue.</div>';
+    return btn("Mark " + unit + " Onboard " + crew.rig, "onboard_rig", "#ffc84a", "gold");
   }
-  if (status === "ambo_responding") return btn("Mark " + unit + " On Scene with " + (crew.rig||"Rig"), "on_scene_ambo", "#7dedb5", "green");
-  if (status === "on_scene_ambo") return "";
-  if (status === "rma_scene") return btn("Mark " + (crew.rig||"Rig") + " Back at Base", "back_at_base", "#7ab8f5", "blue");
-  if (status === "transporting") return btn("Mark " + (crew.rig||"Rig") + " At " + (call.disposition.hospital||"Facility"), "at_facility", "#ff9090", "gold");
-  if (status === "at_facility") return btn("Mark " + (crew.rig||"Rig") + " Clearing " + (call.disposition.hospital||"Facility"), "clearing_facility", "#7dedb5", "green");
-  if (status === "clearing_facility") return btn("Mark " + (crew.rig||"Rig") + " Back at Base", "back_at_base", "#7ab8f5", "blue");
   return "";
+}
+
+// Crew-level: move every rig-path unit in the crew to the same status (rig + units onboard move together)
+function mSetCrewRigStatus(crewIdx, status) {
+  var callId = mDispSelectedCallId;
+  var now = mNowHHMM();
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(); if (!call.crews) call.crews = [{}];
+    var units = mCrewRigUnits(call, crewIdx);
+    if (!units.length) return;
+    var update = { updatedAt: new Date().toISOString() };
+    units.forEach(function(u) {
+      update["unitDetails." + mUdKey(crewIdx, u.role) + ".status"] = status;
+      update["unitDetails." + mUdKey(crewIdx, u.role) + ".statusAt"] = now;
+    });
+    var times = call.times || {};
+    if (status === "on_scene_ambo" && !times.first_on_scene) update["times.first_on_scene"] = now;
+    if (status === "transporting" && !times.enroute) update["times.enroute"] = now;
+    if (status === "at_facility" && !times.at_hospital) update["times.at_hospital"] = now;
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+function mMarkAllOnboard(crewIdx) {
+  var callId = mDispSelectedCallId, now = mNowHHMM();
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(); if (!call.crews) call.crews = [{}];
+    var update = { updatedAt: new Date().toISOString() };
+    mCrewRigUnits(call, crewIdx).forEach(function(u) {
+      if (u.status === "" || u.status === "picking_up_ambo") {
+        update["unitDetails." + mUdKey(crewIdx, u.role) + ".status"] = "onboard_rig";
+        update["unitDetails." + mUdKey(crewIdx, u.role) + ".statusAt"] = now;
+      }
+    });
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
 // ── UNIT ACTIONS ──
 var mUnitConflictMap = {}; // { unit: {id, address, status} } — units busy on OTHER active calls
-var M_ENGAGED_DONE = ["clearing_facility","back_at_base","rma_scene","at_facility","cleared_scene","other_status"];
+var M_ENGAGED_DONE = ["clearing_facility","returning_base","back_at_base","rma_scene","at_facility","cleared_scene","other_status"];
 function mLoadUnitConflicts(excludeCallId) {
   return db.collection("activeCalls").where("status","==","active").get().then(function(snap) {
     var map = {};
@@ -3502,9 +3603,9 @@ function mDoAssign(unitId) {
       if (dupe) { mToast(unitId + " is already assigned elsewhere on this call", true); return; }
     }
     if (mAssignSheetMode === "rig") {
-      crews[crewIdx].rig = unitId;
+      crews[crewIdx].rig = unitId;   // one ambulance per crew — set once at crew level
       var ud = call.unitDetails || {};
-      ud[mUdKey(crewIdx, role)] = Object.assign({}, ud[mUdKey(crewIdx, role)]||{}, { pickedAmbo: unitId, pickedAmboIsERV: false });
+      if (role && role !== "__crew__") ud[mUdKey(crewIdx, role)] = Object.assign({}, ud[mUdKey(crewIdx, role)]||{}, { pickedAmbo: unitId, pickedAmboIsERV: false });
       return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString() });
     } else {
       crews[crewIdx][role] = unitId;
@@ -3835,9 +3936,15 @@ function mSetDispositionRMA() {
     if (!call.crews) call.crews = [{}];
     var current = (call.disposition||{}).type || "";
     var newType = current === "rma" ? "" : "rma";
-    var driver = mFindDriverRole(call);
     var update = { disposition: { type: newType, hospital:"", rmaBy:"", rmaCustom:"" }, updatedAt: new Date().toISOString() };
-    if (newType === "rma" && driver) update["unitDetails." + mUdKey(driver.crewIdx, driver.role) + ".status"] = "rma_scene";
+    if (newType === "rma") {
+      var now = mNowHHMM();
+      (call.crews||[]).forEach(function(crew, ci) {
+        mCrewRigUnits(call, ci).forEach(function(u) {
+          if (u.status === "on_scene_ambo") { update["unitDetails." + mUdKey(ci, u.role) + ".status"] = "rma_scene"; update["unitDetails." + mUdKey(ci, u.role) + ".statusAt"] = now; }
+        });
+      });
+    }
     return db.collection("activeCalls").doc(callId).update(update);
   }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -4142,7 +4249,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.07</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.08</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

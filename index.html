@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.07');
+  window.location.replace('/CallDashboard/mobile.html?v=1.08');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.16i</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.16j</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1894,7 +1894,7 @@ function renderCallCard(call, i) {
   var STATUS_LABEL = {
     cleared_scene: "Cleared Scene", other_status: "Other",
     enroute_scene:"En Route", on_scene_direct:"On Scene",
-    picking_up_ambo:"Picking Up Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene",
+    picking_up_ambo:"Responding to Base", onboard_rig:"Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene", returning_base:"Heading Back to Base",
     rma_scene:"RMA", transporting:"Transporting", at_facility:"At Hospital",
     clearing_facility:"Clearing", back_at_base:"Back at Base"
   };
@@ -2887,7 +2887,7 @@ function openCallDetail(callId) {
     var crews = call.crews || [];
     var unitDetails = call.unitDetails || {};
     var notes = call.callNotes || [];
-    var STATUS_ICON = { cleared_scene:"✓ Cleared Scene", other_status:"• Other", enroute_scene:"🏃 En Route", on_scene_direct:"On Scene", picking_up_ambo:"🔑 Picking Up Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene", rma_scene:"✓ RMA", transporting:"Transporting", at_facility:"🏨 At Hospital", clearing_facility:"🔄 Clearing", back_at_base:"🏠 Back at Base" };
+    var STATUS_ICON = { cleared_scene:"✓ Cleared Scene", other_status:"• Other", enroute_scene:"🏃 En Route", on_scene_direct:"On Scene", picking_up_ambo:"🏠 Responding to Base", onboard_rig:"🚑 Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene", rma_scene:"✓ RMA", transporting:"Transporting", at_facility:"🏨 At Hospital", clearing_facility:"🔄 Clearing", returning_base:"🏠 Heading Back", back_at_base:"🏠 Back at Base" };
 
     var ageParts = [];
     if (call.patientAgeNum) ageParts.push(call.patientAgeNum + " YO");
@@ -5529,7 +5529,7 @@ function renderCLDetail(log, body) {
 
   // Units with statuses
   var unitRows = "";
-  var STATUS_LABEL = { cleared_scene:"Cleared Scene", other_status:"Other", enroute_scene:"En Route to Scene", on_scene_direct:"On Scene", picking_up_ambo:"Picking Up Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene w/ Rig", rma_scene:"RMA on Scene", transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Clearing Facility", back_at_base:"Back at Base" };
+  var STATUS_LABEL = { cleared_scene:"Cleared Scene", other_status:"Other", enroute_scene:"En Route to Scene", on_scene_direct:"On Scene", picking_up_ambo:"Responding to Base", onboard_rig:"Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene w/ Rig", rma_scene:"RMA on Scene", transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Clearing Facility", returning_base:"Heading Back to Base", back_at_base:"Back at Base" };
   (log.crews||[]).forEach(function(crew, ci) {
     Object.keys(crew||{}).sort().forEach(function(role) {
       if (role === "rig") return;
@@ -8720,7 +8720,9 @@ function buildCallActionLog(call) {
     other_status:     { icon:"•", text:"Other", color:"#e8a0ff" },
     enroute_scene:    { icon:"🚗", text:"En Route to Scene",      color:"#7ab8f5" },
     on_scene_direct:  { icon:"📍", text:"On Scene",               color:"#7dedb5" },
-    picking_up_ambo:  { icon:"🔑", text:"Picking Up Rig",  color:"#ffc84a" },
+    picking_up_ambo:  { icon:"🏠", text:"Responding to Base", color:"#ffc84a" },
+    onboard_rig:      { icon:"🚑", text:"Onboard Rig",        color:"#ffc84a" },
+    returning_base:   { icon:"🏠", text:"Heading Back to Base", color:"#7ab8f5" },
     ambo_responding:  { icon:"🚑", text:"Rig Responding",  color:"#ffc84a" },
     on_scene_ambo:    { icon:"📍", text:"On Scene with Rig",       color:"#7dedb5" },
     rma_scene:        { icon:"✋", text:"RMA on Scene",            color:"#7dedb5" },
@@ -8736,7 +8738,7 @@ function buildCallActionLog(call) {
   }
 
   // 2. Unit assignments & status changes — emit every step, group transport under rig
-  var TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","back_at_base"];
+  var TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","returning_base","back_at_base"];
   var STATUS_ORDER = ["enroute_scene","picking_up_ambo","ambo_responding","on_scene_direct","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","back_at_base"];
   var seenUnits = {}; // prevent duplicate entries for same unit
 
@@ -8768,7 +8770,7 @@ function buildCallActionLog(call) {
 
       // Path-aware step list: scene-direct vs rig — never mix the two
       var SCENE_PATH = ["enroute_scene","on_scene_direct"];
-      var RIG_PATH   = ["picking_up_ambo","ambo_responding","on_scene_ambo"];
+      var RIG_PATH   = ["picking_up_ambo","onboard_rig","ambo_responding","on_scene_ambo"];
       var path = (det.response === "rig" || RIG_PATH.indexOf(curStatus) !== -1) ? RIG_PATH : SCENE_PATH;
       function reachedSteps(inclusive) {
         var idx = path.indexOf(curStatus);
@@ -9045,7 +9047,7 @@ function renderDDSidebar(call, keepSection) {
     var snap = results[1];
     // Build unit → call map (excluding current call)
     // Only flag units that are ACTIVELY engaged (not clearing/done)
-    var DONE_STATUSES = ["clearing_facility","back_at_base","rma_scene","at_facility","cleared_scene","other_status"];
+    var DONE_STATUSES = ["clearing_facility","returning_base","back_at_base","rma_scene","at_facility","cleared_scene","other_status"];
     var unitCallMap = {}; // { "MC-16": { id, address } }
     (snap.docs||[]).forEach(function(d) {
       if (d.id === call.id) return;
@@ -9493,7 +9495,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       }
 
     // ── AMBO FLOW ────────────────────────────────────────────────────────
-    } else if (response === 'rig' || currentStatus === 'picking_up_ambo' || currentStatus === 'ambo_responding' || currentStatus === 'on_scene_ambo' || currentStatus === 'rma_scene' || currentStatus === 'transporting' || currentStatus === 'at_facility' || currentStatus === 'clearing_facility' || currentStatus === 'back_at_base') {
+    } else if (response === 'rig' || currentStatus === 'picking_up_ambo' || currentStatus === 'onboard_rig' || currentStatus === 'ambo_responding' || currentStatus === 'on_scene_ambo' || currentStatus === 'rma_scene' || currentStatus === 'transporting' || currentStatus === 'at_facility' || currentStatus === 'clearing_facility' || currentStatus === 'returning_base' || currentStatus === 'back_at_base') {
 
       if (!currentStatus) {
         // Not started — show chain preview
@@ -9905,7 +9907,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
   // Statuses
   var ONSCENE_STATUSES   = ["on_scene_direct","on_scene_ambo"];
-  var TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","back_at_base"];
+  var TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","returning_base","back_at_base"];
   var RESPONDING_STATUSES = ["enroute_scene","picking_up_ambo","ambo_responding"];
 
   var wfNoUnits    = allUnitsFlat.length === 0;
