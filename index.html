@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.03');
+  window.location.replace('/CallDashboard/mobile.html?v=1.07');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.16e</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.16i</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -9651,6 +9651,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
   function unitBlock(callId, crewIdx, role, label, color, currentVal) {
     var det = unitDetails[crewIdx + '_' + role] || {};
+    var crewRigId = (crews[crewIdx] && crews[crewIdx].rig) || ''; // one ambulance per crew
     var status = det.status || '';
     var facility = det.facility || '';
     var rmaApprovedBy = det.rmaApprovedBy || '';
@@ -9718,7 +9719,17 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
               'color:' + (response==='rig'?'#e8a0ff':'#7ab8f5') + '">' +
               (response==='rig'?'🚑 Picking Up Ambulance':'🏃 Responding to Scene') + '</div>'
             // Not started — show toggle buttons (pulse when unit assigned but no choice yet)
-            : '<div style="display:flex;gap:4px;margin-bottom:3px">' +
+            : (call.zone === "secondary"
+              // LOAD A RIG call: expected flow is Base → load rig → respond with rig. Direct-to-scene is the exception (close by only).
+              ? '<div style="background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.45);border-radius:5px;padding:5px 7px;margin-bottom:4px">' +
+                  '<div style="font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#ffc84a">🚑 Load a Rig call</div>' +
+                  '<div style="font-size:0.6rem;color:#ffe0a0;line-height:1.3">Respond to <b>Base</b>, load the rig, then respond to the scene with it.</div>' +
+                '</div>' +
+                '<button onclick="setUnitStatusAndResponse(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',\'picking_up_ambo\',\'rig\')" class="flash-gold" ' +
+                  'style="width:100%;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:4px;border-radius:4px;cursor:pointer;margin-bottom:3px;border:1px solid rgba(255,200,74,0.6);background:rgba(255,200,74,0.15);color:#ffc84a">' + (crewRigId ? '🚑 Ride with ' + crewRigId : '🚑 Load Rig at Base') + '</button>' +
+                '<button onclick="setUnitStatusAndResponse(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',\'enroute_scene\',\'scene\')" ' +
+                  'style="width:100%;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px;border-radius:4px;cursor:pointer;margin-bottom:3px;border:1px solid rgba(122,184,245,0.3);background:rgba(255,255,255,0.02);color:var(--gray)">🏃 Direct to Scene <span style="opacity:0.7">(only if close to the scene)</span></button>'
+              : '<div style="display:flex;gap:4px;margin-bottom:3px">' +
               '<button onclick="setUnitStatusAndResponse(\'' + callId + '\',' + crewIdx + ',\'' + role + '\',\'enroute_scene\',\'scene\')" ' +
                 'style="flex:1;font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px;border-radius:4px;cursor:pointer;' +
                 'border:1px solid ' + (response==='scene'?'#7ab8f5':'var(--card-border)') + ';' +
@@ -9728,8 +9739,8 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
                 'style="flex:1;font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:3px;border-radius:4px;cursor:pointer;' +
                 'border:1px solid ' + (response==='rig'?'#e8a0ff':'var(--card-border)') + ';' +
                 'background:' + (response==='rig'?'rgba(232,160,255,0.15)':'rgba(255,255,255,0.02)') + ';' +
-                'color:' + (response==='rig'?'#e8a0ff':'var(--gray)') + '">🚑 Picking Up Ambulance</button>' +
-            '</div>') +
+                'color:' + (response==='rig'?'#e8a0ff':'var(--gray)') + '">' + (crewRigId ? '🚑 Ride with ' + crewRigId : '🚑 Picking Up Ambulance') + '</button>' +
+            '</div>')) +
         '</div>');
 
     return '<div style="margin-bottom:8px;padding:7px 9px;background:rgba(255,255,255,0.02);border-left:2px solid ' + color + ';border-radius:0 6px 6px 0">' +
@@ -9934,7 +9945,10 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
   var needMoreUnits = requiredUnits.length < 3;   // keep prompting until 3 units are on the call
   var addScenePulse = needMoreUnits ? PULSE_BLUE : '';
-  var addRigPulse   = needMoreUnits ? PULSE_GOLD : '';
+  // "+ Crew & Rig" only pulses once the LAST crew is fully staffed (Unit 1, Unit 2, Unit 3 → Rig all assigned)
+  var lastCrewObj = crews[lastIdx] || {};
+  var lastCrewFull = ['primary','backup','rigUnit'].every(function(r){ return lastCrewObj[r] && lastCrewObj[r] !== '__added__'; });
+  var addRigPulse   = lastCrewFull ? PULSE_GOLD : '';
   var addBtnPulse   = needMoreUnits ? PULSE_GOLD : '';
 
   var addBtns = ''
