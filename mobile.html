@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.12";
+  var BUILD = "1.14";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -330,12 +330,14 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       </div>
 
       <button class="m-signin-btn" id="m-signin-btn" onclick="mSignIn()">Sign In</button>
+      <button id="m-passkey-btn" onclick="mSignInWithPasskey()" style="display:none;width:100%;margin-top:10px;background:rgba(125,237,181,0.1);border:1px solid rgba(125,237,181,0.45);border-radius:9px;color:#7dedb5;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer"><span id="m-passkey-btn-label">Sign in with Face ID / Touch ID</span></button>
+      <div id="m-passkey-remove" style="display:none;text-align:center;margin-top:8px"><button onclick="mRemovePasskey()" style="background:none;border:none;color:var(--gray);font-size:0.7rem;cursor:pointer;text-decoration:underline">Remove biometric sign-in from this device</button></div>
       <div class="m-err" id="m-err"></div>
 
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.12</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.14</div>
     </div>
   </div>
 </div>
@@ -366,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.12</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.14</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -834,6 +836,7 @@ function mSignIn() {
         if (btn) { btn.disabled = false; btn.textContent = "Sign In"; }
         return Promise.reject(null);
       }
+      mPendingPasskeyCreds = { email: email, unit: unitFormatted, pw: pw };
       return auth.signInWithEmailAndPassword(email, pw);
     })
     .catch(function(e) {
@@ -868,7 +871,12 @@ function mSetNewPw() {
   if (pw === "Hatzolah1!") { err.textContent = "You must choose a new password."; return; }
   mCurrentUser.updatePassword(pw).then(function() {
     return db.collection("users").doc(mCurrentUser.uid).update({ mustChangePassword: false });
-  }).then(function() { mEnterHome(); })
+  }).then(function() {
+    // stored biometric sign-in (if any) is now stale — drop it and offer to re-enable with the new password
+    try { localStorage.removeItem(M_PK_KEY); } catch(e) {}
+    if (mPendingPasskeyCreds) { mPendingPasskeyCreds.pw = pw; sessionStorage.removeItem("hzmc_pk_offered"); }
+    mEnterHome(); mMaybeOfferPasskey();
+  })
   .catch(function(e) { err.textContent = e.message; });
 }
 
@@ -888,11 +896,14 @@ auth.onAuthStateChanged(function(user) {
       mEnterHome();
       mLoadAllResponders();
       mApplyTestModeState(!!d.sysTestingMode);
+      mMaybeOfferPasskey();
     }).catch(function(e) { mToast("Error: " + e.message, true); auth.signOut(); });
   } else {
     mCurrentUser = null;
     mCurrentUserUnit = "";
+    mPendingPasskeyCreds = null;
     mGoTo("login");
+    mRefreshPasskeyUI();
     if (mCallsListener) { mCallsListener(); mCallsListener = null; }
     if (mDispatchListener) { mDispatchListener(); mDispatchListener = null; }
     if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
@@ -2287,6 +2298,102 @@ function mNowHHMM() {
   var d = new Date();
   return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
 }
+
+// ── PASSKEY / BIOMETRIC SIGN-IN (WebAuthn + PRF; sign-in encrypted on-device, unlocked only by biometric) ──
+var M_PK_KEY = "hzmc_passkey_v1";
+var mPendingPasskeyCreds = null; // { email, unit, pw } — in memory only, after a password sign-in, until enable / dismiss / sign-out
+function mB64u(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
+function mB64uToBuf(s) { s = s.replace(/-/g,"+").replace(/_/g,"/"); while (s.length % 4) s += "="; var bin = atob(s); var u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; }
+function mPasskeyStored() { try { return JSON.parse(localStorage.getItem(M_PK_KEY) || "null"); } catch (e) { return null; } }
+function mPasskeySupported() { return !!(window.PublicKeyCredential && navigator.credentials && window.crypto && crypto.subtle && window.isSecureContext); }
+function mBiometricName() { var ua = navigator.userAgent || ""; return /iPhone|iPad|iPod|Macintosh/.test(ua) ? "Face ID / Touch ID" : "fingerprint / face unlock"; }
+function mRefreshPasskeyUI() {
+  var b = document.getElementById("m-passkey-btn"), r = document.getElementById("m-passkey-remove"), l = document.getElementById("m-passkey-btn-label");
+  var s = mPasskeyStored(); var has = !!s && mPasskeySupported();
+  if (l) l.textContent = "Sign in with " + mBiometricName() + (s && s.unit ? " · " + s.unit : "");
+  if (b) b.style.display = has ? "" : "none";
+  if (r) r.style.display = has ? "" : "none";
+}
+function mAesKeyFromPrf(prfOut) { return crypto.subtle.importKey("raw", prfOut, { name: "AES-GCM" }, false, ["encrypt","decrypt"]); }
+function mMaybeOfferPasskey() {
+  if (!mPendingPasskeyCreds || mPasskeyStored() || !mPasskeySupported()) return;
+  try { if (sessionStorage.getItem("hzmc_pk_offered")) return; } catch (e) {}
+  var t = document.getElementById("m-passkey-title"); if (t) t.textContent = "Enable " + mBiometricName() + "?";
+  PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function(ok) {
+    if (!ok) return;
+    try { sessionStorage.setItem("hzmc_pk_offered", "1"); } catch (e) {}
+    mOpenSheet("m-sheet-passkey");
+  }).catch(function(){});
+}
+function mDismissPasskeyOffer() { mCloseAllSheets(); mPendingPasskeyCreds = null; }
+async function mEnablePasskey() {
+  var creds = mPendingPasskeyCreds;
+  if (!creds) { mToast("Sign in with your password first", true); return; }
+  if (!mPasskeySupported()) { mToast("Passkeys aren't supported on this device or browser", true); return; }
+  try {
+    var salt = crypto.getRandomValues(new Uint8Array(32));
+    var cred = await navigator.credentials.create({ publicKey: {
+      rp: { name: "Hatzolah MC Ops", id: location.hostname },
+      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: creds.unit, displayName: creds.unit + " · Hatzolah MC" },
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+      timeout: 60000,
+      extensions: { prf: { eval: { first: salt } } }
+    }});
+    var ext = cred.getClientExtensionResults ? cred.getClientExtensionResults() : {};
+    var prfOut = ext.prf && ext.prf.results && ext.prf.results.first;
+    if (!prfOut) {
+      if (!(ext.prf && ext.prf.enabled)) throw new Error("This device's passkey can't protect a sign-in (no PRF support). Update iOS/Android and try again.");
+      var a = await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, allowCredentials: [{ type: "public-key", id: cred.rawId }], userVerification: "required", timeout: 60000, extensions: { prf: { eval: { first: salt } } } } });
+      var ext2 = a.getClientExtensionResults(); prfOut = ext2.prf && ext2.prf.results && ext2.prf.results.first;
+      if (!prfOut) throw new Error("Biometric key could not be derived on this device.");
+    }
+    var key = await mAesKeyFromPrf(prfOut);
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    var ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, new TextEncoder().encode(creds.pw));
+    localStorage.setItem(M_PK_KEY, JSON.stringify({ credId: mB64u(cred.rawId), unit: creds.unit, email: creds.email, salt: mB64u(salt.buffer), iv: mB64u(iv.buffer), ct: mB64u(ct), createdAt: new Date().toISOString() }));
+    mPendingPasskeyCreds = null;
+    mCloseAllSheets(); mRefreshPasskeyUI();
+    mToast("✓ " + mBiometricName() + " sign-in enabled on this device");
+  } catch (e) {
+    if (e && e.name === "NotAllowedError") { mToast("Cancelled"); return; }
+    mToast("Couldn't enable: " + ((e && e.message) || e), true);
+  }
+}
+async function mSignInWithPasskey() {
+  var s = mPasskeyStored(); if (!s) { mRefreshPasskeyUI(); return; }
+  var err = document.getElementById("m-err"); err.textContent = ""; err.classList.remove("show");
+  var btn = document.getElementById("m-passkey-btn"); if (btn) btn.disabled = true;
+  try {
+    var a = await navigator.credentials.get({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname,
+      allowCredentials: [{ type: "public-key", id: mB64uToBuf(s.credId) }],
+      userVerification: "required", timeout: 60000,
+      extensions: { prf: { eval: { first: mB64uToBuf(s.salt) } } }
+    }});
+    var ext = a.getClientExtensionResults(); var prfOut = ext.prf && ext.prf.results && ext.prf.results.first;
+    if (!prfOut) throw new Error("Biometric key unavailable on this device");
+    var key = await mAesKeyFromPrf(prfOut);
+    var pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: mB64uToBuf(s.iv) }, key, mB64uToBuf(s.ct));
+    var pw = new TextDecoder().decode(pt);
+    await auth.signInWithEmailAndPassword(s.email, pw);
+  } catch (e) {
+    if (e && e.name === "NotAllowedError") { /* user cancelled */ }
+    else if (e && /wrong-password|invalid-credential|invalid-login-credentials|user-not-found/.test(e.code || "")) {
+      err.textContent = "Saved sign-in is no longer valid (password changed?). Sign in with your password and re-enable " + mBiometricName() + "."; err.classList.add("show");
+      try { localStorage.removeItem(M_PK_KEY); } catch (x) {}
+      mRefreshPasskeyUI();
+    } else { err.textContent = "Biometric sign-in failed: " + ((e && e.message) || e); err.classList.add("show"); }
+  } finally { if (btn) btn.disabled = false; }
+}
+function mRemovePasskey() {
+  if (!confirm("Remove " + mBiometricName() + " sign-in from this device?")) return;
+  try { localStorage.removeItem(M_PK_KEY); } catch (e) {}
+  mRefreshPasskeyUI(); mToast("Biometric sign-in removed");
+}
+// show the biometric button as soon as the login page renders
+document.addEventListener("DOMContentLoaded", function() { try { mRefreshPasskeyUI(); } catch (e) {} });
 
 // ── ROSTER (for unit assignment picker) ──
 function mIs7xxUnit(unit) {
@@ -3730,8 +3837,16 @@ function mExtractPhoneDigits(text) {
   var m = (text||"").match(/[\d-]{7,}/);
   return m ? m[0].replace(/-/g, "") : "";
 }
+// Town portion of an address: strip a "POI — " prefix, drop the street (before the first comma).
+// Prevents street names like "Edison Ave" or "Metuchen Rd" from matching the wrong town.
+function mAddrLocality(address) {
+  var a = String(address || "");
+  if (a.indexOf("—") !== -1) a = a.split("—").slice(1).join("—");
+  var i = a.indexOf(",");
+  return (i !== -1 ? a.slice(i + 1) : a).toLowerCase();
+}
 function mFindMutualAidHit(call) {
-  var addrLower = (call.address||"").toLowerCase();
+  var addrLower = mAddrLocality(call.address);
   for (var i = 0; i < M_MUTUAL_AID_911.length; i++) {
     var entry = M_MUTUAL_AID_911[i];
     for (var j = 0; j < entry.match.length; j++) { if (addrLower.indexOf(entry.match[j]) !== -1) return entry; }
@@ -3745,7 +3860,7 @@ function mIsAlsNature(call) {
   return call.callNature && M_ALS_NATURE_CODES.some(function(n){ return (call.callNature||"").indexOf(n+" -") === 0; });
 }
 function mAlsSuggestion(call) {
-  var addr = (call.address||"").toLowerCase();
+  var addr = mAddrLocality(call.address);
   var isMedCentral = addr.indexOf("highland park")!==-1||addr.indexOf("new brunswick")!==-1||addr.indexOf("north brunswick")!==-1||addr.indexOf("east brunswick")!==-1||addr.indexOf("south brunswick")!==-1||addr.indexOf("piscataway")!==-1;
   return isMedCentral ? { prov: "Med-Central", phone: "8488005053", display: "848-800-5053" } : { prov: "JFK ALS", phone: "7322875235", display: "732-287-5235" };
 }
@@ -3889,6 +4004,7 @@ function mBuildBlsBanner(call) {
   }
   return '<div style="background:transparent;border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
     '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:6px">BLS Mutual Aid</div>' +
+    (!sugName ? '<div style="font-size:0.7rem;color:var(--gray);margin-bottom:6px">No mutual-aid provider on file for this town — enter one below.</div>' : '') +
     (sugName ? '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sugName + '</span>' +
       (sugPhoneDigits ? '<a href="tel:' + sugPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + sugPhone + '</a>' : '') + '</div>' : '') +
     '<button class="m-disp-btn" style="width:100%;border-color:rgba(232,160,255,0.35);color:#e8a0ff;background:rgba(232,160,255,0.1)" onclick="mOpenBLSSheet()">Request BLS</button>' +
@@ -3934,7 +4050,7 @@ function mBuildPdBanner(call) {
   return '<div style="background:transparent;border:1px solid rgba(74,144,217,0.45);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
     '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:6px">PD</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-      '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + mEscHtml(pdLabel) + '</span>' +
+      '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + mEscHtml(pdLabel) + (hit ? '' : ' <span style="font-size:0.66rem;font-weight:400;color:var(--gray)">— no PD number on file for this town</span>') + '</span>' +
       (pdPhoneDigits ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + mEscHtml(pdPhone) + '</a>' : '') +
     '</div>' +
     '<button class="m-disp-btn" style="width:100%;border-color:rgba(74,144,217,0.5);color:#7ab8f5;background:rgba(74,144,217,0.1)" onclick="mActivatePD()">Notify PD</button>' +
@@ -4267,7 +4383,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.12</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.14</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -4394,6 +4510,15 @@ function mCloseAllSheets() {
 
 <!-- ═══ Bottom Sheets ═══ -->
 <div class="m-disp-sheet-backdrop" id="m-sheet-backdrop" onclick="mCloseAllSheets()"></div>
+
+<div class="m-disp-sheet" id="m-sheet-passkey">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="text-align:center;font-size:2rem;margin-bottom:6px" id="m-passkey-icon">🔐</div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--white);text-align:center;margin-bottom:6px" id="m-passkey-title">Enable Face ID / Touch ID?</div>
+  <div style="font-size:0.8rem;color:var(--gray);text-align:center;line-height:1.5;margin-bottom:16px">Sign in next time with your face or fingerprint instead of typing your password. Your sign-in is encrypted on this device and can only be unlocked by your biometric.</div>
+  <button onclick="mEnablePasskey()" style="width:100%;background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:13px;cursor:pointer">Enable</button>
+  <button onclick="mDismissPasskeyOffer()" style="width:100%;margin-top:8px;background:none;border:1px solid var(--card-border);border-radius:9px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:11px;cursor:pointer">Not now</button>
+</div>
 
 <div class="m-disp-sheet" id="m-sheet-als">
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
