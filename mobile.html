@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.22";
+  var BUILD = "1.26";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.22</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.26</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.22</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.26</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -587,6 +587,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <option value="secondary">Load a Rig</option>
       <option value="outside">Outside Zone</option>
     </select>
+    <select id="m-cl-nature" class="m-disp-input" style="flex:1;min-width:120px"><option value="">All Natures</option></select>
     <select id="m-cl-disp" class="m-disp-input" style="flex:1;min-width:100px">
       <option value="">All Dispositions</option>
       <option value="transport">Transport</option>
@@ -792,7 +793,7 @@ function mGoTo(page) {
   if (page === "contacts") mLoadContacts();
   if (page === "hospital") mLoadHospital();
   if (page === "education") mInitEducation();
-  if (page === "calllogs") mLoadCallLogs();
+  if (page === "calllogs") { mPopulateCLNatureFilter(); mLoadCallLogs(); }
   if (page === "service") mLoadTickets();
   if (page === "scanner") { /* scanner started by mStartScanner() */ }
 }
@@ -895,7 +896,7 @@ auth.onAuthStateChanged(function(user) {
       if (d.mustChangePassword) { mGoTo("force-pw"); return; }
       mEnterHome();
       mLoadAllResponders();
-      mApplyTestModeState(!!d.sysTestingMode);
+      mApplyTestModeState(d.sysTestingMode === true); // personal setting, default OFF
       mMaybeOfferPasskey();
     }).catch(function(e) { mToast("Error: " + e.message, true); auth.signOut(); });
   } else {
@@ -908,6 +909,7 @@ auth.onAuthStateChanged(function(user) {
     if (mDispatchListener) { mDispatchListener(); mDispatchListener = null; }
     if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
     if (mMapCallsListener) { mMapCallsListener(); mMapCallsListener = null; }
+    mApplyTestModeState(false);
     clearInterval(window._mAlsEtaTicker);
     mDispSelectedCallId = null;
     mDispCallCache = {};
@@ -1407,17 +1409,21 @@ function mLoadShifts() {
   db.collection("appdata").doc("shifts").get().then(function(snap) {
     var shifts = (snap.exists && snap.data().shifts) || [];
     if (!shifts.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No shifts on file.</div>'; return; }
-    shifts.sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
-    el.innerHTML = shifts.slice(0,14).map(function(s) {
-      var units = s.units || [];
-      return '<div class="m-info-card">' +
-        '<div class="m-info-name">' + (s.date||"") + '</div>' +
-        (units.length ? '<div style="margin-top:6px">' + units.map(function(u) {
-          return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:0.78rem;border-bottom:1px solid rgba(255,255,255,0.05)">' +
-            '<span style="color:var(--gray)">' + (u.role||u.position||"") + '</span>' +
-            '<span style="color:#7ab8f5;font-family:Oswald,sans-serif;font-weight:700">' + (u.unit||u.name||"") + '</span>' +
-          '</div>';
-        }).join("") + '</div>' : "") +
+    // Same shape desktop writes: [{ day: "Sunday", units: ["MC-17","MC-18", …] }, …] — keep desktop's order (no sorting)
+    var todayName = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()];
+    el.innerHTML = shifts.map(function(s) {
+      var day = s.day || s.date || "";
+      var isToday = day && todayName && day.toLowerCase().indexOf(todayName.toLowerCase()) === 0;
+      var units = (s.units || []).map(function(u) { return (u && typeof u === "object") ? (u.unit || u.name || "") : String(u || ""); }).filter(Boolean);
+      return '<div class="m-info-card"' + (isToday ? ' style="border-color:rgba(201,168,76,0.6)"' : '') + '>' +
+        '<div class="m-info-name" style="display:flex;align-items:center;justify-content:space-between">' + mEscHtml(day) +
+          (isToday ? '<span style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);border:1px solid rgba(201,168,76,0.5);border-radius:5px;padding:2px 7px;font-family:Oswald,sans-serif;font-weight:700">Tonight</span>' : '') +
+        '</div>' +
+        (units.length
+          ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' + units.map(function(u) {
+              return '<span style="font-family:Oswald,sans-serif;font-size:0.78rem;font-weight:700;color:#7ab8f5;background:rgba(122,184,245,0.12);border:1px solid rgba(122,184,245,0.35);border-radius:6px;padding:4px 10px">' + mEscHtml(u) + '</span>';
+            }).join("") + '</div>'
+          : '<div style="font-size:0.72rem;color:var(--gray);margin-top:6px">No units assigned</div>') +
       '</div>';
     }).join("");
   }).catch(function(e) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; });
@@ -2693,8 +2699,13 @@ function mRenderDispatchList(calls) {
 }
 
 // ── TEST DISPATCH MODE ──
+// Test Mode is PERSONAL: it only affects calls *I* post (tagged testMode/testModeUnit on the call record).
+// The Cloud Function restricts a test call's pushes to its creator; my SMS/email are redirected to me.
+// Other dispatchers and their real calls are completely unaffected. Default: OFF.
 function mApplyTestModeState(on) {
-  MSysTestingMode = on;
+  MSysTestingMode = !!on;
+  var banner = document.getElementById("m-test-global-banner");
+  if (banner) banner.textContent = "🧪 TEST DISPATCH MODE — your calls go only to you (" + (mCurrentUserUnit || "me") + ")";
   var track = document.getElementById("m-test-toggle-track");
   var thumb = document.getElementById("m-test-toggle-thumb");
   var label = document.getElementById("m-test-toggle-label");
@@ -2707,22 +2718,15 @@ function mApplyTestModeState(on) {
 function mToggleTestMode() {
   var next = !MSysTestingMode;
   if (!mCurrentUser) return;
-  var label = document.getElementById("m-test-toggle-label"); if (label) label.textContent = "🧪 " + (next ? "Enabling…" : "Disabling…");
-  // Server first: the Cloud Function reads appdata/testMode to keep push notifications off real phones.
-  // If that write fails, do NOT show test mode as on — that would let a "test" call page everyone.
-  var serverWrite = next
-    ? db.collection("pushTokens").doc(mCurrentUser.uid).get().catch(function(){ return { exists:false }; }).then(function(snap) {
-        var token = snap && snap.exists ? (snap.data().token || "") : "";
-        return db.collection("appdata").doc("testMode").set({ active: true, uid: mCurrentUser.uid, unit: mCurrentUserUnit||"", token: token, enabledAt: new Date().toISOString() });
-      })
-    : db.collection("appdata").doc("testMode").set({ active: false, uid: mCurrentUser.uid, unit: mCurrentUserUnit||"", token: "", enabledAt: new Date().toISOString() });
-  serverWrite.then(function() {
+  var label = document.getElementById("m-test-toggle-label"); if (label) label.textContent = "🧪 " + (next ? "Turning on…" : "Turning off…");
+  db.collection("users").doc(mCurrentUser.uid).set({ sysTestingMode: next }, { merge: true }).then(function() {
+    if (label) label.textContent = "🧪 Test Mode";
     mApplyTestModeState(next);
-    db.collection("users").doc(mCurrentUser.uid).set({ sysTestingMode: next }, { merge: true }).catch(function(){});
-    mToast(next ? "🧪 Test Dispatch Mode ON — SMS, email & push go only to you" : "Test Dispatch Mode OFF — live notifications resume");
+    mToast(next ? "🧪 Test Mode ON for you — calls you post go only to you (SMS, email & push)" : "Test Mode OFF — your calls go live");
   }).catch(function(e) {
-    mApplyTestModeState(MSysTestingMode); // revert visuals to the real state
-    mToast("Couldn't " + (next ? "enable" : "disable") + " test mode on the server (" + ((e && e.code) || "error") + "). Notifications would still go LIVE — not changed.", true);
+    if (label) label.textContent = "🧪 Test Mode";
+    mApplyTestModeState(MSysTestingMode);
+    mToast("Couldn't turn test mode " + (next ? "on" : "off") + " (" + ((e && e.code) || "error") + ") — not changed.", true);
   });
 }
 
@@ -2753,6 +2757,7 @@ function mLoadCallLogs() {
   var to = document.getElementById("m-cl-to").value;
   var zone = document.getElementById("m-cl-zone").value;
   var disp = document.getElementById("m-cl-disp").value;
+  var nature = document.getElementById("m-cl-nature").value;
   var unit = (document.getElementById("m-cl-unit").value||"").trim().toUpperCase();
   function process(snap) {
     var logs = [];
@@ -2761,6 +2766,8 @@ function mLoadCallLogs() {
     if (to)   logs = logs.filter(function(l) { return (l.createdAt||"") <= to   + "T23:59:59.999Z"; });
     if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
     if (disp) logs = logs.filter(function(l) { return (l.disposition||{}).type === disp; });
+    if (nature === "__custom__") logs = logs.filter(function(l) { return l.callNature && !M_CALL_NATURES.some(function(nn){ return nn.value === l.callNature; }); });
+    else if (nature) logs = logs.filter(function(l) { return l.callNature === nature; });
     if (unit) logs = logs.filter(function(l) {
       return (l.crews||[]).some(function(crew){ return Object.values(crew||{}).indexOf(unit) !== -1; }) || (l.assignedUnits||[]).indexOf(unit) !== -1;
     });
@@ -2777,6 +2784,11 @@ function mLoadCallLogs() {
         .catch(function(e) { el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
     });
 }
+function mPopulateCLNatureFilter() {
+  var sel = document.getElementById("m-cl-nature");
+  if (!sel || sel.options.length > 1) return;
+  sel.innerHTML = '<option value="">All Natures</option>' + M_CALL_NATURES.map(function(nn){ return '<option value="' + nn.value.replace(/"/g,"&quot;") + '">' + nn.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom</option>';
+}
 function mClearCLFilters() {
   var today = new Date();
   var from = new Date(); from.setDate(today.getDate() - 30);
@@ -2784,6 +2796,7 @@ function mClearCLFilters() {
   document.getElementById("m-cl-to").value = today.toISOString().split("T")[0];
   document.getElementById("m-cl-zone").value = "";
   document.getElementById("m-cl-disp").value = "";
+  document.getElementById("m-cl-nature").value = "";
   document.getElementById("m-cl-unit").value = "";
   mLoadCallLogs();
 }
@@ -4482,7 +4495,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.22</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.26</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
