@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.16";
+  var BUILD = "1.20";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.16</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.20</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.16</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.20</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2694,20 +2694,24 @@ function mApplyTestModeState(on) {
 }
 function mToggleTestMode() {
   var next = !MSysTestingMode;
-  mApplyTestModeState(next);
-  mToast(next ? "🧪 Test Dispatch Mode ON — calls logged as TEST records" : "Test Dispatch Mode OFF");
   if (!mCurrentUser) return;
-  db.collection("users").doc(mCurrentUser.uid).set({ sysTestingMode: next }, { merge: true }).catch(function(){});
-  if (next) {
-    db.collection("pushTokens").doc(mCurrentUser.uid).get().then(function(snap) {
-      var token = snap.exists ? snap.data().token : null;
-      db.collection("appdata").doc("testMode").set({ active: true, uid: mCurrentUser.uid, unit: mCurrentUserUnit||"", token: token||"", enabledAt: new Date().toISOString() });
-    }).catch(function() {
-      db.collection("appdata").doc("testMode").set({ active: true, uid: mCurrentUser.uid, unit: mCurrentUserUnit||"", token: "", enabledAt: new Date().toISOString() });
-    });
-  } else {
-    db.collection("appdata").doc("testMode").set({ active: false }).catch(function(){});
-  }
+  var label = document.getElementById("m-test-toggle-label"); if (label) label.textContent = "🧪 " + (next ? "Enabling…" : "Disabling…");
+  // Server first: the Cloud Function reads appdata/testMode to keep push notifications off real phones.
+  // If that write fails, do NOT show test mode as on — that would let a "test" call page everyone.
+  var serverWrite = next
+    ? db.collection("pushTokens").doc(mCurrentUser.uid).get().catch(function(){ return { exists:false }; }).then(function(snap) {
+        var token = snap && snap.exists ? (snap.data().token || "") : "";
+        return db.collection("appdata").doc("testMode").set({ active: true, uid: mCurrentUser.uid, unit: mCurrentUserUnit||"", token: token, enabledAt: new Date().toISOString() });
+      })
+    : db.collection("appdata").doc("testMode").set({ active: false, uid: mCurrentUser.uid, unit: mCurrentUserUnit||"", token: "", enabledAt: new Date().toISOString() });
+  serverWrite.then(function() {
+    mApplyTestModeState(next);
+    db.collection("users").doc(mCurrentUser.uid).set({ sysTestingMode: next }, { merge: true }).catch(function(){});
+    mToast(next ? "🧪 Test Dispatch Mode ON — SMS, email & push go only to you" : "Test Dispatch Mode OFF — live notifications resume");
+  }).catch(function(e) {
+    mApplyTestModeState(MSysTestingMode); // revert visuals to the real state
+    mToast("Couldn't " + (next ? "enable" : "disable") + " test mode on the server (" + ((e && e.code) || "error") + "). Notifications would still go LIVE — not changed.", true);
+  });
 }
 
 // ── STORAGE ROOM ──
@@ -3025,7 +3029,8 @@ function mGetFirstPhone(phone) {
   return "+" + raw;
 }
 function mSendClickSendSMS(toNumbers, message) {
-  if (!toNumbers || !toNumbers.length || !message) return Promise.resolve();
+  toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
+  if (!toNumbers.length || !message) return Promise.resolve();
   // Test Dispatch Mode ON — only send to the logged-in unit's own phone, prefixed [TEST]
   if (MSysTestingMode) {
     if (!mCurrentUser) return Promise.resolve();
@@ -3192,9 +3197,10 @@ window.mBindNcAutocomplete = function() {
   if (mNcAutocomplete || !window.google || !google.maps.places) return;
   var input = document.getElementById("m-nc-address");
   mNcAutocomplete = new google.maps.places.Autocomplete(input, { componentRestrictions: { country: "us" } });
+  input.addEventListener("blur", function() { setTimeout(function(){ if (!document.getElementById("m-nc-lat").value && input.value.trim()) mResolveTypedAddress(input.value.trim()); }, 400); });
   mNcAutocomplete.addListener("place_changed", function() {
     var place = mNcAutocomplete.getPlace();
-    if (!place.geometry) return;
+    if (!place.geometry) { if (input.value.trim()) mResolveTypedAddress(input.value.trim()); return; } // typed + Enter/Done, no suggestion tapped
     var lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
     document.getElementById("m-nc-lat").value = lat;
     document.getElementById("m-nc-lng").value = lng;
@@ -3205,9 +3211,42 @@ window.mBindNcAutocomplete = function() {
     mCheckAccessCode(place.formatted_address || input.value, placeName, lat, lng);
   });
 };
+// Resolve a typed address (no suggestion tapped) via the Geocoder so the zone is detected from real coordinates
+function mResolveTypedAddress(address) {
+  if (!window.google || !google.maps || !google.maps.Geocoder) return Promise.reject(new Error("maps not loaded"));
+  return new Promise(function(resolve, reject) {
+    new google.maps.Geocoder().geocode({ address: address, region: "us" }, function(results, status) {
+      if (status !== "OK" || !results || !results[0] || !results[0].geometry) return reject(new Error(status || "no result"));
+      var loc = results[0].geometry.location, lat = loc.lat(), lng = loc.lng();
+      document.getElementById("m-nc-lat").value = lat;
+      document.getElementById("m-nc-lng").value = lng;
+      document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
+      var zone = mDetectZone(lat, lng); if (zone) mSetNcZone(zone, false);
+      mCheckAccessCode(results[0].formatted_address || address, "", lat, lng);
+      resolve({ lat: lat, lng: lng });
+    });
+  });
+}
 function mPostNewCall() {
   var address = document.getElementById("m-nc-address").value.trim();
   if (!address) { mToast("Enter an address", true); return; }
+  // Never assume the zone: if the address hasn't resolved to coordinates yet, resolve it now, then post
+  if (!document.getElementById("m-nc-lat").value) {
+    var pbtn = document.getElementById("m-nc-post-btn"); if (pbtn) { pbtn.disabled = true; pbtn.textContent = "Locating…"; }
+    mResolveTypedAddress(address).then(function() {
+      if (pbtn) { pbtn.disabled = false; pbtn.textContent = "🚑 Post Call"; }
+      mPostNewCall();
+    }).catch(function() {
+      if (pbtn) { pbtn.disabled = false; pbtn.textContent = "🚑 Post Call"; }
+      if (!confirm("Couldn't verify this address's location, so the response zone can't be detected.\n\nPost anyway as STANDARD RESPONSE?")) return;
+      mNcZone = "primary"; mPostNewCallNow();
+    });
+    return;
+  }
+  mPostNewCallNow();
+}
+function mPostNewCallNow() {
+  var address = document.getElementById("m-nc-address").value.trim();
   var natSelVal = document.getElementById("m-nc-nature").value;
   var nature = natSelVal === "__custom__" ? document.getElementById("m-nc-nature-custom").value.trim() : natSelVal;
   var btn = document.getElementById("m-nc-post-btn");
@@ -3219,7 +3258,7 @@ function mPostNewCall() {
     lat: parseFloat(document.getElementById("m-nc-lat").value) || null,
     lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
-    zone: mNcZone || "primary",
+    zone: mNcZone || "primary", // only reachable after zone detection or an explicit dispatcher confirmation
     callNature: nature,
     patientAge: mNcAge,
     patientAgeNum: document.getElementById("m-nc-age-num").value.trim(),
@@ -3328,6 +3367,7 @@ function mRenderDispatchDetail(call) {
     '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + (call.address||"Unknown") + '</div>' +
     (call.apt ? '<div style="display:inline-block;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--gold);background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:3px 9px;margin-bottom:8px">🚪 ' + mEscHtml(call.apt) + '</div>' : '') +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+      '<span class="m-disp-zone" style="background:' + zoneColor + '33;color:' + zoneColor + ';border:1.5px solid ' + zoneColor + ';font-size:0.66rem">' + (call.zone === "primary" ? "🚑 Standard Response" : call.zone === "secondary" ? "🚑 Load a Rig" : "⚠ Outside Zone") + '</span>' +
       (natureLabel ? '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + natureLabel + '</span>' : '') +
       (call.patientAge ? '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + call.patientAge + (call.patientAgeNum?" "+call.patientAgeNum+"y":"") + (call.patientSex?" "+(call.patientSex==="male"?"M":"F"):"") + '</span>' : '') +
     '</div>' +
@@ -3346,10 +3386,7 @@ function mRenderDispatchDetail(call) {
   (call.crews||[]).forEach(function(crew, ci) {
     content += mBuildCrewBlock(call, crew, ci);
   });
-  // "+ Crew & Rig" only pulses once the LAST crew is fully staffed (Unit 1, Unit 2, Unit 3 → Rig all assigned)
-  var lastCrew = call.crews[call.crews.length - 1] || {};
-  var lastCrewFull = ["primary","backup","rigUnit"].every(function(r){ return lastCrew[r] && lastCrew[r] !== "__added__"; });
-  content += '<button class="m-disp-btn' + (lastCrewFull ? ' m-pulse-gold' : '') + '" style="width:100%;border-color:rgba(201,168,76,' + (lastCrewFull ? '0.6' : '0.25') + ');color:var(--gold);margin-bottom:14px' + (lastCrewFull ? '' : ';opacity:0.75') + '" onclick="mAddCrew()">+ Crew &amp; Rig</button>';
+  content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(201,168,76,0.35);color:var(--gold);margin-bottom:14px" onclick="mAddCrew()">+ Crew &amp; Rig</button>';
 
   // Disposition
   var needDisp = mAllOnSceneCheck(call) && !call.disposition.type;
@@ -4433,7 +4470,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.16</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.20</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.16');
+  window.location.replace('/CallDashboard/mobile.html?v=1.20');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.16r</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.16v</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2049,6 +2049,14 @@ window.closeManageCall = function() {
   if (modal) modal.style.display = "none";
 };
 window.saveManageCall = function() { window.closeManageCall(); };
+// Manage-call modal: show the free-text field when "Other / Custom…" is chosen (handler was referenced but never defined)
+window.handleNatureChange = function() {
+  var sel = document.getElementById("manage-nature"), other = document.getElementById("manage-nature-other");
+  if (!sel || !other) return;
+  var isOther = sel.value === "__other__";
+  other.style.display = isOther ? "block" : "none";
+  if (isOther) other.focus();
+};
 
 // ── HEX TO RGB ──
 function hexToRgb(hex) {
@@ -3833,6 +3841,8 @@ function sendClickSendEmail(opts) {
 }
 
 function sendClickSendSMS(toNumbers, message) {
+  toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers so one bad record can't block the broadcast
+  if (!toNumbers.length) return Promise.resolve();
   if (!toNumbers || !toNumbers.length || !message) return Promise.resolve();
   // In SMS testing mode OR system testing mode — only send to admin's own number
   if (SYS_TESTING_MODE || SMS_TESTING_MODE) {
@@ -9939,10 +9949,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
   var needMoreUnits = requiredUnits.length < 3;   // keep prompting until 3 units are on the call
   var addScenePulse = needMoreUnits ? PULSE_BLUE : '';
-  // "+ Crew & Rig" only pulses once the LAST crew is fully staffed (Unit 1, Unit 2, Unit 3 → Rig all assigned)
-  var lastCrewObj = crews[lastIdx] || {};
-  var lastCrewFull = ['primary','backup','rigUnit'].every(function(r){ return lastCrewObj[r] && lastCrewObj[r] !== '__added__'; });
-  var addRigPulse   = lastCrewFull ? PULSE_GOLD : '';
+  var addRigPulse   = '';   // "+ Crew & Rig" never pulses
   var addBtnPulse   = needMoreUnits ? PULSE_GOLD : '';
 
   var addBtns = ''
