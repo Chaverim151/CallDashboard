@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.39');
+  window.location.replace('/CallDashboard/mobile.html?v=1.41');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.17o</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.17q</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3691,11 +3691,15 @@ function renderTicketDetail(id, t) {
       var byParent = {}; all.forEach(function(x) { var p = x.parentId || "__root__"; (byParent[p] = byParent[p] || []).push(x); });
       var renderC = function(x, depth) {
         var isMine = x.authorUid && currentUser && x.authorUid === currentUser.uid;
-        var h = '<div class="comment-item"' + (depth ? ' style="margin-left:' + Math.min(depth,3)*16 + 'px;border-left:2px solid rgba(201,168,76,0.35);padding-left:10px"' : '') + '>' +
+        var canEdit = CommentEditable(x, all, currentUser && currentUser.uid);
+        var h = '<div class="comment-item" id="cmt-' + x.id + '"' + (depth ? ' style="margin-left:' + Math.min(depth,3)*16 + 'px;border-left:2px solid rgba(201,168,76,0.35);padding-left:10px"' : '') + '>' +
           (x.parentAuthor ? '<div style="font-size:0.62rem;color:var(--gray)">↪ replying to <b>' + RenderMentions(x.parentAuthor) + '</b></div>' : '') +
           '<div><span class="comment-author">' + RenderMentions(x.author || "—") + '</span><span class="comment-time">' + (x.createdAt ? new Date(x.createdAt).toLocaleString() : "") + '</span></div>' +
-          '<div class="comment-text" style="white-space:pre-wrap">' + RenderMentions(x.text) + '</div>' +
-          '<button onclick="replyToComment(\'' + x.id + '\',\'' + String(x.author||"").replace(/'/g,"") + '\')" style="margin-top:4px;background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' +
+          '<div class="comment-text cmt-text" data-raw="' + String(x.text||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;") + '" style="white-space:pre-wrap">' + RenderMentions(x.text) + (x.editedAt ? ' <span style="font-size:0.62rem;color:var(--gray)">(edited)</span>' : '') + '</div>' +
+          '<div class="cmt-actions" style="display:flex;gap:14px;margin-top:4px">' +
+            '<button onclick="replyToComment(\'' + x.id + '\',\'' + String(x.author||"").replace(/'/g,"") + '\')" style="background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' +
+            (canEdit ? '<button onclick="EditComment(\'' + id + '\',\'' + x.id + '\')" style="background:none;border:none;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">✎ Edit</button>' : '') +
+          '</div>' +
         '</div>';
         (byParent[x.id] || []).forEach(function(r) { h += renderC(r, depth + 1); });
         return h;
@@ -3845,6 +3849,32 @@ function RenderMentions(text) {
   return String(text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
     .replace(/@(MC-?\d{1,4})\b/gi, function(mm, u) { return '<span style="color:var(--gold);font-weight:700">@' + u.toUpperCase().replace(/^MC(\d)/, "MC-$1") + '</span>'; });
 }
+
+// ── Edit your own comment — allowed until someone else comments after it ──
+function CommentEditable(d, all, myUid) {
+  if (!myUid || d.authorUid !== myUid) return false;
+  var lastOther = all.filter(function(x){ return x.authorUid && x.authorUid !== myUid; }).map(function(x){ return x.createdAt || ""; }).sort().pop() || "";
+  return !lastOther || (d.createdAt || "") > lastOther;
+}
+function EditComment(ticketId, commentId) {
+  var box = document.getElementById("cmt-" + commentId); if (!box) return;
+  var textEl = box.querySelector(".cmt-text"); var cur = textEl ? textEl.getAttribute("data-raw") : "";
+  box.querySelector(".cmt-actions").style.display = "none";
+  textEl.innerHTML = '<textarea id="cmt-edit-' + commentId + '" rows="3" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-family:inherit;font-size:0.85rem;outline:none;resize:vertical"></textarea>' +
+    '<div style="display:flex;gap:6px;margin-top:6px">' +
+      '<button onclick="SaveCommentEdit(\'' + ticketId + '\',\'' + commentId + '\')" style="flex:1;background:rgba(125,237,181,0.14);border:1px solid rgba(125,237,181,0.5);border-radius:7px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:8px;cursor:pointer">Save</button>' +
+      '<button onclick="openTicket(\'' + ticketId + '\')" style="flex:1;background:none;border:1px solid var(--card-border);border-radius:7px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:8px;cursor:pointer">Cancel</button>' +
+    '</div>';
+  var ta = document.getElementById("cmt-edit-" + commentId); ta.value = cur; ta.focus();
+}
+function SaveCommentEdit(ticketId, commentId) {
+  var ta = document.getElementById("cmt-edit-" + commentId); if (!ta) return;
+  var text = ta.value.trim(); if (!text) { showToast("Comment can't be empty", true); return; }
+  db.collection("tickets").doc(ticketId).collection("comments").doc(commentId).update({ text: text, editedAt: new Date().toISOString() })
+    .then(function(){ showToast("Comment updated"); openTicket(ticketId); })
+    .catch(function(e){ showToast(/permission/i.test(e.message) ? "Can't edit — someone has replied since" : "Error: " + e.message, true); });
+}
+
 var replyTarget = null;
 function replyToComment(commentId, author) {
   replyTarget = { id: commentId, author: author };

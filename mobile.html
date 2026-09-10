@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.39";
+  var BUILD = "1.41";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.39</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.41</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.39</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.41</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3134,11 +3134,15 @@ function mRenderTicketDetail(id, t) {
       var byParent = {}; all.forEach(function(d) { var p = d.parentId || "__root__"; (byParent[p] = byParent[p] || []).push(d); });
       function renderComment(d, depth) {
         var isMine = d.authorUid && mCurrentUser && d.authorUid === mCurrentUser.uid;
-        var html = '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:8px 10px;margin-bottom:6px' + (depth ? ';margin-left:' + Math.min(depth,3)*14 + 'px;border-left:2px solid rgba(201,168,76,0.35)' : '') + '">' +
+        var canEdit = mCommentEditable(d, all, mCurrentUser && mCurrentUser.uid);
+        var html = '<div id="cmt-' + d.id + '" style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:8px 10px;margin-bottom:6px' + (depth ? ';margin-left:' + Math.min(depth,3)*14 + 'px;border-left:2px solid rgba(201,168,76,0.35)' : '') + '">' +
           (d.parentAuthor ? '<div style="font-size:0.6rem;color:var(--gray);margin-bottom:2px">↪ replying to <b>' + mRenderMentions(d.parentAuthor) + '</b></div>' : '') +
           '<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--gray);margin-bottom:2px"><span style="color:var(--white);font-weight:700">' + mRenderMentions(d.author||"—") + '</span><span>' + (d.createdAt ? new Date(d.createdAt).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "") + '</span></div>' +
-          '<div style="font-size:0.8rem;color:var(--white);white-space:pre-wrap">' + mRenderMentions(d.text) + '</div>' +
-          '<button onclick="mReplyTo(\'' + d.id + '\',\'' + String(d.author||"").replace(/'/g,"") + '\')" style="margin-top:6px;background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' +
+          '<div class="cmt-text" data-raw="' + String(d.text||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;") + '" style="font-size:0.8rem;color:var(--white);white-space:pre-wrap">' + mRenderMentions(d.text) + (d.editedAt ? ' <span style="font-size:0.6rem;color:var(--gray)">(edited)</span>' : '') + '</div>' +
+          '<div class="cmt-actions" style="display:flex;gap:14px;margin-top:6px">' +
+            '<button onclick="mReplyTo(\'' + d.id + '\',\'' + String(d.author||"").replace(/'/g,"") + '\')" style="background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' +
+            (canEdit ? '<button onclick="mEditComment(\'' + t.id + '\',\'' + d.id + '\')" style="background:none;border:none;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">✎ Edit</button>' : '') +
+          '</div>' +
         '</div>';
         (byParent[d.id] || []).forEach(function(r) { html += renderComment(r, depth + 1); });
         return html;
@@ -3194,6 +3198,32 @@ function mRenderTicketDetail(id, t) {
     mAttachMentions("m-tk-new-comment", "m-tk-mention-box");
   }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
+
+// ── Edit your own comment — allowed until someone else comments after it ──
+function mCommentEditable(d, all, myUid) {
+  if (!myUid || d.authorUid !== myUid) return false;
+  var lastOther = all.filter(function(x){ return x.authorUid && x.authorUid !== myUid; }).map(function(x){ return x.createdAt || ""; }).sort().pop() || "";
+  return !lastOther || (d.createdAt || "") > lastOther;
+}
+function mEditComment(ticketId, commentId) {
+  var box = document.getElementById("cmt-" + commentId); if (!box) return;
+  var textEl = box.querySelector(".cmt-text"); var cur = textEl ? textEl.getAttribute("data-raw") : "";
+  box.querySelector(".cmt-actions").style.display = "none";
+  textEl.innerHTML = '<textarea id="cmt-edit-' + commentId + '" rows="3" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-family:inherit;font-size:0.85rem;outline:none;resize:vertical"></textarea>' +
+    '<div style="display:flex;gap:6px;margin-top:6px">' +
+      '<button onclick="mSaveCommentEdit(\'' + ticketId + '\',\'' + commentId + '\')" style="flex:1;background:rgba(125,237,181,0.14);border:1px solid rgba(125,237,181,0.5);border-radius:7px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:8px;cursor:pointer">Save</button>' +
+      '<button onclick="mOpenTicket(\'' + ticketId + '\')" style="flex:1;background:none;border:1px solid var(--card-border);border-radius:7px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:8px;cursor:pointer">Cancel</button>' +
+    '</div>';
+  var ta = document.getElementById("cmt-edit-" + commentId); ta.value = cur; ta.focus();
+}
+function mSaveCommentEdit(ticketId, commentId) {
+  var ta = document.getElementById("cmt-edit-" + commentId); if (!ta) return;
+  var text = ta.value.trim(); if (!text) { mToast("Comment can't be empty", true); return; }
+  db.collection("tickets").doc(ticketId).collection("comments").doc(commentId).update({ text: text, editedAt: new Date().toISOString() })
+    .then(function(){ mToast("Comment updated"); mOpenTicket(ticketId); })
+    .catch(function(e){ mToast(/permission/i.test(e.message) ? "Can't edit — someone has replied since" : "Error: " + e.message, true); });
+}
+
 var mReplyTarget = null;
 function mReplyTo(commentId, author) {
   mReplyTarget = { id: commentId, author: author };
@@ -4459,6 +4489,47 @@ function mSetRmaBy(val) {
 }
 
 var mTmNonMap = {}; // { "crewIdx_role": { status: "on_scene_direct"|"cleared_scene"|"other", label } }
+// ── Hospital search (API Ninjas — same source as desktop). Local hospitals stay as quick picks in the dropdown. ──
+var M_HOSP_API_KEY = "pjjLfeqUHWBqhedxV1ow3rfRTQXvE8zgKqYOi20V";
+var mHospSearchTimer = null;
+function mHospSearchInput() {
+  var inp = document.getElementById("m-tr-hosp-search"), list = document.getElementById("m-tr-hosp-results");
+  var q = inp.value.trim();
+  clearTimeout(mHospSearchTimer);
+  if (q.length < 2) { list.style.display = "none"; list.innerHTML = ""; return; }
+  list.style.display = "block";
+  list.innerHTML = '<div style="padding:10px 12px;font-size:0.78rem;color:var(--gray)">Searching…</div>';
+  mHospSearchTimer = setTimeout(function() {
+    fetch("https://api.api-ninjas.com/v1/hospitals?name=" + encodeURIComponent(q) + "&limit=20", { headers: { "X-Api-Key": M_HOSP_API_KEY } })
+      .then(function(r){ return r.json(); })
+      .then(function(hospitals) {
+        if (inp.value.trim() !== q) return; // stale response
+        if (!hospitals || !hospitals.length) { list.innerHTML = '<div style="padding:10px 12px;font-size:0.78rem;color:var(--gray)">No hospitals found</div>'; return; }
+        // NJ first, then neighboring states, then the rest — same ordering as desktop
+        var nj = hospitals.filter(function(h){ return h.state === "NJ"; });
+        var near = hospitals.filter(function(h){ return ["NY","PA","CT","DE"].indexOf(h.state) !== -1; });
+        var rest = hospitals.filter(function(h){ return h.state !== "NJ" && ["NY","PA","CT","DE"].indexOf(h.state) === -1; });
+        var results = nj.concat(near).concat(rest).slice(0, 8);
+        list.innerHTML = results.map(function(h) {
+          var display = h.name + (h.city ? ", " + h.city : "");
+          return '<div onmousedown="event.preventDefault();mSelectSearchedHospital(\'' + display.replace(/\\/g,"").replace(/'/g,"\\'") + '\')" style="padding:10px 12px;border-bottom:1px solid var(--card-border);cursor:pointer">' +
+            '<div style="font-size:0.84rem;color:var(--white)">' + mEscHtml(h.name) + '</div>' +
+            (h.city ? '<div style="font-size:0.68rem;color:var(--gray)">' + mEscHtml(h.city) + (h.state ? ", " + mEscHtml(h.state) : "") + '</div>' : '') +
+          '</div>';
+        }).join("");
+      })
+      .catch(function() { list.innerHTML = '<div style="padding:10px 12px;font-size:0.78rem;color:#ff9090">Search unavailable</div>'; });
+  }, 300);
+}
+function mSelectSearchedHospital(display) {
+  var sel = document.getElementById("m-tr-hospital"), list = document.getElementById("m-tr-hosp-results"), inp = document.getElementById("m-tr-hosp-search"), chosen = document.getElementById("m-tr-hosp-chosen");
+  var exists = Array.prototype.some.call(sel.options, function(o){ return o.value === display; });
+  if (!exists) { var o = document.createElement("option"); o.value = display; o.textContent = display; sel.insertBefore(o, sel.options[sel.options.length - 1]); }
+  sel.value = display;
+  list.style.display = "none"; list.innerHTML = ""; inp.value = "";
+  if (chosen) { chosen.textContent = "✓ " + display; chosen.style.display = "block"; }
+  mUpdateTransportPrompts();
+}
 function mOpenTransportSheet() {
   var call = mDispCallCache[mDispSelectedCallId];
   if (!call) return;
@@ -4466,6 +4537,9 @@ function mOpenTransportSheet() {
   var hospSel = document.getElementById("m-tr-hospital");
   hospSel.innerHTML = '<option value="">Select hospital…</option>' + mHospitalOptionsHTML();
   hospSel.value = "";
+  var hs = document.getElementById("m-tr-hosp-search"); if (hs) hs.value = "";
+  var hr = document.getElementById("m-tr-hosp-results"); if (hr) { hr.style.display = "none"; hr.innerHTML = ""; }
+  var hc = document.getElementById("m-tr-hosp-chosen"); if (hc) hc.style.display = "none";
   var checks = document.getElementById("m-tr-unit-checks");
   var rows = [];
   (call.crews||[]).forEach(function(crew, ci) {
@@ -4785,7 +4859,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.39</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.41</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -4961,7 +5035,12 @@ function mCloseAllSheets() {
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
   <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:14px">🚑 Transporting Units</div>
   <div class="m-disp-label" id="m-tr-dest-flash">Select Transport Destination</div>
-  <select id="m-tr-hospital" class="m-disp-input" style="margin-bottom:14px" onchange="mUpdateTransportPrompts()"></select>
+  <select id="m-tr-hospital" class="m-disp-input" style="margin-bottom:8px" onchange="mUpdateTransportPrompts()"></select>
+  <div style="position:relative;margin-bottom:14px">
+    <input type="text" id="m-tr-hosp-search" class="m-disp-input" placeholder="🔍 Search any hospital by name…" autocomplete="off" oninput="mHospSearchInput()">
+    <div id="m-tr-hosp-results" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;background:#16283f;border:1px solid var(--card-border);border-radius:8px;z-index:40;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5);max-height:260px;overflow-y:auto"></div>
+    <div id="m-tr-hosp-chosen" style="display:none;font-size:0.78rem;color:#7dedb5;margin-top:6px"></div>
+  </div>
   <div class="m-disp-label" id="m-tr-units-flash">Units Transporting to the Hospital</div>
   <div id="m-tr-unit-checks" style="margin-bottom:10px"></div>
   <div id="m-tr-non-section" style="display:none;margin-bottom:14px">
