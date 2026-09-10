@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.27";
+  var BUILD = "1.29";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.27</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.29</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.27</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.29</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -895,6 +895,7 @@ auth.onAuthStateChanged(function(user) {
       document.getElementById("m-topbar-unit").textContent = mCurrentUserUnit;
       if (d.mustChangePassword) { mGoTo("force-pw"); return; }
       mEnterHome();
+      mHandleDeepLink();
       mLoadAllResponders();
       mApplyTestModeState(d.sysTestingMode === true); // personal setting, default OFF
       mMaybeOfferPasskey();
@@ -1963,6 +1964,7 @@ if ("serviceWorker" in navigator) {
       if (!e.data) return;
       if (e.data.type === "PLAY_TONE") mPlayTone();
       if (e.data.type === "NEW_CALL" && e.data.callId) mGoTo("home");
+      if (e.data.type === "OPEN_TICKET" && e.data.ticketId) mOpenTicketDeepLink(e.data.ticketId);
     });
   }).catch(function(e) { console.warn("SW registration failed:", e); });
 }
@@ -2315,6 +2317,19 @@ var mAssignSheetCrewIdx = 0, mAssignSheetRole = null, mAssignSheetMode = "unit";
 function mNowHHMM() {
   var d = new Date();
   return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+
+// ── DEEP LINKS (from push taps): #ticket=<id> ──
+function mHandleDeepLink() {
+  try {
+    var m = (location.hash || "").match(/[#&]ticket=([A-Za-z0-9_-]+)/);
+    if (m) { history.replaceState(null, "", location.pathname + location.search); mOpenTicketDeepLink(m[1]); }
+  } catch (e) {}
+}
+function mOpenTicketDeepLink(id) {
+  mGoTo("service");
+  mLoadTickets();
+  setTimeout(function() { try { mOpenTicket(id); } catch (e) {} }, 350);
 }
 
 // ── PASSKEY / BIOMETRIC SIGN-IN (WebAuthn + PRF; sign-in encrypted on-device, unlocked only by biometric) ──
@@ -2983,7 +2998,7 @@ function mAddComment(id) {
   db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
     var d = snap.data();
     var author = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
-    return db.collection("tickets").doc(id).collection("comments").add({ text: text, author: author, createdAt: new Date().toISOString() }).then(function() {
+    return db.collection("tickets").doc(id).collection("comments").add({ text: text, author: author, authorUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() }).then(function() {
       var t = mAllTickets.find(function(x){ return x.id === id; });
       if (t && t.assignedByUid && t.assignedByUid !== mCurrentUser.uid) {
         var commentData = { title: t.title, details: "New comment from " + author + ":\n\n\"" + text + "\"", unit: t.unit, priority: t.priority, submittedBy: t.submittedBy, type: "comment" };
@@ -3034,6 +3049,7 @@ function mSendToLogisticsTeam(ticketData) {
 function mSendAcceptanceEmails(opts) {
   var ticketData = Object.assign({}, opts, { details: opts.acceptedBy + " has accepted this service request.", type: "accept" });
   if (MSysTestingMode) { mGetAdminEmail().then(function(email) { if (email) mSendTicketEmail(Object.assign({}, ticketData, { toEmail: email })).catch(function(){}); }); return; }
+  mSendToLogisticsTeam(ticketData); // same as desktop: the rest of the team sees it's taken
   if (opts.submittedByUid) {
     db.collection("users").doc(opts.submittedByUid).get().then(function(snap) {
       var email = snap.exists ? snap.data().email : null;
@@ -3523,10 +3539,7 @@ function mBuildCrewBlock(call, crew, crewIdx) {
   // Crew-level rig: chosen once per crew, never asked per unit.
   // Load-a-Rig calls need the rig up front (everyone goes to base). On a Standard call, only ask
   // once a unit actually chooses the rig path — don't front-load it.
-  var rigNeededNow = (call.zone === "secondary") || Object.keys(crew).some(function(k) {
-    if (k === "rig" || !crew[k] || crew[k] === "__added__") return false;
-    return mUdOf(call, crewIdx, k).response === "rig";
-  });
+  var rigNeededNow = (call.zone === "secondary");   // Standard calls: the picker lives under the unit responding to the rig
   if (!crew.rig && rigNeededNow) {
     html += '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Crew Rig</div>';
     html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.4);color:#ffc84a;margin-bottom:8px" onclick="mOpenAssignSheet(' + crewIdx + ',\'__crew__\',\'rig\')">🚑 Choose Rig for Crew ' + (crewIdx+1) + '</button>';
@@ -3617,8 +3630,32 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   var nextBtn = mNextStepButton(call, crewIdx, role, unit);
   if (nextBtn) html += nextBtn;
 
+  // Divert: change response mode while still en route (scene ↔ rig). Assignment stays — a unit is assigned once per call.
+  if (["enroute_scene","picking_up_ambo","onboard_rig","ambo_responding"].indexOf(status) !== -1) {
+    var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to base / rig";
+    html += '<button onclick="mDivertResponse(' + crewIdx + ',\'' + role + '\',\'' + unit + '\')" style="width:100%;margin-top:6px;background:none;border:1px dashed rgba(255,255,255,0.18);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px;cursor:pointer">↔ ' + toLabel + '</button>';
+  }
+
   html += '</div>';
   return html;
+}
+function mDivertResponse(crewIdx, role, unit) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(); var det = mUdOf(call, crewIdx, role);
+    var toRig = det.response !== "rig";
+    if (!confirm(unit + ": divert to " + (toRig ? "base / rig" : "direct to scene") + "?")) return;
+    var now = mNowHHMM();
+    var update = { updatedAt: new Date().toISOString() };
+    update["unitDetails." + mUdKey(crewIdx, role) + ".response"] = toRig ? "rig" : "scene";
+    update["unitDetails." + mUdKey(crewIdx, role) + ".status"] = toRig ? "picking_up_ambo" : "enroute_scene";
+    update["unitDetails." + mUdKey(crewIdx, role) + ".statusAt"] = now;
+    var notes = call.callNotes || [];
+    notes.push({ text: unit + " diverted — now " + (toRig ? "responding to base for the rig" : "responding direct to scene"), time: now, by: mCurrentUserUnit || "Dispatch" });
+    update.callNotes = notes;
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).then(function(){ mToast(unit + " diverted"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
 function mNextStepButton(call, crewIdx, role, unit) {
@@ -3636,7 +3673,10 @@ function mNextStepButton(call, crewIdx, role, unit) {
   }
   // Rig path: the only per-unit step is boarding the rig. Everything after is crew-level (rig + units move as one).
   if (status === "picking_up_ambo") {
-    if (!crew.rig) return '<div style="font-size:0.66rem;color:var(--gray)">Select the crew rig to continue.</div>';
+    if (!crew.rig) {
+      return '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Rig</div>' +
+        '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.5);background:rgba(255,200,74,0.12);color:#ffc84a" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'rig\')">🚑 Choose Rig for ' + unit + '</button>';
+    }
     return btn("Mark " + unit + " Onboard " + crew.rig, "onboard_rig", "#ffc84a", "gold");
   }
   return "";
@@ -4501,7 +4541,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.27</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.29</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
