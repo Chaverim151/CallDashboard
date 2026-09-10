@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.50";
+  var BUILD = "1.54";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.50</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.54</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.50</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.54</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -1545,7 +1545,7 @@ function mLoadEduContent() {
   if (!el) return;
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:16px 0">Loading...</div>';
 
-  if (mEduTab === "cme") { mRenderCME(el); return; }
+  if (mEduTab === "cme") { if (mEduIsAdmin) mRenderCMEAdmin(el); else mRenderCME(el); return; }
 
   var now = new Date().toISOString();
   db.collection("education").get().then(function(snap) {
@@ -1689,7 +1689,10 @@ function mOpenEduDetail(eventId) {
         ) : '') +
 
         // Admin: manage event + attendance roster / CE approval
-        (mEduIsAdmin ? '<div style="display:flex;gap:6px;margin:12px 0"><button class="m-disp-btn" style="flex:1;border-color:rgba(255,255,255,0.2)" onclick="mEditEduEvent(\'' + ev.id + '\')">✎ Edit</button><button class="m-disp-btn" style="flex:1;border-color:rgba(201,168,76,0.4);color:var(--gold)" onclick="mShowEduQR(\'' + ev.id + '\')">▦ QR</button><button class="m-disp-btn" style="flex:1;border-color:rgba(255,144,144,0.4);color:#ff9090" onclick="mDeleteEduEvent(\'' + ev.id + '\')">🗑 Delete</button></div><div id="m-edu-admin-section"></div>' : '');
+        (mEduIsAdmin && !isPast ? (ev.checkinOpen
+          ? '<button class="m-disp-btn m-pulse-green" style="width:100%;margin-top:12px;border-color:rgba(125,237,181,0.5);background:rgba(125,237,181,0.12);color:#7dedb5" onclick="mToggleCheckin(\'' + ev.id + '\',false)">🔓 Check-in is OPEN — tap to lock</button>'
+          : '<button class="m-disp-btn" style="width:100%;margin-top:12px;border-color:rgba(201,168,76,0.5);background:rgba(201,168,76,0.12);color:var(--gold)" onclick="mToggleCheckin(\'' + ev.id + '\',true)">🔒 Check-in locked — tap to open for members</button>') : '') +
+        (mEduIsAdmin ? '<div style="display:flex;gap:6px;margin:12px 0"><button class="m-disp-btn" style="flex:1;border-color:rgba(255,255,255,0.2)" onclick="mEditEduEvent(\'' + ev.id + '\')">✎ Edit</button><button class="m-disp-btn" style="flex:1;border-color:rgba(201,168,76,0.4);color:var(--gold)" onclick="mShowEduQR(\'' + ev.id + '\')">▦ QR</button><button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.4);color:#7ab8f5" onclick="mPrintClassSheet(\'' + ev.id + '\')">🖨 Sheet</button><button class="m-disp-btn" style="flex:1;border-color:rgba(255,144,144,0.4);color:#ff9090" onclick="mDeleteEduEvent(\'' + ev.id + '\')">🗑 Delete</button></div><div id="m-edu-admin-section"></div>' : '');
 
       if (mEduIsAdmin) mEduRenderAdminSection(ev);
     });
@@ -1765,6 +1768,11 @@ function mSaveEduEvent() {
   var op = editId ? db.collection("education").doc(editId).set(data, { merge: true }) : db.collection("education").add(data);
   op.then(function() { mToast(editId ? "Event updated" : "Event created"); mCloseAllSheets(); mCloseEduDetail(); mLoadEduContent(); })
     .catch(function(e) { msg.textContent = "Error: " + e.message; msg.style.display = "block"; });
+}
+function mToggleCheckin(eventId, open) {
+  db.collection("education").doc(eventId).set({ checkinOpen: open }, { merge: true })
+    .then(function() { mToast(open ? "🔓 Check-in opened — members can scan now" : "🔒 Check-in locked"); mOpenEduDetail(eventId); })
+    .catch(function(e) { mToast("Error: " + e.message, true); });
 }
 function mEditEduEvent(eventId) {
   db.collection("education").doc(eventId).get().then(function(s) { if (s.exists) mOpenEduForm(Object.assign({ id: s.id }, s.data())); });
@@ -1895,6 +1903,174 @@ function mRenderPendingTab(el) {
     }).join("") + '</div>';
   });
 }
+// ── Admin CME view: full roster with totals; tap a member to edit ──
+function mRenderCMEAdmin(el) {
+  var year = new Date().getFullYear();
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading…</div>';
+  db.collection("users").get().then(function(snap) {
+    var members = [];
+    snap.forEach(function(d) {
+      var m = d.data(); if (!m.unit) return;
+      var roles = (m.roles||[]).map(function(r){ return String(r).toLowerCase(); });
+      var isField = roles.includes("responder") || roles.includes("captain") || roles.includes("chief") || roles.includes("observer") || m.role === "admin";
+      if (!isField) return; // pure dispatchers / logistics don't accrue CE
+      members.push(Object.assign({ uid: d.id }, m));
+    });
+    members.sort(function(a,b){ return (a.unit||"").localeCompare(b.unit||"", undefined, { numeric: true }); });
+    var totalHrs = members.reduce(function(s,m){ return s + ((m.cmeHours||{})[year]||0); }, 0);
+    el.innerHTML = '<div style="padding:12px 0 0">' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px"><div style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray)">' + year + ' CME — All Members</div><div style="font-size:0.7rem;color:var(--gray)">' + members.length + ' members · ' + totalHrs + ' hrs</div></div>' +
+      members.map(function(m) {
+        var name = ((m.firstName||"") + " " + (m.lastName||"")).trim();
+        var hrs = (m.cmeHours||{})[year]||0, classes = (m.cmeClasses||{})[year]||0, pending = (m.cmePending||{})[year]||0;
+        var col = hrs >= 10 ? "#7dedb5" : hrs >= 5 ? "#ffc84a" : "var(--white)";
+        return '<div onclick="mOpenCMEEdit(\'' + m.uid + '\')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:11px 12px;margin-bottom:6px;cursor:pointer">' +
+          '<div style="min-width:0"><span style="font-family:\'Oswald\',sans-serif;font-weight:700;color:#7ab8f5">' + mEscHtml(m.unit) + '</span> <span style="color:var(--white);font-size:0.85rem">' + mEscHtml(name||"—") + '</span>' +
+            '<div style="font-size:0.66rem;color:var(--gray);margin-top:2px">' + classes + ' class' + (classes===1?'':'es') + (pending ? ' · <span style="color:#ffc84a">' + pending + ' pending</span>' : '') + '</div></div>' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:' + col + '">' + hrs + '<span style="font-size:0.6rem;color:var(--gray);font-weight:400"> CE</span></span><span style="color:var(--gray)">✎</span></div>' +
+        '</div>';
+      }).join("") + '</div>';
+  }).catch(function(e){ el.innerHTML = '<div style="color:#ff9090;font-size:0.8rem;padding:20px 0">Error: ' + e.message + '</div>'; });
+}
+var mCMEEditUid = null;
+function mOpenCMEEdit(uid) {
+  mCMEEditUid = uid;
+  var yearSel = document.getElementById("m-cme-edit-year"), thisYear = new Date().getFullYear();
+  yearSel.innerHTML = [thisYear+1, thisYear, thisYear-1, thisYear-2].map(function(y){ return '<option value="' + y + '"' + (y===thisYear?' selected':'') + '>' + y + '</option>'; }).join("");
+  document.getElementById("m-cme-edit-attended").innerHTML = '<div style="color:var(--gray);font-size:0.78rem">Loading…</div>';
+  mOpenSheet("m-sheet-cme-edit");
+  db.collection("users").doc(uid).get().then(function(s) {
+    var m = s.exists ? s.data() : {};
+    document.getElementById("m-cme-edit-unit").textContent = m.unit || "";
+    document.getElementById("m-cme-edit-name").textContent = ((m.firstName||"") + " " + (m.lastName||"")).trim();
+    mCMELoadYear();
+    mCMELoadAttended(uid);
+  });
+}
+function mCMELoadYear() {
+  var uid = mCMEEditUid; if (!uid) return;
+  var year = document.getElementById("m-cme-edit-year").value;
+  db.collection("users").doc(uid).get().then(function(s) {
+    var m = s.exists ? s.data() : {};
+    document.getElementById("m-cme-edit-hours").value = (m.cmeHours||{})[year] || 0;
+    document.getElementById("m-cme-edit-classes").value = (m.cmeClasses||{})[year] || 0;
+  });
+}
+function mSaveCMETotals() {
+  var uid = mCMEEditUid; if (!uid) return;
+  var year = document.getElementById("m-cme-edit-year").value;
+  var update = {};
+  update["cmeHours." + year] = parseFloat(document.getElementById("m-cme-edit-hours").value) || 0;
+  update["cmeClasses." + year] = parseInt(document.getElementById("m-cme-edit-classes").value) || 0;
+  db.collection("users").doc(uid).update(update).then(function(){ mToast("✓ " + year + " totals saved"); if (mEduTab === "cme") mLoadEduContent(); }).catch(function(e){ mToast("Error: " + e.message, true); });
+}
+function mCMELoadAttended(uid) {
+  var host = document.getElementById("m-cme-edit-attended");
+  db.collection("education").get().then(function(evSnap) {
+    var events = []; evSnap.forEach(function(d){ events.push(Object.assign({ id: d.id }, d.data())); });
+    return Promise.all(events.map(function(ev) {
+      return db.collection("education").doc(ev.id).collection("attendance").doc(uid).get().then(function(a){ return { ev: ev, att: a.exists ? a.data() : null }; }).catch(function(){ return { ev: ev, att: null }; });
+    }));
+  }).then(function(records) {
+    var attended = records.filter(function(r){ return r.att; });
+    attended.sort(function(a,b){ return (b.ev.dateTime||"").localeCompare(a.ev.dateTime||""); });
+    if (!attended.length) { host.innerHTML = '<div style="color:var(--gray);font-size:0.78rem">No classes attended.</div>'; return; }
+    host.innerHTML = '<div class="m-disp-label">Attended Classes</div>' + attended.map(function(r) {
+      var ev = r.ev, att = r.att, dt = ev.dateTime ? new Date(ev.dateTime) : null;
+      var approved = !!att.ceApproved, denied = att.ceDecision === "denied", pending = !approved && !denied;
+      var col = approved ? "#7dedb5" : pending ? "#ffc84a" : "#ff9090", lab = approved ? "✓ Approved" : pending ? "⏳ Pending" : "✗ Denied";
+      var rid = "m-cme-row-" + ev.id;
+      return '<div id="' + rid + '" style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:9px 10px;margin-bottom:6px">' +
+        '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="font-size:0.8rem;color:var(--white);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mEscHtml(ev.title||"Untitled") + '</div><div style="font-size:0.65rem;color:var(--gray)">' + (dt ? dt.toLocaleDateString([], {month:"short",day:"numeric",year:"numeric"}) : "—") + (ev.type ? ' · ' + ev.type : '') + '</div></div>' +
+        '<div style="text-align:right;flex-shrink:0"><div style="font-family:\'Oswald\',sans-serif;font-weight:700;color:var(--white)">' + (att.ceHours||0) + ' CE</div><div style="font-size:0.6rem;color:' + col + '">' + lab + '</div></div>' +
+        '<button onclick="mCMEToggleRowEdit(\'' + rid + '\')" style="background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:5px;color:var(--gray);font-size:0.7rem;padding:5px 8px;cursor:pointer">✎</button></div>' +
+        '<div class="m-cme-row-edit" style="display:none;margin-top:8px;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:0.66rem;color:var(--gray)">CE hours</span><input type="number" min="0" step="0.5" value="' + (att.ceHours||0) + '" class="m-att-hrs" style="width:70px;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);border-radius:5px;padding:5px 8px;color:var(--white);font-size:0.85rem"></div>' +
+          '<div style="display:flex;gap:6px">' +
+            '<button onclick="mSaveAttRecord(\'' + rid + '\',\'' + ev.id + '\',\'' + uid + '\',\'approved\')" style="flex:1;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.45);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:8px;cursor:pointer">✓ Approve</button>' +
+            '<button onclick="mSaveAttRecord(\'' + rid + '\',\'' + ev.id + '\',\'' + uid + '\',\'pending\')" style="flex:1;background:rgba(255,200,74,0.12);border:1px solid rgba(255,200,74,0.45);border-radius:6px;color:#ffc84a;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:8px;cursor:pointer">⏳ Pending</button>' +
+            '<button onclick="mSaveAttRecord(\'' + rid + '\',\'' + ev.id + '\',\'' + uid + '\',\'denied\')" style="flex:1;background:rgba(255,144,144,0.1);border:1px solid rgba(255,144,144,0.4);border-radius:6px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:8px;cursor:pointer">✗ Deny</button>' +
+          '</div></div></div>';
+    }).join("");
+  });
+}
+function mCMEToggleRowEdit(rid) { var e = document.querySelector("#" + rid + " .m-cme-row-edit"); if (e) e.style.display = e.style.display === "none" ? "block" : "none"; }
+// Save one attendance record and keep the member's yearly totals consistent (mirrors desktop's delta logic)
+function mSaveAttRecord(rid, evId, uid, decision) {
+  var row = document.getElementById(rid); var inp = row ? row.querySelector(".m-att-hrs") : null;
+  var newHrs = parseFloat(inp ? inp.value : 0) || 0, approved = decision === "approved";
+  var update = { ceHours: newHrs, ceApproved: approved, ceDecision: decision === "pending" ? "" : decision, decidedByUid: mCurrentUser ? mCurrentUser.uid : "", editedBy: mCurrentUserUnit || (mCurrentUser ? mCurrentUser.email : "Admin"), editedAt: new Date().toISOString() };
+  db.collection("education").doc(evId).get().then(function(evSnap) {
+    var evData = evSnap.exists ? evSnap.data() : {};
+    var year = evData.dateTime ? new Date(evData.dateTime).getFullYear() : new Date().getFullYear();
+    return db.collection("education").doc(evId).collection("attendance").doc(uid).get().then(function(prevSnap) {
+      var prev = prevSnap.exists ? prevSnap.data() : {}, wasApproved = !!prev.ceApproved, prevHrs = prev.ceHours || 0;
+      return db.collection("education").doc(evId).collection("attendance").doc(uid).set(update, { merge: true }).then(function() {
+        var u = {};
+        if (wasApproved && !approved) { u["cmeHours." + year] = firebase.firestore.FieldValue.increment(-prevHrs); u["cmeClasses." + year] = firebase.firestore.FieldValue.increment(-1); }
+        else if (!wasApproved && approved) { u["cmeHours." + year] = firebase.firestore.FieldValue.increment(newHrs); u["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1); }
+        else if (wasApproved && approved && prevHrs !== newHrs) { u["cmeHours." + year] = firebase.firestore.FieldValue.increment(newHrs - prevHrs); }
+        if (Object.keys(u).length) return db.collection("users").doc(uid).set(u, { merge: true });
+      });
+    });
+  }).then(function() { mToast("✓ Record updated"); mCMELoadYear(); mCMELoadAttended(uid); mEduPendingBadge(); }).catch(function(e){ mToast("Error: " + e.message, true); });
+}
+
+// ── Printable Class Sign-In Sheet (same document as desktop) ──
+function mPrintClassSheet(eventId) {
+  db.collection("education").doc(eventId).get().then(function(snap) {
+    if (!snap.exists) return; var ev = snap.data();
+    var dt = ev.dateTime ? new Date(ev.dateTime) : null;
+    var dateStr = dt ? dt.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "—";
+    var timeStr = dt ? dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "";
+    var typeLabel = { cme: "CME Class", drill: "Drill", meeting: "Meeting", training: "Training", other: "Event" }[ev.type || "other"] || "Event";
+    var payload = JSON.stringify({ h: "1", e: eventId, a: ev.lat ? Math.round(ev.lat*10000)/10000 + "," + Math.round(ev.lng*10000)/10000 : null, r: ev.geoRadius || 100, c: ev.ceHours || 0 });
+    var esc = function(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;"); };
+    function build(qrDataUrl) {
+      return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Class Sign-In Sheet</title><style>' +
+        'body{font-family:Arial,sans-serif;max-width:680px;margin:24px auto;padding:16px;color:#000}' +
+        '.header{display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #000}.logo{width:56px;height:56px}.org{font-size:20px;font-weight:bold;letter-spacing:1px}.org span{color:#c9a84c}' +
+        '.title{font-size:24px;font-weight:bold;margin-bottom:14px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:18px}.meta-item{padding:8px 12px;border:1px solid #ddd;border-radius:6px}.meta-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-bottom:2px}.meta-value{font-size:14px;font-weight:bold}' +
+        '.qr-section{display:flex;align-items:flex-start;gap:20px;margin-bottom:20px;padding:14px;border:2px solid #c9a84c;border-radius:8px;background:#fffdf5}.qr-label{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-bottom:8px;font-weight:bold}.qr-inst{font-size:13px;color:#333;line-height:1.5}.geo-note{font-size:11px;color:#888;margin-top:8px}' +
+        '.signin-table{width:100%;border-collapse:collapse;margin-top:12px}.signin-table th{background:#f0f0f0;padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;border:1px solid #ccc}.signin-table td{padding:10px;border:1px solid #ccc;height:26px}.signin-table tr:nth-child(even) td{background:#fafafa}' +
+        '.footer{margin-top:20px;padding-top:12px;border-top:1px solid #ddd;font-size:11px;color:#888;text-align:center}@media print{body{margin:12px}}' +
+        '</style></head><body>' +
+        '<div class="header"><img class="logo" src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png"><div><div class="org">Hatzolah <span>Middlesex County</span></div><div style="font-size:13px;color:#666;margin-top:2px">Class Sign-In Sheet</div></div></div>' +
+        '<div class="title">' + esc(ev.title || "Class") + '</div>' +
+        '<div class="meta"><div class="meta-item"><div class="meta-label">Type</div><div class="meta-value">' + typeLabel + '</div></div><div class="meta-item"><div class="meta-label">CE Hours</div><div class="meta-value">' + (ev.ceHours || "N/A") + '</div></div><div class="meta-item"><div class="meta-label">Date</div><div class="meta-value">' + dateStr + '</div></div><div class="meta-item"><div class="meta-label">Time</div><div class="meta-value">' + timeStr + '</div></div>' +
+        (ev.location ? '<div class="meta-item" style="grid-column:1/-1"><div class="meta-label">Location</div><div class="meta-value">' + esc(ev.location) + '</div></div>' : '') +
+        (ev.instructor ? '<div class="meta-item" style="grid-column:1/-1"><div class="meta-label">Instructor</div><div class="meta-value">' + esc(ev.instructor) + '</div></div>' : '') + '</div>' +
+        '<div class="qr-section"><div><div class="qr-label">Member QR Check-In</div>' + (qrDataUrl ? '<img src="' + qrDataUrl + '" width="160" height="160">' : '<div style="width:160px;height:160px;background:#eee"></div>') + '<div class="geo-note">Geo-locked: ' + (ev.geoRadius || 100) + 'm radius</div></div>' +
+        '<div><div class="qr-label">Instructions for Members</div><div class="qr-inst">1. Open the Hatzolah MC app on your phone<br>2. Go to <strong>Education</strong><br>3. Find this class and tap <strong>Scan QR to Check In</strong><br>4. Scan this code — you must be physically present<br>5. You\'ll receive confirmation and CE hours automatically</div></div></div>' +
+        '<div style="font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Manual Sign-In (backup)</div>' +
+        '<table class="signin-table"><thead><tr><th style="width:40px">#</th><th>Unit</th><th>Name</th><th>Signature</th><th style="width:70px">Time In</th></tr></thead><tbody>' +
+        Array.from({ length: 25 }, function(_, i) { return '<tr><td style="color:#999;font-size:12px">' + (i+1) + '</td><td></td><td></td><td></td><td></td></tr>'; }).join("") +
+        '</tbody></table><div class="footer">Hatzolah Middlesex County · ' + new Date().toLocaleDateString() + ' · This document is for internal use only</div></body></html>';
+    }
+    function show(qrDataUrl) {
+      var frame = document.getElementById("m-print-frame");
+      frame.srcdoc = build(qrDataUrl);
+      document.getElementById("m-print-overlay").style.display = "flex";
+    }
+    // Render the QR off-screen, capture as an image, then build the sheet
+    function makeQR() {
+      var tmp = document.createElement("div"); tmp.style.cssText = "position:fixed;left:-9999px;top:0"; document.body.appendChild(tmp);
+      new window.QRCode(tmp, { text: payload, width: 320, height: 320, colorDark: "#000000", colorLight: "#ffffff", correctLevel: window.QRCode.CorrectLevel.H });
+      setTimeout(function() {
+        var cv = tmp.querySelector("canvas"), img = tmp.querySelector("img");
+        var url = cv ? cv.toDataURL("image/png") : (img ? img.src : null);
+        document.body.removeChild(tmp); show(url);
+      }, 150);
+    }
+    if (window.QRCode) makeQR(); else { var s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"; s.onload = makeQR; s.onerror = function(){ show(null); }; document.head.appendChild(s); }
+  });
+}
+function mPrintSheetNow() {
+  var frame = document.getElementById("m-print-frame");
+  try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+  catch (e) { mToast("Use your browser's Share → Print to print this sheet", true); }
+}
+
 // ── QR code for check-in (same payload as desktop) ──
 function mShowEduQR(eventId) {
   db.collection("education").doc(eventId).get().then(function(snap) {
@@ -5179,7 +5355,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.50</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.54</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5405,10 +5581,10 @@ function mCloseAllSheets() {
       <select id="m-edu-type" class="m-disp-input" style="margin-bottom:10px"><option value="cme">CME Class</option><option value="drill">Drill</option><option value="training">Training</option><option value="meeting">Meeting</option><option value="other">Other</option></select></div>
     <div style="flex:1"><div class="m-disp-label">CE Hours</div><input type="number" id="m-edu-hours" class="m-disp-input" min="0" max="8" step="0.5" value="1" style="margin-bottom:10px"></div>
   </div>
-  <div style="display:flex;gap:8px">
-    <div style="flex:1"><div class="m-disp-label">Date</div><input type="date" id="m-edu-date" class="m-disp-input" style="margin-bottom:10px"></div>
-    <div style="flex:1"><div class="m-disp-label">Time</div><input type="time" id="m-edu-time" class="m-disp-input" value="19:00" style="margin-bottom:10px"></div>
-  </div>
+  <div class="m-disp-label">Date</div>
+  <input type="date" id="m-edu-date" class="m-disp-input" style="margin-bottom:10px;width:100%;max-width:100%;box-sizing:border-box;-webkit-appearance:none;appearance:none;min-height:44px">
+  <div class="m-disp-label">Time</div>
+  <input type="time" id="m-edu-time" class="m-disp-input" value="19:00" style="margin-bottom:10px;width:100%;max-width:100%;box-sizing:border-box;-webkit-appearance:none;appearance:none;min-height:44px">
   <div class="m-disp-label">Location</div>
   <input type="text" id="m-edu-location" class="m-disp-input" placeholder="Start typing an address…" autocomplete="off" style="margin-bottom:4px">
   <input type="hidden" id="m-edu-lat"><input type="hidden" id="m-edu-lng">
@@ -5428,6 +5604,20 @@ function mCloseAllSheets() {
   <button onclick="mSaveEduEvent()" style="width:100%;background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:13px;cursor:pointer">Save Event</button>
 </div>
 
+<div class="m-disp-sheet" id="m-sheet-cme-edit" style="max-height:92vh;overflow-y:auto">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div><div id="m-cme-edit-unit" style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#7ab8f5"></div><div id="m-cme-edit-name" style="font-size:0.78rem;color:var(--gray)"></div></div>
+    <select id="m-cme-edit-year" class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.8rem" onchange="mCMELoadYear()"></select>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:10px">
+    <div style="flex:1"><div class="m-disp-label">CE Hours (year total)</div><input type="number" id="m-cme-edit-hours" class="m-disp-input" min="0" step="0.5"></div>
+    <div style="flex:1"><div class="m-disp-label">Classes</div><input type="number" id="m-cme-edit-classes" class="m-disp-input" min="0" step="1"></div>
+  </div>
+  <button onclick="mSaveCMETotals()" style="width:100%;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.5);border-radius:8px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:10px;cursor:pointer;margin-bottom:14px">Save year totals (manual override)</button>
+  <div id="m-cme-edit-attended"></div>
+</div>
+
 <div class="m-disp-sheet" id="m-sheet-ce-deny">
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
   <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:8px">✗ Deny CE Hours</div>
@@ -5435,6 +5625,15 @@ function mCloseAllSheets() {
   <div class="m-disp-label">Reason <span style="color:var(--gray);text-transform:none;letter-spacing:0">(sent to the member)</span></div>
   <textarea id="m-ce-deny-reason" class="m-disp-input" rows="3" placeholder="e.g. Left before the class ended…" style="margin-bottom:12px;resize:vertical"></textarea>
   <button onclick="mSubmitDenyCE()" style="width:100%;background:rgba(255,144,144,0.15);border:1px solid rgba(255,144,144,0.45);border-radius:9px;color:#ff9090;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Deny & Notify</button>
+</div>
+
+<div id="m-print-overlay" style="display:none;position:fixed;inset:0;z-index:950;background:#fff;flex-direction:column">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top));background:#0d1c33;flex-shrink:0">
+    <button onclick="document.getElementById('m-print-overlay').style.display='none'" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:7px;color:#fff;font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:8px 12px;cursor:pointer">✕ Close</button>
+    <span style="font-family:'Oswald',sans-serif;font-size:0.8rem;font-weight:700;color:#c9a84c;letter-spacing:0.06em">CLASS SIGN-IN SHEET</span>
+    <button onclick="mPrintSheetNow()" style="background:#c9a84c;border:none;border-radius:7px;color:#000;font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:8px 12px;cursor:pointer">🖨 Print / Share</button>
+  </div>
+  <iframe id="m-print-frame" style="flex:1;border:none;width:100%;background:#fff"></iframe>
 </div>
 
 <div class="m-modal-overlay" id="m-edu-qr-modal" style="z-index:900">
