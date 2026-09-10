@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.36');
+  window.location.replace('/CallDashboard/mobile.html?v=1.37');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.17l</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.17m</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1406,6 +1406,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places,geometry&callback=Function.prototype"></script>
 <script>
 // ── EARLY WINDOW EXPORTS — must be assigned before any other code runs ──
@@ -3734,6 +3735,8 @@ function renderTicketDetail(id, t) {
         '</div>' +
       '</div>' +
       '<div class="detail-section"><h4>Details</h4><div class="detail-body">' + (t.details || "No details provided.") + '</div></div>' +
+      '<div class="detail-section"><h4>Photos' + ((t.photos||[]).length ? ' (' + t.photos.length + ')' : '') + '</h4><div style="max-width:420px">' + TicketPhotosHtml(t, function(p){ return isAdmin || (p.byUid && currentUser && p.byUid === currentUser.uid); }) + '</div>' +
+        '<label class="edit-mode-btn" style="display:inline-block;font-size:0.72rem;padding:6px 12px;cursor:pointer">📷 Add photos<input type="file" id="tk-detail-photo-input" accept="image/*" multiple style="display:none" onchange="addPhotosToTicket(\'' + id + '\')"></label></div>' +
       '<div class="detail-section"><h4>Activity Log</h4><div style="padding:0 4px">' + TicketHistoryHtml(t) + '</div></div>' +
       '<div class="detail-section"><h4>Comments</h4><div id="comments-list">' + commentsHtml + '</div>' +
         '<div style="margin-top:14px"><div id="reply-banner" style="display:none;font-size:0.72rem;color:var(--gold);margin-bottom:6px;align-items:center;justify-content:space-between"><span id="reply-banner-label"></span><button onclick="cancelReply()" style="background:none;border:none;color:var(--gray);cursor:pointer">✕</button></div>' +
@@ -3773,6 +3776,70 @@ function TicketHistoryHtml(t) {
         '<div style="font-size:0.68rem;color:var(--gray);margin-top:1px">' + String(e.by||"").replace(/</g,"&lt;") + (when ? " · " + when : "") + '</div></div>' +
     '</div>';
   }).join("");
+}
+
+// ── TICKET PHOTOS (Firebase Storage) ──
+// Photos are downscaled client-side (max 1280px, JPEG ~0.8) before upload, stored at
+// tickets/{ticketId}/{ts}.jpg and recorded on the ticket doc as photos: [{url,path,by,byUid,at}]
+function PhotoStorage() { try { return firebase.storage(); } catch (e) { return null; } }
+function DownscaleImage(file, maxPx) {
+  return new Promise(function(resolve, reject) {
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function() {
+      var w = img.width, h = img.height, s = Math.min(1, maxPx / Math.max(w, h));
+      var cv = document.createElement("canvas"); cv.width = Math.round(w * s); cv.height = Math.round(h * s);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(function(b) { b ? resolve(b) : reject(new Error("Could not process image")); }, "image/jpeg", 0.8);
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error("Not a valid image")); };
+    img.src = url;
+  });
+}
+function UploadTicketPhotos(ticketId, files, onProgress) {
+  var st = PhotoStorage(); if (!st) return Promise.reject(new Error("Photo storage isn't available"));
+  var list = Array.prototype.slice.call(files || []).filter(function(f){ return /^image\//.test(f.type); }).slice(0, 6);
+  if (!list.length) return Promise.resolve([]);
+  var by = (currentUserUnit || ""), byUid = (currentUser ? currentUser.uid : "");
+  var done = 0, results = [];
+  return list.reduce(function(chain, file) {
+    return chain.then(function() { return DownscaleImage(file, 1280); }).then(function(blob) {
+      var path = "tickets/" + ticketId + "/" + Date.now() + "_" + Math.random().toString(36).slice(2, 7) + ".jpg";
+      return st.ref(path).put(blob, { contentType: "image/jpeg" }).then(function(snap) { return snap.ref.getDownloadURL(); }).then(function(url) {
+        results.push({ url: url, path: path, by: by, byUid: byUid, at: new Date().toISOString() });
+        done++; if (onProgress) onProgress(done, list.length);
+      });
+    });
+  }, Promise.resolve()).then(function() {
+    if (!results.length) return results;
+    return db.collection("tickets").doc(ticketId).set({ photos: firebase.firestore.FieldValue.arrayUnion.apply(null, results) }, { merge: true }).then(function(){ return results; });
+  });
+}
+function TicketPhotosHtml(t, canDelete) {
+  var ph = t.photos || []; if (!ph.length) return "";
+  return '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">' + ph.map(function(p, i) {
+    var esc = String(p.url).replace(/"/g, "&quot;");
+    return '<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--card-border);background:#000">' +
+      '<a href="' + esc + '" target="_blank" rel="noopener"><img src="' + esc + '" alt="Ticket photo" style="width:100%;height:100%;object-fit:cover;display:block"></a>' +
+      (canDelete(p) ? '<button onclick="DeleteTicketPhoto(\'' + t.id + '\',' + i + ')" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,0.65);border:1px solid rgba(255,144,144,0.6);color:#ff9090;font-size:0.8rem;cursor:pointer;line-height:1">✕</button>' : '') +
+    '</div>';
+  }).join("") + '</div>';
+}
+function DeleteTicketPhoto(ticketId, idx) {
+  if (!confirm("Remove this photo?")) return;
+  db.collection("tickets").doc(ticketId).get().then(function(s) {
+    if (!s.exists) return; var ph = (s.data().photos || []).slice(); var p = ph[idx]; if (!p) return;
+    ph.splice(idx, 1);
+    var st = PhotoStorage();
+    var del = (st && p.path) ? st.ref(p.path).delete().catch(function(){}) : Promise.resolve();
+    return del.then(function(){ return db.collection("tickets").doc(ticketId).set({ photos: ph }, { merge: true }); });
+  }).then(function(){ openTicket(ticketId); }).catch(function(e){ showToast("Error: " + e.message, true); });
+}
+
+function addPhotosToTicket(id) {
+  var inp = document.getElementById("tk-detail-photo-input"); if (!inp || !inp.files || !inp.files.length) return;
+  showToast("Uploading " + inp.files.length + " photo(s)…");
+  UploadTicketPhotos(id, inp.files).then(function(r){ showToast("✓ " + r.length + " photo(s) added"); inp.value = ""; openTicket(id); }).catch(function(e){ showToast("Upload failed: " + e.message, true); });
 }
 function RenderMentions(text) {
   return String(text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")

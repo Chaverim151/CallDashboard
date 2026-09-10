@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.36";
+  var BUILD = "1.37";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.36</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.37</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.36</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.37</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -652,6 +652,9 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="m-disp-label">Description</div>
     <div style="position:relative"><textarea id="m-tk-details" class="m-disp-input" rows="5" placeholder="Describe the issue in detail… type @ to tag a unit" style="margin-bottom:12px;resize:vertical"></textarea>
     <div id="m-tk-details-mention-box" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:-12px;background:#16283f;border:1px solid var(--card-border);border-radius:8px;z-index:30;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5)"></div></div>
+    <div class="m-disp-label">Photos <span style="color:var(--gray);text-transform:none;letter-spacing:0">(optional, up to 6)</span></div>
+    <label style="display:flex;align-items:center;gap:10px;border:1px dashed rgba(201,168,76,0.45);border-radius:9px;padding:12px;margin-bottom:8px;cursor:pointer;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase">📷 Take / choose photos<input type="file" id="m-tk-photo-input" accept="image/*" multiple style="display:none" onchange="mPickTicketPhotos('m-tk-photo-input','m-tk-photo-preview')"></label>
+    <div id="m-tk-photo-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
     <div class="m-disp-label">Priority</div>
     <select id="m-tk-priority" class="m-disp-input" style="margin-bottom:16px">
       <option value="low">🟢 Low</option>
@@ -747,6 +750,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script>
 // ── FIREBASE ──
 firebase.initializeApp({
@@ -2955,7 +2959,79 @@ function mRenderTickets() {
     '</div>';
   }).join("");
 }
-function mBindTicketFormMentions() { mAttachMentions("m-tk-details", "m-tk-details-mention-box"); }
+
+// ── TICKET PHOTOS (Firebase Storage) ──
+// Photos are downscaled client-side (max 1280px, JPEG ~0.8) before upload, stored at
+// tickets/{ticketId}/{ts}.jpg and recorded on the ticket doc as photos: [{url,path,by,byUid,at}]
+function mPhotoStorage() { try { return firebase.storage(); } catch (e) { return null; } }
+function mDownscaleImage(file, maxPx) {
+  return new Promise(function(resolve, reject) {
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function() {
+      var w = img.width, h = img.height, s = Math.min(1, maxPx / Math.max(w, h));
+      var cv = document.createElement("canvas"); cv.width = Math.round(w * s); cv.height = Math.round(h * s);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(function(b) { b ? resolve(b) : reject(new Error("Could not process image")); }, "image/jpeg", 0.8);
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error("Not a valid image")); };
+    img.src = url;
+  });
+}
+function mUploadTicketPhotos(ticketId, files, onProgress) {
+  var st = mPhotoStorage(); if (!st) return Promise.reject(new Error("Photo storage isn't available"));
+  var list = Array.prototype.slice.call(files || []).filter(function(f){ return /^image\//.test(f.type); }).slice(0, 6);
+  if (!list.length) return Promise.resolve([]);
+  var by = (mCurrentUserUnit || ""), byUid = (mCurrentUser ? mCurrentUser.uid : "");
+  var done = 0, results = [];
+  return list.reduce(function(chain, file) {
+    return chain.then(function() { return mDownscaleImage(file, 1280); }).then(function(blob) {
+      var path = "tickets/" + ticketId + "/" + Date.now() + "_" + Math.random().toString(36).slice(2, 7) + ".jpg";
+      return st.ref(path).put(blob, { contentType: "image/jpeg" }).then(function(snap) { return snap.ref.getDownloadURL(); }).then(function(url) {
+        results.push({ url: url, path: path, by: by, byUid: byUid, at: new Date().toISOString() });
+        done++; if (onProgress) onProgress(done, list.length);
+      });
+    });
+  }, Promise.resolve()).then(function() {
+    if (!results.length) return results;
+    return db.collection("tickets").doc(ticketId).set({ photos: firebase.firestore.FieldValue.arrayUnion.apply(null, results) }, { merge: true }).then(function(){ return results; });
+  });
+}
+function mTicketPhotosHtml(t, canDelete) {
+  var ph = t.photos || []; if (!ph.length) return "";
+  return '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">' + ph.map(function(p, i) {
+    var esc = String(p.url).replace(/"/g, "&quot;");
+    return '<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--card-border);background:#000">' +
+      '<a href="' + esc + '" target="_blank" rel="noopener"><img src="' + esc + '" alt="Ticket photo" style="width:100%;height:100%;object-fit:cover;display:block"></a>' +
+      (canDelete(p) ? '<button onclick="mDeleteTicketPhoto(\'' + t.id + '\',' + i + ')" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,0.65);border:1px solid rgba(255,144,144,0.6);color:#ff9090;font-size:0.8rem;cursor:pointer;line-height:1">✕</button>' : '') +
+    '</div>';
+  }).join("") + '</div>';
+}
+function mDeleteTicketPhoto(ticketId, idx) {
+  if (!confirm("Remove this photo?")) return;
+  db.collection("tickets").doc(ticketId).get().then(function(s) {
+    if (!s.exists) return; var ph = (s.data().photos || []).slice(); var p = ph[idx]; if (!p) return;
+    ph.splice(idx, 1);
+    var st = mPhotoStorage();
+    var del = (st && p.path) ? st.ref(p.path).delete().catch(function(){}) : Promise.resolve();
+    return del.then(function(){ return db.collection("tickets").doc(ticketId).set({ photos: ph }, { merge: true }); });
+  }).then(function(){ mOpenTicket(ticketId); }).catch(function(e){ mToast("Error: " + e.message, true); });
+}
+
+var mPendingTicketFiles = [];
+function mPickTicketPhotos(inputId, previewId) {
+  var inp = document.getElementById(inputId), prev = document.getElementById(previewId);
+  var files = Array.prototype.slice.call(inp.files || []).filter(function(f){ return /^image\//.test(f.type); });
+  if (inputId === "m-tk-photo-input") mPendingTicketFiles = files.slice(0, 6);
+  if (prev) prev.innerHTML = files.slice(0, 6).map(function(f) { return '<img src="' + URL.createObjectURL(f) + '" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--card-border)">'; }).join("");
+}
+function mAddPhotosToTicket(id) {
+  var inp = document.getElementById("m-tk-detail-photo-input"); if (!inp || !inp.files || !inp.files.length) return;
+  mToast("Uploading " + inp.files.length + " photo" + (inp.files.length>1?"s":"") + "…");
+  mUploadTicketPhotos(id, inp.files, function(d, tot){ if (d === tot) mToast("✓ " + tot + " photo" + (tot>1?"s":"") + " added"); })
+    .then(function(){ inp.value = ""; mOpenTicket(id); }).catch(function(e){ mToast("Upload failed: " + e.message, true); });
+}
+function mBindTicketFormMentions() { mAttachMentions("m-tk-details", "m-tk-details-mention-box"); mPendingTicketFiles = []; var pv = document.getElementById("m-tk-photo-preview"); if (pv) pv.innerHTML = ""; var pi = document.getElementById("m-tk-photo-input"); if (pi) pi.value = ""; }
 function mSubmitTicket() {
   var title = document.getElementById("m-tk-title").value.trim();
   var details = document.getElementById("m-tk-details").value.trim();
@@ -2971,6 +3047,10 @@ function mSubmitTicket() {
     var acceptToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     return db.collection("tickets").add({ title: title, details: details, category: "general", unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: mCurrentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
       // notifications (push + SMS fallback) are sent server-side by the onTicketCreated Cloud Function
+      if (mPendingTicketFiles.length) {
+        mToast("Uploading photos…");
+        return mUploadTicketPhotos(ref.id, mPendingTicketFiles).then(function(){ mPendingTicketFiles = []; }).catch(function(e){ mToast("Ticket saved, but photos failed: " + e.message, true); });
+      }
     });
   }).then(function() {
     msg.style.color = "#7dedb5"; msg.textContent = "✓ Service Request submitted!";
@@ -3056,6 +3136,9 @@ function mRenderTicketDetail(id, t) {
       '</div>' +
       '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Details</div>' +
       '<div style="font-size:0.85rem;color:var(--white);margin-bottom:16px;white-space:pre-wrap">' + (t.details ? mRenderMentions(t.details) : "No details provided.") + '</div>' +
+      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Photos' + ((t.photos||[]).length ? ' (' + t.photos.length + ')' : '') + '</div>' +
+      mTicketPhotosHtml(t, function(p){ return isAdmin || (p.byUid && mCurrentUser && p.byUid === mCurrentUser.uid); }) +
+      ((t.photos||[]).length < 12 ? '<label style="display:inline-flex;align-items:center;gap:8px;border:1px dashed rgba(201,168,76,0.45);border-radius:8px;padding:9px 12px;margin-bottom:16px;cursor:pointer;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase">📷 Add photos<input type="file" id="m-tk-detail-photo-input" accept="image/*" multiple style="display:none" onchange="mAddPhotosToTicket(\'' + id + '\')"></label>' : '') +
       resolveHtml +
       '<div style="height:16px"></div>' +
       '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Activity Log</div>' +
@@ -4663,7 +4746,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.36</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.37</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
