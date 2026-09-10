@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.59');
+  window.location.replace('/CallDashboard/mobile.html?v=1.64');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.18i</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.18n</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1897,7 +1897,7 @@ function renderCallCard(call, i) {
     enroute_scene:"En Route", on_scene_direct:"On Scene",
     picking_up_ambo:"Responding to Base", onboard_rig:"Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene", returning_base:"Heading Back to Base",
     rma_scene:"RMA", transporting:"Transporting", at_facility:"At Hospital",
-    clearing_facility:"Clearing", back_at_base:"Back at Base"
+    clearing_facility:"Cleared ER", back_at_base:"Back at Base"
   };
   var unitPills = '';
   try {
@@ -2897,7 +2897,7 @@ function openCallDetail(callId) {
     var crews = call.crews || [];
     var unitDetails = call.unitDetails || {};
     var notes = call.callNotes || [];
-    var STATUS_ICON = { cleared_scene:"✓ Cleared Scene", other_status:"• Other", enroute_scene:"🏃 En Route", on_scene_direct:"On Scene", picking_up_ambo:"🏠 Responding to Base", onboard_rig:"🚑 Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene", rma_scene:"✓ RMA", transporting:"Transporting", at_facility:"🏨 At Hospital", clearing_facility:"🔄 Clearing", returning_base:"🏠 Heading Back", back_at_base:"🏠 Back at Base" };
+    var STATUS_ICON = { cleared_scene:"✓ Cleared Scene", other_status:"• Other", enroute_scene:"🏃 En Route", on_scene_direct:"On Scene", picking_up_ambo:"🏠 Responding to Base", onboard_rig:"🚑 Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene", rma_scene:"✓ RMA", transporting:"Transporting", at_facility:"🏨 At Hospital", clearing_facility:"🔄 Cleared ER", returning_base:"🏠 Heading Back", back_at_base:"🏠 Back at Base" };
 
     var ageParts = [];
     if (call.patientAgeNum) ageParts.push(call.patientAgeNum + " YO");
@@ -3295,6 +3295,7 @@ function loadAppData() {
   db.collection("appdata").doc("shifts").get().then(function(snap) { if (snap.exists && snap.data().shifts) window.LIVE_SHIFTS = snap.data().shifts; }).catch(function() {});
 }
 window.saveSection = function(sec) {
+  Object.keys(window.LIVE_DATA).forEach(function(k){ syncCodes(window.LIVE_DATA[k]); });
   db.collection("appdata").doc("codes").set({ sections: window.LIVE_DATA }, { merge: true }).then(function() { showToast("✓ Saved!"); }).catch(function(e) { showToast("Save failed: " + e.message, true); });
 };
 window.saveShifts = function() {
@@ -3321,16 +3322,51 @@ function mkDigits(code, special) {
   if (special) return '<span class="digit sp">' + code + '</span>';
   return code.split("-").map(function(d) { return '<span class="digit">' + d + '</span>'; }).join("");
 }
+// Every entry can carry several labelled codes: codes:[{label:"Front door",code:"1234"},…]
+// The legacy single `code` field is treated as the first (unlabelled) code.
+function extraCodesEditor(sec, i, item) {
+  var extra = Array.isArray(item.codes) ? item.codes.slice(1) : [];   // codes[0] mirrors the primary `code` field
+  var h = extra.map(function(c, k) {
+    return '<div style="display:flex;gap:6px;margin-top:6px"><input class="card-edit-inp" style="flex:1;margin:0" placeholder="Label (e.g. Side door)" value="' + String(c.label||"").replace(/"/g,"&quot;") + '" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].codes[' + (k+1) + '].label=this.value">' +
+      '<input class="card-edit-inp" style="flex:1;margin:0" placeholder="Code" value="' + String(c.code||"").replace(/"/g,"&quot;") + '" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].codes[' + (k+1) + '].code=this.value">' +
+      '<button class="del-btn" style="padding:6px 10px" onclick="window.removeExtraCode(\'' + sec + '\',' + i + ',' + (k+1) + ')">✕</button></div>';
+  }).join("");
+  return h + '<button class="edit-mode-btn" style="margin-top:6px;font-size:0.7rem;padding:5px 10px" onclick="window.addExtraCode(\'' + sec + '\',' + i + ')">+ Add another code</button>';
+}
+window.addExtraCode = function(sec, i) {
+  var it = window.LIVE_DATA[sec][i];
+  if (!Array.isArray(it.codes) || !it.codes.length) it.codes = [{ label: "", code: it.code || "" }];
+  it.codes.push({ label: "", code: "" });
+  window.renderCards(sec, window.LIVE_DATA[sec]);
+};
+window.removeExtraCode = function(sec, i, k) { var it = window.LIVE_DATA[sec][i]; if (it.codes) it.codes.splice(k, 1); window.renderCards(sec, window.LIVE_DATA[sec]); };
+// Before saving: keep codes[0] in sync with the primary `code` field (and vice-versa)
+function syncCodes(items) {
+  (items || []).forEach(function(it) {
+    if (Array.isArray(it.codes) && it.codes.length) { it.codes[0].code = it.code || it.codes[0].code || ""; it.code = it.codes[0].code; it.codes = it.codes.filter(function(c, k){ return k === 0 || (c.code||"").trim(); }); }
+  });
+}
+function codesOf(item) {
+  var list = Array.isArray(item.codes) ? item.codes.filter(function(c){ return c && (c.code||"").trim(); }) : [];
+  if (!list.length && (item.code||"").trim()) list = [{ label: "", code: item.code }];
+  return list;
+}
+function codesSummary(item, sep) {
+  return codesOf(item).map(function(c){ return (c.label ? c.label + ": " : "") + c.code; }).join(sep || " · ");
+}
 function mkCard(item, i, sec) {
   var editing = editModeActive[sec] && currentRole === "admin";
   var html = '<div class="card ' + (editing ? "editable" : "") + '" style="animation-delay:' + (i * 40) + 'ms">';
   html += '<div class="card-name">' + (item.name || "") + '</div>';
   if (item.address) html += '<div class="card-addr">' + item.address + '</div>';
   if (item.note && !editing) html += '<div class="card-note">' + item.note + '</div>';
-  html += '<div class="code-row"><span class="code-lbl">Code:</span><div class="digits">' + mkDigits(item.code || "", item.special) + '</div></div>';
+  var cl = codesOf(item);
+  if (cl.length <= 1) html += '<div class="code-row"><span class="code-lbl">Code:</span><div class="digits">' + mkDigits(cl.length ? cl[0].code : "", item.special) + '</div></div>';
+  else cl.forEach(function(c) { html += '<div class="code-row"><span class="code-lbl">' + (c.label ? c.label.replace(/</g,"&lt;") : "Code") + ':</span><div class="digits">' + mkDigits(c.code, item.special) + '</div></div>'; });
   if (editing) {
     html += '<div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">' +
       '<input class="card-edit-inp" placeholder="Code (e.g. 1-2-3)" value="' + (item.code || "") + '" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].code=this.value">' +
+      extraCodesEditor(sec, i, item) +
       '<input class="card-edit-inp" placeholder="Note (optional)" value="' + (item.note || "") + '" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].note=this.value">' +
       '<div style="position:relative">' +
         '<input class="card-edit-inp codes-addr-inp" id="codes-addr-' + sec + '-' + i + '" placeholder="Address (type to search…)" value="' + (item.address || "") + '" autocomplete="off"' +
@@ -5676,7 +5712,7 @@ function renderCLDetail(log, body) {
 
   // Units with statuses
   var unitRows = "";
-  var STATUS_LABEL = { cleared_scene:"Cleared Scene", other_status:"Other", enroute_scene:"En Route to Scene", on_scene_direct:"On Scene", picking_up_ambo:"Responding to Base", onboard_rig:"Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene w/ Rig", rma_scene:"RMA on Scene", transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Clearing Facility", returning_base:"Heading Back to Base", back_at_base:"Back at Base" };
+  var STATUS_LABEL = { cleared_scene:"Cleared Scene", other_status:"Other", enroute_scene:"En Route to Scene", on_scene_direct:"On Scene", picking_up_ambo:"Responding to Base", onboard_rig:"Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene w/ Rig", rma_scene:"RMA on Scene", transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Cleared ER", returning_base:"Heading Back to Base", back_at_base:"Back at Base" };
   (log.crews||[]).forEach(function(crew, ci) {
     Object.keys(crew||{}).sort().forEach(function(role) {
       if (role === "rig") return;
@@ -5936,11 +5972,21 @@ function renderCodesEditor() {
       '<input value="' + (item.name || "") + '" placeholder="Name" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].name=this.value" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.85rem;outline:none">' +
       '<input value="' + (item.code || "") + '" placeholder="Code" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].code=this.value" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.85rem;outline:none">' +
       (!isSpecial ? '<input value="' + (item.address || "") + '" placeholder="Address" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].address=this.value" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.85rem;outline:none">' : '') +
-      '<button onclick="removeCodeEntry(\'' + sec + '\',' + i + ')" class="del-btn" style="padding:8px 12px">✕</button></div>';
+      '<button onclick="removeCodeEntry(\'' + sec + '\',' + i + ')" class="del-btn" style="padding:8px 12px">✕</button></div>' +
+      '<div style="margin:-4px 0 10px 0;padding-left:8px;border-left:2px solid rgba(201,168,76,0.3)">' + extraCodesEditorAdmin(sec, i, item) + '</div>';
   });
   el.innerHTML = '<div style="margin-bottom:14px">' + rowsHtml + '</div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="edit-mode-btn" onclick="addCodeEntry(\'' + sec + '\')">+ Add Entry</button><button class="card-save-btn" onclick="saveCodesEditor()">💾 Save All</button></div>' +
     '<div class="form-msg" id="codes-editor-msg" style="margin-top:10px"></div>';
+}
+function extraCodesEditorAdmin(sec, i, item) {
+  var extra = Array.isArray(item.codes) ? item.codes.slice(1) : [];
+  var h = extra.map(function(c, k) {
+    return '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:6px"><input value="' + String(c.label||"").replace(/"/g,"&quot;") + '" placeholder="Label (e.g. Side door)" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].codes[' + (k+1) + '].label=this.value" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.85rem">' +
+      '<input value="' + String(c.code||"").replace(/"/g,"&quot;") + '" placeholder="Code" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].codes[' + (k+1) + '].code=this.value" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.85rem">' +
+      '<button class="del-btn" style="padding:8px 12px" onclick="window.LIVE_DATA[\'' + sec + '\'][' + i + '].codes.splice(' + (k+1) + ',1);renderCodesEditor()">✕</button></div>';
+  }).join("");
+  return h + '<button class="edit-mode-btn" style="font-size:0.7rem;padding:5px 10px" onclick="(function(){var it=window.LIVE_DATA[\'' + sec + '\'][' + i + '];if(!Array.isArray(it.codes)||!it.codes.length)it.codes=[{label:\'\',code:it.code||\'\'}];it.codes.push({label:\'\',code:\'\'});renderCodesEditor();})()">+ Add another code</button>';
 }
 function addCodeEntry(sec) {
   if (!window.LIVE_DATA[sec]) window.LIVE_DATA[sec] = [];
@@ -5949,6 +5995,7 @@ function addCodeEntry(sec) {
 function removeCodeEntry(sec, i) { window.LIVE_DATA[sec].splice(i, 1); renderCodesEditor(); }
 function saveCodesEditor() {
   var msg = document.getElementById("codes-editor-msg"); msg.className = "form-msg"; msg.textContent = "";
+  Object.keys(window.LIVE_DATA).forEach(function(k){ syncCodes(window.LIVE_DATA[k]); });
   db.collection("appdata").doc("codes").set({ sections: window.LIVE_DATA }, { merge: true })
     .then(function() { msg.className = "form-msg success"; msg.textContent = "✓ Saved!"; window.renderCards(codesEditorTab, window.LIVE_DATA[codesEditorTab]); })
     .catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
@@ -6315,7 +6362,7 @@ function checkAccessCodeOnFile(formattedAddress, placeName) {
   if (match && bestScore >= 4) {
     window._accessCodeSuggestion = match;
     document.getElementById("access-code-suggestion-name").textContent = match.name || "";
-    document.getElementById("access-code-suggestion-code").textContent = match.code || "";
+    document.getElementById("access-code-suggestion-code").textContent = codesSummary(match) || match.code || "";
     document.getElementById("access-code-suggestion-note").textContent = match.note || "";
     banner.style.display = "block";
   } else {
@@ -6329,7 +6376,7 @@ window.applyAccessCodeSuggestion = function() {
   if (!match) return;
   var inp = document.getElementById("maps-access-code");
   if (inp) {
-    inp.value = match.code + (match.note ? " (" + match.note + ")" : "");
+    inp.value = (codesSummary(match) || match.code || "") + (match.note ? " (" + match.note + ")" : "");
     inp.style.borderColor = "rgba(201,168,76,0.6)";
   }
   var banner = document.getElementById("access-code-suggestion");
@@ -6690,7 +6737,7 @@ window.initMapsAutocomplete = function() {
         if (entry.code) {
           var codeInp = document.getElementById("maps-access-code");
           if (codeInp && !codeInp.value) {
-            codeInp.value = entry.code + (entry.note ? " (" + entry.note + ")" : "");
+            codeInp.value = (codesSummary(entry) || entry.code || "") + (entry.note ? " (" + entry.note + ")" : "");
             codeInp.style.borderColor = "rgba(201,168,76,0.6)";
           }
         }
@@ -8866,7 +8913,7 @@ function buildCallActionLog(call) {
     rma_scene:        { icon:"✋", text:"RMA on Scene",            color:"#7dedb5" },
     transporting:     { icon:"🚑", text:"Transporting",            color:"#ffc84a" },
     at_facility:      { icon:"🏥", text:"Arrived at Hospital",     color:"#ff9090" },
-    clearing_facility:{ icon:"✓",  text:"Clearing Hospital",       color:"#7dedb5" },
+    clearing_facility:{ icon:"✓",  text:"Cleared ER",       color:"#7dedb5" },
     back_at_base:     { icon:"🏠", text:"Back at Base",            color:"var(--gray)" }
   };
 
@@ -8965,7 +9012,7 @@ function buildCallActionLog(call) {
 
     // Render transport group under rig — one entry per transport step reached
     if (transportingUnits.length) {
-      var rigStatusLabels = { transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Clearing Facility", back_at_base:"Back at Base" };
+      var rigStatusLabels = { transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Cleared ER", back_at_base:"Back at Base" };
       var rigColors = { transporting:"#ffc84a", at_facility:"#ff9090", clearing_facility:"#7dedb5", back_at_base:"#4a90d9" };
       var rigIcons = { transporting:"🚑", at_facility:"🏥", clearing_facility:"🔄", back_at_base:"🏠" };
 
@@ -9059,6 +9106,7 @@ function buildCallActionLog(call) {
   var TRANSPORT_EVENT_TEXTS = ["Rig Back at Base","Back at Base"];
   (call.callEvents||[]).forEach(function(ev) {
     if (!ev || !ev.text) return;
+    if (ev.kind && ["status","assign","als","bls","pd","disp"].indexOf(ev.kind) !== -1) return; // mobile's running-log entries desktop already derives
     if (hasTransportGroup && TRANSPORT_EVENT_TEXTS.indexOf(ev.text) !== -1) return;
     // Skip legacy "MC-xx responding to..." entries now computed from unitDetails
     if (/^MC-\d+\s+responding/.test(ev.text)) return;
@@ -9562,7 +9610,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
     { val:"ambo_responding",  label:"Ambo → Scene",             color:"#ffc84a" },
     { val:"on_scene_ambo",    label:"On Scene w/ Ambo",         color:"#7dedb5" },
     { val:"transporting",     label:"Transporting",              color:"#ff9090" },
-    { val:"clearing_facility",label:"Clearing Facility",         color:"#8a9ab5" },
+    { val:"clearing_facility",label:"Cleared ER",         color:"#8a9ab5" },
     { val:"back_at_base",     label:"Ambo Back at Base",         color:"#4a90d9" }
   ];
 
@@ -9577,7 +9625,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   var TRANSPORT_FLOW = [
     { val:"transporting",      label:"Transporting",          color:"#ff9090" },
     { val:"at_facility",       label:"At Facility",            color:"#ff9090" },
-    { val:"clearing_facility", label:"Clearing Facility",      color:"#8a9ab5" },
+    { val:"clearing_facility", label:"Cleared ER",      color:"#8a9ab5" },
     { val:"back_at_base",      label:"Back at Base", color:"#4a90d9" }
   ];
   // RMA path

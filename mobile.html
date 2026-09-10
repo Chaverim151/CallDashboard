@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.59";
+  var BUILD = "1.64";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.59</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.64</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.59</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.64</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -1095,7 +1095,7 @@ function mRenderCalls(calls) {
     enroute_scene:"En Route", on_scene_direct:"On Scene",
     picking_up_ambo:"Picking Up Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene",
     rma_scene:"RMA", transporting:"Transporting", at_facility:"At Hospital",
-    clearing_facility:"Clearing", back_at_base:"Back at Base"
+    clearing_facility:"Cleared ER", back_at_base:"Back at Base"
   };
 
   list.innerHTML = calls.map(function(call) {
@@ -1325,7 +1325,7 @@ function mRenderDetail(call) {
   var STATUS_LABEL = { enroute_scene:"En Route", on_scene_direct:"On Scene",
     picking_up_ambo:"Picking Up Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene",
     rma_scene:"RMA", transporting:"Transporting", at_facility:"At Hospital",
-    clearing_facility:"Clearing", back_at_base:"Back at Base" };
+    clearing_facility:"Cleared ER", back_at_base:"Back at Base" };
   crews.forEach(function(crew, ci) {
     if (!crew) return;
     Object.keys(crew).sort().forEach(function(role) {
@@ -1387,7 +1387,7 @@ function mLoadHospital() {
       return '<div class="m-info-card">' +
         '<div class="m-info-name">' + mEscHtml(item.name||"") + '</div>' +
         (item.address ? '<div class="m-info-sub">' + mEscHtml(item.address) + '</div>' : '') +
-        (item.code ? '<div class="m-code-badge">' + mEscHtml(item.code) + '</div>' : '') +
+        mCodesBadges(item) +
         (item.note ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">' + mEscHtml(item.note) + '</div>' : '') +
       '</div>';
     }).join("");
@@ -1406,7 +1406,7 @@ function mLoadBuildings() {
       return '<div class="m-info-card">' +
         '<div class="m-info-name">' + mEscHtml(b.name||"") + '</div>' +
         (b.address ? '<div class="m-info-sub">' + mEscHtml(b.address) + '</div>' : "") +
-        (b.code ? '<div class="m-code-badge">' + mEscHtml(b.code) + '</div>' : "") +
+        mCodesBadges(b) +
         (b.note ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">' + mEscHtml(b.note) + '</div>' : "") +
       '</div>';
     }).join("");
@@ -1423,7 +1423,7 @@ function mLoadShuls() {
       return '<div class="m-info-card">' +
         '<div class="m-info-name">' + mEscHtml(s.name||"") + '</div>' +
         (s.address ? '<div class="m-info-sub">' + mEscHtml(s.address) + '</div>' : "") +
-        (s.code ? '<div class="m-code-badge">' + mEscHtml(s.code) + '</div>' : "") +
+        mCodesBadges(s) +
         (s.note ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">' + mEscHtml(s.note) + '</div>' : "") +
       '</div>';
     }).join("");
@@ -2603,14 +2603,14 @@ var M_STATUS_LOG = {
   other_status:     { icon:"•", text:"Other", color:"#e8a0ff" },
   enroute_scene:    { icon:"🚗", text:"En Route to Scene",  color:"#7ab8f5" },
   on_scene_direct:  { icon:"📍", text:"On Scene",           color:"#7dedb5" },
-  picking_up_ambo:  { icon:"🏠", text:"Responding to Base", color:"#ffc84a" },
+  picking_up_ambo:  { icon:"🏠", text:"Responding to Rig", color:"#ffc84a" },
   onboard_rig:      { icon:"🚑", text:"Onboard Rig",        color:"#ffc84a" },
   ambo_responding:  { icon:"🚑", text:"Rig Responding",     color:"#ffc84a" },
   on_scene_ambo:    { icon:"📍", text:"On Scene with Rig",  color:"#7dedb5" },
   rma_scene:        { icon:"✋", text:"RMA on Scene",        color:"#7dedb5" },
   transporting:     { icon:"🚑", text:"Transporting",        color:"#ffc84a" },
   at_facility:      { icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" },
-  clearing_facility:{ icon:"✓",  text:"Clearing Hospital → Base", color:"#7dedb5" },
+  clearing_facility:{ icon:"✓",  text:"Cleared ER → Base", color:"#7dedb5" },
   returning_base:   { icon:"🏠", text:"Heading Back to Base",     color:"#7ab8f5" },
   back_at_base:     { icon:"🏠", text:"Back at Base",        color:"var(--gray)" }
 };
@@ -2714,7 +2714,7 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
   });
   if (match && bestScore >= 4) {
     mAccessCodeSuggestion = match;
-    document.getElementById("m-nc-code-suggestion-text").textContent = (match.name||"") + " — " + (match.code||"") + (match.note ? " ("+match.note+")" : "");
+    document.getElementById("m-nc-code-suggestion-text").textContent = (match.name||"") + " — " + (mCodesSummary(match) || match.code || "") + (match.note ? " ("+match.note+")" : "");
     banner.style.display = "flex";
   } else {
     mAccessCodeSuggestion = null;
@@ -2723,7 +2723,7 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
 }
 function mApplyAccessCodeSuggestion() {
   if (!mAccessCodeSuggestion) return;
-  document.getElementById("m-nc-accesscode").value = mAccessCodeSuggestion.code + (mAccessCodeSuggestion.note ? " (" + mAccessCodeSuggestion.note + ")" : "");
+  document.getElementById("m-nc-accesscode").value = (mCodesSummary(mAccessCodeSuggestion) || mAccessCodeSuggestion.code || "") + (mAccessCodeSuggestion.note ? " (" + mAccessCodeSuggestion.note + ")" : "");
   document.getElementById("m-nc-code-suggestion").style.display = "none";
 }
 
@@ -2864,6 +2864,16 @@ function mLoadUnitDirectory() {
 function mJsAttr(s) { return String(s||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 // Only allow real web URLs in href/src built from data
 function mSafeUrl(u) { u = String(u||""); return /^https?:\/\//i.test(u) ? u.replace(/"/g,"&quot;") : ""; }
+// Multiple labelled codes per location (codes:[{label,code}]); legacy single `code` = first code
+function mCodesOf(item) {
+  var list = Array.isArray(item.codes) ? item.codes.filter(function(c){ return c && (c.code||"").trim(); }) : [];
+  if (!list.length && (item.code||"").trim()) list = [{ label: "", code: item.code }];
+  return list;
+}
+function mCodesBadges(item) {
+  return mCodesOf(item).map(function(c){ return '<div class="m-code-badge">' + (c.label ? '<span style="font-size:0.62rem;color:var(--gray);margin-right:6px;font-weight:400">' + mEscHtml(c.label) + '</span>' : '') + mEscHtml(c.code) + '</div>'; }).join("");
+}
+function mCodesSummary(item) { return mCodesOf(item).map(function(c){ return (c.label ? c.label + ": " : "") + c.code; }).join(" · "); }
 function mRenderMentions(text) {
   return String(text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
     .replace(/@(MC-?\d{1,4})\b/gi, function(m, u) { return '<span style="color:var(--gold);font-weight:700">@' + u.toUpperCase().replace(/^MC(\d)/, "MC-$1") + '</span>'; });
@@ -3242,7 +3252,7 @@ function mLoadStorage() {
       return '<div class="m-info-card">' +
         '<div class="m-info-name">' + mEscHtml(s.name||"") + '</div>' +
         (s.address ? '<div class="m-info-sub">' + mEscHtml(s.address) + '</div>' : "") +
-        (s.code ? '<div class="m-code-badge">' + mEscHtml(s.code) + '</div>' : "") +
+        mCodesBadges(s) +
         (s.note ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">' + mEscHtml(s.note) + '</div>' : "") +
       '</div>';
     }).join("");
@@ -4002,6 +4012,7 @@ function mPostNewCallNow() {
     lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
     zone: mNcZone || "primary", // only reachable after zone detection or an explicit dispatcher confirmation
+    callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }],
     callNature: nature,
     patientAge: mNcAge,
     patientAgeNum: document.getElementById("m-nc-age-num").value.trim(),
@@ -4016,7 +4027,7 @@ function mPostNewCallNow() {
     times: { dispatched: mNowHHMM() },
     disposition: {},
     alsActivated: false, blsActivated: false, pdActivated: false,
-    callEvents: [], callNotes: [],
+    callNotes: [],
     testMode: MSysTestingMode ? true : false,
     testModeUnit: MSysTestingMode ? (mCurrentUserUnit||"") : "",
     createdAt: now.toISOString(),
@@ -4222,9 +4233,16 @@ function mClearNonRigUnits() {
       update["unitDetails." + mUdKey(u.crewIdx, u.role) + ".status"] = "cleared_scene";
       update["unitDetails." + mUdKey(u.crewIdx, u.role) + ".statusAt"] = now;
     });
+    update.callEvents = mEvtUnion(mEvt(open.map(function(u){ return u.unit; }).join(", ") + " — Cleared", "✓", "#7dedb5", "status"));
     return db.collection("activeCalls").doc(callId).update(update);
   }).then(function(){ mToast("Units cleared"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
+// ── Call event log: every action is appended to callEvents (the array desktop also uses) ──
+// kind lets desktop skip entries it already derives itself (status/assign/als/bls/pd/disp) while showing the rest.
+function mEvt(text, icon, color, kind, sub) {
+  return { text: text, icon: icon || "⚡", color: color || "var(--gray)", sub: sub || "", kind: kind || "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() };
+}
+function mEvtUnion(ev) { return firebase.firestore.FieldValue.arrayUnion(ev); }
 // Crew-level rig movement: the rig and everyone onboard move as one
 function mBuildCrewRigPanel(call, crewIdx) {
   var crew = mCrewOf(call, crewIdx);
@@ -4260,7 +4278,7 @@ function mBuildCrewRigPanel(call, crewIdx) {
     body = btn("Mark " + rig + " + units At " + hosp, "at_facility", "#ff9090", "gold");
   } else if (every("at_facility")) {
     var riders = rigUnits.filter(function(u){ return u.rider; }).map(function(u){ return u.unit; });
-    body = btn("Mark " + rig + " Clearing " + hosp + " → Base", "clearing_facility", "#7dedb5", "green") +
+    body = btn("Mark " + rig + " Cleared " + hosp + " ER → Base", "clearing_facility", "#7dedb5", "green") +
       (riders.length ? '<div style="font-size:0.66rem;color:var(--gray);margin-top:6px">' + mEscHtml(riders.join(", ")) + ' will be marked cleared</div>' : '');
   } else if (every("clearing_facility") || every("returning_base")) {
     body = btn("Mark " + rig + " Back at Base — all units cleared", "back_at_base", "#7ab8f5", "blue");
@@ -4348,7 +4366,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
 
   if (!det.response) {
     var isLoadRig = call.zone === "secondary";
-    var rigLbl = "🏠 Respond to Base" + (crew.rig ? " → " + crew.rig : "");   // rig is chosen once per crew, never per unit
+    var rigLbl = "🏠 Respond to Rig" + (crew.rig ? " → " + crew.rig : "");   // rig is chosen once per crew, never per unit
     if (isLoadRig) {
       // LOAD A RIG call: expected flow is Base → load rig → respond with rig. Direct-to-scene is the exception (close by only).
       html += '<div style="background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.45);border-radius:7px;padding:7px 9px;margin-bottom:8px">' +
@@ -4384,7 +4402,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Once a unit is onboard / the rig is responding, they're on the ambulance — no divert.
   var canDivert = (det.response === "scene" && status === "enroute_scene") || (det.response === "rig" && status === "picking_up_ambo");
   if (canDivert) {
-    var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to base / rig";
+    var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
     html += '<button onclick="mDivertResponse(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(unit) + '\')" style="width:100%;margin-top:6px;background:none;border:1px dashed rgba(255,255,255,0.18);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px;cursor:pointer">↔ ' + toLabel + '</button>';
   }
 
@@ -4397,15 +4415,16 @@ function mDivertResponse(crewIdx, role, unit) {
     if (!snap.exists) return;
     var call = snap.data(); var det = mUdOf(call, crewIdx, role);
     var toRig = det.response !== "rig";
-    if (!confirm(unit + ": divert to " + (toRig ? "base / rig" : "direct to scene") + "?")) return;
+    if (!confirm(unit + ": divert to " + (toRig ? "the rig" : "direct to scene") + "?")) return;
     var now = mNowHHMM();
     var update = { updatedAt: new Date().toISOString() };
     update["unitDetails." + mUdKey(crewIdx, role) + ".response"] = toRig ? "rig" : "scene";
     update["unitDetails." + mUdKey(crewIdx, role) + ".status"] = toRig ? "picking_up_ambo" : "enroute_scene";
     update["unitDetails." + mUdKey(crewIdx, role) + ".statusAt"] = now;
     var notes = call.callNotes || [];
-    notes.push({ text: unit + " diverted — now " + (toRig ? "responding to base for the rig" : "responding direct to scene"), time: now, by: mCurrentUserUnit || "Dispatch" });
+    notes.push({ text: unit + " diverted — now " + (toRig ? "responding to the rig" : "responding direct to scene"), time: now, by: mCurrentUserUnit || "Dispatch" });
     update.callNotes = notes;
+    update.callEvents = mEvtUnion(mEvt(unit + " diverted → " + (toRig ? "the rig" : "direct to scene"), "↔", "#ffc84a", "event"));
     return db.collection("activeCalls").doc(callId).update(update);
   }).then(function(){ mToast(unit + " diverted"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -4455,6 +4474,8 @@ function mSetCrewRigStatus(crewIdx, status) {
       update["unitDetails." + mUdKey(crewIdx, u.role) + ".status"] = target;
       update["unitDetails." + mUdKey(crewIdx, u.role) + ".statusAt"] = now;
     });
+    var sl2 = M_STATUS_LOG[status]; var rigName = (mCrewOf(call, crewIdx).rig) || "Rig";
+    update.callEvents = mEvtUnion(mEvt(rigName + " + " + units.map(function(u){ return u.unit; }).join(", ") + " — " + (sl2 ? sl2.text : status), sl2 ? sl2.icon : "🚑", sl2 ? sl2.color : "#ffc84a", "status"));
     var times = call.times || {};
     if (status === "on_scene_ambo" && !times.first_on_scene) update["times.first_on_scene"] = now;
     if (status === "transporting" && !times.enroute) update["times.enroute"] = now;
@@ -4468,12 +4489,14 @@ function mMarkAllOnboard(crewIdx) {
     if (!snap.exists) return;
     var call = snap.data(); if (!call.crews) call.crews = [{}];
     var update = { updatedAt: new Date().toISOString() };
+    var boarded = [];
     mCrewRigUnits(call, crewIdx).forEach(function(u) {
       if (u.status === "" || u.status === "picking_up_ambo") {
         update["unitDetails." + mUdKey(crewIdx, u.role) + ".status"] = "onboard_rig";
-        update["unitDetails." + mUdKey(crewIdx, u.role) + ".statusAt"] = now;
+        update["unitDetails." + mUdKey(crewIdx, u.role) + ".statusAt"] = now; boarded.push(u.unit);
       }
     });
+    if (boarded.length) update.callEvents = mEvtUnion(mEvt(boarded.join(", ") + " — Onboard " + (mCrewOf(call, crewIdx).rig || "Rig"), "🚑", "#ffc84a", "status"));
     return db.collection("activeCalls").doc(callId).update(update);
   }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -4634,7 +4657,7 @@ function mDoAssign(unitId) {
       crews[crewIdx].rig = unitId;   // one ambulance per crew — set once at crew level
       var ud = call.unitDetails || {};
       if (role && role !== "__crew__") ud[mUdKey(crewIdx, role)] = Object.assign({}, ud[mUdKey(crewIdx, role)]||{}, { pickedAmbo: unitId, pickedAmboIsERV: false });
-      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString() });
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("Rig " + unitId + " selected for Crew " + (crewIdx+1), "🚑", "#ffc84a", "assign")) });
     } else {
       crews[crewIdx][role] = unitId;
       var assignedUnits = [];
@@ -4642,7 +4665,7 @@ function mDoAssign(unitId) {
       assignedUnits = assignedUnits.filter(function(u,i){ return assignedUnits.indexOf(u)===i; });
       var ud2 = call.unitDetails || {};
       ud2[mUdKey(crewIdx, role)] = Object.assign({}, ud2[mUdKey(crewIdx, role)]||{}, { assignedAt: mNowHHMM() });
-      return db.collection("activeCalls").doc(callId).update({ crews: crews, assignedUnits: assignedUnits, unitDetails: ud2, updatedAt: new Date().toISOString() });
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, assignedUnits: assignedUnits, unitDetails: ud2, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(unitId + " assigned", "👤", "var(--white)", "assign")) });
     }
   }).then(function() { mCloseAllSheets(); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -4716,6 +4739,8 @@ function mSetUnitResponse(crewIdx, role, response) {
   var update = {};
   update[key + ".response"] = response;
   update[key + ".status"] = initialStatus;
+  var crewR = mCrewOf(mDispCallCache[mDispSelectedCallId]||{}, crewIdx); var unitR = crewR[role] || role;
+  update.callEvents = mEvtUnion(mEvt(unitR + (response === "rig" ? " — Responding to Rig" : " — En Route to Scene"), response === "rig" ? "🏠" : "🏃", response === "rig" ? "#ffc84a" : "#7ab8f5", "status"));
   update[key + ".statusAt"] = mNowHHMM();
   update.updatedAt = new Date().toISOString();
   db.collection("activeCalls").doc(callId).update(update).catch(function(e){ mToast("Error: "+e.message, true); });
@@ -4727,6 +4752,8 @@ function mSetUnitStatus(crewIdx, role, status) {
   var update = {};
   update[key + ".status"] = status;
   update[key + ".statusAt"] = now;
+  var sl = M_STATUS_LOG[status]; var crewNow = mCrewOf(mDispCallCache[mDispSelectedCallId]||{}, crewIdx); var unitNow = crewNow[role] || role;
+  update.callEvents = mEvtUnion(mEvt(unitNow + " — " + (sl ? sl.text : status), sl ? sl.icon : "⚡", sl ? sl.color : "var(--gray)", "status"));
   update.updatedAt = new Date().toISOString();
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (snap.exists) {
@@ -4837,7 +4864,11 @@ function mBuildAlsBanner(call) {
     '</div>';
   }
   var isRecommended = mIsAlsNature(call);
-  return '<div style="background:' + (isRecommended?'rgba(224,85,85,0.12)':'transparent') + ';border:' + (isRecommended?'2px solid rgba(224,85,85,0.7)':'1px solid rgba(224,85,85,0.45)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px' + (isRecommended?';animation:als-flash 0.9s ease-in-out infinite':'') + '">' +
+  // Units first, then ALS: only start flashing the ALS prompt once 3 units are assigned to the call
+  var assignedCount = 0;
+  (call.crews || []).forEach(function(cr) { Object.keys(cr||{}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__") assignedCount++; }); });
+  var flashNow = isRecommended && assignedCount >= 3;
+  return '<div style="background:' + (isRecommended?'rgba(224,85,85,0.12)':'transparent') + ';border:' + (isRecommended?'2px solid rgba(224,85,85,0.7)':'1px solid rgba(224,85,85,0.45)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px' + (flashNow?';animation:als-flash 0.9s ease-in-out infinite':'') + '">' +
     '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + (isRecommended?'ALS Recommended by Protocol':'ALS') + '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sug.prov + '</span>' +
@@ -4872,17 +4903,19 @@ function mConfirmALS() {
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
     alsActivated: true, alsProvider: provider, alsUnit: unit, alsEta: eta, alsEtaMinutes: eta ? parseInt(eta)||0 : 0,
     alsActivatedAt: mNowHHMM(), alsActivatedISO: now.toISOString(),
-    alsOnScene: false, alsOnSceneAt: "", updatedAt: now.toISOString()
+    alsOnScene: false, alsOnSceneAt: "", updatedAt: now.toISOString(),
+    callEvents: mEvtUnion(mEvt("ALS Activated — " + provider + (unit ? " · " + unit : "") + (eta ? " · ETA " + eta + " min" : ""), "🚨", "#ff9090", "als"))
   }).then(function() { mCloseAllSheets(); mToast("🚨 ALS Activated"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mConfirmNoALSAvailable() {
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
-    alsActivated: true, alsProvider: "No ALS Available", alsUnit: "", alsEta: "", updatedAt: new Date().toISOString()
+    alsActivated: true, alsProvider: "No ALS Available", alsUnit: "", alsEta: "", updatedAt: new Date().toISOString(),
+    callEvents: mEvtUnion(mEvt("No ALS Available", "⚠️", "#ff9090", "als"))
   }).then(function() { mCloseAllSheets(); mToast("Logged: No ALS Available"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mMarkAlsOnScene() {
   clearInterval(window._mAlsEtaTicker);
-  db.collection("activeCalls").doc(mDispSelectedCallId).update({ alsOnScene: true, alsOnSceneAt: mNowHHMM(), updatedAt: new Date().toISOString() })
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ alsOnScene: true, alsOnSceneAt: mNowHHMM(), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("ALS On Scene", "✓", "#7dedb5", "als")) })
     .then(function(){ mToast("✓ ALS On Scene"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 // ── CANCEL ALS (reason picker, mirrors desktop exactly) ──
@@ -4918,7 +4951,8 @@ function mConfirmCancelAls() {
     alsActivated: false, alsProvider: "", alsUnit: "", alsEta: "", alsEtaMinutes: 0,
     alsActivatedISO: "", alsOnScene: false, alsOnSceneAt: "",
     alsCancel: { reason: reason, time: mNowHHMM(), by: mCurrentUserUnit || "" },
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    callEvents: mEvtUnion(mEvt("ALS Cancelled — " + reason, "✕", "var(--gray)", "event"))
   }).then(function() { mCloseAllSheets(); mToast("ALS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
@@ -4958,12 +4992,13 @@ function mConfirmBLS() {
   var eta = document.getElementById("m-bls-eta").value.trim();
   if (!provider) { mToast("Enter a provider", true); return; }
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
-    blsActivated: true, blsProvider: provider, blsUnit: unit, blsEta: eta, blsActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString()
+    blsActivated: true, blsProvider: provider, blsUnit: unit, blsEta: eta, blsActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString(),
+    callEvents: mEvtUnion(mEvt("BLS Mutual Aid — " + provider + (unit ? " · " + unit : "") + (eta ? " · ETA " + eta + " min" : ""), "🔵", "#a78bfa", "bls"))
   }).then(function() { mCloseAllSheets(); mToast("🔵 BLS Requested"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mCancelBLS() {
   if (!confirm("Cancel BLS mutual aid for this call?")) return;
-  db.collection("activeCalls").doc(mDispSelectedCallId).update({ blsActivated: false, blsProvider: "", blsEta: "", updatedAt: new Date().toISOString() })
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ blsActivated: false, blsProvider: "", blsEta: "", updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("BLS Mutual Aid Cancelled", "✕", "var(--gray)", "event")) })
     .then(function(){ mToast("BLS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
@@ -4991,7 +5026,7 @@ function mBuildPdBanner(call) {
   '</div>';
 }
 function mActivatePD() {
-  db.collection("activeCalls").doc(mDispSelectedCallId).update({ pdActivated: true, pdActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString() })
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ pdActivated: true, pdActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("PD Notified", "🚔", "#7ab8f5", "pd")) })
     .then(function(){ mToast("🚔 PD Notified"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
@@ -5005,6 +5040,7 @@ function mSetDispositionRMA() {
     var current = (call.disposition||{}).type || "";
     var newType = current === "rma" ? "" : "rma";
     var update = { disposition: { type: newType, hospital:"", rmaBy:"", rmaCustom:"" }, updatedAt: new Date().toISOString() };
+    update.callEvents = mEvtUnion(mEvt(newType === "rma" ? "Disposition: RMA" : "Disposition cleared", "✋", "#7dedb5", "disp"));
     if (newType === "rma") {
       var now = mNowHHMM();
       (call.crews||[]).forEach(function(crew, ci) {
@@ -5181,7 +5217,7 @@ function mConfirmTransport() {
       if (m.status === "other") ud[id] = Object.assign({}, ud[id]||{}, { status: "other_status", customStatus: (m.label||"").trim() || "Other", statusAt: nowT });
       else ud[id] = Object.assign({}, ud[id]||{}, { status: m.status, statusAt: nowT });
     });
-    var update = { unitDetails: ud, disposition: { type: "transport", hospital: hospital, rmaBy:"", rmaCustom:"" }, updatedAt: now.toISOString() };
+    var update = { callEvents: mEvtUnion(mEvt("Transport → " + hospital, "🏥", "#ff9090", "disp")), unitDetails: ud, disposition: { type: "transport", hospital: hospital, rmaBy:"", rmaCustom:"" }, updatedAt: now.toISOString() };
     if (!times.enroute) update["times.enroute"] = nowT;
     return db.collection("activeCalls").doc(callId).update(update);
   }).then(function() { mCloseAllSheets(); mToast("🚑 Transport confirmed → " + hospital); }).catch(function(e){ mToast("Error: "+e.message, true); });
@@ -5196,40 +5232,56 @@ function mAddDispNote() {
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
     var notes = snap.data().callNotes || [];
-    notes.push({ text: text, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch", byUid: mCurrentUser ? mCurrentUser.uid : "" });
+    notes.push({ text: text, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch", byUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() });
     return db.collection("activeCalls").doc(callId).update({ callNotes: notes, updatedAt: new Date().toISOString() });
   }).then(function() { inp.value = ""; }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
 // ── TIMELINE (simplified mobile version, multi-crew aware) ──
 function mBuildDispTimeline(call) {
-  var entries = [];
   var t = call.times || {};
-  if (t.dispatched) entries.push({ time:t.dispatched, icon:"📟", text:"Call Dispatched", color:"#7ab8f5" });
-  (call.crews||[]).forEach(function(crew, ci) {
-    Object.keys(crew).forEach(function(role) {
-      if (role === "rig" || !crew[role] || crew[role]==="__added__") return;
-      var det = mUdOf(call, ci, role);
-      if (det.assignedAt) entries.push({ time: det.assignedAt, icon:"👤", text: crew[role] + " assigned", color:"var(--white)" });
-      if (det.status && M_STATUS_LOG[det.status]) entries.push({ time: det.statusAt||"", icon:M_STATUS_LOG[det.status].icon, text: crew[role] + " — " + (det.status==="other_status" ? (det.customStatus||"Other") : M_STATUS_LOG[det.status].text), color:M_STATUS_LOG[det.status].color });
+  var events = (call.callEvents || []).filter(function(ev){ return ev && ev.text; });
+  var entries = [];
+  if (events.length) {
+    // TRUE RUNNING LOG — every action, in the order it happened, with who did it
+    events.forEach(function(ev) { entries.push({ time: ev.time || "", icon: ev.icon || "⚡", text: ev.text, color: ev.color || "var(--gray)", by: ev.by || "", at: ev.createdAt || "" }); });
+    (call.callNotes || []).forEach(function(nn) { if (nn && nn.text) entries.push({ time: nn.time || "", icon: "📝", text: nn.text, color: "var(--gray)", by: nn.by || "", at: nn.createdAt || "" }); });
+    if (call.status === "cancelled") entries.push({ time: call.cancelledAt ? new Date(call.cancelledAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "✕", text: "Call Cancelled" + (call.cancelReason ? " — " + call.cancelReason : ""), color: "#ff9090", by: call.cancelledBy || "", at: call.cancelledAt || "" });
+    if (call.status === "complete") entries.push({ time: call.completedAt ? new Date(call.completedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "🏁", text: "Call Complete", color: "#7dedb5", by: call.completedBy || "", at: call.completedAt || "" });
+    entries.sort(function(a, b) { var ta = (a.time||"").slice(0,5), tb = (b.time||"").slice(0,5); if (ta !== tb && ta && tb) return ta.localeCompare(tb); return (a.at||"").localeCompare(b.at||""); });
+  } else {
+    // Snapshot fallback (calls created before the running log existed)
+    if (t.dispatched) entries.push({ time:t.dispatched, icon:"📟", text:"Call Dispatched", color:"#7ab8f5" });
+    (call.crews||[]).forEach(function(crew, ci) {
+      Object.keys(crew||{}).forEach(function(role) {
+        if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
+        var det = mUdOf(call, ci, role);
+        if (det.assignedAt) entries.push({ time: det.assignedAt, icon:"👤", text: crew[role] + " assigned", color:"var(--white)" });
+        if (det.status && M_STATUS_LOG[det.status]) entries.push({ time: det.statusAt||"", icon:M_STATUS_LOG[det.status].icon, text: crew[role] + " — " + (det.status==="other_status" ? (det.customStatus||"Other") : M_STATUS_LOG[det.status].text), color:M_STATUS_LOG[det.status].color });
+      });
     });
-  });
-  if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon: call.alsProvider==="No ALS Available"?"⚠️":"🚨", text: call.alsProvider==="No ALS Available" ? "No ALS Available" : "ALS Activated — "+(call.alsProvider||""), color:"#ff9090" });
-  if (call.alsOnScene) entries.push({ time: call.alsOnSceneAt||"", icon:"✓", text:"ALS On Scene", color:"#7dedb5" });
-  if (call.blsActivated) entries.push({ time: call.blsActivatedAt||"", icon:"🔵", text:"BLS Requested", color:"#a78bfa" });
-  if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
-  if (call.disposition && call.disposition.type === "transport" && call.disposition.hospital) entries.push({ time: t.enroute||"", icon:"🏥", text:"Transport → "+call.disposition.hospital, color:"#7ab8f5" });
-  if (call.disposition && call.disposition.type === "rma") entries.push({ time:"", icon:"✋", text:"RMA"+(call.disposition.rmaBy?" — "+call.disposition.rmaBy:""), color:"#7dedb5" });
-
+    if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon: call.alsProvider==="No ALS Available"?"⚠️":"🚨", text: call.alsProvider==="No ALS Available" ? "No ALS Available" : "ALS Activated — "+(call.alsProvider||""), color:"#ff9090" });
+    if (call.alsOnScene) entries.push({ time: call.alsOnSceneAt||"", icon:"✓", text:"ALS On Scene", color:"#7dedb5" });
+    if (call.blsActivated) entries.push({ time: call.blsActivatedAt||"", icon:"🔵", text:"BLS Requested", color:"#a78bfa" });
+    if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
+    if (call.disposition && call.disposition.type === "transport" && call.disposition.hospital) entries.push({ time: t.enroute||"", icon:"🏥", text:"Transport → "+call.disposition.hospital, color:"#ff9090" });
+    if (call.disposition && call.disposition.type === "rma") entries.push({ time:"", icon:"✋", text:"RMA"+(call.disposition.rmaBy?" — "+call.disposition.rmaBy:""), color:"#7dedb5" });
+    entries.sort(function(a,b){ return (a.time||"").localeCompare(b.time||""); });
+  }
   if (!entries.length) return "";
-  var html = '<div id="m-dd-anchor-timeline" style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px;padding-top:10px;border-top:1px solid var(--card-border)">⚡ Call Updates</div>';
-  html += entries.map(function(e) {
-    return '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px">' +
-      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;color:' + e.color + ';flex-shrink:0;min-width:34px">' + (e.time||"") + '</div>' +
-      '<div style="font-size:0.72rem;color:var(--white)">' + e.icon + ' ' + mEscHtml(e.text) + '</div>' +
-    '</div>';
-  }).join("");
-  return html;
+  return '<div id="m-dd-anchor-timeline" style="margin-top:18px">' +
+    '<div style="font-family:\'Oswald\',sans-serif;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">⚡ Call Timeline' + (events.length ? ' <span style="font-weight:400;color:var(--gray);letter-spacing:0;text-transform:none">(' + entries.length + ' entries)</span>' : '') + '</div>' +
+    '<div style="border-left:2px solid var(--card-border);margin-left:6px;padding-left:12px">' +
+    entries.map(function(e) {
+      return '<div style="position:relative;padding:5px 0 5px 4px;border-bottom:1px solid rgba(255,255,255,0.04)">' +
+        '<span style="position:absolute;left:-19px;top:8px;width:10px;height:10px;border-radius:50%;background:' + e.color + ';border:2px solid var(--navy)"></span>' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">' +
+          '<div style="font-size:0.78rem;color:var(--white);min-width:0">' + e.icon + ' ' + mEscHtml(e.text) + '</div>' +
+          '<div style="font-size:0.62rem;color:var(--gray);font-family:\'Oswald\',sans-serif;flex-shrink:0">' + (e.time||"") + '</div>' +
+        '</div>' +
+        (e.by ? '<div style="font-size:0.6rem;color:var(--gray);margin-top:1px">' + mEscHtml(e.by) + '</div>' : '') +
+      '</div>';
+    }).join("") + '</div></div>';
 }
 
 // ── COMPLETE / CANCEL ──
@@ -5392,7 +5444,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.59</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.64</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5506,7 +5558,7 @@ function mCloseAllSheets() {
       <button onclick="mDrawerJump('units')" class="m-drawer-item">👥 Units</button>
       <button onclick="mDrawerJump('disposition')" class="m-drawer-item">📋 Disposition</button>
       <button onclick="mDrawerJump('notes')" class="m-drawer-item">📝 Notes</button>
-      <button onclick="mDrawerJump('timeline')" class="m-drawer-item">⚡ Updates</button>
+      <button onclick="mDrawerJump('timeline')" class="m-drawer-item">⚡ Timeline</button>
       <div style="display:flex;gap:6px;margin-top:10px;padding:0 4px">
         <button onclick="mCloseDispDrawer();mCancelCallPrompt()" style="flex:1;background:rgba(255,144,144,0.1);border:1px solid rgba(255,144,144,0.4);border-radius:8px;color:#ff9090;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:10px 6px;cursor:pointer">✕ Cancel Call</button>
         <button onclick="mCloseDispDrawer();mCompleteCall()" style="flex:1;background:rgba(125,237,181,0.1);border:1px solid rgba(125,237,181,0.4);border-radius:8px;color:#7dedb5;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:10px 6px;cursor:pointer">✓ Complete</button>
