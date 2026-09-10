@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.44";
+  var BUILD = "1.45";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.44</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.45</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.44</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.45</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3752,7 +3752,7 @@ function mRenderDispatchDetail(call) {
 // Units in this crew that move with the rig: the rig path itself, PLUS any scene-direct unit that is
 // riding in the rig (status transporting → clearing). Riders share the rig's status until the hospital
 // is cleared, then they're cleared; only the rig crew continues back to base.
-var M_RIDER_STATUSES = ["transporting","at_facility","clearing_facility"];
+var M_RIDER_STATUSES = ["transporting","at_facility"];
 function mCrewRigUnits(call, crewIdx) {
   var crew = mCrewOf(call, crewIdx), out = [];
   Object.keys(crew).forEach(function(k) {
@@ -3830,7 +3830,9 @@ function mBuildCrewRigPanel(call, crewIdx) {
   } else if (every("transporting")) {
     body = btn("Mark " + rig + " + units At " + hosp, "at_facility", "#ff9090", "gold");
   } else if (every("at_facility")) {
-    body = btn("Mark " + rig + " + units Clearing " + hosp + " → Base", "clearing_facility", "#7dedb5", "green");
+    var riders = rigUnits.filter(function(u){ return u.rider; }).map(function(u){ return u.unit; });
+    body = btn("Mark " + rig + " Clearing " + hosp + " → Base", "clearing_facility", "#7dedb5", "green") +
+      (riders.length ? '<div style="font-size:0.66rem;color:var(--gray);margin-top:6px">' + mEscHtml(riders.join(", ")) + ' will be marked cleared</div>' : '');
   } else if (every("clearing_facility") || every("returning_base")) {
     body = btn("Mark " + rig + " Back at Base — all units cleared", "back_at_base", "#7ab8f5", "blue");
   } else if (every("back_at_base")) {
@@ -4015,8 +4017,9 @@ function mSetCrewRigStatus(crewIdx, status) {
     if (!units.length) return;
     var update = { updatedAt: new Date().toISOString() };
     units.forEach(function(u) {
-      // Riders (scene-direct units in the rig) share the rig's status through "clearing hospital", then clear
-      var target = (u.rider && ["returning_base","back_at_base"].indexOf(status) !== -1) ? "cleared_scene" : status;
+      // Riders (scene-direct units in the rig) share the rig's status until the hospital is cleared —
+      // at that moment they're simply cleared; only the rig crew heads back to base
+      var target = (u.rider && ["clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1) ? "cleared_scene" : status;
       update["unitDetails." + mUdKey(crewIdx, u.role) + ".status"] = target;
       update["unitDetails." + mUdKey(crewIdx, u.role) + ".statusAt"] = now;
     });
@@ -4909,7 +4912,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.44</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.45</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
