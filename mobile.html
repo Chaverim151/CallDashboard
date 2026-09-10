@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.49";
+  var BUILD = "1.50";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.49</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.50</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.49</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.50</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2732,7 +2732,7 @@ function mLoadAllResponders() {
       var allRoles = primary ? r.concat([primary]).filter(function(v,i,a){ return a.indexOf(v)===i; }) : r;
       // Exclude pure-dispatcher-only members from field-unit assignment (mirrors desktop's intent)
       if (allRoles.indexOf("dispatcher") !== -1 && allRoles.length <= 1) return;
-      list.push({ unit: u.unit, roles: allRoles, isSupervisor: allRoles.indexOf("captain") !== -1 || allRoles.indexOf("chief") !== -1 });
+      list.push({ unit: u.unit, roles: allRoles, isSupervisor: allRoles.indexOf("captain") !== -1 || allRoles.indexOf("chief") !== -1, isObserver: allRoles.indexOf("observer") !== -1 });
     });
     list.sort(function(a,b){ return a.unit.localeCompare(b.unit, undefined, {numeric:true}); });
     mAllRespondersCache = list;
@@ -4338,24 +4338,27 @@ function mOpenAssignSheet(crewIdx, role, mode) {
       var call = mDispCallCache[mDispSelectedCallId] || {};
       var onThisCall = {};
       (call.crews || []).forEach(function(cr) { Object.keys(cr||{}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__") onThisCall[cr[k]] = true; }); });
-      var isSupervisorSlot = /^(supervisor|sup_)/.test(role || "");
-      mRenderAssignRoster(roster, onThisCall, isSupervisorSlot ? "supervisors" : "all");
+      var slotFilter = /^(supervisor|sup_)/.test(role || "") ? "supervisors" : /^observer/.test(role || "") ? "observers" : "all";
+      mRenderAssignRoster(roster, onThisCall, slotFilter);
     });
   }
 }
-// Roster renderer: "supervisors" shows captains/chiefs with an "Other units…" reveal; "all" shows everyone
+// Roster renderer: "supervisors" = captains/chiefs, "observers" = observer role — each with an "Other units…" reveal; "all" = everyone
 function mRenderAssignRoster(roster, onThisCall, filter) {
   var units = (mAllRespondersCache || []).filter(function(u) { return !onThisCall[u.unit]; });
-  var list = filter === "supervisors" ? units.filter(function(u) { return u.isSupervisor; }) : units;
+  var list = filter === "supervisors" ? units.filter(function(u) { return u.isSupervisor; })
+           : filter === "observers"   ? units.filter(function(u) { return u.isObserver; })
+           : units;
   var html = list.map(function(u) {
     var conflict = mUnitConflictMap[u.unit];
     var style = conflict ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px";
-    var label = u.unit + (conflict ? " ⚠" : "") + (filter === "supervisors" && u.roles.indexOf("chief") !== -1 ? " · Chief" : filter === "supervisors" ? " · Capt" : "");
+    var tag = filter === "supervisors" ? (u.roles.indexOf("chief") !== -1 ? " · Chief" : " · Capt") : filter === "observers" ? " · Obs" : "";
+    var label = u.unit + (conflict ? " ⚠" : "") + tag;
     var title = conflict ? ' title="On another call: ' + conflict.address + '"' : "";
     return '<button class="m-disp-btn" style="' + style + '"' + title + ' onclick="mConfirmAssignRoster(\'' + u.unit + '\')">' + label + '</button>';
   }).join("");
-  if (filter === "supervisors") {
-    if (!list.length) html = '<div style="font-size:0.75rem;color:var(--gray);width:100%">No captains or chiefs available</div>';
+  if (filter !== "all") {
+    if (!list.length) html = '<div style="font-size:0.75rem;color:var(--gray);width:100%">' + (filter === "supervisors" ? "No captains or chiefs available" : "No observers on the roster") + '</div>';
     html += '<button class="m-disp-btn" style="width:100%;margin-top:6px;border-color:rgba(255,255,255,0.2);color:var(--gray);font-size:0.62rem" onclick="mRenderAssignRoster(document.getElementById(\'m-assign-roster\'), ' + JSON.stringify(onThisCall).replace(/"/g, "&quot;") + ', \'all\')">Other units…</button>';
   }
   roster.innerHTML = html || '<div style="font-size:0.75rem;color:var(--gray)">No roster loaded — type below</div>';
@@ -5176,7 +5179,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.49</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.50</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
