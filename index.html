@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.29');
+  window.location.replace('/CallDashboard/mobile.html?v=1.31');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.17e</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.17g</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2512,6 +2512,7 @@ window.saveAttEdit = function(rowId, evId, uid, decision) {
     ceHours: newHrs,
     ceApproved: approved,
     ceDecision: decision,
+    decidedByUid: currentUser ? currentUser.uid : "",
     editedBy: currentUserUnit || (currentUser ? currentUser.email : "Admin"),
     editedAt: new Date().toISOString()
   };
@@ -3732,10 +3733,7 @@ function acceptTicket(id) {
     var assignedTo = ((d.unit || "") + " " + (d.firstName || "") + " " + (d.lastName || "")).trim();
     var update = { assignedTo: assignedTo, assignedByUid: currentUser.uid, assignedAt: new Date().toISOString(), status: "in-progress" };
     return db.collection("tickets").doc(id).set(update, { merge: true }).then(function() {
-      if (t) {
-        Object.assign(t, update);
-        sendAcceptanceEmails({ title: t.title, unit: t.unit, priority: t.priority, submittedBy: t.submittedBy, acceptedBy: assignedTo, submittedByUid: t.submittedByUid });
-      }
+      if (t) Object.assign(t, update); // onTicketUpdated Cloud Function notifies submitter + logistics team
     });
   }).then(function() { showToast("✋ Assigned to you!"); openTicket(id); })
   .catch(function(e) { showToast("Error: " + e.message, true); });
@@ -3749,7 +3747,7 @@ function unassignTicket(id) {
   }).catch(function(e) { showToast("Error: " + e.message, true); });
 }
 function updateTicketStatus(id, status) {
-  db.collection("tickets").doc(id).set({ status: status }, { merge: true }).then(function() {
+  db.collection("tickets").doc(id).set({ status: status, statusByUid: currentUser ? currentUser.uid : "" }, { merge: true }).then(function() {
     var t = allTickets.find(function(x) { return x.id === id; }); if (t) t.status = status;
     showToast("Status updated!");
   }).catch(function(e) { showToast("Error: " + e.message, true); });
@@ -3760,18 +3758,8 @@ function addComment(id) {
   db.collection("users").doc(currentUser.uid).get().then(function(snap) {
     var d = snap.data();
     var author = ((d.unit || "") + " " + (d.firstName || "") + " " + (d.lastName || "")).trim();
-    return db.collection("tickets").doc(id).collection("comments").add({ text: text, author: author, createdAt: new Date().toISOString() }).then(function() {
-      if (t && t.assignedByUid && t.assignedByUid !== currentUser.uid) {
-        var commentData = { title: t.title, details: "New comment from " + author + ":\n\n\"" + text + "\"", unit: t.unit, priority: t.priority, submittedBy: t.submittedBy, type: "comment" };
-        if (TESTING_MODE) {
-          getAdminEmail().then(function(email) { if (email) sendTicketEmail(Object.assign({}, commentData, { toEmail: email })).catch(function(e) { console.warn(e); }); });
-        } else if (t.assignedByUid) {
-          db.collection("users").doc(t.assignedByUid).get().then(function(asnap) {
-            var email = asnap.exists ? asnap.data().email : null;
-            if (email) sendTicketEmail(Object.assign({}, commentData, { toEmail: email })).catch(function(e) { console.warn(e); });
-          });
-        }
-      }
+    return db.collection("tickets").doc(id).collection("comments").add({ text: text, author: author, authorUid: currentUser.uid, createdAt: new Date().toISOString() }).then(function() {
+      // onTicketComment Cloud Function notifies the assigned member / submitter / logistics team
     });
   }).then(function() { document.getElementById("new-comment").value = ""; openTicket(id); showToast("Comment posted!"); })
   .catch(function(e) { showToast("Error: " + e.message, true); });
@@ -3798,7 +3786,7 @@ function submitTicket() {
     var submittedBy = ((d.unit || "") + " " + (d.firstName || "") + " " + (d.lastName || "")).trim();
     var acceptToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     return db.collection("tickets").add({ title: title, details: details, category: "general", unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: currentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
-      sendToLogisticsTeam({ title: title, details: details, category: "general", unit: unit, priority: priority, submittedBy: submittedBy, ticketId: ref.id, acceptToken: acceptToken });
+      // notifications (push + SMS fallback) are sent server-side by the onTicketCreated Cloud Function
     });
   }).then(function() {
     msg.className = "form-msg success"; msg.textContent = "✓ Service Request submitted!";
@@ -4571,7 +4559,7 @@ window.approveCE = function(eventId, uid, ceHours) {
 
     var batch = db.batch();
     batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), {
-      ceApproved: true, ceDecision: "approved",
+      ceApproved: true, ceDecision: "approved", decidedByUid: currentUser ? currentUser.uid : "",
       approvedBy: approvedBy, approvedAt: new Date().toISOString()
     });
     var cmeUpdate = {};
@@ -4618,7 +4606,7 @@ window.submitDenyCE = function() {
   var deniedBy = currentUserUnit || currentUser.email;
 
   db.collection("education").doc(ctx.eventId).collection("attendance").doc(ctx.uid).update({
-    ceApproved: false, ceDecision: "denied",
+    ceApproved: false, ceDecision: "denied", decidedByUid: currentUser ? currentUser.uid : "",
     deniedBy: deniedBy, deniedAt: new Date().toISOString(), denialReason: reason
   }).then(function() {
     window.closeDenyModal();
@@ -4659,7 +4647,7 @@ window.approveAllCE = function(eventId) {
       pending.forEach(function(d) {
         var r = d.data();
         if (!r.ceHours || r.ceHours <= 0) return;
-        batch.update(d.ref, { ceApproved: true, ceDecision: "approved", approvedBy: approvedBy, approvedAt: new Date().toISOString() });
+        batch.update(d.ref, { ceApproved: true, ceDecision: "approved", decidedByUid: currentUser ? currentUser.uid : "", approvedBy: approvedBy, approvedAt: new Date().toISOString() });
         var cmeUpdate = {};
         cmeUpdate["cmeHours." + year] = firebase.firestore.FieldValue.increment(r.ceHours);
         cmeUpdate["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
@@ -4846,6 +4834,8 @@ function saveEvent() {
     notify1h:document.getElementById("edu-notif-1h").checked,
     notifyOnCreate:document.getElementById("edu-notif-new").checked,
     createdBy:currentUserUnit||currentUser.email,
+    createdByUid:currentUser.uid,
+    testMode: !!SYS_TESTING_MODE, testModeUnit: SYS_TESTING_MODE ? (currentUserUnit||"") : "",
     updatedAt:new Date().toISOString()
   };
   if (!editId) data.createdAt=new Date().toISOString();
@@ -7787,7 +7777,7 @@ function addCallNote(callId) {
   var by = (document.getElementById("topbar-email") || {}).textContent || "";
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     var notes = snap.exists ? (snap.data().callNotes || []) : [];
-    notes.push({ text: input.value.trim(), time: time, by: by, createdAt: new Date().toISOString() });
+    notes.push({ text: input.value.trim(), time: time, by: by, byUid: currentUser ? currentUser.uid : "", createdAt: new Date().toISOString() });
     return db.collection("activeCalls").doc(callId).set({ callNotes: notes }, { merge: true });
   }).then(function() {
     input.value = "";

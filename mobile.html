@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.29";
+  var BUILD = "1.31";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.29</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.31</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.29</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.31</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2720,7 +2720,7 @@ function mRenderDispatchList(calls) {
 function mApplyTestModeState(on) {
   MSysTestingMode = !!on;
   var banner = document.getElementById("m-test-global-banner");
-  if (banner) banner.textContent = "🧪 TEST DISPATCH MODE — your calls go only to you (" + (mCurrentUserUnit || "me") + ")";
+  if (banner) banner.textContent = "🧪 TEST MODE — everything you trigger (calls, tickets, education, SMS, push) goes only to " + (mCurrentUserUnit || "you");
   var track = document.getElementById("m-test-toggle-track");
   var thumb = document.getElementById("m-test-toggle-thumb");
   var label = document.getElementById("m-test-toggle-label");
@@ -2737,7 +2737,7 @@ function mToggleTestMode() {
   db.collection("users").doc(mCurrentUser.uid).set({ sysTestingMode: next }, { merge: true }).then(function() {
     if (label) label.textContent = "🧪 Test Mode";
     mApplyTestModeState(next);
-    mToast(next ? "🧪 Test Mode ON for you — calls you post go only to you (SMS, email & push)" : "Test Mode OFF — your calls go live");
+    mToast(next ? "🧪 Test Mode ON for you — everything you trigger goes only to you" : "Test Mode OFF — your actions go live");
   }).catch(function(e) {
     if (label) label.textContent = "🧪 Test Mode";
     mApplyTestModeState(MSysTestingMode);
@@ -2908,7 +2908,7 @@ function mSubmitTicket() {
     var submittedBy = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
     var acceptToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     return db.collection("tickets").add({ title: title, details: details, category: "general", unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: mCurrentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
-      mSendToLogisticsTeam({ title: title, details: details, category: "general", unit: unit, priority: priority, submittedBy: submittedBy, ticketId: ref.id, acceptToken: acceptToken });
+      // notifications (push + SMS fallback) are sent server-side by the onTicketCreated Cloud Function
     });
   }).then(function() {
     msg.style.color = "#7dedb5"; msg.textContent = "✓ Service Request submitted!";
@@ -2974,7 +2974,7 @@ function mAcceptTicket(id) {
     var assignedTo = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
     var update = { assignedTo: assignedTo, assignedByUid: mCurrentUser.uid, assignedAt: new Date().toISOString(), status: "in-progress" };
     return db.collection("tickets").doc(id).set(update, { merge: true }).then(function() {
-      if (t) { Object.assign(t, update); mSendAcceptanceEmails({ title: t.title, unit: t.unit, priority: t.priority, submittedBy: t.submittedBy, acceptedBy: assignedTo, submittedByUid: t.submittedByUid }); }
+      if (t) Object.assign(t, update); // onTicketUpdated Cloud Function notifies submitter + logistics team
     });
   }).then(function() { mToast("✋ Assigned to you!"); mOpenTicket(id); }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
@@ -2987,7 +2987,7 @@ function mUnassignTicket(id) {
   }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
 function mUpdateTicketStatus(id, status) {
-  db.collection("tickets").doc(id).set({ status: status }, { merge: true }).then(function() {
+  db.collection("tickets").doc(id).set({ status: status, statusByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true }).then(function() {
     var t = mAllTickets.find(function(x){ return x.id === id; }); if (t) t.status = status;
     mToast("Status updated!");
   }).catch(function(e) { mToast("Error: " + e.message, true); });
@@ -2999,14 +2999,7 @@ function mAddComment(id) {
     var d = snap.data();
     var author = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
     return db.collection("tickets").doc(id).collection("comments").add({ text: text, author: author, authorUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() }).then(function() {
-      var t = mAllTickets.find(function(x){ return x.id === id; });
-      if (t && t.assignedByUid && t.assignedByUid !== mCurrentUser.uid) {
-        var commentData = { title: t.title, details: "New comment from " + author + ":\n\n\"" + text + "\"", unit: t.unit, priority: t.priority, submittedBy: t.submittedBy, type: "comment" };
-        db.collection("users").doc(t.assignedByUid).get().then(function(asnap) {
-          var email = asnap.exists ? asnap.data().email : null;
-          if (email) mSendTicketEmail(Object.assign({}, commentData, { toEmail: email })).catch(function(){});
-        });
-      }
+      // onTicketComment Cloud Function notifies the assigned member / submitter / logistics team
     });
   }).then(function() { document.getElementById("m-tk-new-comment").value = ""; mOpenTicket(id); }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
@@ -4345,7 +4338,7 @@ function mAddDispNote() {
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
     var notes = snap.data().callNotes || [];
-    notes.push({ text: text, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch" });
+    notes.push({ text: text, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch", byUid: mCurrentUser ? mCurrentUser.uid : "" });
     return db.collection("activeCalls").doc(callId).update({ callNotes: notes, updatedAt: new Date().toISOString() });
   }).then(function() { inp.value = ""; }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -4541,7 +4534,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.29</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.31</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
