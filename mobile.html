@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.46";
+  var BUILD = "1.49";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.46</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.49</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.46</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.49</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -693,14 +693,15 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 <!-- EDUCATION PAGE (MOBILE) -->
 <div class="page" id="m-pg-education">
-  <div class="m-subpage-header">
-    <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
-    <span class="m-page-title">Education</span>
+  <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:6px"><button class="m-back-btn" onclick="mGoTo('home')">← Back</button><span class="m-page-title">Education</span></div>
+    <button id="m-edu-new-btn" onclick="mOpenEduForm()" style="display:none;background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New</button>
   </div>
   <!-- Tabs -->
   <div style="display:flex;border-bottom:1px solid var(--card-border);flex-shrink:0">
     <button id="m-edu-tab-upcoming" onclick="mSetEduTab('upcoming')" style="flex:1;background:none;border:none;border-bottom:2px solid var(--gold);color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:12px 8px;cursor:pointer">Upcoming</button>
     <button id="m-edu-tab-past" onclick="mSetEduTab('past')" style="flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:12px 8px;cursor:pointer">Past</button>
+    <button id="m-edu-tab-pending" onclick="mSetEduTab('pending')" style="display:none;flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:12px 4px;cursor:pointer;position:relative">Pending <span id="m-edu-pending-badge" style="display:none;background:#ffc84a;color:#1a1215;border-radius:9px;font-size:0.6rem;padding:1px 6px;margin-left:3px">0</span></button>
     <button id="m-edu-tab-cme" onclick="mSetEduTab('cme')" style="flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:12px 8px;cursor:pointer">My CME</button>
   </div>
   <div class="m-scroll" id="m-edu-content"></div>
@@ -1514,6 +1515,11 @@ var M_EDU_COLORS = {
   other:    { bg:"rgba(138,154,181,0.15)", border:"rgba(138,154,181,0.3)", color:"var(--gray)", label:"Other" }
 };
 
+function mEduApplyAdminUI() {
+  var nb = document.getElementById("m-edu-new-btn"); if (nb) nb.style.display = mEduIsAdmin ? "" : "none";
+  var pt = document.getElementById("m-edu-tab-pending"); if (pt) pt.style.display = mEduIsAdmin ? "" : "none";
+  if (mEduIsAdmin) mEduPendingBadge();
+}
 function mInitEducation() {
   var roles = (mCurrentUserRoles||[]).map(function(r){ return r.toLowerCase(); });
   mEduIsAdmin = mCurrentRole === "admin" || mCurrentRole === "captain" || mCurrentRole === "chief" ||
@@ -1523,7 +1529,7 @@ function mInitEducation() {
 
 function mSetEduTab(tab) {
   mEduTab = tab;
-  ["upcoming","past","cme"].forEach(function(t) {
+  ["upcoming","past","cme","pending"].forEach(function(t) {
     var el = document.getElementById("m-edu-tab-" + t);
     if (!el) return;
     el.style.color = t === tab ? "var(--gold)" : "var(--gray)";
@@ -1534,6 +1540,8 @@ function mSetEduTab(tab) {
 
 function mLoadEduContent() {
   var el = document.getElementById("m-edu-content");
+  mEduApplyAdminUI();
+  if (mEduTab === "pending") { mRenderPendingTab(el); return; }
   if (!el) return;
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:16px 0">Loading...</div>';
 
@@ -1680,16 +1688,224 @@ function mOpenEduDetail(eventId) {
           '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:12px;margin-bottom:10px;text-align:center;font-size:0.78rem;color:var(--gray)">⏳ Check-in not yet open — wait for the instructor to unlock</div>'
         ) : '') +
 
-        // Admin: attendance count
-        (mEduIsAdmin ? '<div id="m-edu-attend-count" style="font-size:0.75rem;color:var(--gray);text-align:center">Loading attendance...</div>' : '');
+        // Admin: manage event + attendance roster / CE approval
+        (mEduIsAdmin ? '<div style="display:flex;gap:6px;margin:12px 0"><button class="m-disp-btn" style="flex:1;border-color:rgba(255,255,255,0.2)" onclick="mEditEduEvent(\'' + ev.id + '\')">✎ Edit</button><button class="m-disp-btn" style="flex:1;border-color:rgba(201,168,76,0.4);color:var(--gold)" onclick="mShowEduQR(\'' + ev.id + '\')">▦ QR</button><button class="m-disp-btn" style="flex:1;border-color:rgba(255,144,144,0.4);color:#ff9090" onclick="mDeleteEduEvent(\'' + ev.id + '\')">🗑 Delete</button></div><div id="m-edu-admin-section"></div>' : '');
 
-      if (mEduIsAdmin) {
-        db.collection("education").doc(eventId).collection("attendance").get().then(function(asnap) {
-          var el2 = document.getElementById("m-edu-attend-count");
-          if (el2) el2.textContent = asnap.size + " member" + (asnap.size!==1?"s":"") + " checked in";
-        });
-      }
+      if (mEduIsAdmin) mEduRenderAdminSection(ev);
     });
+  });
+}
+
+// ══ EDUCATION ADMIN (create/edit/delete, pending approvals, attendance roster, approve/deny, QR) ══
+function mOpenEduForm(ev) {
+  var isEdit = !!(ev && ev.id);
+  document.getElementById("m-edu-form-title").textContent = isEdit ? "✎ Edit Event" : "🎓 New Event";
+  document.getElementById("m-edu-edit-id").value = isEdit ? ev.id : "";
+  document.getElementById("m-edu-title").value = isEdit ? (ev.title||"") : "";
+  document.getElementById("m-edu-type").value = isEdit ? (ev.type||"cme") : "cme";
+  document.getElementById("m-edu-hours").value = isEdit ? (ev.ceHours != null ? ev.ceHours : 1) : 1;
+  var dt = isEdit && ev.dateTime ? new Date(ev.dateTime) : null;
+  document.getElementById("m-edu-date").value = dt ? dt.getFullYear() + "-" + String(dt.getMonth()+1).padStart(2,"0") + "-" + String(dt.getDate()).padStart(2,"0") : "";
+  document.getElementById("m-edu-time").value = dt ? String(dt.getHours()).padStart(2,"0") + ":" + String(dt.getMinutes()).padStart(2,"0") : "19:00";
+  document.getElementById("m-edu-location").value = isEdit ? (ev.location||"") : "";
+  document.getElementById("m-edu-lat").value = isEdit && ev.lat ? ev.lat : ""; document.getElementById("m-edu-lng").value = isEdit && ev.lng ? ev.lng : "";
+  var pv = document.getElementById("m-edu-location-preview"); pv.style.display = (isEdit && ev.lat) ? "block" : "none"; if (isEdit && ev.lat) pv.textContent = "📍 Location geo-locked";
+  document.getElementById("m-edu-instructor").value = isEdit ? (ev.instructor||"") : "";
+  document.getElementById("m-edu-radius").value = isEdit ? String(ev.geoRadius||100) : "100";
+  document.getElementById("m-edu-desc").value = isEdit ? (ev.description||"") : "";
+  document.getElementById("m-edu-notif-new").checked = isEdit ? !!ev.notifyOnCreate : true;
+  document.getElementById("m-edu-notif-24h").checked = isEdit ? ev.notify24h !== false : true;
+  document.getElementById("m-edu-notif-1h").checked = isEdit ? ev.notify1h !== false : true;
+  document.getElementById("m-edu-form-msg").style.display = "none";
+  mOpenSheet("m-sheet-edu-form");
+  mEduInitAutocomplete();
+}
+function mEduInitAutocomplete() {
+  var input = document.getElementById("m-edu-location");
+  if (!input || input.dataset.acBound) return;
+  var bind = function() {
+    if (!window.google || !google.maps || !google.maps.places) return false;
+    var ac = new google.maps.places.Autocomplete(input, { types: ["establishment","geocode"], componentRestrictions: { country: "us" } });
+    input.addEventListener("input", function() { document.getElementById("m-edu-lat").value = ""; document.getElementById("m-edu-lng").value = ""; document.getElementById("m-edu-location-preview").style.display = "none"; });
+    ac.addListener("place_changed", function() {
+      var p = ac.getPlace(); if (!p.geometry) return;
+      var lat = p.geometry.location.lat(), lng = p.geometry.location.lng();
+      document.getElementById("m-edu-lat").value = lat; document.getElementById("m-edu-lng").value = lng;
+      var pv = document.getElementById("m-edu-location-preview"); pv.textContent = "📍 " + (p.formatted_address || p.name || "Location confirmed"); pv.style.display = "block";
+    });
+    input.dataset.acBound = "1"; return true;
+  };
+  if (bind()) return;
+  if (!document.getElementById("m-map-script") && !document.getElementById("m-places-script")) {
+    var s = document.createElement("script"); s.id = "m-places-script";
+    s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=mEduInitAutocomplete";
+    document.head.appendChild(s);
+  } else { setTimeout(bind, 800); }
+}
+window.mEduInitAutocomplete = mEduInitAutocomplete;
+function mSaveEduEvent() {
+  var msg = document.getElementById("m-edu-form-msg"); msg.style.display = "none";
+  var title = document.getElementById("m-edu-title").value.trim(), date = document.getElementById("m-edu-date").value, time = document.getElementById("m-edu-time").value;
+  if (!title) { msg.textContent = "Enter an event title."; msg.style.display = "block"; return; }
+  if (!date) { msg.textContent = "Select a date."; msg.style.display = "block"; return; }
+  var editId = document.getElementById("m-edu-edit-id").value;
+  var lat = parseFloat(document.getElementById("m-edu-lat").value) || null, lng = parseFloat(document.getElementById("m-edu-lng").value) || null;
+  var data = {
+    title: title, type: document.getElementById("m-edu-type").value, ceHours: parseFloat(document.getElementById("m-edu-hours").value) || 0,
+    dateTime: new Date(date + "T" + (time || "19:00")).toISOString(), location: document.getElementById("m-edu-location").value.trim(),
+    description: document.getElementById("m-edu-desc").value.trim(), instructor: document.getElementById("m-edu-instructor").value.trim(),
+    geoRadius: parseInt(document.getElementById("m-edu-radius").value) || 100, lat: lat, lng: lng,
+    notify24h: document.getElementById("m-edu-notif-24h").checked, notify1h: document.getElementById("m-edu-notif-1h").checked, notifyOnCreate: document.getElementById("m-edu-notif-new").checked,
+    createdBy: mCurrentUserUnit || (mCurrentUser ? mCurrentUser.email : ""), createdByUid: mCurrentUser ? mCurrentUser.uid : "",
+    testMode: !!MSysTestingMode, testModeUnit: MSysTestingMode ? (mCurrentUserUnit||"") : "",
+    updatedAt: new Date().toISOString()
+  };
+  if (!editId) data.createdAt = new Date().toISOString();
+  if (!lat && data.location) mToast("⚠ Pick the location from the dropdown for geo-locked check-in", true);
+  var op = editId ? db.collection("education").doc(editId).set(data, { merge: true }) : db.collection("education").add(data);
+  op.then(function() { mToast(editId ? "Event updated" : "Event created"); mCloseAllSheets(); mCloseEduDetail(); mLoadEduContent(); })
+    .catch(function(e) { msg.textContent = "Error: " + e.message; msg.style.display = "block"; });
+}
+function mEditEduEvent(eventId) {
+  db.collection("education").doc(eventId).get().then(function(s) { if (s.exists) mOpenEduForm(Object.assign({ id: s.id }, s.data())); });
+}
+function mDeleteEduEvent(eventId) {
+  if (!confirm("Delete this event? Attendance records will be removed with it.")) return;
+  db.collection("education").doc(eventId).delete().then(function() { mToast("Event deleted"); mCloseEduDetail(); mLoadEduContent(); }).catch(function(e) { mToast("Error: " + e.message, true); });
+}
+// ── Attendance roster + CE approval (inside the event detail) ──
+function mEduRenderAdminSection(ev) {
+  var host = document.getElementById("m-edu-admin-section"); if (!host) return;
+  host.innerHTML = '<div style="font-size:0.75rem;color:var(--gray);text-align:center;padding:8px">Loading attendance…</div>';
+  Promise.all([
+    db.collection("education").doc(ev.id).collection("rsvps").get().catch(function(){ return { forEach: function(){} }; }),
+    db.collection("education").doc(ev.id).collection("attendance").get()
+  ]).then(function(res) {
+    var counts = { yes: 0, maybe: 0, no: 0 }; res[0].forEach(function(d) { var s = d.data().status; if (counts[s] !== undefined) counts[s]++; });
+    var rows = []; res[1].forEach(function(d) { rows.push(Object.assign({ uid: d.id }, d.data())); });
+    rows.sort(function(a, b) { return (a.unit||"").localeCompare(b.unit||"", undefined, { numeric: true }); });
+    var pending = rows.filter(function(r) { return !r.ceApproved && r.ceHours > 0 && r.ceDecision !== "denied"; }).length;
+    var html = '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:10px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px">RSVPs</div>' +
+      '<div style="display:flex;gap:18px"><span style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-weight:700">' + counts.yes + ' <span style="font-size:0.7rem;font-weight:400">Yes</span></span><span style="color:#ffc84a;font-family:\'Oswald\',sans-serif;font-weight:700">' + counts.maybe + ' <span style="font-size:0.7rem;font-weight:400">Maybe</span></span><span style="color:#ff9090;font-family:\'Oswald\',sans-serif;font-weight:700">' + counts.no + ' <span style="font-size:0.7rem;font-weight:400">No</span></span></div></div>';
+    if (pending > 0) html += '<button onclick="mApproveAllCE(\'' + ev.id + '\')" style="width:100%;margin-bottom:10px;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.45);border-radius:8px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:11px;cursor:pointer">✓ Approve all pending (' + pending + ')</button>';
+    html += '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:10px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Attendance & CE (' + rows.length + ')</div>' + (pending ? '<span style="background:rgba(255,200,74,0.15);border:1px solid rgba(255,200,74,0.4);border-radius:10px;color:#ffc84a;font-family:\'Oswald\',sans-serif;font-size:0.6rem;font-weight:700;padding:2px 8px">' + pending + ' pending</span>' : '') + '</div>' +
+      (rows.length ? rows.map(function(r) {
+        var t = r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+        var approved = !!r.ceApproved, denied = r.ceDecision === "denied", hasCE = r.ceHours > 0;
+        var col = approved ? "#7dedb5" : denied ? "#ff9090" : "#ffc84a", icon = approved ? "✓" : denied ? "✗" : "⏳";
+        var esc = function(s) { return String(s||"").replace(/\\/g,"").replace(/'/g,"\\'"); };
+        var btn = function(label, fn, color) { return '<button onclick="' + fn + '" style="background:' + color + '1f;border:1px solid ' + color + '66;border-radius:6px;color:' + color + ';font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;padding:6px 9px;cursor:pointer">' + label + '</button>'; };
+        var actions = !hasCE ? '<span style="font-size:0.65rem;color:var(--gray)">No CE</span>'
+          : approved ? btn("Revoke", "mRevokeCE('" + ev.id + "','" + r.uid + "'," + r.ceHours + ")", "#ff9090")
+          : denied ? btn("Approve", "mApproveCE('" + ev.id + "','" + r.uid + "'," + r.ceHours + ")", "#7dedb5")
+          : btn("Approve", "mApproveCE('" + ev.id + "','" + r.uid + "'," + r.ceHours + ")", "#7dedb5") + " " + btn("Deny", "mOpenDenyCE('" + ev.id + "','" + r.uid + "'," + r.ceHours + ",'" + esc(r.name) + "','" + esc(r.unit) + "','" + esc(ev.title) + "')", "#ff9090");
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">' +
+          '<div style="min-width:0"><span style="color:#7ab8f5;font-weight:700;font-family:\'Oswald\',sans-serif">' + mEscHtml(r.unit||r.uid) + '</span> <span style="color:var(--gray);font-size:0.7rem">' + mEscHtml(r.name||"") + '</span>' +
+            '<div style="font-size:0.65rem;color:var(--gray)">' + t + (r.distanceMeters ? ' · ' + r.distanceMeters + ' m' : '') + (hasCE ? ' · <span style="color:' + col + '">' + r.ceHours + ' CE ' + icon + '</span>' : '') + (denied && r.denialReason ? ' · <span style="color:#ff9090">' + mEscHtml(r.denialReason) + '</span>' : '') + '</div></div>' +
+          '<div style="display:flex;gap:6px;flex-shrink:0">' + actions + '</div></div>';
+      }).join("") : '<div style="color:var(--gray);font-size:0.78rem">No check-ins yet.</div>') + '</div>';
+    host.innerHTML = html;
+  }).catch(function(e) { host.innerHTML = '<div style="color:#ff9090;font-size:0.78rem">Error: ' + e.message + '</div>'; });
+}
+function mApproveCE(eventId, uid, ceHours) {
+  if (!mEduIsAdmin) { mToast("Admin access required", true); return; }
+  var year = new Date().getFullYear().toString(), approvedBy = mCurrentUserUnit || mCurrentUser.email;
+  var batch = db.batch();
+  batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), { ceApproved: true, ceDecision: "approved", decidedByUid: mCurrentUser.uid, approvedBy: approvedBy, approvedAt: new Date().toISOString() });
+  var cme = {}; cme["cmeHours." + year] = firebase.firestore.FieldValue.increment(ceHours); cme["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
+  batch.set(db.collection("users").doc(uid), cme, { merge: true });
+  batch.commit().then(function() { mToast("✓ " + ceHours + " CE hours approved"); mEduRefreshAfterDecision(eventId); }).catch(function(e) { mToast("Error: " + e.message, true); });
+}
+var mCeDenyCtx = null;
+function mOpenDenyCE(eventId, uid, ceHours, name, unit, eventTitle) {
+  mCeDenyCtx = { eventId: eventId, uid: uid, ceHours: ceHours };
+  document.getElementById("m-ce-deny-info").innerHTML = '<b>' + mEscHtml(unit) + '</b> ' + mEscHtml(name) + ' · ' + ceHours + ' CE · ' + mEscHtml(eventTitle);
+  document.getElementById("m-ce-deny-reason").value = "";
+  mOpenSheet("m-sheet-ce-deny");
+}
+function mSubmitDenyCE() {
+  var ctx = mCeDenyCtx; if (!ctx) return;
+  var reason = document.getElementById("m-ce-deny-reason").value.trim(); if (!reason) { mToast("Enter a reason", true); return; }
+  db.collection("education").doc(ctx.eventId).collection("attendance").doc(ctx.uid).update({ ceApproved: false, ceDecision: "denied", decidedByUid: mCurrentUser.uid, deniedBy: mCurrentUserUnit || mCurrentUser.email, deniedAt: new Date().toISOString(), denialReason: reason })
+    .then(function() { mCloseAllSheets(); mToast("CE hours denied — member notified"); mEduRefreshAfterDecision(ctx.eventId); mCeDenyCtx = null; }).catch(function(e) { mToast("Error: " + e.message, true); });
+}
+function mRevokeCE(eventId, uid, ceHours) {
+  // Revoking already-approved hours also backs them out of the member's yearly total
+  if (!confirm("Revoke these " + ceHours + " approved CE hours?")) return;
+  var year = new Date().getFullYear().toString();
+  var batch = db.batch();
+  batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), { ceApproved: false, ceDecision: "denied", decidedByUid: mCurrentUser.uid, deniedBy: mCurrentUserUnit || mCurrentUser.email, deniedAt: new Date().toISOString(), denialReason: "Revoked" });
+  var cme = {}; cme["cmeHours." + year] = firebase.firestore.FieldValue.increment(-ceHours); cme["cmeClasses." + year] = firebase.firestore.FieldValue.increment(-1);
+  batch.set(db.collection("users").doc(uid), cme, { merge: true });
+  batch.commit().then(function() { mToast("CE hours revoked"); mEduRefreshAfterDecision(eventId); }).catch(function(e) { mToast("Error: " + e.message, true); });
+}
+function mApproveAllCE(eventId) {
+  if (!mEduIsAdmin) return;
+  db.collection("education").doc(eventId).collection("attendance").where("ceApproved", "==", false).get().then(function(snap) {
+    var pending = []; snap.forEach(function(d) { var r = d.data(); if (r.ceHours > 0 && r.ceDecision !== "denied") pending.push(d); });
+    if (!pending.length) { mToast("No pending approvals"); return; }
+    if (!confirm("Approve CE hours for " + pending.length + " member" + (pending.length > 1 ? "s" : "") + "?")) return;
+    var year = new Date().getFullYear().toString(), approvedBy = mCurrentUserUnit || mCurrentUser.email, batch = db.batch();
+    pending.forEach(function(d) {
+      var r = d.data();
+      batch.update(d.ref, { ceApproved: true, ceDecision: "approved", decidedByUid: mCurrentUser.uid, approvedBy: approvedBy, approvedAt: new Date().toISOString() });
+      var cme = {}; cme["cmeHours." + year] = firebase.firestore.FieldValue.increment(r.ceHours); cme["cmeClasses." + year] = firebase.firestore.FieldValue.increment(1);
+      batch.set(db.collection("users").doc(d.id), cme, { merge: true });
+    });
+    batch.commit().then(function() { mToast("✓ Approved " + pending.length); mEduRefreshAfterDecision(eventId); }).catch(function(e) { mToast("Error: " + e.message, true); });
+  });
+}
+function mEduRefreshAfterDecision(eventId) {
+  if (mEduTab === "pending") mLoadEduContent(); else if (document.getElementById("m-edu-admin-section")) db.collection("education").doc(eventId).get().then(function(s){ if (s.exists) mEduRenderAdminSection(Object.assign({ id: s.id }, s.data())); });
+  mEduPendingBadge();
+}
+// ── Pending tab (all events) + badge ──
+function mEduPendingList() {
+  return db.collection("education").get().then(function(evSnap) {
+    var events = {}; evSnap.forEach(function(d) { events[d.id] = d.data(); });
+    return Promise.all(Object.keys(events).map(function(eid) {
+      return db.collection("education").doc(eid).collection("attendance").where("ceApproved", "==", false).get()
+        .then(function(a) { return a.docs.filter(function(r) { return r.data().ceHours > 0 && r.data().ceDecision !== "denied"; }).map(function(r) { return Object.assign({ uid: r.id, eventId: eid, eventTitle: events[eid].title || "Event" }, r.data()); }); })
+        .catch(function() { return []; });
+    })).then(function(lists) { return [].concat.apply([], lists); });
+  });
+}
+function mEduPendingBadge() {
+  mEduPendingList().then(function(p) { var b = document.getElementById("m-edu-pending-badge"); if (b) { b.textContent = p.length; b.style.display = p.length ? "inline" : "none"; } }).catch(function(){});
+}
+function mRenderPendingTab(el) {
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading…</div>';
+  mEduPendingList().then(function(pending) {
+    var b = document.getElementById("m-edu-pending-badge"); if (b) { b.textContent = pending.length; b.style.display = pending.length ? "inline" : "none"; }
+    if (!pending.length) { el.innerHTML = '<div style="color:#7dedb5;font-size:0.9rem;padding:24px 0;text-align:center">✓ No pending CE hours — all caught up</div>'; return; }
+    pending.sort(function(a, b) { return (b.timestamp||"").localeCompare(a.timestamp||""); });
+    var esc = function(s) { return String(s||"").replace(/\\/g,"").replace(/'/g,"\\'"); };
+    el.innerHTML = '<div style="padding:12px 0 0"><div style="font-size:0.72rem;color:var(--gray);margin-bottom:10px">' + pending.length + ' member' + (pending.length > 1 ? 's' : '') + ' awaiting CE approval</div>' + pending.map(function(r) {
+      var dt = r.timestamp ? new Date(r.timestamp).toLocaleDateString([], { month: "short", day: "numeric" }) : "—";
+      return '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:8px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div style="min-width:0"><div style="font-family:\'Oswald\',sans-serif;font-weight:700;color:#7ab8f5">' + mEscHtml(r.unit||r.uid) + ' <span style="color:var(--white);font-weight:400;font-size:0.85rem">' + mEscHtml(r.name||"") + '</span></div>' +
+        '<div style="font-size:0.72rem;color:var(--gray);margin-top:2px">' + mEscHtml(r.eventTitle) + ' · ' + dt + (r.distanceMeters ? ' · ' + r.distanceMeters + ' m' : '') + '</div></div>' +
+        '<span style="color:#ffc84a;font-family:\'Oswald\',sans-serif;font-weight:700;flex-shrink:0">' + r.ceHours + ' CE</span></div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+          '<button onclick="mApproveCE(\'' + r.eventId + '\',\'' + r.uid + '\',' + r.ceHours + ')" style="flex:1;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.45);border-radius:7px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:9px;cursor:pointer">✓ Approve</button>' +
+          '<button onclick="mOpenDenyCE(\'' + r.eventId + '\',\'' + r.uid + '\',' + r.ceHours + ',\'' + esc(r.name) + '\',\'' + esc(r.unit) + '\',\'' + esc(r.eventTitle) + '\')" style="flex:1;background:rgba(255,144,144,0.1);border:1px solid rgba(255,144,144,0.4);border-radius:7px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:9px;cursor:pointer">✗ Deny</button>' +
+        '</div></div>';
+    }).join("") + '</div>';
+  });
+}
+// ── QR code for check-in (same payload as desktop) ──
+function mShowEduQR(eventId) {
+  db.collection("education").doc(eventId).get().then(function(snap) {
+    if (!snap.exists) return; var ev = snap.data();
+    document.getElementById("m-edu-qr-name").textContent = ev.title || "Event QR";
+    document.getElementById("m-edu-qr-sub").textContent = (ev.location ? ev.location + " · " : "") + (ev.geoRadius >= 99999 ? "no geo-lock" : (ev.geoRadius||100) + " m geo-lock");
+    var box = document.getElementById("m-edu-qr-code"); box.innerHTML = "";
+    var payload = JSON.stringify({ h: "1", e: eventId, a: ev.lat ? Math.round(ev.lat*10000)/10000 + "," + Math.round(ev.lng*10000)/10000 : null, r: ev.geoRadius || 100, c: ev.ceHours || 0 });
+    var make = function() { new window.QRCode(box, { text: payload, width: 220, height: 220, colorDark: "#000000", colorLight: "#ffffff", correctLevel: window.QRCode.CorrectLevel.H }); };
+    if (window.QRCode) make(); else { var s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"; s.onload = make; document.head.appendChild(s); }
+    document.getElementById("m-edu-qr-modal").classList.add("show");
   });
 }
 
@@ -2516,7 +2732,7 @@ function mLoadAllResponders() {
       var allRoles = primary ? r.concat([primary]).filter(function(v,i,a){ return a.indexOf(v)===i; }) : r;
       // Exclude pure-dispatcher-only members from field-unit assignment (mirrors desktop's intent)
       if (allRoles.indexOf("dispatcher") !== -1 && allRoles.length <= 1) return;
-      list.push({ unit: u.unit });
+      list.push({ unit: u.unit, roles: allRoles, isSupervisor: allRoles.indexOf("captain") !== -1 || allRoles.indexOf("chief") !== -1 });
     });
     list.sort(function(a,b){ return a.unit.localeCompare(b.unit, undefined, {numeric:true}); });
     mAllRespondersCache = list;
@@ -4073,6 +4289,28 @@ function mLoadUnitConflicts(excludeCallId) {
     return map;
   }).catch(function(){ mUnitConflictMap = {}; return {}; });
 }
+var mRigConflictMap = {};   // rigId -> { id, address } for rigs committed on OTHER active calls
+function mLoadRigConflicts(excludeCallId) {
+  return db.collection("activeCalls").where("status","==","active").get().then(function(snap) {
+    var map = {};
+    snap.forEach(function(d) {
+      if (d.id === excludeCallId) return;
+      var data = d.data(), addr = (data.address||"").split(",")[0], ud = data.unitDetails || {};
+      (data.crews||[]).forEach(function(crew, ci) {
+        if (!crew || !crew.rig) return;
+        // still in use unless every rig-path unit on that call is back at base / cleared
+        var busy = false;
+        Object.keys(crew).forEach(function(k) {
+          if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+          var det = ud[ci+"_"+k] || {};
+          if (det.response === "rig" && ["back_at_base","cleared_scene","other_status"].indexOf(det.status||"") === -1) busy = true;
+        });
+        if (busy) map[crew.rig] = { id: d.id, address: addr };
+      });
+    });
+    mRigConflictMap = map; return map;
+  }).catch(function(){ mRigConflictMap = {}; return {}; });
+}
 function mOpenAssignSheet(crewIdx, role, mode) {
   mAssignSheetCrewIdx = crewIdx; mAssignSheetRole = role; mAssignSheetMode = mode || "unit";
   document.getElementById("m-assign-title").textContent = mode === "rig" ? "Choose Rig" : "Assign Unit";
@@ -4083,26 +4321,49 @@ function mOpenAssignSheet(crewIdx, role, mode) {
   roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">Loading…</div>';
   mOpenSheet("m-sheet-assign");
   if (mode === "rig") {
-    mLoadLiveRigs().then(function(rigs) {
+    Promise.all([mLoadLiveRigs(), mLoadRigConflicts(mDispSelectedCallId)]).then(function(res) {
+      var rigs = res[0];
       if (!rigs.length) { roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">No rigs on file — type below</div>'; return; }
       roster.innerHTML = rigs.map(function(r) {
-        var style = r.isOOS ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px;border-color:rgba(255,200,74,0.4);color:#ffc84a";
-        var label = r.id + (r.isOOS ? " (OOS)" : "");
-        var onclick = r.isOOS ? 'mConfirmOosRig(\'' + r.id + '\')' : 'mConfirmAssignRoster(\'' + r.id + '\')';
-        return '<button class="m-disp-btn" style="' + style + '" onclick="' + onclick + '">' + label + '</button>';
-      }).join("");
+        var busy = mRigConflictMap[r.id];
+        var style = (r.isOOS || busy) ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px;border-color:rgba(255,200,74,0.4);color:#ffc84a";
+        var label = r.id + (r.isOOS ? " (OOS)" : busy ? " ⚠ on call" : "");
+        var onclick = r.isOOS ? 'mConfirmOosRig(\'' + r.id + '\')' : busy ? 'mConfirmBusyRig(\'' + r.id + '\')' : 'mConfirmAssignRoster(\'' + r.id + '\')';
+        var title = busy ? ' title="In use on: ' + mEscHtml(busy.address) + '"' : '';
+        return '<button class="m-disp-btn" style="' + style + '"' + title + ' onclick="' + onclick + '">' + label + '</button>';
+      }).join("") + (Object.keys(mRigConflictMap).some(function(id){ return rigs.some(function(r){ return r.id===id; }); }) ? '<div style="width:100%;font-size:0.68rem;color:#ff9090;margin-top:6px">⚠ Rigs marked "on call" are committed to another active call</div>' : '');
     });
   } else {
     mLoadUnitConflicts(mDispSelectedCallId).then(function() {
-      roster.innerHTML = (mAllRespondersCache || []).map(function(u) {
-        var conflict = mUnitConflictMap[u.unit];
-        var style = conflict ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px";
-        var label = u.unit + (conflict ? " ⚠" : "");
-        var title = conflict ? ' title="On another call: ' + conflict.address + '"' : "";
-        return '<button class="m-disp-btn" style="' + style + '"' + title + ' onclick="mConfirmAssignRoster(\'' + u.unit + '\')">' + label + '</button>';
-      }).join("") || '<div style="font-size:0.75rem;color:var(--gray)">No roster loaded — type below</div>';
+      var call = mDispCallCache[mDispSelectedCallId] || {};
+      var onThisCall = {};
+      (call.crews || []).forEach(function(cr) { Object.keys(cr||{}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__") onThisCall[cr[k]] = true; }); });
+      var isSupervisorSlot = /^(supervisor|sup_)/.test(role || "");
+      mRenderAssignRoster(roster, onThisCall, isSupervisorSlot ? "supervisors" : "all");
     });
   }
+}
+// Roster renderer: "supervisors" shows captains/chiefs with an "Other units…" reveal; "all" shows everyone
+function mRenderAssignRoster(roster, onThisCall, filter) {
+  var units = (mAllRespondersCache || []).filter(function(u) { return !onThisCall[u.unit]; });
+  var list = filter === "supervisors" ? units.filter(function(u) { return u.isSupervisor; }) : units;
+  var html = list.map(function(u) {
+    var conflict = mUnitConflictMap[u.unit];
+    var style = conflict ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px";
+    var label = u.unit + (conflict ? " ⚠" : "") + (filter === "supervisors" && u.roles.indexOf("chief") !== -1 ? " · Chief" : filter === "supervisors" ? " · Capt" : "");
+    var title = conflict ? ' title="On another call: ' + conflict.address + '"' : "";
+    return '<button class="m-disp-btn" style="' + style + '"' + title + ' onclick="mConfirmAssignRoster(\'' + u.unit + '\')">' + label + '</button>';
+  }).join("");
+  if (filter === "supervisors") {
+    if (!list.length) html = '<div style="font-size:0.75rem;color:var(--gray);width:100%">No captains or chiefs available</div>';
+    html += '<button class="m-disp-btn" style="width:100%;margin-top:6px;border-color:rgba(255,255,255,0.2);color:var(--gray);font-size:0.62rem" onclick="mRenderAssignRoster(document.getElementById(\'m-assign-roster\'), ' + JSON.stringify(onThisCall).replace(/"/g, "&quot;") + ', \'all\')">Other units…</button>';
+  }
+  roster.innerHTML = html || '<div style="font-size:0.75rem;color:var(--gray)">No roster loaded — type below</div>';
+}
+function mConfirmBusyRig(rigId) {
+  var b = mRigConflictMap[rigId];
+  if (!confirm("⚠ " + rigId + " is already in use on another call" + (b && b.address ? " (" + b.address + ")" : "") + ".\n\nAssign it to this call anyway?")) return;
+  mDoAssign(rigId);
 }
 function mConfirmOosRig(rigId) {
   if (!confirm("⚠ " + rigId + " is marked Out of Service.\n\nUse it anyway?")) return;
@@ -4915,7 +5176,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.46</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.49</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5128,6 +5389,60 @@ function mCloseAllSheets() {
   <textarea id="m-cancel-call-note" class="m-disp-input" rows="2" placeholder="Any additional details…" style="margin-bottom:12px;resize:vertical"></textarea>
   <div style="background:rgba(255,144,144,0.06);border:1px solid rgba(255,144,144,0.2);border-radius:7px;padding:9px 12px;margin-bottom:14px;font-size:0.72rem;color:var(--gray);line-height:1.5">This will mark the call cancelled and clear all responding units. The call will be saved to logs.</div>
   <button id="m-cancel-confirm-btn" disabled onclick="mConfirmCancelCall()" style="width:100%;background:rgba(255,144,144,0.15);border:1px solid rgba(255,144,144,0.4);border-radius:9px;color:#ff9090;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer;opacity:0.4">Confirm Cancel</button>
+</div>
+
+<div class="m-disp-sheet" id="m-sheet-edu-form" style="max-height:92vh;overflow-y:auto">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div id="m-edu-form-title" style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--gold);margin-bottom:14px">🎓 New Event</div>
+  <input type="hidden" id="m-edu-edit-id">
+  <div class="m-disp-label">Title</div>
+  <input type="text" id="m-edu-title" class="m-disp-input" placeholder="e.g. Monthly CME — Cardiac Emergencies" style="margin-bottom:10px">
+  <div style="display:flex;gap:8px">
+    <div style="flex:1"><div class="m-disp-label">Type</div>
+      <select id="m-edu-type" class="m-disp-input" style="margin-bottom:10px"><option value="cme">CME Class</option><option value="drill">Drill</option><option value="training">Training</option><option value="meeting">Meeting</option><option value="other">Other</option></select></div>
+    <div style="flex:1"><div class="m-disp-label">CE Hours</div><input type="number" id="m-edu-hours" class="m-disp-input" min="0" max="8" step="0.5" value="1" style="margin-bottom:10px"></div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <div style="flex:1"><div class="m-disp-label">Date</div><input type="date" id="m-edu-date" class="m-disp-input" style="margin-bottom:10px"></div>
+    <div style="flex:1"><div class="m-disp-label">Time</div><input type="time" id="m-edu-time" class="m-disp-input" value="19:00" style="margin-bottom:10px"></div>
+  </div>
+  <div class="m-disp-label">Location</div>
+  <input type="text" id="m-edu-location" class="m-disp-input" placeholder="Start typing an address…" autocomplete="off" style="margin-bottom:4px">
+  <input type="hidden" id="m-edu-lat"><input type="hidden" id="m-edu-lng">
+  <div id="m-edu-location-preview" style="display:none;font-size:0.7rem;color:#7dedb5;margin-bottom:8px"></div>
+  <div style="display:flex;gap:8px;margin-top:6px">
+    <div style="flex:1"><div class="m-disp-label">Instructor</div><input type="text" id="m-edu-instructor" class="m-disp-input" placeholder="e.g. Dr. Smith / MC-16" style="margin-bottom:10px"></div>
+    <div style="flex:1"><div class="m-disp-label">Check-in radius</div>
+      <select id="m-edu-radius" class="m-disp-input" style="margin-bottom:10px"><option value="50">50 m</option><option value="100" selected>100 m</option><option value="200">200 m</option><option value="500">500 m</option><option value="99999">No geo-lock</option></select></div>
+  </div>
+  <div class="m-disp-label">Description</div>
+  <textarea id="m-edu-desc" class="m-disp-input" rows="3" placeholder="Topics, materials needed…" style="margin-bottom:10px;resize:vertical"></textarea>
+  <div class="m-disp-label">Notifications</div>
+  <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--white);margin-bottom:6px"><input type="checkbox" id="m-edu-notif-new" checked> Notify all members when created</label>
+  <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--white);margin-bottom:6px"><input type="checkbox" id="m-edu-notif-24h" checked> Reminder 24 hours before</label>
+  <label style="display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--white);margin-bottom:14px"><input type="checkbox" id="m-edu-notif-1h" checked> Reminder 1 hour before</label>
+  <div id="m-edu-form-msg" style="display:none;color:#ff9090;font-size:0.78rem;margin-bottom:10px"></div>
+  <button onclick="mSaveEduEvent()" style="width:100%;background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:13px;cursor:pointer">Save Event</button>
+</div>
+
+<div class="m-disp-sheet" id="m-sheet-ce-deny">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:8px">✗ Deny CE Hours</div>
+  <div id="m-ce-deny-info" style="font-size:0.8rem;color:var(--white);margin-bottom:10px"></div>
+  <div class="m-disp-label">Reason <span style="color:var(--gray);text-transform:none;letter-spacing:0">(sent to the member)</span></div>
+  <textarea id="m-ce-deny-reason" class="m-disp-input" rows="3" placeholder="e.g. Left before the class ended…" style="margin-bottom:12px;resize:vertical"></textarea>
+  <button onclick="mSubmitDenyCE()" style="width:100%;background:rgba(255,144,144,0.15);border:1px solid rgba(255,144,144,0.45);border-radius:9px;color:#ff9090;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer">Deny & Notify</button>
+</div>
+
+<div class="m-modal-overlay" id="m-edu-qr-modal" style="z-index:900">
+  <div class="m-modal" style="background:#fff;color:#000;text-align:center">
+    <div class="m-modal-header" style="background:#fff;border-bottom:1px solid #ddd"><span class="m-modal-title" style="color:#000" id="m-edu-qr-name">Event QR</span><button class="m-modal-close" style="color:#000" onclick="document.getElementById('m-edu-qr-modal').classList.remove('show')">×</button></div>
+    <div class="m-modal-body" style="background:#fff">
+      <div id="m-edu-qr-sub" style="font-size:0.75rem;color:#555;margin-bottom:12px"></div>
+      <div id="m-edu-qr-code" style="display:flex;justify-content:center;margin-bottom:12px"></div>
+      <div style="font-size:0.72rem;color:#555">Members scan this in the app to check in and log CE hours</div>
+    </div>
+  </div>
 </div>
 
 <div class="m-disp-sheet" id="m-sheet-cancel-als">
