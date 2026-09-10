@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.37";
+  var BUILD = "1.39";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.37</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.39</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.37</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.39</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -646,7 +646,13 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   </div>
   <div class="m-scroll">
     <div class="m-disp-label">Location / Unit</div>
-    <input type="text" id="m-tk-unit" class="m-disp-input" placeholder="e.g. MC-16, Base, Storage Room…" style="margin-bottom:12px">
+    <div style="display:flex;gap:6px;margin-bottom:8px" id="m-tk-loc-chips">
+      <button type="button" class="m-disp-btn m-tk-loc-chip" data-loc="storage" onclick="mTkPickLocation('storage')" style="flex:1">📦 Storage Room</button>
+      <button type="button" class="m-disp-btn m-tk-loc-chip" data-loc="vehicle" onclick="mTkPickLocation('vehicle')" style="flex:1">🚑 Vehicle</button>
+      <button type="button" class="m-disp-btn m-tk-loc-chip" data-loc="other" onclick="mTkPickLocation('other')" style="flex:1">✏️ Other</button>
+    </div>
+    <select id="m-tk-vehicle" class="m-disp-input" style="display:none;margin-bottom:12px" onchange="mTkVehicleChanged()"><option value="">Select vehicle…</option></select>
+    <input type="text" id="m-tk-unit" class="m-disp-input" placeholder="Describe the location…" style="display:none;margin-bottom:12px">
     <div class="m-disp-label">Title</div>
     <input type="text" id="m-tk-title" class="m-disp-input" placeholder="Brief description of the issue…" style="margin-bottom:12px">
     <div class="m-disp-label">Description</div>
@@ -3031,11 +3037,44 @@ function mAddPhotosToTicket(id) {
   mUploadTicketPhotos(id, inp.files, function(d, tot){ if (d === tot) mToast("✓ " + tot + " photo" + (tot>1?"s":"") + " added"); })
     .then(function(){ inp.value = ""; mOpenTicket(id); }).catch(function(e){ mToast("Upload failed: " + e.message, true); });
 }
-function mBindTicketFormMentions() { mAttachMentions("m-tk-details", "m-tk-details-mention-box"); mPendingTicketFiles = []; var pv = document.getElementById("m-tk-photo-preview"); if (pv) pv.innerHTML = ""; var pi = document.getElementById("m-tk-photo-input"); if (pi) pi.value = ""; }
+var mTkLocation = "";          // final value saved to the ticket's "unit" field
+var mTkLocationMode = "";
+function mTkPickLocation(mode) {
+  mTkLocationMode = mode;
+  document.querySelectorAll(".m-tk-loc-chip").forEach(function(b) {
+    var on = b.getAttribute("data-loc") === mode;
+    b.style.borderColor = on ? "rgba(201,168,76,0.7)" : "var(--card-border)"; b.style.background = on ? "rgba(201,168,76,0.15)" : "rgba(255,255,255,0.04)"; b.style.color = on ? "var(--gold)" : "var(--white)";
+  });
+  var veh = document.getElementById("m-tk-vehicle"), txt = document.getElementById("m-tk-unit");
+  veh.style.display = mode === "vehicle" ? "" : "none";
+  txt.style.display = mode === "other" ? "" : "none";
+  if (mode === "storage") { mTkLocation = "Storage Room"; }
+  else if (mode === "vehicle") { mTkLocation = veh.value || ""; if (!veh.dataset.loaded) mTkLoadVehicles(); }
+  else if (mode === "other") { mTkLocation = txt.value.trim(); setTimeout(function(){ txt.focus(); }, 50); }
+}
+function mTkVehicleChanged() { mTkLocation = document.getElementById("m-tk-vehicle").value || ""; }
+function mTkLoadVehicles() {
+  var sel = document.getElementById("m-tk-vehicle");
+  db.collection("vehicles").get().then(function(snap) {
+    var all = []; snap.forEach(function(d) { var v = d.data(); if (v.id || d.id) all.push({ id: v.id || d.id, type: v.type || "", desc: v.description || "" }); });
+    all.sort(function(a, b) { return a.id.localeCompare(b.id, undefined, { numeric: true }); });
+    var groups = [["vehicle", "🚑 Ambulances"], ["erv", "🚗 ERVs"], ["jumpbag", "🎒 Jump Bags"], ["storage", "📦 Storage"], ["other", "📋 Other"]];
+    var html = '<option value="">Select vehicle…</option>';
+    groups.forEach(function(g) {
+      var items = all.filter(function(v) { return (v.type || "other") === g[0]; });
+      if (!items.length) return;
+      html += '<optgroup label="' + g[1] + '">' + items.map(function(v) { return '<option value="' + v.id.replace(/"/g,"&quot;") + '">' + v.id + (v.desc ? " — " + v.desc : "") + '</option>'; }).join("") + '</optgroup>';
+    });
+    sel.innerHTML = html; sel.dataset.loaded = "1";
+  }).catch(function() {});
+}
+function mBindTicketFormMentions() { mAttachMentions("m-tk-details", "m-tk-details-mention-box");
+  mTkLocation = ""; mTkLocationMode = ""; document.querySelectorAll(".m-tk-loc-chip").forEach(function(b){ b.style.borderColor="var(--card-border)"; b.style.background="rgba(255,255,255,0.04)"; b.style.color="var(--white)"; });
+  document.getElementById("m-tk-vehicle").style.display = "none"; document.getElementById("m-tk-vehicle").value = ""; document.getElementById("m-tk-unit").style.display = "none"; document.getElementById("m-tk-unit").value = ""; mPendingTicketFiles = []; var pv = document.getElementById("m-tk-photo-preview"); if (pv) pv.innerHTML = ""; var pi = document.getElementById("m-tk-photo-input"); if (pi) pi.value = ""; }
 function mSubmitTicket() {
   var title = document.getElementById("m-tk-title").value.trim();
   var details = document.getElementById("m-tk-details").value.trim();
-  var unit = document.getElementById("m-tk-unit").value.trim();
+  var unit = mTkLocationMode === "other" ? document.getElementById("m-tk-unit").value.trim() : mTkLocationMode === "vehicle" ? document.getElementById("m-tk-vehicle").value : mTkLocation;
   var priority = document.getElementById("m-tk-priority").value;
   var btn = document.getElementById("m-tk-submit-btn"), msg = document.getElementById("m-tk-msg");
   msg.textContent = ""; msg.style.color = "var(--white)";
@@ -3099,7 +3138,7 @@ function mRenderTicketDetail(id, t) {
           (d.parentAuthor ? '<div style="font-size:0.6rem;color:var(--gray);margin-bottom:2px">↪ replying to <b>' + mRenderMentions(d.parentAuthor) + '</b></div>' : '') +
           '<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--gray);margin-bottom:2px"><span style="color:var(--white);font-weight:700">' + mRenderMentions(d.author||"—") + '</span><span>' + (d.createdAt ? new Date(d.createdAt).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "") + '</span></div>' +
           '<div style="font-size:0.8rem;color:var(--white);white-space:pre-wrap">' + mRenderMentions(d.text) + '</div>' +
-          (!isMine ? '<button onclick="mReplyTo(\'' + d.id + '\',\'' + String(d.author||"").replace(/'/g,"") + '\')" style="margin-top:6px;background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' : '') +
+          '<button onclick="mReplyTo(\'' + d.id + '\',\'' + String(d.author||"").replace(/'/g,"") + '\')" style="margin-top:6px;background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' +
         '</div>';
         (byParent[d.id] || []).forEach(function(r) { html += renderComment(r, depth + 1); });
         return html;
@@ -4746,7 +4785,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.37</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.39</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
