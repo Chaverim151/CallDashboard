@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.58";
+  var BUILD = "1.59";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.58</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.59</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.58</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.59</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3867,12 +3867,12 @@ function mOpenNewCallForm() {
       var found = M_CALL_NATURES.find(function(n){ return n.value === natSel.value; });
       document.getElementById("m-nc-als-hint").style.display = (found && found.als) ? "block" : "none";
       document.getElementById("m-nc-als-hint-spacer").style.display = (found && found.als) ? "none" : "block";
-      document.getElementById("m-nc-nature-custom").style.display = natSel.value === "__custom__" ? "block" : "none";
+      document.getElementById("m-nc-nature-custom-wrap").style.display = natSel.value === "__custom__" ? "block" : "none";
     };
   }
   natSel.value = "";
   document.getElementById("m-nc-nature-custom").value = "";
-  document.getElementById("m-nc-nature-custom").style.display = "none";
+  document.getElementById("m-nc-nature-custom-wrap").style.display = "none";
   document.getElementById("m-nc-als-hint").style.display = "none";
   document.getElementById("m-nc-als-hint-spacer").style.display = "block";
   mLoadLiveCodes();
@@ -3943,6 +3943,18 @@ window.mBindNcAutocomplete = function() {
   });
 };
 // Resolve a typed address (no suggestion tapped) via the Geocoder so the zone is detected from real coordinates
+function mNcClearField(id) {
+  var el = document.getElementById(id); if (!el) return;
+  el.value = "";
+  if (id === "m-nc-address") {
+    ["m-nc-lat","m-nc-lng","m-nc-mapslink"].forEach(function(i){ var x = document.getElementById(i); if (x) x.value = ""; });
+    mNcZone = ""; var zb = document.getElementById("m-nc-zone-banner"); if (zb) zb.style.display = "none";
+    var cs = document.getElementById("m-nc-code-suggestion"); if (cs) cs.style.display = "none";
+  }
+  if (id === "m-nc-nature-custom") { /* keep the dropdown on Other so they can retype */ }
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.focus();
+}
 function mResolveTypedAddress(address) {
   if (!window.google || !google.maps || !google.maps.Geocoder) return Promise.reject(new Error("maps not loaded"));
   return new Promise(function(resolve, reject) {
@@ -5380,7 +5392,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.58</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.59</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5403,15 +5415,15 @@ function mCloseAllSheets() {
   </div>
   <div class="m-scroll">
     <div class="m-disp-label">Location</div>
-    <input type="text" id="m-nc-address" class="m-disp-input" placeholder="Start typing address…" style="margin-bottom:10px" oninput="mNcAddressTouched=true">
+    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" class="m-disp-input" placeholder="Start typing address…" style="padding-right:38px;" oninput="mNcAddressTouched=true"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
     <div class="m-disp-label">Apt / Unit / Floor</div>
-    <input type="text" id="m-nc-apt" class="m-disp-input" placeholder="e.g. Apt 4B, 2nd floor, Unit 12…" style="margin-bottom:10px">
+    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-apt" class="m-disp-input" placeholder="e.g. Apt 4B, 2nd floor, Unit 12…" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-apt')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <div id="m-nc-zone-banner" style="display:none;margin-bottom:12px"></div>
 
     <div class="m-disp-label">Call Nature</div>
     <select id="m-nc-nature" class="m-disp-input" style="margin-bottom:4px"></select>
-    <input type="text" id="m-nc-nature-custom" class="m-disp-input" placeholder="Type custom call nature…" style="display:none;margin-top:6px;margin-bottom:4px">
+    <div id="m-nc-nature-custom-wrap" style="display:none;position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-custom" class="m-disp-input" placeholder="Type custom call nature…" style="padding-right:38px;margin-top:6px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-nature-custom')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <div id="m-nc-als-hint" style="display:none;font-size:0.68rem;color:#ff9090;margin-bottom:12px">🚨 ALS recommended by protocol for this nature</div>
     <div id="m-nc-als-hint-spacer" style="height:12px"></div>
 
@@ -5422,13 +5434,13 @@ function mCloseAllSheets() {
       <button type="button" class="m-disp-btn" data-age="uto" onclick="mSetNcAge('uto')" style="flex:1">UTO</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:12px">
-      <input type="number" id="m-nc-age-num" class="m-disp-input" placeholder="Age (optional)" style="flex:1">
+      <div style="position:relative;flex:1;margin-bottom:0"><input type="number" id="m-nc-age-num" class="m-disp-input" placeholder="Age" style="padding-right:38px;flex:1"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-age-num')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
       <button type="button" class="m-disp-btn" data-sex="male" onclick="mSetNcSex('male')" style="flex:1">♂ Male</button>
       <button type="button" class="m-disp-btn" data-sex="female" onclick="mSetNcSex('female')" style="flex:1">♀ Female</button>
     </div>
 
     <div class="m-disp-label">Callback Number</div>
-    <input type="tel" id="m-nc-callback" class="m-disp-input" placeholder="Caller's phone number" style="margin-bottom:12px">
+    <div style="position:relative;margin-bottom:12px"><input type="tel" id="m-nc-callback" class="m-disp-input" placeholder="Caller's phone number" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-callback')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
 
     <div id="m-nc-code-suggestion" style="display:none;align-items:center;gap:8px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.4);border-radius:8px;padding:8px 10px;margin-bottom:10px">
       <span style="font-size:1rem">🔑</span>
@@ -5436,10 +5448,10 @@ function mCloseAllSheets() {
       <button onclick="mApplyAccessCodeSuggestion()" style="flex-shrink:0;background:rgba(201,168,76,0.2);border:1px solid rgba(201,168,76,0.5);border-radius:6px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.62rem;font-weight:700;padding:5px 10px;cursor:pointer">Apply</button>
     </div>
     <div class="m-disp-label">Access Code</div>
-    <input type="text" id="m-nc-accesscode" class="m-disp-input" placeholder="Gate / door / building code" style="margin-bottom:12px">
+    <div style="position:relative;margin-bottom:12px"><input type="text" id="m-nc-accesscode" class="m-disp-input" placeholder="Gate / door / building code" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-accesscode')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
 
     <div class="m-disp-label">Dispatch Notes</div>
-    <textarea id="m-nc-notes" class="m-disp-input" rows="3" placeholder="Floor, apartment, special instructions…" style="margin-bottom:16px;resize:vertical"></textarea>
+    <div style="position:relative;margin-bottom:16px"><textarea id="m-nc-notes" class="m-disp-input" rows="3" placeholder="Floor, apartment, special instructions…" style="padding-right:38px;resize:vertical"></textarea><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-notes')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
 
     <button onclick="mPostNewCall()" id="m-nc-post-btn" style="width:100%;background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:14px;cursor:pointer">🚑 Post Call</button>
   </div>
