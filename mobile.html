@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.41";
+  var BUILD = "1.43";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.41</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.43</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.41</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.43</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3762,6 +3762,34 @@ function mCrewRigUnits(call, crewIdx) {
   });
   return out;
 }
+// Units that did NOT ride the rig and are still open (en route / on scene)
+function mOpenNonRigUnits(call) {
+  var out = [];
+  (call.crews || []).forEach(function(crew, ci) {
+    Object.keys(crew || {}).forEach(function(k) {
+      if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+      var det = mUdOf(call, ci, k);
+      if (det.response === "rig") return;
+      if (["enroute_scene","on_scene_direct"].indexOf(det.status || "") !== -1) out.push({ crewIdx: ci, role: k, unit: crew[k] });
+    });
+  });
+  return out;
+}
+function mClearNonRigUnits() {
+  var callId = mDispSelectedCallId, now = mNowHHMM();
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(); if (!call.crews) call.crews = [{}];
+    var open = mOpenNonRigUnits(call); if (!open.length) return;
+    if (!confirm("Mark " + open.map(function(u){ return u.unit; }).join(", ") + " cleared?")) return;
+    var update = { updatedAt: new Date().toISOString() };
+    open.forEach(function(u) {
+      update["unitDetails." + mUdKey(u.crewIdx, u.role) + ".status"] = "cleared_scene";
+      update["unitDetails." + mUdKey(u.crewIdx, u.role) + ".statusAt"] = now;
+    });
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).then(function(){ mToast("Units cleared"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
 // Crew-level rig movement: the rig and everyone onboard move as one
 function mBuildCrewRigPanel(call, crewIdx) {
   var crew = mCrewOf(call, crewIdx);
@@ -3778,6 +3806,9 @@ function mBuildCrewRigPanel(call, crewIdx) {
   var body = "";
   if (!crew.rig) {
     body = '<div style="font-size:0.7rem;color:var(--gray)">Select the crew\'s rig above to begin the rig flow.</div>';
+  } else if (call.zone !== "secondary" && st.some(function(x){ return x === "" || x === "picking_up_ambo"; })) {
+    // Standard call: the rig unit's own button ("Mark rig Responding to Scene") drives this — nothing to gather
+    return "";
   } else if (st.some(function(x){ return x === "" || x === "picking_up_ambo"; })) {
     var waiting = rigUnits.filter(function(u){ return u.status === "" || u.status === "picking_up_ambo"; }).map(function(u){ return u.unit; });
     body = '<div style="font-size:0.7rem;color:var(--gray);margin-bottom:6px">Waiting for units to board ' + mEscHtml(rig) + ': <b style="color:#ffc84a">' + mEscHtml(waiting.join(", ")) + '</b></div>' +
@@ -3800,6 +3831,12 @@ function mBuildCrewRigPanel(call, crewIdx) {
     body = '<div style="font-size:0.7rem;color:#7dedb5">✓ ' + mEscHtml(rig) + ' back at base — all units cleared</div>';
   } else {
     body = '<div style="font-size:0.7rem;color:var(--gray)">Units are at different stages: ' + rigUnits.map(function(u){ return mEscHtml(u.unit) + " (" + (M_STATUS_LOG[u.status] ? M_STATUS_LOG[u.status].text : "—") + ")"; }).join(", ") + '</div>';
+  }
+  // Once the rig has cleared the hospital, units that stayed behind can all be cleared in one tap
+  var rigCleared = st.length && st.every(function(x){ return ["clearing_facility","returning_base","back_at_base"].indexOf(x) !== -1; });
+  var stillOpen = rigCleared ? mOpenNonRigUnits(call) : [];
+  if (stillOpen.length) {
+    body += '<button class="m-disp-btn m-pulse-green" style="width:100%;margin-top:8px;border-color:rgba(125,237,181,0.5);background:rgba(125,237,181,0.12);color:#7dedb5" onclick="mClearNonRigUnits()">✓ Clear all units not on the rig (' + stillOpen.map(function(u){ return mEscHtml(u.unit); }).join(", ") + ')</button>';
   }
   return '<div style="border:1px solid rgba(255,200,74,0.3);border-radius:8px;padding:8px 10px;margin:6px 0 8px;background:rgba(255,200,74,0.05)">' +
     '<div style="font-family:\'Oswald\',sans-serif;font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:#ffc84a;margin-bottom:6px">🚑 ' + mEscHtml(rig) + ' — Rig Flow</div>' + body + '</div>';
@@ -3945,7 +3982,11 @@ function mNextStepButton(call, crewIdx, role, unit) {
     if (status === "on_scene_direct") return btn("Mark " + unit + " Clearing the Scene", "cleared_scene", "#7dedb5", null);
     return "";
   }
-  // Rig path: the only per-unit step is boarding the rig. Everything after is crew-level (rig + units move as one).
+  // Rig path. Load-a-Rig: the per-unit step is boarding the rig (everyone gathers at base), then crew-level.
+  // Standard: one unit is fetching the rig alone — no boarding step; go straight to "rig responding".
+  if (status === "picking_up_ambo" && call.zone !== "secondary" && crew.rig) {
+    return btn("Mark " + crew.rig + " Responding to Scene", "ambo_responding", "#ffc84a", "gold");
+  }
   if (status === "picking_up_ambo") {
     if (!crew.rig) {
       return '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Rig</div>' +
@@ -4859,7 +4900,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.41</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.43</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
