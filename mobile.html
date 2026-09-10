@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.64";
+  var BUILD = "1.66";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.64</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.66</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.64</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.66</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -1182,6 +1182,7 @@ function mRenderCalls(calls) {
         '</div>' +
         '<div class="m-call-addr">' + mEscHtml(call.address||"Unknown") + '</div>' +
         (call.apt ? '<div style="font-family:\'Oswald\',sans-serif;font-size:0.82rem;font-weight:700;color:var(--gold);margin-top:2px">🚪 ' + mEscHtml(call.apt) + '</div>' : "") +
+        (call.patientName && mCanSeePatientName(call) ? '<div style="font-size:0.78rem;color:var(--white);margin-top:2px">🧑 ' + mEscHtml(call.patientName) + '</div>' : "") +
         (call.crossStreet ? '<div class="m-call-cross">↪ ' + mEscHtml(call.crossStreet) + '</div>' : "") +
       '</div>' +
       (svThumb ? '<div style="flex-shrink:0">' + svThumb + '</div>' : '') +
@@ -1250,7 +1251,8 @@ function mRenderDetail(call) {
   // Address header
   html += '<div style="font-family:Oswald,sans-serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:' + (call.apt ? '4' : '12') + 'px;line-height:1.3">' +
     mEscHtml(call.address||"Unknown location") + '</div>' +
-    (call.apt ? '<div style="display:inline-block;font-family:Oswald,sans-serif;font-size:0.85rem;font-weight:700;color:var(--gold);background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:3px 10px;margin-bottom:12px">🚪 ' + mEscHtml(call.apt) + '</div>' : '');
+    (call.apt ? '<div style="display:inline-block;font-family:Oswald,sans-serif;font-size:0.85rem;font-weight:700;color:var(--gold);background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:3px 10px;margin-bottom:12px">🚪 ' + mEscHtml(call.apt) + '</div>' : '') +
+    (call.patientName && mCanSeePatientName(call) ? '<div style="display:inline-block;font-size:0.85rem;font-weight:600;color:var(--white);background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:3px 10px;margin-bottom:12px;margin-left:6px">🧑 ' + mEscHtml(call.patientName) + '</div>' : '');
 
   // Zone + nature row
   var zone = call.zone === "primary" ? "primary" : call.zone === "secondary" ? "secondary" : "outside";
@@ -3086,6 +3088,14 @@ var mMapCallFlags = {};
 function mEscHtml(s) { return String(s||"").replace(/&(?!(?:amp|lt|gt|quot|#\d+);)/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 // Deep-copy a call with every string field HTML-escaped. Applied once at each render entry point so
 // no view can ever inject markup, regardless of which field it prints.
+// Patient name is PHI: responders only see it on calls they're assigned to (dispatchers always see it)
+function mCanSeePatientName(call) {
+  var roles = (mCurrentUserRoles || []).map(function(r){ return String(r).toLowerCase(); });
+  if (mCurrentRole === "admin" || roles.includes("dispatcher") || roles.includes("captain") || roles.includes("chief")) return true;
+  var me = mCurrentUserUnit; if (!me) return false;
+  if ((call.assignedUnits || []).indexOf(me) !== -1) return true;
+  return (call.crews || []).some(function(cr) { return Object.keys(cr || {}).some(function(k) { return k !== "rig" && cr[k] === me; }); });
+}
 function mSanitizeCall(call) {
   function walk(v) {
     if (typeof v === "string") return mEscHtml(v);
@@ -3863,6 +3873,7 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-address").value = "";
   document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
   document.getElementById("m-nc-age-num").value = "";
+  document.getElementById("m-nc-patient-name").value = "";
   document.getElementById("m-nc-callback").value = "";
   document.getElementById("m-nc-accesscode").value = "";
   document.getElementById("m-nc-apt").value = "";
@@ -4016,6 +4027,7 @@ function mPostNewCallNow() {
     callNature: nature,
     patientAge: mNcAge,
     patientAgeNum: document.getElementById("m-nc-age-num").value.trim(),
+    patientName: document.getElementById("m-nc-patient-name").value.trim(),
     patientSex: mNcSex,
     callbackNumber: document.getElementById("m-nc-callback").value.trim(),
     accessCode: document.getElementById("m-nc-accesscode").value.trim(),
@@ -4120,7 +4132,8 @@ function mRenderDispatchDetail(call) {
         '</div>'
       : '') +
     '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + mEscHtml(call.address||"Unknown") + '</div>' +
-    (call.apt ? '<div style="display:inline-block;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--gold);background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:3px 9px;margin-bottom:8px">🚪 ' + mEscHtml(call.apt) + '</div>' : '') +
+    (call.apt ? '<div style="display:inline-block;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--gold);background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:3px 9px;margin-bottom:8px;margin-right:6px">🚪 ' + mEscHtml(call.apt) + '</div>' : '') +
+    (call.patientName ? '<div style="display:inline-block;font-size:0.8rem;font-weight:600;color:var(--white);background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:3px 9px;margin-bottom:8px">🧑 ' + mEscHtml(call.patientName) + '</div>' : '') +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
       '<span class="m-disp-zone" style="background:' + zoneColor + '33;color:' + zoneColor + ';border:1.5px solid ' + zoneColor + ';font-size:0.66rem">' + (call.zone === "primary" ? "🚑 Standard Response" : call.zone === "secondary" ? "🚑 Load a Rig" : "⚠ Outside Zone") + '</span>' +
       (natureLabel ? '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + natureLabel + '</span>' : '') +
@@ -5444,7 +5457,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.64</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.66</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5479,6 +5492,8 @@ function mCloseAllSheets() {
     <div id="m-nc-als-hint" style="display:none;font-size:0.68rem;color:#ff9090;margin-bottom:12px">🚨 ALS recommended by protocol for this nature</div>
     <div id="m-nc-als-hint-spacer" style="height:12px"></div>
 
+    <div class="m-disp-label">Patient Name</div>
+    <div style="position:relative;margin-bottom:12px"><input type="text" id="m-nc-patient-name" class="m-disp-input" placeholder="Patient's name (if known)" autocomplete="off" style="padding-right:38px"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-patient-name')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <div class="m-disp-label">Patient</div>
     <div style="display:flex;gap:6px;margin-bottom:8px" id="m-nc-age-toggle">
       <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1;border-color:#7ab8f5;background:rgba(122,184,245,0.15);color:#7ab8f5">Adult</button>
