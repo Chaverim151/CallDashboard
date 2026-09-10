@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.31');
+  window.location.replace('/CallDashboard/mobile.html?v=1.35');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.17g</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.17k</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3675,6 +3675,10 @@ function renderTickets() {
 }
 function openTicket(id) {
   var t = allTickets.find(function(x) { return x.id === id; }); if (!t) return;
+  // pull the latest copy so the server-written activity log is current
+  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) Object.assign(t, s.data()); renderTicketDetail(id, t); }).catch(function(){ renderTicketDetail(id, t); });
+}
+function renderTicketDetail(id, t) {
   var isAdmin = currentRole === "admin";
   var isServiceUnit = isAdmin || (currentUserRoles || []).includes("logistics");
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
@@ -3682,10 +3686,20 @@ function openTicket(id) {
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
-      commentsHtml = csnap.docs.map(function(c) {
-        var d = c.data();
-        return '<div class="comment-item"><div><span class="comment-author">' + (d.author || "—") + '</span><span class="comment-time">' + (d.createdAt ? new Date(d.createdAt).toLocaleString() : "") + '</span></div><div class="comment-text">' + d.text + '</div></div>';
-      }).join("");
+      var all = csnap.docs.map(function(c) { return Object.assign({ id: c.id }, c.data()); });
+      var byParent = {}; all.forEach(function(x) { var p = x.parentId || "__root__"; (byParent[p] = byParent[p] || []).push(x); });
+      var renderC = function(x, depth) {
+        var isMine = x.authorUid && currentUser && x.authorUid === currentUser.uid;
+        var h = '<div class="comment-item"' + (depth ? ' style="margin-left:' + Math.min(depth,3)*16 + 'px;border-left:2px solid rgba(201,168,76,0.35);padding-left:10px"' : '') + '>' +
+          (x.parentAuthor ? '<div style="font-size:0.62rem;color:var(--gray)">↪ replying to <b>' + RenderMentions(x.parentAuthor) + '</b></div>' : '') +
+          '<div><span class="comment-author">' + RenderMentions(x.author || "—") + '</span><span class="comment-time">' + (x.createdAt ? new Date(x.createdAt).toLocaleString() : "") + '</span></div>' +
+          '<div class="comment-text" style="white-space:pre-wrap">' + RenderMentions(x.text) + '</div>' +
+          (!isMine ? '<button onclick="replyToComment(\'' + x.id + '\',\'' + String(x.author||"").replace(/'/g,"") + '\')" style="margin-top:4px;background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' : '') +
+        '</div>';
+        (byParent[x.id] || []).forEach(function(r) { h += renderC(r, depth + 1); });
+        return h;
+      };
+      commentsHtml = (byParent["__root__"] || []).map(function(x) { return renderC(x, 0); }).join("");
     }
     var statusControl = isAdmin
       ? '<select class="status-select" onchange="updateTicketStatus(\'' + id + '\',this.value)"><option value="open"' + (t.status === "open" ? " selected" : "") + '>🔴 Open</option><option value="in-progress"' + (t.status === "in-progress" ? " selected" : "") + '>🟡 In Progress</option><option value="resolved"' + (t.status === "resolved" ? " selected" : "") + '>🟢 Resolved</option></select>'
@@ -3717,8 +3731,10 @@ function openTicket(id) {
         '</div>' +
       '</div>' +
       '<div class="detail-section"><h4>Details</h4><div class="detail-body">' + (t.details || "No details provided.") + '</div></div>' +
+      '<div class="detail-section"><h4>Activity Log</h4><div style="padding:0 4px">' + TicketHistoryHtml(t) + '</div></div>' +
       '<div class="detail-section"><h4>Comments</h4><div id="comments-list">' + commentsHtml + '</div>' +
-        '<div style="margin-top:14px"><textarea class="comment-inp" id="new-comment" rows="3" placeholder="Add a comment…"></textarea>' +
+        '<div style="margin-top:14px"><div id="reply-banner" style="display:none;font-size:0.72rem;color:var(--gold);margin-bottom:6px;align-items:center;justify-content:space-between"><span id="reply-banner-label"></span><button onclick="cancelReply()" style="background:none;border:none;color:var(--gray);cursor:pointer">✕</button></div>' +
+        '<textarea class="comment-inp" id="new-comment" rows="3" placeholder="Add a comment… type @MC-17 to tag a unit"></textarea>' +
         '<button class="submit-btn" style="margin-top:8px;padding:9px 18px;font-size:0.82rem" onclick="addComment(\'' + id + '\')">Post Comment</button></div>' +
       '</div>' +
       (isAdmin ? '<div style="margin-bottom:24px"><button class="del-btn" onclick="deleteTicket(\'' + id + '\')" style="padding:8px 16px;font-size:0.8rem">🗑 Delete</button></div>' : "");
@@ -3738,9 +3754,37 @@ function acceptTicket(id) {
   }).then(function() { showToast("✋ Assigned to you!"); openTicket(id); })
   .catch(function(e) { showToast("Error: " + e.message, true); });
 }
+
+function TicketHistoryHtml(t) {
+  var h = (t.history || []).slice().sort(function(a,b){ return (a.at||"").localeCompare(b.at||""); });
+  if (!h.length) return '<div style="color:var(--gray);font-size:0.8rem">No activity yet.</div>';
+  var icons = { created:"🆕", accepted:"✋", unassigned:"↩️", status:"🔁", resolved:"✅", comment:"💬" };
+  var labels = { created:"Submitted", accepted:"Accepted", unassigned:"Unassigned", status:"Status changed", resolved:"Resolved", comment:"Comment" };
+  return h.map(function(e) {
+    var d = e.at ? new Date(e.at) : null;
+    var when = d ? d.toLocaleDateString([], {month:"short",day:"numeric"}) + " " + d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "";
+    var note = e.note ? '<span style="color:var(--gray)"> — ' + String(e.note).replace(/&/g,"&amp;").replace(/</g,"&lt;") + '</span>' : "";
+    return '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.8rem">' +
+      '<span style="flex-shrink:0">' + (icons[e.action]||"•") + '</span>' +
+      '<div style="flex:1;min-width:0"><span style="color:var(--white);font-weight:600">' + (labels[e.action]||e.action) + '</span>' + note +
+        '<div style="font-size:0.68rem;color:var(--gray);margin-top:1px">' + String(e.by||"").replace(/</g,"&lt;") + (when ? " · " + when : "") + '</div></div>' +
+    '</div>';
+  }).join("");
+}
+function RenderMentions(text) {
+  return String(text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/@(MC-?\d{1,4})\b/gi, function(mm, u) { return '<span style="color:var(--gold);font-weight:700">@' + u.toUpperCase().replace(/^MC(\d)/, "MC-$1") + '</span>'; });
+}
+var replyTarget = null;
+function replyToComment(commentId, author) {
+  replyTarget = { id: commentId, author: author };
+  var w = document.getElementById("reply-banner"); if (w) { w.style.display = "flex"; document.getElementById("reply-banner-label").textContent = "↪ Replying to " + author; }
+  var ta = document.getElementById("new-comment"); if (ta) ta.focus();
+}
+function cancelReply() { replyTarget = null; var w = document.getElementById("reply-banner"); if (w) w.style.display = "none"; }
 function unassignTicket(id) {
   if (!confirm("Remove assignment?")) return;
-  db.collection("tickets").doc(id).set({ assignedTo: null, assignedByUid: null, assignedAt: null }, { merge: true }).then(function() {
+  db.collection("tickets").doc(id).set({ assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: currentUser ? currentUser.uid : "" }, { merge: true }).then(function() {
     var t = allTickets.find(function(x) { return x.id === id; });
     if (t) { t.assignedTo = null; t.assignedByUid = null; t.assignedAt = null; }
     showToast("Unassigned"); openTicket(id);
@@ -3758,7 +3802,10 @@ function addComment(id) {
   db.collection("users").doc(currentUser.uid).get().then(function(snap) {
     var d = snap.data();
     var author = ((d.unit || "") + " " + (d.firstName || "") + " " + (d.lastName || "")).trim();
-    return db.collection("tickets").doc(id).collection("comments").add({ text: text, author: author, authorUid: currentUser.uid, createdAt: new Date().toISOString() }).then(function() {
+    var doc = { text: text, author: author, authorUid: currentUser.uid, createdAt: new Date().toISOString() };
+    if (replyTarget) { doc.parentId = replyTarget.id; doc.parentAuthor = replyTarget.author; }
+    replyTarget = null;
+    return db.collection("tickets").doc(id).collection("comments").add(doc).then(function() {
       // onTicketComment Cloud Function notifies the assigned member / submitter / logistics team
     });
   }).then(function() { document.getElementById("new-comment").value = ""; openTicket(id); showToast("Comment posted!"); })

@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.31";
+  var BUILD = "1.35";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.31</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.35</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.31</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.35</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -380,6 +380,16 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   </div>
 
   <div class="m-scroll">
+    <!-- Global Test Mode (personal setting) -->
+    <div id="m-home-test-row" style="display:none;align-items:center;justify-content:space-between;gap:10px;background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:10px;padding:10px 14px;margin-bottom:14px;cursor:pointer" onclick="mToggleTestMode()">
+      <div>
+        <div class="m-test-label" style="font-family:'Oswald',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;color:var(--white)">🧪 Test Mode</div>
+        <div id="m-home-test-sub" style="font-size:0.68rem;color:var(--gray);margin-top:2px">Off — your actions go live</div>
+      </div>
+      <div class="m-test-track" style="width:44px;height:24px;border-radius:12px;background:rgba(255,255,255,0.1);border:1px solid var(--card-border);position:relative;transition:all 0.25s;flex-shrink:0">
+        <div class="m-test-thumb" style="position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--gray);transition:all 0.25s"></div>
+      </div>
+    </div>
     <!-- Active Calls -->
     <div id="m-calls-section" style="display:none;margin-bottom:16px">
       <div class="m-section-header">
@@ -617,7 +627,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
       <span class="m-page-title">Service Requests</span>
     </div>
-    <button onclick="mGoTo('service-new')" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New</button>
+    <button onclick="mGoTo('service-new');mBindTicketFormMentions()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New</button>
   </div>
   <div style="display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--card-border);flex-wrap:wrap" id="m-tk-tabs">
     <button class="m-disp-btn m-tk-tab active" data-status="all" onclick="mSetTicketTab('all',this)" style="border-color:var(--gold);color:var(--gold)">All</button>
@@ -640,7 +650,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="m-disp-label">Title</div>
     <input type="text" id="m-tk-title" class="m-disp-input" placeholder="Brief description of the issue…" style="margin-bottom:12px">
     <div class="m-disp-label">Description</div>
-    <textarea id="m-tk-details" class="m-disp-input" rows="5" placeholder="Describe the issue in detail…" style="margin-bottom:12px;resize:vertical"></textarea>
+    <div style="position:relative"><textarea id="m-tk-details" class="m-disp-input" rows="5" placeholder="Describe the issue in detail… type @ to tag a unit" style="margin-bottom:12px;resize:vertical"></textarea>
+    <div id="m-tk-details-mention-box" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:-12px;background:#16283f;border:1px solid var(--card-border);border-radius:8px;z-index:30;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5)"></div></div>
     <div class="m-disp-label">Priority</div>
     <select id="m-tk-priority" class="m-disp-input" style="margin-bottom:16px">
       <option value="low">🟢 Low</option>
@@ -897,6 +908,7 @@ auth.onAuthStateChanged(function(user) {
       mEnterHome();
       mHandleDeepLink();
       mLoadAllResponders();
+      mLoadUnitDirectory();
       mApplyTestModeState(d.sysTestingMode === true); // personal setting, default OFF
       mMaybeOfferPasskey();
     }).catch(function(e) { mToast("Error: " + e.message, true); auth.signOut(); });
@@ -953,6 +965,7 @@ function mEnterHome() {
   var canDispatch = mCurrentRole==="admin"||roles.includes("dispatcher")||roles.includes("captain")||roles.includes("chief");
   var dispatchTile = document.getElementById("m-dispatch-tile");
   if (dispatchTile) dispatchTile.style.display = canDispatch ? "" : "none";
+  var homeTestRow = document.getElementById("m-home-test-row"); if (homeTestRow) homeTestRow.style.display = canDispatch ? "flex" : "none";
   var callLogsTile = document.getElementById("m-calllogs-tile");
   if (callLogsTile) callLogsTile.style.display = canDispatch ? "" : "none";
 }
@@ -2428,6 +2441,53 @@ function mRemovePasskey() {
 // show the biometric button as soon as the login page renders
 document.addEventListener("DOMContentLoaded", function() { try { mRefreshPasskeyUI(); } catch (e) {} });
 
+// ── UNIT DIRECTORY (for @mentions: everyone with a unit number) ──
+var mUnitDirectory = [];
+function mLoadUnitDirectory() {
+  db.collection("users").get().then(function(snap) {
+    var list = [];
+    snap.forEach(function(d) { var u = d.data(); if (u.unit) list.push({ unit: u.unit, name: ((u.firstName||"") + " " + (u.lastName||"")).trim() }); });
+    list.sort(function(a,b){ return a.unit.localeCompare(b.unit, undefined, {numeric:true}); });
+    mUnitDirectory = list;
+  }).catch(function(){});
+}
+// Highlight @MC-xx mentions in rendered text
+function mRenderMentions(text) {
+  return String(text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/@(MC-?\d{1,4})\b/gi, function(m, u) { return '<span style="color:var(--gold);font-weight:700">@' + u.toUpperCase().replace(/^MC(\d)/, "MC-$1") + '</span>'; });
+}
+// Attach an @mention suggestion box to a textarea
+function mAttachMentions(textareaId, boxId) {
+  var ta = document.getElementById(textareaId), box = document.getElementById(boxId);
+  if (!ta || !box || ta.dataset.mentionsBound) return;
+  ta.dataset.mentionsBound = "1";
+  function hide() { box.style.display = "none"; box.innerHTML = ""; }
+  function currentToken() {
+    var pos = ta.selectionStart || 0, before = ta.value.slice(0, pos);
+    var m = before.match(/(?:^|\s)@([A-Za-z0-9-]*)$/);
+    return m ? { start: pos - m[1].length - 1, q: m[1].toUpperCase() } : null;
+  }
+  ta.addEventListener("input", function() {
+    var tok = currentToken(); if (!tok) { hide(); return; }
+    var q = tok.q.replace(/^MC-?/, "");
+    var hits = mUnitDirectory.filter(function(u) { var num = u.unit.replace(/^MC-?/i, ""); return !q || num.indexOf(q) === 0 || u.name.toUpperCase().indexOf(tok.q) !== -1; }).slice(0, 6);
+    if (!hits.length) { hide(); return; }
+    box.innerHTML = hits.map(function(u) {
+      return '<div onmousedown="event.preventDefault();mInsertMention(\'' + textareaId + '\',\'' + boxId + '\',' + tok.start + ',\'' + u.unit + '\')" style="padding:9px 12px;border-bottom:1px solid var(--card-border);cursor:pointer;display:flex;justify-content:space-between;align-items:center">' +
+        '<span style="font-family:\'Oswald\',sans-serif;font-weight:700;color:var(--gold)">@' + u.unit + '</span><span style="font-size:0.72rem;color:var(--gray)">' + mRenderMentions(u.name) + '</span></div>';
+    }).join("");
+    box.style.display = "block";
+  });
+  ta.addEventListener("blur", function() { setTimeout(hide, 150); });
+}
+function mInsertMention(textareaId, boxId, start, unit) {
+  var ta = document.getElementById(textareaId), box = document.getElementById(boxId);
+  var pos = ta.selectionStart || ta.value.length;
+  ta.value = ta.value.slice(0, start) + "@" + unit + " " + ta.value.slice(pos);
+  var np = start + unit.length + 2; ta.setSelectionRange(np, np); ta.focus();
+  box.style.display = "none"; box.innerHTML = "";
+}
+
 // ── ROSTER (for unit assignment picker) ──
 function mIs7xxUnit(unit) {
   var m = (unit||"").match(/(\d{3})/);
@@ -2721,19 +2781,20 @@ function mApplyTestModeState(on) {
   MSysTestingMode = !!on;
   var banner = document.getElementById("m-test-global-banner");
   if (banner) banner.textContent = "🧪 TEST MODE — everything you trigger (calls, tickets, education, SMS, push) goes only to " + (mCurrentUserUnit || "you");
-  var track = document.getElementById("m-test-toggle-track");
-  var thumb = document.getElementById("m-test-toggle-thumb");
-  var label = document.getElementById("m-test-toggle-label");
-  var banner = document.getElementById("m-test-global-banner");
-  if (track) { track.style.background = on ? "rgba(240,165,0,0.3)" : "rgba(255,255,255,0.1)"; track.style.borderColor = on ? "rgba(240,165,0,0.5)" : "var(--card-border)"; }
-  if (thumb) { thumb.style.background = on ? "#f0a500" : "var(--gray)"; thumb.style.left = on ? "18px" : "2px"; }
-  if (label) label.style.color = on ? "#ffc84a" : "var(--gray)";
+  document.querySelectorAll(".m-test-track").forEach(function(track) {
+    track.style.background = on ? "rgba(240,165,0,0.3)" : "rgba(255,255,255,0.1)"; track.style.borderColor = on ? "rgba(240,165,0,0.5)" : "var(--card-border)";
+    var thumb = track.querySelector(".m-test-thumb"); if (thumb) { thumb.style.background = on ? "#f0a500" : "var(--gray)"; thumb.style.left = on ? "calc(100% - " + (thumb.offsetWidth || 14) + "px - 2px)" : "2px"; }
+  });
+  document.querySelectorAll(".m-test-label").forEach(function(l) { l.style.color = on ? "#ffc84a" : (l.id === "m-test-toggle-label" ? "var(--gray)" : "var(--white)"); });
+  var sub = document.getElementById("m-home-test-sub");
+  if (sub) { sub.textContent = on ? "ON — everything you trigger goes only to you" : "Off — your actions go live"; sub.style.color = on ? "#ffc84a" : "var(--gray)"; }
   if (banner) banner.style.display = on ? "block" : "none";
 }
 function mToggleTestMode() {
   var next = !MSysTestingMode;
   if (!mCurrentUser) return;
   var label = document.getElementById("m-test-toggle-label"); if (label) label.textContent = "🧪 " + (next ? "Turning on…" : "Turning off…");
+  var sub0 = document.getElementById("m-home-test-sub"); if (sub0) sub0.textContent = next ? "Turning on…" : "Turning off…";
   db.collection("users").doc(mCurrentUser.uid).set({ sysTestingMode: next }, { merge: true }).then(function() {
     if (label) label.textContent = "🧪 Test Mode";
     mApplyTestModeState(next);
@@ -2894,6 +2955,7 @@ function mRenderTickets() {
     '</div>';
   }).join("");
 }
+function mBindTicketFormMentions() { mAttachMentions("m-tk-details", "m-tk-details-mention-box"); }
 function mSubmitTicket() {
   var title = document.getElementById("m-tk-title").value.trim();
   var details = document.getElementById("m-tk-details").value.trim();
@@ -2918,9 +2980,30 @@ function mSubmitTicket() {
   }).catch(function(e) { msg.style.color = "#ff9090"; msg.textContent = "Error: " + e.message; })
   .finally(function() { btn.disabled = false; btn.textContent = "Submit Service Request"; });
 }
+
+function mTicketHistoryHtml(t) {
+  var h = (t.history || []).slice().sort(function(a,b){ return (a.at||"").localeCompare(b.at||""); });
+  if (!h.length) return '<div style="color:var(--gray);font-size:0.8rem">No activity yet.</div>';
+  var icons = { created:"🆕", accepted:"✋", unassigned:"↩️", status:"🔁", resolved:"✅", comment:"💬" };
+  var labels = { created:"Submitted", accepted:"Accepted", unassigned:"Unassigned", status:"Status changed", resolved:"Resolved", comment:"Comment" };
+  return h.map(function(e) {
+    var d = e.at ? new Date(e.at) : null;
+    var when = d ? d.toLocaleDateString([], {month:"short",day:"numeric"}) + " " + d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "";
+    var note = e.note ? '<span style="color:var(--gray)"> — ' + String(e.note).replace(/&/g,"&amp;").replace(/</g,"&lt;") + '</span>' : "";
+    return '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.8rem">' +
+      '<span style="flex-shrink:0">' + (icons[e.action]||"•") + '</span>' +
+      '<div style="flex:1;min-width:0"><span style="color:var(--white);font-weight:600">' + (labels[e.action]||e.action) + '</span>' + note +
+        '<div style="font-size:0.68rem;color:var(--gray);margin-top:1px">' + String(e.by||"").replace(/</g,"&lt;") + (when ? " · " + when : "") + '</div></div>' +
+    '</div>';
+  }).join("");
+}
 function mOpenTicket(id) {
   var t = mAllTickets.find(function(x){ return x.id === id; });
   if (!t) return;
+  // pull the latest copy so the server-written activity log is current
+  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) Object.assign(t, s.data()); mRenderTicketDetail(id, t); }).catch(function(){ mRenderTicketDetail(id, t); });
+}
+function mRenderTicketDetail(id, t) {
   var isAdmin = mCurrentRole === "admin";
   var isServiceUnit = isAdmin || (mCurrentUserRoles||[]).includes("logistics");
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
@@ -2928,12 +3011,20 @@ function mOpenTicket(id) {
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
-      commentsHtml = csnap.docs.map(function(c) {
-        var d = c.data();
-        return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:8px 10px;margin-bottom:6px">' +
-          '<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--gray);margin-bottom:2px"><span style="color:var(--white);font-weight:700">' + (d.author||"—") + '</span><span>' + (d.createdAt ? new Date(d.createdAt).toLocaleString() : "") + '</span></div>' +
-          '<div style="font-size:0.8rem;color:var(--white)">' + d.text + '</div></div>';
-      }).join("");
+      var all = csnap.docs.map(function(c) { return Object.assign({ id: c.id }, c.data()); });
+      var byParent = {}; all.forEach(function(d) { var p = d.parentId || "__root__"; (byParent[p] = byParent[p] || []).push(d); });
+      function renderComment(d, depth) {
+        var isMine = d.authorUid && mCurrentUser && d.authorUid === mCurrentUser.uid;
+        var html = '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:8px 10px;margin-bottom:6px' + (depth ? ';margin-left:' + Math.min(depth,3)*14 + 'px;border-left:2px solid rgba(201,168,76,0.35)' : '') + '">' +
+          (d.parentAuthor ? '<div style="font-size:0.6rem;color:var(--gray);margin-bottom:2px">↪ replying to <b>' + mRenderMentions(d.parentAuthor) + '</b></div>' : '') +
+          '<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--gray);margin-bottom:2px"><span style="color:var(--white);font-weight:700">' + mRenderMentions(d.author||"—") + '</span><span>' + (d.createdAt ? new Date(d.createdAt).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "") + '</span></div>' +
+          '<div style="font-size:0.8rem;color:var(--white);white-space:pre-wrap">' + mRenderMentions(d.text) + '</div>' +
+          (!isMine ? '<button onclick="mReplyTo(\'' + d.id + '\',\'' + String(d.author||"").replace(/'/g,"") + '\')" style="margin-top:6px;background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' : '') +
+        '</div>';
+        (byParent[d.id] || []).forEach(function(r) { html += renderComment(r, depth + 1); });
+        return html;
+      }
+      commentsHtml = (byParent["__root__"] || []).map(function(d) { return renderComment(d, 0); }).join("");
     }
     var statusControl = isAdmin
       ? '<select class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.75rem" onchange="mUpdateTicketStatus(\'' + id + '\',this.value)"><option value="open"' + (t.status==="open"?" selected":"") + '>🔴 Open</option><option value="in-progress"' + (t.status==="in-progress"?" selected":"") + '>🟡 In Progress</option><option value="resolved"' + (t.status==="resolved"?" selected":"") + '>🟢 Resolved</option></select>'
@@ -2957,15 +3048,28 @@ function mOpenTicket(id) {
         '<div style="border-top:1px solid var(--card-border);padding-top:10px">' + assignmentHtml + '</div>' +
       '</div>' +
       '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Details</div>' +
-      '<div style="font-size:0.85rem;color:var(--white);margin-bottom:16px;white-space:pre-wrap">' + (t.details||"No details provided.") + '</div>' +
+      '<div style="font-size:0.85rem;color:var(--white);margin-bottom:16px;white-space:pre-wrap">' + (t.details ? mRenderMentions(t.details) : "No details provided.") + '</div>' +
+      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Activity Log</div>' +
+      '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:6px 12px;margin-bottom:16px">' + mTicketHistoryHtml(t) + '</div>' +
       '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Comments</div>' +
       commentsHtml +
-      '<textarea id="m-tk-new-comment" class="m-disp-input" rows="3" placeholder="Add a comment…" style="margin-top:8px;margin-bottom:8px;resize:vertical"></textarea>' +
+      '<div id="m-tk-replying" style="display:none;font-size:0.72rem;color:var(--gold);margin-top:8px;align-items:center;justify-content:space-between"><span id="m-tk-replying-label"></span><button onclick="mCancelReply()" style="background:none;border:none;color:var(--gray);cursor:pointer;font-size:0.9rem">✕</button></div>' +
+      '<div style="position:relative"><textarea id="m-tk-new-comment" class="m-disp-input" rows="3" placeholder="Add a comment… type @ to tag a unit" style="margin-top:8px;margin-bottom:8px;resize:vertical"></textarea>' +
+      '<div id="m-tk-mention-box" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:-8px;background:#16283f;border:1px solid var(--card-border);border-radius:8px;z-index:30;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5)"></div></div>' +
       '<button onclick="mAddComment(\'' + id + '\')" style="width:100%;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-weight:700;padding:10px;cursor:pointer;margin-bottom:16px">Post Comment</button>' +
       (isAdmin ? '<button onclick="mDeleteTicket(\'' + id + '\')" style="width:100%;background:rgba(224,85,85,0.1);border:1px solid rgba(255,144,144,0.4);border-radius:8px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-weight:700;padding:10px;cursor:pointer">🗑 Delete</button>' : "");
     mGoTo("service-detail");
+    mReplyTarget = null;
+    mAttachMentions("m-tk-new-comment", "m-tk-mention-box");
   }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
+var mReplyTarget = null;
+function mReplyTo(commentId, author) {
+  mReplyTarget = { id: commentId, author: author };
+  var w = document.getElementById("m-tk-replying"); if (w) { w.style.display = "flex"; document.getElementById("m-tk-replying-label").textContent = "↪ Replying to " + author; }
+  var ta = document.getElementById("m-tk-new-comment"); if (ta) { ta.focus(); ta.scrollIntoView({ block: "center", behavior: "smooth" }); }
+}
+function mCancelReply() { mReplyTarget = null; var w = document.getElementById("m-tk-replying"); if (w) w.style.display = "none"; }
 function mAcceptTicket(id) {
   if (mCurrentRole !== "admin" && !(mCurrentUserRoles||[]).includes("logistics")) { mToast("Only service units can accept tickets", true); return; }
   var t = mAllTickets.find(function(x){ return x.id === id; });
@@ -2980,7 +3084,7 @@ function mAcceptTicket(id) {
 }
 function mUnassignTicket(id) {
   if (!confirm("Remove assignment?")) return;
-  db.collection("tickets").doc(id).set({ assignedTo: null, assignedByUid: null, assignedAt: null }, { merge: true }).then(function() {
+  db.collection("tickets").doc(id).set({ assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true }).then(function() {
     var t = mAllTickets.find(function(x){ return x.id === id; });
     if (t) { t.assignedTo = null; t.assignedByUid = null; t.assignedAt = null; }
     mToast("Unassigned"); mOpenTicket(id);
@@ -2998,10 +3102,12 @@ function mAddComment(id) {
   db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
     var d = snap.data();
     var author = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
-    return db.collection("tickets").doc(id).collection("comments").add({ text: text, author: author, authorUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() }).then(function() {
-      // onTicketComment Cloud Function notifies the assigned member / submitter / logistics team
+    var doc = { text: text, author: author, authorUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() };
+    if (mReplyTarget) { doc.parentId = mReplyTarget.id; doc.parentAuthor = mReplyTarget.author; }
+    return db.collection("tickets").doc(id).collection("comments").add(doc).then(function() {
+      // onTicketComment Cloud Function notifies assigned/submitter/logistics, plus @tagged units and the person replied to
     });
-  }).then(function() { document.getElementById("m-tk-new-comment").value = ""; mOpenTicket(id); }).catch(function(e){ mToast("Error: " + e.message, true); });
+  }).then(function() { document.getElementById("m-tk-new-comment").value = ""; mReplyTarget = null; mOpenTicket(id); }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
 function mDeleteTicket(id) {
   if (!confirm("Delete this service request permanently?")) return;
@@ -3099,8 +3205,13 @@ function mBroadcastNewCallSMS(call) {
   var now = new Date();
   var timeStamp = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
   var zonePrefix = call.zone === "secondary" ? "🚑 LOAD A RIG\n" : call.zone === "outside" ? "⚠ OUTSIDE ZONE\n" : "";
-  var streetAddr = (call.address || "").split(",")[0];
-  var smsBody = "🚨 NEW CALL\n" + zonePrefix + streetAddr + "\n" + (call.apt ? call.apt + "\n" : "") + (naturePatient ? naturePatient + "\n" : "") + (call.mapsLink ? call.mapsLink + "\n" : "") + timeStamp;
+  // POI calls are stored as "Topgolf Edison — 1013 US-1, Edison, NJ 08817, USA":
+  //   line 1 = POI name, line 2 = the actual street address (street, town, zip; no ", USA")
+  var rawA = String(call.address || "");
+  var poiName = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ")[0].trim() : "";
+  var fullA = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ").slice(1).join(" — ") : rawA;
+  var streetAddr = fullA.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 3).join(", ");
+  var smsBody = "🚨 NEW CALL\n" + zonePrefix + (poiName ? poiName + "\n" : "") + streetAddr + "\n" + (call.apt ? call.apt + "\n" : "") + (naturePatient ? naturePatient + "\n" : "") + (call.mapsLink ? call.mapsLink + "\n" : "") + timeStamp;
   db.collection("users").get().then(function(snap) {
     var phones = [];
     snap.forEach(function(doc) { var phone = mGetFirstPhone(doc.data().phone); if (phone) phones.push(phone); });
@@ -4534,14 +4645,14 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.31</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.35</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
   <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 16px 0" onclick="mToggleTestMode()">
-    <span id="m-test-toggle-label" style="font-size:0.6rem;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray)">🧪 Test Mode</span>
-    <div id="m-test-toggle-track" style="width:36px;height:20px;border-radius:10px;background:rgba(255,255,255,0.1);border:1px solid var(--card-border);position:relative;transition:all 0.25s;cursor:pointer">
-      <div id="m-test-toggle-thumb" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--gray);transition:all 0.25s"></div>
+    <span id="m-test-toggle-label" class="m-test-label" style="font-size:0.6rem;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray)">🧪 Test Mode</span>
+    <div class="m-test-track" style="width:36px;height:20px;border-radius:10px;background:rgba(255,255,255,0.1);border:1px solid var(--card-border);position:relative;transition:all 0.25s;cursor:pointer">
+      <div class="m-test-thumb" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--gray);transition:all 0.25s"></div>
     </div>
   </div>
   <div class="m-scroll" id="m-dispatch-list-scroll">
