@@ -56,6 +56,8 @@ self.addEventListener('notificationclick', function(e) {
       for (var i = 0; i < cls.length; i++) {
         if (cls[i].url.indexOf('chaverim151.github.io/CallDashboard') !== -1) {
           if (callId) cls[i].postMessage({ type: 'NEW_CALL', callId: callId });
+          var ticketId = e.notification.data && e.notification.data.ticketId;
+          if (ticketId) cls[i].postMessage({ type: 'OPEN_TICKET', ticketId: ticketId });
           return cls[i].focus();
         }
       }
