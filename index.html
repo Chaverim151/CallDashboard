@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.66');
+  window.location.replace('/CallDashboard/mobile.html?v=1.67');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -565,7 +565,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.18p</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.19a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1014,6 +1014,23 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         <button class="ticket-tab" onclick="setCodesTab('storage',this)">🗄️ Storage</button>
       </div>
       <div id="codes-editor-content"></div>
+    </div>
+
+    <div class="admin-section" id="dispatch-settings-section">
+      <div class="admin-section-title">🎛️ Dispatch Console Settings</div>
+      <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">These tables drive the dispatch console on <strong style="color:var(--white)">both desktop and mobile</strong>: which PD / BLS / ALS the console suggests for a town, the transport hospital list, which natures flash ALS, and who to call for out-of-area calls. Changes apply the next time a dispatcher signs in.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px" id="ds-tabs">
+        <button class="ticket-tab active" onclick="setDsTab('mutualAid')">🚔 Mutual Aid Directory</button>
+        <button class="ticket-tab" onclick="setDsTab('hospitals')">🏥 Transport Hospitals</button>
+        <button class="ticket-tab" onclick="setDsTab('als')">🚨 ALS Protocol Natures</button>
+        <button class="ticket-tab" onclick="setDsTab('outside')">📞 Outside-Coverage Contacts</button>
+      </div>
+      <div id="ds-content"></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
+        <button class="submit-btn" style="width:auto;padding:10px 22px" onclick="saveDispatchSettings()">💾 Save Dispatch Settings</button>
+        <button class="edit-mode-btn" onclick="resetDispatchSettingsTab()">↺ Reset this tab to built-in defaults</button>
+        <span class="form-msg" id="ds-msg"></span>
+      </div>
     </div>
 
     <div class="admin-section">
@@ -4250,6 +4267,7 @@ function showSysTestBanner(show) {
 }
 
 function initSysTestMode(userData) {
+  loadDispatchSettings();
   // Restore testing mode from user doc on login
   if (userData && userData.sysTestingMode) {
     SYS_TESTING_MODE = true;
@@ -5405,7 +5423,7 @@ window.toggleHospDD = function(btn, callId) {
   var existing = document.getElementById("hosp-dd-popup");
   if (existing) { existing.remove(); return; }
 
-  var HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
+  var HOSPITALS = DISPATCH_HOSPITALS;
 
   // Get button position
   var rect = btn.getBoundingClientRect();
@@ -5964,6 +5982,7 @@ function setCodesTab(tab, btn) {
   btn.classList.add("active"); renderCodesEditor();
 }
 function renderCodesEditor() {
+  if (typeof renderDispatchSettings === "function" && document.getElementById("ds-content") && !document.getElementById("ds-content").innerHTML) renderDispatchSettings();
   var el = document.getElementById("codes-editor-content"); if (!el) return;
   var sec = codesEditorTab, items = window.LIVE_DATA[sec] || [], isSpecial = sec === "hospital" || sec === "storage";
   var rowsHtml = "";
@@ -5987,6 +6006,84 @@ function extraCodesEditorAdmin(sec, i, item) {
       '<button class="del-btn" style="padding:8px 12px" onclick="window.LIVE_DATA[\'' + sec + '\'][' + i + '].codes.splice(' + (k+1) + ',1);renderCodesEditor()">✕</button></div>';
   }).join("");
   return h + '<button class="edit-mode-btn" style="font-size:0.7rem;padding:5px 10px" onclick="(function(){var it=window.LIVE_DATA[\'' + sec + '\'][' + i + '];if(!Array.isArray(it.codes)||!it.codes.length)it.codes=[{label:\'\',code:it.code||\'\'}];it.codes.push({label:\'\',code:\'\'});renderCodesEditor();})()">+ Add another code</button>';
+}
+// ══ DISPATCH CONSOLE SETTINGS (admin) ══
+var dsTab = "mutualAid", DS_EDIT = null;
+function dsEnsureEdit() {
+  if (DS_EDIT) return;
+  var ds = DISPATCH_SETTINGS || {};
+  DS_EDIT = {
+    mutualAid: (Array.isArray(ds.mutualAid) && ds.mutualAid.length ? ds.mutualAid : (MUTUAL_AID_911_DEFAULT||MUTUAL_AID_911)).map(function(r){ return { match: (r.match||[]).slice(), borough: r.borough||"", pd: r.pd||"", bls: r.bls||"", als: r.als||"" }; }),
+    hospitals: (Array.isArray(ds.hospitals) && ds.hospitals.length ? ds.hospitals : DISPATCH_HOSPITALS_DEFAULT).filter(function(h){ return h !== "Other"; }),
+    alsNatureCodes: (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length ? ds.alsNatureCodes : ALS_NATURE_CODES_DEFAULT).slice(),
+    outsideContacts: (Array.isArray(ds.outsideContacts) ? ds.outsideContacts : []).map(function(c){ return { name: c.name||"", phone: c.phone||"", note: c.note||"" }; })
+  };
+}
+function setDsTab(t) { dsTab = t; document.querySelectorAll("#ds-tabs .ticket-tab").forEach(function(b, i){ b.classList.toggle("active", ["mutualAid","hospitals","als","outside"][i] === t); }); renderDispatchSettings(); }
+function renderDispatchSettings() {
+  var el = document.getElementById("ds-content"); if (!el) return;
+  dsEnsureEdit(); var E = DS_EDIT;
+  var inp = function(v, ph, oninput, extra) { return '<input value="' + String(v||"").replace(/"/g,"&quot;") + '" placeholder="' + ph + '" oninput="' + oninput + '" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.85rem;' + (extra||"") + '">'; };
+  if (dsTab === "mutualAid") {
+    el.innerHTML = '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px">One row per town. <strong>Match words</strong> are the town names as they appear in an address (comma-separated, e.g. <code>woodbridge, avenel, colonia</code>). The console suggests these PD / BLS / ALS numbers for any call in that town.</div>' +
+      '<div style="display:grid;grid-template-columns:1.4fr 1.2fr 1fr 1.3fr 1.3fr auto;gap:6px;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px"><div>Match words</div><div>Display name</div><div>PD phone</div><div>BLS provider</div><div>ALS provider</div><div></div></div>' +
+      E.mutualAid.map(function(r, i) {
+        return '<div style="display:grid;grid-template-columns:1.4fr 1.2fr 1fr 1.3fr 1.3fr auto;gap:6px;margin-bottom:6px">' +
+          inp(r.match.join(", "), "edison, south plainfield", "DS_EDIT.mutualAid[" + i + "].match=this.value.split(',').map(function(x){return x.trim().toLowerCase();}).filter(Boolean)") +
+          inp(r.borough, "Edison / South Plainfield", "DS_EDIT.mutualAid[" + i + "].borough=this.value") +
+          inp(r.pd, "732-248-7400", "DS_EDIT.mutualAid[" + i + "].pd=this.value") +
+          inp(r.bls, "JFK: 732-287-5235", "DS_EDIT.mutualAid[" + i + "].bls=this.value") +
+          inp(r.als, "Med-Central: 848-800-5053", "DS_EDIT.mutualAid[" + i + "].als=this.value") +
+          '<button class="del-btn" style="padding:8px 12px" onclick="DS_EDIT.mutualAid.splice(' + i + ',1);renderDispatchSettings()">✕</button></div>';
+      }).join("") +
+      '<button class="edit-mode-btn" style="margin-top:6px" onclick="DS_EDIT.mutualAid.push({match:[],borough:\'\',pd:\'\',bls:\'\',als:\'\'});renderDispatchSettings()">+ Add town</button>';
+  } else if (dsTab === "hospitals") {
+    el.innerHTML = '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px">Quick-pick hospitals in the Transport picker, in this order. "Other" is always available at the end.</div>' +
+      E.hospitals.map(function(h, i) {
+        return '<div style="display:flex;gap:6px;margin-bottom:6px;max-width:560px">' + inp(h, "Hospital name", "DS_EDIT.hospitals[" + i + "]=this.value") +
+          '<button class="edit-mode-btn" style="padding:6px 10px" title="Move up" onclick="if(' + i + '>0){var a=DS_EDIT.hospitals;var t=a[' + i + '-1];a[' + i + '-1]=a[' + i + '];a[' + i + ']=t;renderDispatchSettings();}">↑</button>' +
+          '<button class="del-btn" style="padding:8px 12px" onclick="DS_EDIT.hospitals.splice(' + i + ',1);renderDispatchSettings()">✕</button></div>';
+      }).join("") + '<button class="edit-mode-btn" style="margin-top:6px" onclick="DS_EDIT.hospitals.push(\'\');renderDispatchSettings()">+ Add hospital</button>';
+  } else if (dsTab === "als") {
+    el.innerHTML = '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px">Natures that flash "ALS Recommended by Protocol" and pre-fill the ALS provider.</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px">' +
+      CALL_NATURES.filter(function(nn){ return nn.value !== "__custom__"; }).map(function(nn) {
+        var code = (nn.value.match(/^(\d{2})\s*-/)||[])[1]; if (!code) return "";
+        var on = E.alsNatureCodes.indexOf(code) !== -1;
+        return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid ' + (on ? 'rgba(224,85,85,0.5)' : 'var(--card-border)') + ';border-radius:7px;background:' + (on ? 'rgba(224,85,85,0.08)' : 'transparent') + ';cursor:pointer;font-size:0.85rem;color:var(--white)"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="var a=DS_EDIT.alsNatureCodes;var i=a.indexOf(\'' + code + '\');if(this.checked&&i===-1)a.push(\'' + code + '\');if(!this.checked&&i!==-1)a.splice(i,1);renderDispatchSettings()">' + nn.label + '</label>';
+      }).join("") + '</div>';
+  } else {
+    el.innerHTML = '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px">For calls outside the coverage area, the console shows these contacts as tap-to-call buttons <strong>in this order</strong> (e.g. the coordinator chain). Leave empty to show none.</div>' +
+      E.outsideContacts.map(function(c, i) {
+        return '<div style="display:grid;grid-template-columns:auto 1.2fr 1fr 1.4fr auto auto;gap:6px;margin-bottom:6px;align-items:center;max-width:760px"><span style="font-family:\'Oswald\',sans-serif;color:var(--gold);font-weight:700;width:24px">' + (i+1) + '.</span>' +
+          inp(c.name, "MC-10 Wahrman", "DS_EDIT.outsideContacts[" + i + "].name=this.value") + inp(c.phone, "732-555-0100", "DS_EDIT.outsideContacts[" + i + "].phone=this.value") + inp(c.note, "note (optional)", "DS_EDIT.outsideContacts[" + i + "].note=this.value") +
+          '<button class="edit-mode-btn" style="padding:6px 10px" onclick="if(' + i + '>0){var a=DS_EDIT.outsideContacts;var t=a[' + i + '-1];a[' + i + '-1]=a[' + i + '];a[' + i + ']=t;renderDispatchSettings();}">↑</button>' +
+          '<button class="del-btn" style="padding:8px 12px" onclick="DS_EDIT.outsideContacts.splice(' + i + ',1);renderDispatchSettings()">✕</button></div>';
+      }).join("") + '<button class="edit-mode-btn" style="margin-top:6px" onclick="DS_EDIT.outsideContacts.push({name:\'\',phone:\'\',note:\'\'});renderDispatchSettings()">+ Add contact</button>';
+  }
+}
+function resetDispatchSettingsTab() {
+  dsEnsureEdit();
+  if (!confirm("Reset this tab to the built-in defaults? (Nothing is saved until you click Save.)")) return;
+  if (dsTab === "mutualAid") DS_EDIT.mutualAid = (MUTUAL_AID_911_DEFAULT||[]).map(function(r){ return { match: r.match.slice(), borough: r.borough, pd: r.pd, bls: r.bls, als: r.als }; });
+  if (dsTab === "hospitals") DS_EDIT.hospitals = DISPATCH_HOSPITALS_DEFAULT.filter(function(h){ return h !== "Other"; });
+  if (dsTab === "als") DS_EDIT.alsNatureCodes = ALS_NATURE_CODES_DEFAULT.slice();
+  if (dsTab === "outside") DS_EDIT.outsideContacts = [];
+  renderDispatchSettings();
+}
+function saveDispatchSettings() {
+  dsEnsureEdit(); var msg = document.getElementById("ds-msg"); msg.className = "form-msg"; msg.textContent = "";
+  var data = {
+    mutualAid: DS_EDIT.mutualAid.filter(function(r){ return r.match.length && r.borough; }),
+    hospitals: DS_EDIT.hospitals.map(function(h){ return String(h||"").trim(); }).filter(Boolean),
+    alsNatureCodes: DS_EDIT.alsNatureCodes.slice(),
+    outsideContacts: DS_EDIT.outsideContacts.filter(function(c){ return (c.name||"").trim(); }),
+    updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || (currentUser ? currentUser.email : "")
+  };
+  db.collection("appdata").doc("dispatchSettings").set(data).then(function() {
+    DISPATCH_SETTINGS = data; applyDispatchSettings(data);
+    msg.className = "form-msg success"; msg.textContent = "✓ Saved — live on desktop now; phones pick it up at next sign-in";
+  }).catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
 }
 function addCodeEntry(sec) {
   if (!window.LIVE_DATA[sec]) window.LIVE_DATA[sec] = [];
@@ -6254,6 +6351,27 @@ function extractRouteName(addressComponents) {
 // ── 911 MUTUAL AID BLS/ALS LOOKUP ──
 // Borough names are matched against the selected address's formatted_address text.
 // Order matters: more specific multi-town entries are checked first.
+var MUTUAL_AID_911_DEFAULT = null; // captured after the built-in table below is defined
+var DISPATCH_HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
+var DISPATCH_HOSPITALS_DEFAULT = DISPATCH_HOSPITALS.slice();
+var ALS_NATURE_CODES = ["01","02","03","04","06","07","08","09","11","14","15","18","20","23"];
+var ALS_NATURE_CODES_DEFAULT = ALS_NATURE_CODES.slice();
+var OUTSIDE_CONTACTS = [];   // [{name, phone, note}] in the order they should be called
+var DISPATCH_SETTINGS = null;
+function loadDispatchSettings() {
+  return db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
+    DISPATCH_SETTINGS = s.exists ? (s.data() || {}) : {};
+    applyDispatchSettings(DISPATCH_SETTINGS);
+  }).catch(function(){});
+}
+function applyDispatchSettings(ds) {
+  if (Array.isArray(ds.mutualAid) && ds.mutualAid.length) MUTUAL_AID_911 = ds.mutualAid.map(function(r){ return { match: (r.match||[]).map(function(x){ return String(x).toLowerCase(); }), borough: r.borough||"", bls: r.bls||"", als: r.als||"", pd: r.pd||"" }; });
+  else if (MUTUAL_AID_911_DEFAULT) MUTUAL_AID_911 = MUTUAL_AID_911_DEFAULT.slice();
+  DISPATCH_HOSPITALS = (Array.isArray(ds.hospitals) && ds.hospitals.length) ? ds.hospitals.slice() : DISPATCH_HOSPITALS_DEFAULT.slice();
+  if (DISPATCH_HOSPITALS.indexOf("Other") === -1) DISPATCH_HOSPITALS.push("Other");
+  ALS_NATURE_CODES = (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length) ? ds.alsNatureCodes.slice() : ALS_NATURE_CODES_DEFAULT.slice();
+  OUTSIDE_CONTACTS = Array.isArray(ds.outsideContacts) ? ds.outsideContacts.slice() : [];
+}
 var MUTUAL_AID_911 = [
   { match: ["edison","south plainfield"], borough: "Edison / South Plainfield", bls: "JFK: 732-287-5235", als: "JFK: 732-287-5235", pd: "732-248-7400" },
   { match: ["highland park"], borough: "Highland Park", bls: "Med-Central: 848-800-5053", als: "Med-Central: 848-800-5053", pd: "732-572-3800" },
@@ -6281,6 +6399,8 @@ var MUTUAL_AID_911 = [
   { match: ["franklin","somerset"], borough: "Franklin (Somerset)", bls: "", als: "", pd: "732-873-2300" },
   { match: ["scotch plains"], borough: "Scotch Plains", bls: "", als: "", pd: "908-322-7108" }
 ];
+MUTUAL_AID_911_DEFAULT = MUTUAL_AID_911.slice();
+
 
 function checkAccessCodeOnFile(formattedAddress, placeName) {
   var banner = document.getElementById("access-code-suggestion");
@@ -6642,7 +6762,8 @@ function showZoneBanner(zone) {
   else {
     icon = "🔴"; label = "Outside Coverage Area"; sublabel = "Outside service zone"; bg = "rgba(224,85,85,0.12)"; border = "rgba(224,85,85,0.4)"; color = "#ff9090";
     extra = '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(224,85,85,0.25)">' +
-      '<div style="font-size:0.78rem;color:#ffb3b3;margin-bottom:6px">This location is outside the MC coverage area. Consider contacting Statewide Hatzolah:</div>' +
+      '<div style="font-size:0.78rem;color:#ffb3b3;margin-bottom:6px">This location is outside the MC coverage area.' + (OUTSIDE_CONTACTS.length ? ' <strong>Call a coordinator, in this order:</strong>' : '') + '</div>' +
+      (OUTSIDE_CONTACTS.length ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">' + OUTSIDE_CONTACTS.map(function(ct, i) { var digits = String(ct.phone||"").replace(/\D/g,""); return '<a href="tel:' + digits + '" style="display:inline-flex;align-items:center;gap:6px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:6px 12px;color:#ff9090;text-decoration:none;font-size:0.8rem"><span style="font-family:\'Oswald\',sans-serif;font-weight:700">' + (i+1) + '.</span> ' + String(ct.name||"").replace(/</g,"&lt;") + (ct.phone ? ' · ' + String(ct.phone).replace(/</g,"&lt;") : '') + '</a>'; }).join("") + '</div><div style="font-size:0.72rem;color:#ffb3b3;margin-bottom:4px">If no coordinator answers:</div>' : '') +
       '<a href="tel:2016131111" style="display:inline-flex;align-items:center;gap:8px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:6px 14px;color:#fff;font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.04em;text-decoration:none"><img src="https://i.ibb.co/DNn1t93/hatzalah-statewide-3-orig-removebg-preview.png" alt="" style="height:28px;width:auto">Statewide Hatzolah — (201) 613-1111</a>' +
       '</div>';
   }
@@ -9325,7 +9446,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   }
 
   // ── ALS BANNER ──
-  var alsNatures = ["01","02","03","04","06","07","08","09","11","14","15","18","20","23"];
+  var alsNatures = ALS_NATURE_CODES;
   var isALSNature = call.callNature && alsNatures.some(function(n){return (call.callNature||"").indexOf(n+" -")===0;});
   var addr2 = (function(a){ a = String(a||""); if (a.indexOf("—") !== -1) a = a.split("—").slice(1).join("—"); var i = a.indexOf(","); return (i !== -1 ? a.slice(i+1) : a).toLowerCase(); })(call.address); // town portion only
   var isMedCentral = addr2.indexOf("highland park")!==-1||addr2.indexOf("new brunswick")!==-1||addr2.indexOf("north brunswick")!==-1||addr2.indexOf("east brunswick")!==-1||addr2.indexOf("south brunswick")!==-1||addr2.indexOf("piscataway")!==-1;
@@ -10163,7 +10284,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   var hospital = disposition.hospital || "";
   var rmaBy = disposition.rmaBy || "";
   var rmaCustom = disposition.rmaCustom || "";
-  var HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
+  var HOSPITALS = DISPATCH_HOSPITALS;
   var allUnitNums = [];
   crews.forEach(function(c) {
     Object.keys(c).forEach(function(k) { if (k!=="rig" && c[k] && c[k]!=="__added__") allUnitNums.push(c[k]); });

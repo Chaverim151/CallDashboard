@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.66";
+  var BUILD = "1.67";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.66</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.67</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.66</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.67</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -920,6 +920,7 @@ auth.onAuthStateChanged(function(user) {
       mHandleDeepLink();
       mLoadAllResponders();
       mLoadUnitDirectory();
+      mLoadDispatchSettings();
       mApplyTestModeState(d.sysTestingMode === true); // personal setting, default OFF
       mMaybeOfferPasskey();
     }).catch(function(e) { mToast("Error: " + e.message, true); auth.signOut(); });
@@ -3912,7 +3913,8 @@ function mShowNcZoneBanner(zone) {
   else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area"; bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
   else {
     icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
-    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area. Consider Statewide Hatzolah: <a href="tel:2016131111" style="color:#fff;font-weight:700">(201) 613-1111</a></div>';
+    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area.' + (M_OUTSIDE_CONTACTS.length ? ' <b>Call a coordinator, in this order:</b>' : '') + '</div>' +
+      (M_OUTSIDE_CONTACTS.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + M_OUTSIDE_CONTACTS.map(function(ct, i) { var digits = String(ct.phone||"").replace(/\D/g,""); return '<a href="tel:' + digits + '" style="display:flex;align-items:center;gap:8px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:9px 12px;color:#ff9090;text-decoration:none;font-size:0.8rem"><span style="font-family:\'Oswald\',sans-serif;font-weight:700">' + (i+1) + '.</span> ' + mEscHtml(ct.name) + (ct.phone ? ' <span style="margin-left:auto">📞 ' + mEscHtml(ct.phone) + '</span>' : '') + '</a>'; }).join("") + '</div>' : '');
   }
   banner.style.display = "block";
   banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
@@ -4830,6 +4832,17 @@ function mFindMutualAidHit(call) {
 
 // ── ALS BANNER (mirrors desktop exactly: recommended-nature flash, suggestion, live ETA ticker, No ALS Available) ──
 var M_ALS_NATURE_CODES = ["01","02","03","04","06","07","08","09","11","14","15","18","20","23"];
+var M_OUTSIDE_CONTACTS = [];
+// Admin-managed Dispatch Console Settings (appdata/dispatchSettings) override the built-in tables above
+function mLoadDispatchSettings() {
+  return db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
+    if (!s.exists) return; var ds = s.data() || {};
+    if (Array.isArray(ds.mutualAid) && ds.mutualAid.length) M_MUTUAL_AID_911 = ds.mutualAid.map(function(r){ return { match: (r.match||[]).map(function(x){ return String(x).toLowerCase(); }), borough: r.borough||"", bls: r.bls||"", als: r.als||"", pd: r.pd||"" }; });
+    if (Array.isArray(ds.hospitals) && ds.hospitals.length) { M_HOSPITALS = ds.hospitals.slice(); if (M_HOSPITALS.indexOf("Other") === -1) M_HOSPITALS.push("Other"); }
+    if (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length) M_ALS_NATURE_CODES = ds.alsNatureCodes.slice();
+    M_OUTSIDE_CONTACTS = Array.isArray(ds.outsideContacts) ? ds.outsideContacts.slice() : [];
+  }).catch(function(){});
+}
 function mIsAlsNature(call) {
   return call.callNature && M_ALS_NATURE_CODES.some(function(n){ return (call.callNature||"").indexOf(n+" -") === 0; });
 }
@@ -5457,7 +5470,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.66</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.67</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
