@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.75";
+  var BUILD = "1.79";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.75</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.79</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.75</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.79</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2719,14 +2719,14 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
     mAccessCodeSuggestion = match;
     var codeInp = document.getElementById("m-nc-accesscode");   // populate directly; dispatcher can still edit or clear
     if (codeInp && !codeInp.dataset.userEdited) codeInp.value = (mCodesSummary(match) || match.code || "") + (match.note ? " (" + match.note + ")" : "");
-    document.getElementById("m-nc-code-suggestion-text").textContent = "🔑 Code filled from " + (match.name || "saved location");
+    document.getElementById("m-nc-code-suggestion-text").textContent = "Be advised — access code filled in from " + (match.name || "a saved location");
     banner.style.display = "flex";
   } else {
     mAccessCodeSuggestion = null;
     banner.style.display = "none";
   }
 }
-function mApplyAccessCodeSuggestion() {
+function mApplyAccessCodeSuggestion() {   // legacy: the code is auto-filled now
   if (!mAccessCodeSuggestion) return;
   document.getElementById("m-nc-accesscode").value = (mCodesSummary(mAccessCodeSuggestion) || mAccessCodeSuggestion.code || "") + (mAccessCodeSuggestion.note ? " (" + mAccessCodeSuggestion.note + ")" : "");
   document.getElementById("m-nc-code-suggestion").style.display = "none";
@@ -4214,7 +4214,7 @@ function mRenderDispatchDetail(call) {
   (call.crews||[]).forEach(function(crew, ci) {
     content += mBuildCrewBlock(call, crew, ci);
   });
-  content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(201,168,76,0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Rig</button>';
+  content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(201,168,76,0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
 
   // Additional resources — right above the disposition
   var resHtml = mBuildAlsBanner(call) + mBuildBlsBanner(call) + mBuildPdBanner(call);
@@ -4394,13 +4394,22 @@ function mBuildCrewBlock(call, crew, crewIdx) {
     '</div>';
   }
 
+  // Slot labels don't presume a response — each unit chooses Scene or Rig. Once a unit is on the
+  // rig path we append the rig it's taking, e.g. "Unit 3 → MC-902".
   var fixedRoles = [
     { role: "primary", label: "Unit 1" },
     { role: "backup",  label: "Unit 2" },
-    { role: "rigUnit", label: "Unit 3 → Rig" }
+    { role: "rigUnit", label: "Unit 3" }
   ];
+  fixedRoles.forEach(function(r) {
+    var det = mUdOf(call, crewIdx, r.role);
+    if (crew[r.role] && det.response === "rig") r.label += crew.rig ? " → " + crew.rig : " → Rig";
+  });
   var lastFilled = -1;
   fixedRoles.forEach(function(r, i) { if (crew[r.role]) lastFilled = i; });
+  // Crew 1 is the main response (3 slots). Extra crews exist only to carry another rig —
+  // show just the units actually on them; more can be added with the Add buttons.
+  if (crewIdx > 0) fixedRoles = fixedRoles.filter(function(r){ return crew[r.role]; });
   fixedRoles.forEach(function(r, i) {
     if (crew[r.role] || i <= lastFilled + 1) html += mBuildUnitBox(call, crewIdx, r.role, r.label);
   });
@@ -4810,9 +4819,13 @@ function mAddRigPrompt() {
 }
 // Rigs in service, minus any committed to this call or another active call
 function mNextFreeRig() {
-  var call = mDispCallCache[mDispSelectedCallId] || {};
-  return Promise.all([mLoadLiveRigs(), mLoadRigConflicts(mDispSelectedCallId)]).then(function(res) {
+  return Promise.all([
+    mLoadLiveRigs(),
+    mLoadRigConflicts(mDispSelectedCallId),
+    db.collection("activeCalls").doc(mDispSelectedCallId).get().then(function(s){ return s.exists ? s.data() : (mDispCallCache[mDispSelectedCallId] || {}); }).catch(function(){ return mDispCallCache[mDispSelectedCallId] || {}; })
+  ]).then(function(res) {
     var rigs = res[0].filter(function(r){ return !r.isOOS; });
+    var call = res[2] || {};
     var usedHere = {};
     (call.crews || []).forEach(function(cr){ if (cr && cr.rig) usedHere[cr.rig] = true; });
     var taken = [], free = null;
@@ -5611,7 +5624,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.75</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.79</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5663,7 +5676,6 @@ function mCloseAllSheets() {
     <div id="m-nc-code-suggestion" style="display:none;align-items:center;gap:8px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.4);border-radius:8px;padding:8px 10px;margin-bottom:10px">
       <span style="font-size:1rem">🔑</span>
       <span id="m-nc-code-suggestion-text" style="flex:1;font-size:0.75rem;color:var(--gold)"></span>
-      <button onclick="mApplyAccessCodeSuggestion()" style="flex-shrink:0;background:rgba(201,168,76,0.2);border:1px solid rgba(201,168,76,0.5);border-radius:6px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.62rem;font-weight:700;padding:5px 10px;cursor:pointer">Apply</button>
     </div>
     <div class="m-disp-label">Access Code</div>
     <div style="position:relative;margin-bottom:12px"><input type="text" id="m-nc-accesscode" class="m-disp-input" placeholder="Gate / door / building code" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-accesscode')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
@@ -5828,7 +5840,7 @@ function mCloseAllSheets() {
 
 <div class="m-disp-sheet" id="m-sheet-addrig">
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--gold)">🚑 Add Rig</div><button onclick="mCloseAllSheets()" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 12px;cursor:pointer">✕ Close</button></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--gold)">🚑 Add Additional Rig</div><button onclick="mCloseAllSheets()" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 12px;cursor:pointer">✕ Close</button></div>
   <div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px">Which unit is responding to the rig?</div>
   <div id="m-addrig-info" style="font-size:0.74rem;color:var(--gray);margin-bottom:12px"></div>
   <button id="m-addrig-bls" class="m-disp-btn" style="display:none;width:100%;border-color:rgba(167,139,250,0.5);color:#a78bfa;margin-bottom:12px" onclick="mAddRigBls()">🔵 Request BLS Mutual Aid instead</button>
