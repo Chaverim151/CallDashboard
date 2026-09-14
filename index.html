@@ -571,7 +571,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.19b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.19c</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -6015,7 +6015,7 @@ function renderCodesEditor() {
     rowsHtml += '<div style="display:grid;grid-template-columns:1fr 1fr ' + (!isSpecial ? '1fr' : '') + ' auto;gap:8px;align-items:center;margin-bottom:8px">' +
       '<input value="' + (item.name || "") + '" placeholder="Name" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].name=this.value" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.85rem;outline:none">' +
       '<input value="' + (item.code || "") + '" placeholder="Code" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].code=this.value" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.85rem;outline:none">' +
-      (!isSpecial ? '<input value="' + (item.address || "") + '" placeholder="Address" oninput="window.LIVE_DATA[\'' + sec + '\'][' + i + '].address=this.value" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.85rem;outline:none">' : '') +
+      (!isSpecial ? '<div style="position:relative"><input value="' + (item.address || "") + '" placeholder="Address (type to search…)" autocomplete="off" id="codes-addr-' + sec + '-' + i + '" oninput="window.codesAddrSearch(this,\'' + sec + '\',' + i + ')" onfocus="window.codesAddrSearch(this,\'' + sec + '\',' + i + ')" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.85rem;outline:none"><div id="codes-addr-dd-' + sec + '-' + i + '" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:50;background:#16283f;border:1px solid var(--card-border);border-radius:8px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5)"></div></div>' : '') +
       '<button onclick="removeCodeEntry(\'' + sec + '\',' + i + ')" class="del-btn" style="padding:8px 12px">✕</button></div>' +
       '<div style="margin:-4px 0 10px 0;padding-left:8px;border-left:2px solid rgba(201,168,76,0.3)">' + extraCodesEditorAdmin(sec, i, item) + '</div>';
   });
@@ -6132,9 +6132,24 @@ function dsNatureSync(i) {
 }
 // ── Coverage-area map editor ──
 var dsZoneMap = null, dsZonePolys = [], dsDrawMgr = null;
+var _dsMapTries = 0;
 function dsZonesInitMap() {
-  var host = document.getElementById("ds-zone-map"); if (!host || !window.google || !google.maps) { if (host) host.innerHTML = '<div style="padding:20px;color:var(--gray)">Google Maps is still loading… switch tabs and back in a moment.</div>'; return; }
+  var host = document.getElementById("ds-zone-map"); if (!host) return;
+  var ready = window.google && google.maps && google.maps.Map;
+  var visible = host.offsetWidth > 0 && host.offsetHeight > 0;
+  if (!ready || !visible) {
+    if (_dsMapTries++ < 40) { setTimeout(dsZonesInitMap, 250); return; }   // wait up to ~10s for Maps / for the tab to become visible
+    host.innerHTML = '<div style="padding:20px;color:#ff9090">Google Maps did not load. Check the network and reload the page.</div>'; return;
+  }
+  _dsMapTries = 0;
+  host.innerHTML = "";
   dsZoneMap = new google.maps.Map(host, { center: { lat: 40.505, lng: -74.41 }, zoom: 12, mapTypeControl: false, streetViewControl: false, styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }] });
+  setTimeout(function(){ try { google.maps.event.trigger(dsZoneMap, "resize"); } catch (e) {} }, 300);
+  if (!google.maps.drawing && google.maps.importLibrary) google.maps.importLibrary("drawing").then(function(){ dsZonesInitDrawing(); }).catch(function(){});
+  else dsZonesInitDrawing();
+  dsZonesRefreshMap(true);
+}
+function dsZonesInitDrawing() {
   if (google.maps.drawing) {
     dsDrawMgr = new google.maps.drawing.DrawingManager({ drawingMode: null, drawingControl: false, polygonOptions: { fillColor: "#7ab8f5", fillOpacity: 0.15, strokeColor: "#7ab8f5", strokeWeight: 2, editable: true } });
     dsDrawMgr.setMap(dsZoneMap);
@@ -6145,7 +6160,6 @@ function dsZonesInitMap() {
       renderDispatchSettings();
     });
   }
-  dsZonesRefreshMap(true);
 }
 function dsZonesRefreshMap(fit) {
   if (!dsZoneMap) return;
