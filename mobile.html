@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.68";
+  var BUILD = "1.70";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.68</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.70</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.68</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.70</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2717,7 +2717,9 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
   });
   if (match && bestScore >= 4) {
     mAccessCodeSuggestion = match;
-    document.getElementById("m-nc-code-suggestion-text").textContent = (match.name||"") + " — " + (mCodesSummary(match) || match.code || "") + (match.note ? " ("+match.note+")" : "");
+    var codeInp = document.getElementById("m-nc-accesscode");   // populate directly; dispatcher can still edit or clear
+    if (codeInp && !codeInp.dataset.userEdited) codeInp.value = (mCodesSummary(match) || match.code || "") + (match.note ? " (" + match.note + ")" : "");
+    document.getElementById("m-nc-code-suggestion-text").textContent = "🔑 Code filled from " + (match.name || "saved location");
     banner.style.display = "flex";
   } else {
     mAccessCodeSuggestion = null;
@@ -3775,6 +3777,51 @@ function mGetFirstPhone(phone) {
   if (raw.length === 11 && raw[0] === "1") return "+" + raw;
   return "+" + raw;
 }
+// Full call details for a newly assigned unit (sent once, on assignment)
+function mCallDetailsSMS(call) {
+  var rawA = String(call.address || "");
+  var poi = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ")[0].trim() : "";
+  var fullA = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ").slice(1).join(" — ") : rawA;
+  var street = fullA.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 3).join(", ");
+  var nature = (call.callNature || "").replace(/^\d+\s*-\s*/, "");
+  var age = call.patientAgeNum ? call.patientAgeNum + " YO" : (call.patientAge === "pediatric" ? "Pediatric" : call.patientAge === "adult" ? "Adult" : "");
+  var sex = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
+  var pt = [age, sex].filter(Boolean).join(" ");
+  var lines = ["🚑 YOU ARE ASSIGNED"];
+  if (call.zone === "secondary") lines.push("🚑 LOAD A RIG");
+  if (poi) lines.push(poi);
+  if (street) lines.push(street);
+  if (call.apt) lines.push("🚪 " + call.apt);
+  if (call.crossStreet) lines.push("↪ " + call.crossStreet);
+  if (nature || pt) lines.push([nature, pt].filter(Boolean).join(" | "));
+  if (call.accessCode) lines.push("🔑 " + call.accessCode);
+  if (call.callbackNumber) lines.push("📞 " + call.callbackNumber);
+  if (call.dispatchNotes) lines.push("📝 " + call.dispatchNotes);
+  if (call.alsActivated && call.alsProvider) lines.push("🚨 ALS: " + call.alsProvider + (call.alsEta ? " ETA " + call.alsEta + " min" : ""));
+  if (call.mapsLink) lines.push(call.mapsLink);
+  return lines.join("\n");
+}
+function mPhonesForUnits(units) {
+  var want = {}; (units || []).forEach(function(u){ if (u) want[u] = true; });
+  if (!Object.keys(want).length) return Promise.resolve([]);
+  return db.collection("users").get().then(function(snap) {
+    var phones = [];
+    snap.forEach(function(d) { var u = d.data(); if (u.unit && want[u.unit]) { var p = mGetFirstPhone(u.phone); if (p) phones.push(p); } });
+    return phones;
+  }).catch(function(){ return []; });
+}
+// Text one unit the full call details the moment it's assigned
+function mTextAssignedUnit(unitId, call) {
+  mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, mCallDetailsSMS(call)); });
+}
+// Text every assigned unit a new dispatcher note
+function mTextNoteToAssigned(call, noteText) {
+  var units = [];
+  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
+  if (!units.length) return;
+  var street = String(call.address || "").split(",")[0];
+  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, "📝 UPDATE — " + street + "\n" + noteText); });
+}
 function mSendClickSendSMS(toNumbers, message) {
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
   if (!toNumbers.length || !message) return Promise.resolve();
@@ -3874,7 +3921,6 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-address").value = "";
   document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
   document.getElementById("m-nc-age-num").value = "";
-  document.getElementById("m-nc-patient-name").value = "";
   document.getElementById("m-nc-callback").value = "";
   document.getElementById("m-nc-accesscode").value = "";
   document.getElementById("m-nc-apt").value = "";
@@ -4029,7 +4075,6 @@ function mPostNewCallNow() {
     callNature: nature,
     patientAge: mNcAge,
     patientAgeNum: document.getElementById("m-nc-age-num").value.trim(),
-    patientName: document.getElementById("m-nc-patient-name").value.trim(),
     patientSex: mNcSex,
     callbackNumber: document.getElementById("m-nc-callback").value.trim(),
     accessCode: document.getElementById("m-nc-accesscode").value.trim(),
@@ -4147,16 +4192,19 @@ function mRenderDispatchDetail(call) {
   '</div>';
 
   // ALS / BLS / PD banners
-  content += mBuildAlsBanner(call);
-  content += mBuildBlsBanner(call);
-  content += mBuildPdBanner(call);
+  // (ALS / BLS / PD banners are rendered lower, just above Call Disposition — see below)
 
   // Units — one block per crew
   content += '<div id="m-dd-anchor-units" style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin:14px 0 8px">👥 Units</div>';
   (call.crews||[]).forEach(function(crew, ci) {
     content += mBuildCrewBlock(call, crew, ci);
   });
-  content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(201,168,76,0.35);color:var(--gold);margin-bottom:14px" onclick="mAddCrew()">+ Crew &amp; Rig</button>';
+  content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(201,168,76,0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Rig</button>';
+
+  // Additional resources — right above the disposition
+  var resHtml = mBuildAlsBanner(call) + mBuildBlsBanner(call) + mBuildPdBanner(call);
+  if (resHtml) content += '<div id="m-dd-anchor-resources" style="border-top:1px solid var(--card-border);padding-top:12px;margin-bottom:6px">' +
+    '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">➕ Additional Resources</div>' + resHtml + '</div>';
 
   // Disposition
   var needDisp = mAllOnSceneCheck(call) && !call.disposition.type;
@@ -4348,9 +4396,9 @@ function mBuildCrewBlock(call, crew, crewIdx) {
   });
   html += mBuildCrewRigPanel(call, crewIdx);
   html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
-    '<button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">+ Responder</button>' +
-    '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.3);color:#e8a0ff" onclick="mAddExtraRole(' + crewIdx + ',\'supervisor\')">+ Supervisor</button>' +
-    '<button class="m-disp-btn" style="flex:1;border-color:rgba(138,154,181,0.3);color:var(--gray)" onclick="mAddExtraRole(' + crewIdx + ',\'observer\')">+ Observer</button>' +
+    '<button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">Add Responder</button>' +
+    '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.3);color:#e8a0ff" onclick="mAddExtraRole(' + crewIdx + ',\'supervisor\')">Add Supervisor</button>' +
+    '<button class="m-disp-btn" style="flex:1;border-color:rgba(138,154,181,0.3);color:var(--gray)" onclick="mAddExtraRole(' + crewIdx + ',\'observer\')">Add Observer</button>' +
   '</div>';
   html += '</div>';
   return html;
@@ -4393,10 +4441,9 @@ function mBuildUnitBox(call, crewIdx, role, label) {
       html += '</div>';
       return html;
     }
-    html += '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Response Mode</div>';
     html += '<div style="display:flex;gap:6px">' +
-      '<button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.4);color:#7ab8f5" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Scene</button>' +
-      '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.4);color:#e8a0ff" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>' +
+      '<button class="m-disp-btn m-pulse-blue" style="flex:1;border-color:rgba(122,184,245,0.6);background:rgba(122,184,245,0.12);color:#7ab8f5" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Respond to Scene</button>' +
+      '<button class="m-disp-btn m-pulse-gold" style="flex:1;border-color:rgba(232,160,255,0.6);background:rgba(232,160,255,0.12);color:#e8a0ff" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>' +
     '</div>';
     html += '</div>';
     return html;
@@ -4418,7 +4465,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   var canDivert = (det.response === "scene" && status === "enroute_scene") || (det.response === "rig" && status === "picking_up_ambo");
   if (canDivert) {
     var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
-    html += '<button onclick="mDivertResponse(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(unit) + '\')" style="width:100%;margin-top:6px;background:none;border:1px dashed rgba(255,255,255,0.18);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px;cursor:pointer">↔ ' + toLabel + '</button>';
+    html += '<button onclick="mDivertResponse(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(unit) + '\')" class="m-disp-btn" style="width:100%;margin-top:6px;border-color:rgba(255,200,74,0.35);color:#ffc84a">↔ ' + toLabel + '</button>';
   }
 
   html += '</div>';
@@ -4680,6 +4727,7 @@ function mDoAssign(unitId) {
       assignedUnits = assignedUnits.filter(function(u,i){ return assignedUnits.indexOf(u)===i; });
       var ud2 = call.unitDetails || {};
       ud2[mUdKey(crewIdx, role)] = Object.assign({}, ud2[mUdKey(crewIdx, role)]||{}, { assignedAt: mNowHHMM() });
+      mTextAssignedUnit(unitId, Object.assign({}, call, { crews: crews }));   // full details straight to the assigned unit
       return db.collection("activeCalls").doc(callId).update({ crews: crews, assignedUnits: assignedUnits, unitDetails: ud2, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(unitId + " assigned", "👤", "var(--white)", "assign")) });
     }
   }).then(function() { mCloseAllSheets(); }).catch(function(e){ mToast("Error: "+e.message, true); });
@@ -4721,6 +4769,38 @@ function mAddExtraRole(crewIdx, base) {
     crews[crewIdx][key] = "__added__";
     return db.collection("activeCalls").doc(callId).update({ crews: crews, updatedAt: new Date().toISOString() });
   }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+// Add another rig: pick the unit who'll take it, then create the crew with that unit on the rig path
+function mAddRigPrompt() {
+  var call = mDispCallCache[mDispSelectedCallId] || {};
+  var onCall = {};
+  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") onCall[cr[k]] = true; }); });
+  var avail = (mAllRespondersCache || []).filter(function(u){ return !onCall[u.unit]; });
+  document.getElementById("m-addrig-roster").innerHTML = avail.map(function(u) {
+    var conflict = mUnitConflictMap[u.unit];
+    var style = conflict ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px";
+    return '<button class="m-disp-btn" style="' + style + '" onclick="mAddRigWithUnit(\'' + mJsAttr(u.unit) + '\')">' + mEscHtml(u.unit) + (conflict ? " ⚠" : "") + '</button>';
+  }).join("") || '<div style="font-size:0.75rem;color:var(--gray)">No available units — type one below</div>';
+  document.getElementById("m-addrig-custom").value = "";
+  mOpenSheet("m-sheet-addrig");
+}
+function mAddRigCustom() { var v = document.getElementById("m-addrig-custom").value.trim().toUpperCase(); if (!v) { mToast("Enter a unit", true); return; } mAddRigWithUnit(v); }
+function mAddRigWithUnit(unitId) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(), crews = call.crews || [{}];
+    var dupe = false;
+    crews.forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] === unitId) dupe = true; }); });
+    if (dupe) { mToast(unitId + " is already assigned on this call", true); return; }
+    var idx = crews.length; crews.push({ rigUnit: unitId });
+    mTextAssignedUnit(unitId, call);
+    var ud = call.unitDetails || {};
+    ud[idx + "_rigUnit"] = { response: "rig", status: "picking_up_ambo", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
+    var assigned = (call.assignedUnits || []).slice(); if (assigned.indexOf(unitId) === -1) assigned.push(unitId);
+    return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assigned, updatedAt: new Date().toISOString(),
+      callEvents: mEvtUnion(mEvt(unitId + " assigned to the next rig (Crew " + (idx+1) + ")", "🚑", "#ffc84a", "assign")) });
+  }).then(function(){ mCloseAllSheets(); mToast(unitId + " — now pick the rig"); }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
 function mAddCrew() {
   var callId = mDispSelectedCallId;
@@ -4903,7 +4983,7 @@ function mBuildAlsBanner(call) {
   (call.crews || []).forEach(function(cr) { Object.keys(cr||{}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__") assignedCount++; }); });
   var flashNow = isRecommended && assignedCount >= 3;
   return '<div style="background:' + (isRecommended?'rgba(224,85,85,0.12)':'transparent') + ';border:' + (isRecommended?'2px solid rgba(224,85,85,0.7)':'1px solid rgba(224,85,85,0.45)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px' + (flashNow?';animation:als-flash 0.9s ease-in-out infinite':'') + '">' +
-    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + (isRecommended?'ALS Recommended by Protocol':'ALS') + '</div>' +
+    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + (isRecommended?'Dispatch ALS — Recommended by Protocol':'Dispatch ALS') + '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sug.prov + '</span>' +
       '<a href="tel:' + sug.phone + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + sug.display + '</a>' +
@@ -5045,7 +5125,7 @@ function mBuildPdBanner(call) {
   // Same layout as the ALS / BLS banners: label, provider + phone row, full-width action
   if (call.pdActivated) {
     return '<div style="background:rgba(74,144,217,0.08);border:1px solid rgba(74,144,217,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
-      '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:2px">🚔 PD Notified</div>' +
+      '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:2px">🚔 PD Dispatched</div>' +
       '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + mEscHtml(pdLabel) + (call.pdActivatedAt ? ' · ' + call.pdActivatedAt : '') + '</div></div>' +
       (pdPhoneDigits ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none;flex-shrink:0">📞 ' + mEscHtml(pdPhone) + '</a>' : '') +
     '</div>';
@@ -5056,7 +5136,7 @@ function mBuildPdBanner(call) {
       '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + mEscHtml(pdLabel) + (hit ? '' : ' <span style="font-size:0.66rem;font-weight:400;color:var(--gray)">— no PD number on file for this town</span>') + '</span>' +
       (pdPhoneDigits ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + mEscHtml(pdPhone) + '</a>' : '') +
     '</div>' +
-    '<button class="m-disp-btn" style="width:100%;border-color:rgba(74,144,217,0.5);color:#7ab8f5;background:rgba(74,144,217,0.1)" onclick="mActivatePD()">Notify PD</button>' +
+    '<button class="m-disp-btn" style="width:100%;border-color:rgba(74,144,217,0.5);color:#7ab8f5;background:rgba(74,144,217,0.1)" onclick="mActivatePD()">Dispatch PD</button>' +
   '</div>';
 }
 function mActivatePD() {
@@ -5265,8 +5345,10 @@ function mAddDispNote() {
   var callId = mDispSelectedCallId;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
-    var notes = snap.data().callNotes || [];
+    var callNow = snap.data();
+    var notes = callNow.callNotes || [];
     notes.push({ text: text, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch", byUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() });
+    mTextNoteToAssigned(callNow, text);   // keep assigned units updated as notes come in
     return db.collection("activeCalls").doc(callId).update({ callNotes: notes, updatedAt: new Date().toISOString() });
   }).then(function() { inp.value = ""; }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -5478,7 +5560,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.68</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.70</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5512,9 +5594,6 @@ function mCloseAllSheets() {
     <div id="m-nc-nature-custom-wrap" style="display:none;position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-custom" class="m-disp-input" placeholder="Type custom call nature…" style="padding-right:38px;margin-top:6px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-nature-custom')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <div id="m-nc-als-hint" style="display:none;font-size:0.68rem;color:#ff9090;margin-bottom:12px">🚨 ALS recommended by protocol for this nature</div>
     <div id="m-nc-als-hint-spacer" style="height:12px"></div>
-
-    <div class="m-disp-label">Patient Name</div>
-    <div style="position:relative;margin-bottom:12px"><input type="text" id="m-nc-patient-name" class="m-disp-input" placeholder="Patient's name (if known)" autocomplete="off" style="padding-right:38px"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-patient-name')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <div class="m-disp-label">Patient</div>
     <div style="display:flex;gap:6px;margin-bottom:8px" id="m-nc-age-toggle">
       <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1;border-color:#7ab8f5;background:rgba(122,184,245,0.15);color:#7ab8f5">Adult</button>
@@ -5557,6 +5636,7 @@ function mCloseAllSheets() {
   <div class="m-scroll" id="m-dd-scroll">
     <div id="m-dd-content"></div>
   </div>
+  <button onclick="mOpenNewCallForm()" title="Post another call" style="position:absolute;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:60;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:26px;box-shadow:0 6px 18px rgba(0,0,0,0.5);font-family:'Oswald',sans-serif;font-size:0.76rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:13px 18px;cursor:pointer">🚨 New Call</button>
 </div>
 
 <!-- ═══ DISPATCH MAP ═══ -->
@@ -5693,6 +5773,15 @@ function mCloseAllSheets() {
   <textarea id="m-cancel-call-note" class="m-disp-input" rows="2" placeholder="Any additional details…" style="margin-bottom:12px;resize:vertical"></textarea>
   <div style="background:rgba(255,144,144,0.06);border:1px solid rgba(255,144,144,0.2);border-radius:7px;padding:9px 12px;margin-bottom:14px;font-size:0.72rem;color:var(--gray);line-height:1.5">This will mark the call cancelled and clear all responding units. The call will be saved to logs.</div>
   <button id="m-cancel-confirm-btn" disabled onclick="mConfirmCancelCall()" style="width:100%;background:rgba(255,144,144,0.15);border:1px solid rgba(255,144,144,0.4);border-radius:9px;color:#ff9090;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer;opacity:0.4">Confirm Cancel</button>
+</div>
+
+<div class="m-disp-sheet" id="m-sheet-addrig">
+  <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--gold)">🚑 Add Rig</div><button onclick="mCloseAllSheets()" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 12px;cursor:pointer">✕ Close</button></div>
+  <div style="font-size:0.78rem;color:var(--gray);margin-bottom:12px">Which unit is taking the next available rig?</div>
+  <div id="m-addrig-roster" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+  <div class="m-disp-label">Other unit</div>
+  <div style="display:flex;gap:8px"><input type="text" id="m-addrig-custom" class="m-disp-input" placeholder="e.g. MC-31" style="flex:1"><button class="m-disp-btn" style="border-color:rgba(201,168,76,0.5);color:var(--gold)" onclick="mAddRigCustom()">Add</button></div>
 </div>
 
 <div class="m-disp-sheet" id="m-sheet-edu-form" style="max-height:92vh;overflow-y:auto">

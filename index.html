@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.68');
+  window.location.replace('/CallDashboard/mobile.html?v=1.70');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -629,7 +629,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.19j</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.19m</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -6158,7 +6158,7 @@ function renderDispatchSettings() {
         }).join("") +
         '<button class="submit-btn" style="width:100%;padding:10px" onclick="dsZoneStartDraw()">✎ Draw a new area</button>' +
         '<div style="font-size:0.7rem;color:var(--gray);margin-top:6px">Click points on the map, then click the first point again to close the shape. Drag the white handles to reshape.</div></div>' +
-        '<div id="ds-zone-map"></div>' +
+        '<div><div id="ds-zone-map"></div><div id="ds-zone-warn" style="font-size:0.72rem;color:#ffc84a;margin-top:6px"></div></div>' +
       '</div>';
     setTimeout(dsZonesInitMap, 50);
   } else if (dsTab === "mutualAid") {
@@ -6211,19 +6211,27 @@ function dsNatureSync(i) {
 }
 // ── Coverage-area map editor ──
 var dsZoneMap = null, dsZonePolys = [], dsDrawMgr = null;
-var _dsMapTries = 0;
-function dsZonesInitMap() {
+var _dsMapTries = 0, _dsMapHost = null;
+function dsZonesInitMap(fresh) {
   var host = document.getElementById("ds-zone-map"); if (!host) return;
+  if (fresh !== false) _dsMapTries = 0;   // every render restarts the wait — a previous timeout must not poison later attempts
   var ready = window.google && google.maps && google.maps.Map;
   var visible = host.offsetWidth > 0 && host.offsetHeight > 0;
   if (!ready || !visible) {
-    if (_dsMapTries++ < 40) { setTimeout(dsZonesInitMap, 250); return; }   // wait up to ~10s for Maps / for the tab to become visible
-    host.innerHTML = '<div style="padding:20px;color:#ff9090">Google Maps did not load. Check the network and reload the page.</div>'; return;
+    if (_dsMapTries++ < 40) { setTimeout(function(){ dsZonesInitMap(false); }, 250); return; }   // wait up to ~10s for Maps / for the tab to become visible
+    host.innerHTML = '<div style="padding:20px;color:#ff9090">Google Maps did not load. <button class="edit-mode-btn" style="margin-left:8px" onclick="dsZonesInitMap()">Retry</button></div>'; return;
   }
   _dsMapTries = 0;
   host.innerHTML = "";
+  _dsMapHost = host;
   dsZoneMap = new google.maps.Map(host, { center: { lat: 40.505, lng: -74.41 }, zoom: 12, mapTypeControl: false, streetViewControl: false, styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }] });
-  setTimeout(function(){ try { google.maps.event.trigger(dsZoneMap, "resize"); } catch (e) {} }, 300);
+  // Real Maps can drop overlays added before the map's first paint (the tab was hidden a moment ago),
+  // so draw immediately AND again on the first idle, then fit the view.
+  google.maps.event.addListenerOnce(dsZoneMap, "idle", function() {
+    try { google.maps.event.trigger(dsZoneMap, "resize"); } catch (e) {}
+    dsZonesRefreshMap(true);
+  });
+  setTimeout(function(){ try { google.maps.event.trigger(dsZoneMap, "resize"); dsZonesRefreshMap(true); } catch (e) {} }, 400);
   if (!google.maps.drawing && google.maps.importLibrary) google.maps.importLibrary("drawing").then(function(){ dsZonesInitDrawing(); }).catch(function(){});
   else dsZonesInitDrawing();
   dsZonesRefreshMap(true);
@@ -6241,18 +6249,26 @@ function dsZonesInitDrawing() {
   }
 }
 function dsZonesRefreshMap(fit) {
-  if (!dsZoneMap) return;
+  var host = document.getElementById("ds-zone-map");
+  if (!dsZoneMap || !host) return;
+  if (_dsMapHost !== host) { dsZonesInitMap(); return; }   // the panel re-rendered: rebuild on the new container instead of drawing onto a detached map
+  if (!DS_EDIT || !DS_EDIT.zones) return;
   dsZonePolys.forEach(function(p){ p.setMap(null); }); dsZonePolys = [];
   var bounds = new google.maps.LatLngBounds(), any = false;
   DS_EDIT.zones.forEach(function(z, i) {
     var col = z.type === "primary" ? "#4caf80" : "#f0a500";
-    var poly = new google.maps.Polygon({ paths: z.points, strokeColor: col, strokeWeight: 2, fillColor: col, fillOpacity: 0.18, editable: true, draggable: false, map: dsZoneMap });
+    var pts = (z.points || []).map(function(p){ return { lat: +p.lat, lng: +p.lng }; }).filter(function(p){ return isFinite(p.lat) && isFinite(p.lng); });
+    if (pts.length < 3) return;
+    var poly = new google.maps.Polygon({ paths: pts, strokeColor: col, strokeWeight: 2, fillColor: col, fillOpacity: 0.18, editable: true, draggable: false, map: dsZoneMap });
     var sync = function() { z.points = poly.getPath().getArray().map(function(ll){ return { lat: ll.lat(), lng: ll.lng() }; }); var lst = document.getElementById("ds-zone-list"); };
     ["set_at","insert_at","remove_at"].forEach(function(evn){ google.maps.event.addListener(poly.getPath(), evn, sync); });
-    z.points.forEach(function(p){ bounds.extend(p); any = true; });
+    z.points.forEach(function(p){ bounds.extend({ lat: +p.lat, lng: +p.lng }); any = true; });
     dsZonePolys.push(poly);
   });
   if (fit && any) dsZoneMap.fitBounds(bounds);
+  var empty = DS_EDIT.zones.filter(function(z){ return (z.points||[]).length < 3; }).length;
+  var warn = document.getElementById("ds-zone-warn");
+  if (warn) warn.textContent = empty ? ("⚠ " + empty + " area" + (empty>1?"s have":" has") + " fewer than 3 points and cannot be drawn") : "";
 }
 function dsZoneHighlight(i, on) { var p = dsZonePolys[i]; if (p) p.setOptions({ fillOpacity: on ? 0.4 : 0.18, strokeWeight: on ? 4 : 2 }); }
 function dsZoneZoom(i) { if (!dsZoneMap) return; var b = new google.maps.LatLngBounds(); (DS_EDIT.zones[i].points||[]).forEach(function(p){ b.extend(p); }); dsZoneMap.fitBounds(b); }
