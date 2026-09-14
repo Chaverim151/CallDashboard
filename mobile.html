@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.82";
+  var BUILD = "1.84";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.82</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.84</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.82</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.84</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3833,22 +3833,28 @@ function mPhonesForUnits(units) {
 function mTextAssignedUnit(unitId, call) {
   mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, mCallDetailsSMS(call)); });
 }
+// One address format for every SMS: POI name + street/town, never the raw ", USA" string
+function mSmsAddress(call) {
+  var raw = String(call.address || "");
+  var poi = raw.indexOf(" — ") !== -1 ? raw.split(" — ")[0].trim() : "";
+  var rest = raw.indexOf(" — ") !== -1 ? raw.split(" — ").slice(1).join(" — ") : raw;
+  var street = rest.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 2).join(", ");
+  return (poi ? poi + " — " : "") + street;
+}
 // Text every assigned unit when a resource is dispatched/changed (ALS usually comes after assignment,
 // so the assignment text can't carry it — this keeps crews in the loop on the same channel)
 function mTextResourceToAssigned(call, header, detail) {
   var units = [];
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
-  var street = String(call.address || "").split(",")[0];
-  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, header + "\n" + street + (detail ? "\n" + detail : "")); });
+  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, header + "\n" + mSmsAddress(call) + (detail ? "\n" + detail : "")); });
 }
 // Text every assigned unit a new dispatcher note
 function mTextNoteToAssigned(call, noteText) {
   var units = [];
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
-  var street = String(call.address || "").split(",")[0];
-  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, "📝 CALL UPDATE\n" + street + "\n" + noteText); });
+  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, "📝 CALL UPDATE\n" + mSmsAddress(call) + "\n" + noteText); });
 }
 function mSendClickSendSMS(toNumbers, message) {
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
@@ -3859,7 +3865,7 @@ function mSendClickSendSMS(toNumbers, message) {
     return db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
       if (!snap.exists) return;
       var phone = mGetFirstPhone(snap.data().phone);
-      if (!phone) return;
+      if (!phone) { mToast("Test Mode: no phone on your profile — the text wasn't sent anywhere", true); return; }
       return fetch(M_CLICKSEND_WORKER, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-App-Secret": M_APP_SHARED_SECRET },
@@ -3914,7 +3920,7 @@ function mPushCallbackSMS() {
   var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
   if (!targetUnits.length) { mToast("No units assigned", true); return; }
   var addr = (call.address||"").split(",")[0];
-  var msg = "📞 CALLBACK NUMBER\n" + addr + "\nCallback: " + call.callbackNumber;
+  var msg = "📞 CALLBACK NUMBER\n" + mSmsAddress(call) + "\nCallback: " + call.callbackNumber;
   db.collection("users").get().then(function(snap) {
     var phones = [];
     snap.forEach(function(doc) {
@@ -4248,7 +4254,10 @@ function mRenderDispatchDetail(call) {
     content += '<div style="margin-top:8px"><div class="m-disp-label">RMA Approved By</div>' +
       '<input type="text" class="m-disp-input" placeholder="Name or unit…" value="' + (call.disposition.rmaBy||"") + '" onchange="mSetRmaBy(this.value)"></div>';
   }
-  if (call.disposition.type === 'transport' && call.disposition.hospital) {
+  if (call.disposition.type === 'transport' && (call.disposition.transports||[]).length > 1) {
+    content += '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px">' +
+      call.disposition.transports.map(function(t){ return '<div style="font-size:0.78rem;color:#7ab8f5">🏥 ' + mEscHtml(t.rig || ("Crew " + (t.crewIdx+1))) + ' → ' + mEscHtml(t.hospital) + '</div>'; }).join("") + '</div>';
+  } else if (call.disposition.type === 'transport' && call.disposition.hospital) {
     content += '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px;font-size:0.78rem;color:#7ab8f5">🏥 ' + call.disposition.hospital + '</div>';
   }
   content += '<button class="m-disp-btn" style="width:100%;margin-top:8px;border-color:rgba(201,168,76,0.35);color:var(--gold)" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
@@ -4336,6 +4345,12 @@ function mEvt(text, icon, color, kind, sub) {
 }
 function mEvtUnion(ev) { return firebase.firestore.FieldValue.arrayUnion(ev); }
 // Crew-level rig movement: the rig and everyone onboard move as one
+// A crew's transport destination (multi-rig aware), falling back to the call-level one
+function mCrewHospital(call, crewIdx) {
+  var d = call.disposition || {};
+  var t = (d.transports || []).filter(function(x){ return x.crewIdx === crewIdx; })[0];
+  return (t && t.hospital) || d.hospital || "Facility";
+}
 function mBuildCrewRigPanel(call, crewIdx) {
   var crew = mCrewOf(call, crewIdx);
   var rigUnits = mCrewRigUnits(call, crewIdx);
@@ -4344,7 +4359,7 @@ function mBuildCrewRigPanel(call, crewIdx) {
   var st = rigUnits.map(function(u){ return u.status; });
   var every = function(s) { return st.every(function(x){ return x === s; }); };
   var names = rigUnits.map(function(u){ return u.unit + (u.rider ? " (riding)" : ""); }).join(", ");
-  var hosp = call.disposition && call.disposition.hospital ? call.disposition.hospital : "Facility";
+  var hosp = mCrewHospital(call, crewIdx);
   function btn(label, next, color, flash) {
     return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetCrewRigStatus(' + crewIdx + ',\'' + next + '\')">' + label + '</button>';
   }
@@ -5293,6 +5308,62 @@ function mSelectSearchedHospital(display) {
   if (chosen) { chosen.textContent = "✓ " + display; chosen.style.display = "block"; }
   mUpdateTransportPrompts();
 }
+// Each rig crew transports to its own facility
+function mConfirmTransportMulti() {
+  var blocks = Array.prototype.slice.call(document.querySelectorAll("#m-tr-unit-checks .m-tr-crew"));
+  var transports = [], allChecked = [], allUnchecked = [], problem = "";
+  blocks.forEach(function(blk) {
+    var ci = parseInt(blk.getAttribute("data-crew"), 10);
+    var hosp = (document.getElementById("m-tr-hosp-" + ci) || {}).value || "";
+    var checked = Array.prototype.slice.call(blk.querySelectorAll("input:checked"));
+    var unchecked = Array.prototype.slice.call(blk.querySelectorAll("input:not(:checked)"));
+    allChecked = allChecked.concat(checked); allUnchecked = allUnchecked.concat(unchecked);
+    if (!checked.length) return;                                   // nobody from this crew is transporting
+    if (!hosp || hosp === "__none__") { problem = problem || ("Pick a destination for Crew " + (ci+1)); return; }
+    var call = mDispCallCache[mDispSelectedCallId] || {}, crew = (call.crews||[])[ci] || {};
+    transports.push({ crewIdx: ci, rig: crew.rig || "", hospital: hosp, units: checked.map(function(cb){ return (((call.crews||[])[ci]||{})[cb.getAttribute("data-role")]) || ""; }).filter(Boolean) });
+  });
+  if (problem) { mToast(problem, true); return; }
+  if (!transports.length) { mToast("Select at least one transporting unit", true); return; }
+  var allSet = allUnchecked.every(function(cb) {
+    var id = cb.getAttribute("data-crew") + "_" + cb.getAttribute("data-role");
+    var m = mTmNonMap[id];
+    return m && (m.status !== "other" || (m.label||"").trim());
+  });
+  if (!allSet) { mTmRenderNonList(); mToast("Set a status for every non-transporting unit", true); return; }
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var now = new Date(), nowT = mNowHHMM(), data = snap.data();
+    var ud = data.unitDetails || {}, times = data.times || {};
+    allChecked.forEach(function(cb) {
+      var id = cb.getAttribute("data-crew") + "_" + cb.getAttribute("data-role");
+      ud[id] = Object.assign({}, ud[id]||{}, { status: "transporting", statusAt: nowT });
+    });
+    allUnchecked.forEach(function(cb) {
+      var id = cb.getAttribute("data-crew") + "_" + cb.getAttribute("data-role");
+      var m = mTmNonMap[id] || { status: "cleared_scene" };
+      ud[id] = Object.assign({}, ud[id]||{}, { status: m.status === "other" ? "other_status" : m.status, customStatus: m.status === "other" ? m.label : "", statusAt: nowT });
+    });
+    var update = { unitDetails: ud, updatedAt: now.toISOString(),
+      disposition: { type: "transport", hospital: transports[0].hospital, transports: transports, rmaBy: "", rmaCustom: "" } };
+    if (!times.enroute) update["times.enroute"] = nowT;
+    update.callEvents = firebase.firestore.FieldValue.arrayUnion.apply(null, transports.map(function(t) {
+      return mEvt("Transport → " + t.hospital + (t.rig ? " (" + t.rig + ")" : ""), "🏥", "#ff9090", "disp");
+    }));
+    return db.collection("activeCalls").doc(callId).update(update).then(function() {
+      transports.forEach(function(t) { mTextUnitsTransport(data, t); });   // each crew gets its own destination
+    });
+  }).then(function(){ mCloseAllSheets(); mToast("🚑 Transport confirmed — " + transports.map(function(t){ return (t.rig||"Crew") + " → " + t.hospital; }).join(", ")); })
+    .catch(function(e){ mToast("Error: " + e.message, true); });
+}
+// Per-crew transport text
+function mTextUnitsTransport(call, t) {
+  if (!t.units.length) return;
+  mPhonesForUnits(t.units).then(function(phones) {
+    if (phones.length) mSendClickSendSMS(phones, "🏥 TRANSPORT\n" + mSmsAddress(call) + "\nDestination: " + t.hospital + (t.rig ? "\nRig: " + t.rig : ""));
+  });
+}
 function mOpenTransportSheet() {
   var call = mDispCallCache[mDispSelectedCallId];
   if (!call) return;
@@ -5311,6 +5382,29 @@ function mOpenTransportSheet() {
       rows.push({ crewIdx: ci, role: k, unit: crew[k] });
     });
   });
+  // Multi-rig: one destination picker per rig crew, each with its own units
+  var rigCrews = (call.crews || []).map(function(cr, ci){ return { ci: ci, rig: cr && cr.rig }; }).filter(function(x){ return x.rig; });
+  mTrMulti = rigCrews.length >= 2;
+  document.getElementById("m-tr-single-dest").style.display = mTrMulti ? "none" : "block";
+  document.getElementById("m-tr-multi-note").style.display = mTrMulti ? "block" : "none";
+  document.getElementById("m-tr-units-flash").textContent = mTrMulti ? "Destination & Units per Rig" : "Units Transporting to the Hospital";
+  if (mTrMulti) {
+    var byCrew = {};
+    rows.forEach(function(r){ (byCrew[r.crewIdx] = byCrew[r.crewIdx] || []).push(r); });
+    checks.innerHTML = Object.keys(byCrew).map(function(ciKey) {
+      var ci = parseInt(ciKey, 10), crew = (call.crews||[])[ci] || {};
+      var rigLbl = crew.rig ? crew.rig : "No rig";
+      return '<div class="m-tr-crew" data-crew="' + ci + '" style="border:1px solid var(--card-border);border-radius:9px;padding:10px;margin-bottom:10px;background:rgba(255,255,255,0.03)">' +
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#ffc84a;margin-bottom:6px">🚑 Crew ' + (ci+1) + ' — ' + mEscHtml(rigLbl) + '</div>' +
+        '<select id="m-tr-hosp-' + ci + '" class="m-disp-input" style="margin-bottom:8px" onchange="mUpdateTransportPrompts()"><option value="">Select destination…</option>' + mHospitalOptionsHTML() + '<option value="__none__">Not transporting</option></select>' +
+        byCrew[ci].map(function(r) {
+          return '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:0.85rem;color:var(--white)"><input type="checkbox" data-crew="' + r.crewIdx + '" data-role="' + r.role + '" checked onchange="mTmUnitsTouched=true;mUpdateTransportPrompts()" style="width:18px;height:18px;accent-color:#7ab8f5">' + mEscHtml(r.unit) + '</label>';
+        }).join("") + '</div>';
+    }).join("");
+    mTmUnitsTouched = false;
+    mOpenSheet("m-sheet-transport");
+    return;
+  }
   checks.innerHTML = rows.map(function(r) {
     return '<label style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:0.85rem;color:var(--white)"><input type="checkbox" data-crew="' + r.crewIdx + '" data-role="' + r.role + '" checked onchange="mTmUnitsTouched=true;mTmRenderNonList();mUpdateTransportPrompts()" style="width:18px;height:18px;accent-color:#7ab8f5"> ' + r.unit + '</label>';
   }).join("");
@@ -5320,6 +5414,7 @@ function mOpenTransportSheet() {
   mUpdateTransportPrompts();
 }
 var mTmUnitsTouched = false;
+var mTrMulti = false;   // true when 2+ rigs are on the call and each needs its own destination
 function mUpdateTransportPrompts() {
   var hosp = document.getElementById("m-tr-hospital").value;
   document.getElementById("m-tr-dest-flash").className = hosp ? "m-disp-label" : "m-disp-label m-flash";
@@ -5384,6 +5479,7 @@ function mTmSetAllNon(status) {
 window.mTmSetAllNon = mTmSetAllNon;
 
 function mConfirmTransport() {
+  if (mTrMulti) return mConfirmTransportMulti();
   var hospital = document.getElementById("m-tr-hospital").value;
   if (!hospital) { mUpdateTransportPrompts(); return; }
   var checkedBoxes = Array.prototype.slice.call(document.querySelectorAll("#m-tr-unit-checks input:checked"));
@@ -5640,7 +5736,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.82</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.84</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5815,6 +5911,7 @@ function mCloseAllSheets() {
 <div class="m-disp-sheet" id="m-sheet-transport">
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
   <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:14px">🚑 Transporting Units</div>
+  <div id="m-tr-single-dest">
   <div class="m-disp-label" id="m-tr-dest-flash">Select Transport Destination</div>
   <select id="m-tr-hospital" class="m-disp-input" style="margin-bottom:8px" onchange="mUpdateTransportPrompts()"></select>
   <div style="position:relative;margin-bottom:14px">
@@ -5822,6 +5919,8 @@ function mCloseAllSheets() {
     <div id="m-tr-hosp-results" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;background:#16283f;border:1px solid var(--card-border);border-radius:8px;z-index:40;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5);max-height:260px;overflow-y:auto"></div>
     <div id="m-tr-hosp-chosen" style="display:none;font-size:0.78rem;color:#7dedb5;margin-top:6px"></div>
   </div>
+  </div>
+  <div id="m-tr-multi-note" style="display:none;font-size:0.76rem;color:var(--gray);margin-bottom:10px">More than one rig is on this call — set a destination for each. They can go to different facilities.</div>
   <div class="m-disp-label" id="m-tr-units-flash">Units Transporting to the Hospital</div>
   <div id="m-tr-unit-checks" style="margin-bottom:10px"></div>
   <div id="m-tr-non-section" style="display:none;margin-bottom:14px">
