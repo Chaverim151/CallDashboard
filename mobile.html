@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.72";
+  var BUILD = "1.75";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.72</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.75</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.72</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.75</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3787,18 +3787,24 @@ function mCallDetailsSMS(call) {
   var age = call.patientAgeNum ? call.patientAgeNum + " YO" : (call.patientAge === "pediatric" ? "Pediatric" : call.patientAge === "adult" ? "Adult" : "");
   var sex = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
   var pt = [age, sex].filter(Boolean).join(" ");
+  // Only the header carries an emoji. Address/apt and patient/nature share a line; field titles
+  // are used only where the value needs one to be clear.
   var lines = ["🚑 YOU ARE ASSIGNED"];
-  if (call.zone === "secondary") lines.push("🚑 LOAD A RIG");
+  if (call.zone === "secondary") lines.push("LOAD A RIG");
+  else if (call.zone === "outside") lines.push("OUTSIDE ZONE");
   if (poi) lines.push(poi);
-  if (street) lines.push(street);
-  if (call.apt) lines.push("🚪 " + call.apt);
-  if (call.crossStreet) lines.push("↪ " + call.crossStreet);
-  if (nature || pt) lines.push([nature, pt].filter(Boolean).join(" | "));
-  if (call.accessCode) lines.push("🔑 " + call.accessCode);
-  if (call.callbackNumber) lines.push("📞 " + call.callbackNumber);
-  if (call.dispatchNotes) lines.push("📝 " + call.dispatchNotes);
-  if (call.alsActivated && call.alsProvider) lines.push("🚨 ALS: " + call.alsProvider + (call.alsEta ? " ETA " + call.alsEta + " min" : ""));
+  var addrLine = street + (call.apt ? " | Apt: " + call.apt : "");
+  if (addrLine.trim()) lines.push(addrLine);
+  if (call.crossStreet) lines.push("Cross: " + call.crossStreet);
+  var ptLine = [pt, nature].filter(Boolean).join(" | ");
+  if (ptLine) lines.push(ptLine);
+  if (call.accessCode) lines.push("Access code: " + call.accessCode);
+  if (call.callbackNumber) lines.push("Callback: " + call.callbackNumber);
+  if (call.dispatchNotes) lines.push("Notes: " + call.dispatchNotes);
+  if (call.alsActivated && call.alsProvider) lines.push("ALS: " + call.alsProvider + (call.alsEta ? " (ETA " + call.alsEta + " min)" : ""));
   if (call.mapsLink) lines.push(call.mapsLink);
+  var now = new Date();
+  lines.push(now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" }));
   return lines.join("\n");
 }
 function mPhonesForUnits(units) {
@@ -3814,13 +3820,22 @@ function mPhonesForUnits(units) {
 function mTextAssignedUnit(unitId, call) {
   mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, mCallDetailsSMS(call)); });
 }
+// Text every assigned unit when a resource is dispatched/changed (ALS usually comes after assignment,
+// so the assignment text can't carry it — this keeps crews in the loop on the same channel)
+function mTextResourceToAssigned(call, header, detail) {
+  var units = [];
+  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
+  if (!units.length) return;
+  var street = String(call.address || "").split(",")[0];
+  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, header + "\n" + street + (detail ? "\n" + detail : "")); });
+}
 // Text every assigned unit a new dispatcher note
 function mTextNoteToAssigned(call, noteText) {
   var units = [];
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
   var street = String(call.address || "").split(",")[0];
-  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, "📝 UPDATE — " + street + "\n" + noteText); });
+  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, "📝 CALL UPDATE\n" + street + "\n" + noteText); });
 }
 function mSendClickSendSMS(toNumbers, message) {
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
@@ -3858,14 +3873,14 @@ function mBroadcastNewCallSMS(call) {
   var naturePatient = [nature, patientStr].filter(Boolean).join(" | ");
   var now = new Date();
   var timeStamp = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
-  var zonePrefix = call.zone === "secondary" ? "🚑 LOAD A RIG\n" : call.zone === "outside" ? "⚠ OUTSIDE ZONE\n" : "";
+  var zonePrefix = call.zone === "secondary" ? "LOAD A RIG\n" : call.zone === "outside" ? "OUTSIDE ZONE\n" : "";
   // POI calls are stored as "Topgolf Edison — 1013 US-1, Edison, NJ 08817, USA":
   //   line 1 = POI name, line 2 = the actual street address (street, town, zip; no ", USA")
   var rawA = String(call.address || "");
   var poiName = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ")[0].trim() : "";
   var fullA = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ").slice(1).join(" — ") : rawA;
   var streetAddr = fullA.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 3).join(", ");
-  var smsBody = "🚨 NEW CALL\n" + zonePrefix + (poiName ? poiName + "\n" : "") + streetAddr + "\n" + (call.apt ? call.apt + "\n" : "") + (naturePatient ? naturePatient + "\n" : "") + (call.mapsLink ? call.mapsLink + "\n" : "") + timeStamp;
+  var smsBody = "🚨 NEW CALL\n" + zonePrefix + (poiName ? poiName + "\n" : "") + streetAddr + (call.apt ? " | Apt: " + call.apt : "") + "\n" + (naturePatient ? naturePatient + "\n" : "") + (call.mapsLink ? call.mapsLink + "\n" : "") + timeStamp;
   db.collection("users").get().then(function(snap) {
     var phones = [];
     snap.forEach(function(doc) { var phone = mGetFirstPhone(doc.data().phone); if (phone) phones.push(phone); });
@@ -3886,7 +3901,7 @@ function mPushCallbackSMS() {
   var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
   if (!targetUnits.length) { mToast("No units assigned", true); return; }
   var addr = (call.address||"").split(",")[0];
-  var msg = "📞 Callback # for " + addr + ":\n" + call.callbackNumber;
+  var msg = "📞 CALLBACK NUMBER\n" + addr + "\nCallback: " + call.callbackNumber;
   db.collection("users").get().then(function(snap) {
     var phones = [];
     snap.forEach(function(doc) {
@@ -3909,7 +3924,7 @@ function mSendCallUpdateSMS(callId, message) {
         var d = doc.data();
         if (assignedUnits.indexOf(d.unit) !== -1) { var phone = mGetFirstPhone(d.phone); if (phone) phones.push(phone); }
       });
-      if (phones.length) mSendClickSendSMS(phones, "🚨 Hatzolah MC Update\n" + message);
+      if (phones.length) mSendClickSendSMS(phones, "🚨 CALL UPDATE\n" + message);
     });
   });
 }
@@ -5053,17 +5068,19 @@ function mConfirmALS() {
     alsActivatedAt: mNowHHMM(), alsActivatedISO: now.toISOString(),
     alsOnScene: false, alsOnSceneAt: "", updatedAt: now.toISOString(),
     callEvents: mEvtUnion(mEvt("ALS Activated — " + provider + (unit ? " · " + unit : "") + (eta ? " · ETA " + eta + " min" : ""), "🚨", "#ff9090", "als"))
+  }).then(function() {
+    mTextResourceToAssigned(mDispCallCache[mDispSelectedCallId] || {}, "🚨 ALS DISPATCHED", "ALS: " + provider + (unit ? " (" + unit + ")" : "") + (eta ? " ETA " + eta + " min" : ""));
   }).then(function() { mCloseAllSheets(); mToast("🚨 ALS Activated"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mConfirmNoALSAvailable() {
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
     alsActivated: true, alsProvider: "No ALS Available", alsUnit: "", alsEta: "", updatedAt: new Date().toISOString(),
     callEvents: mEvtUnion(mEvt("No ALS Available", "⚠️", "#ff9090", "als"))
-  }).then(function() { mCloseAllSheets(); mToast("Logged: No ALS Available"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+  }).then(function() { mTextResourceToAssigned(mDispCallCache[mDispSelectedCallId] || {}, "🚨 ALS UPDATE", "No ALS available"); }).then(function() { mCloseAllSheets(); mToast("Logged: No ALS Available"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mMarkAlsOnScene() {
   clearInterval(window._mAlsEtaTicker);
-  db.collection("activeCalls").doc(mDispSelectedCallId).update({ alsOnScene: true, alsOnSceneAt: mNowHHMM(), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("ALS On Scene", "✓", "#7dedb5", "als")) })
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ alsOnScene: true, alsOnSceneAt: mNowHHMM(), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("ALS On Scene", "✓", "#7dedb5", "als")) }).then(function(){ mTextResourceToAssigned(mDispCallCache[mDispSelectedCallId] || {}, "🚨 ALS UPDATE", "ALS on scene"); })
     .then(function(){ mToast("✓ ALS On Scene"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 // ── CANCEL ALS (reason picker, mirrors desktop exactly) ──
@@ -5101,7 +5118,7 @@ function mConfirmCancelAls() {
     alsCancel: { reason: reason, time: mNowHHMM(), by: mCurrentUserUnit || "" },
     updatedAt: new Date().toISOString(),
     callEvents: mEvtUnion(mEvt("ALS Cancelled — " + reason, "✕", "var(--gray)", "event"))
-  }).then(function() { mCloseAllSheets(); mToast("ALS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+  }).then(function() { mTextResourceToAssigned(mDispCallCache[mDispSelectedCallId] || {}, "🚨 ALS UPDATE", "ALS cancelled — " + reason); }).then(function() { mCloseAllSheets(); mToast("ALS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
 
@@ -5142,7 +5159,7 @@ function mConfirmBLS() {
   db.collection("activeCalls").doc(mDispSelectedCallId).update({
     blsActivated: true, blsProvider: provider, blsUnit: unit, blsEta: eta, blsActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString(),
     callEvents: mEvtUnion(mEvt("BLS Mutual Aid — " + provider + (unit ? " · " + unit : "") + (eta ? " · ETA " + eta + " min" : ""), "🔵", "#a78bfa", "bls"))
-  }).then(function() { mCloseAllSheets(); mToast("🔵 BLS Requested"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+  }).then(function() { mTextResourceToAssigned(mDispCallCache[mDispSelectedCallId] || {}, "🔵 BLS MUTUAL AID", "BLS: " + provider + (unit ? " (" + unit + ")" : "") + (eta ? " ETA " + eta + " min" : "")); }).then(function() { mCloseAllSheets(); mToast("🔵 BLS Requested"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mCancelBLS() {
   if (!confirm("Cancel BLS mutual aid for this call?")) return;
@@ -5174,7 +5191,7 @@ function mBuildPdBanner(call) {
   '</div>';
 }
 function mActivatePD() {
-  db.collection("activeCalls").doc(mDispSelectedCallId).update({ pdActivated: true, pdActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("PD Notified", "🚔", "#7ab8f5", "pd")) })
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ pdActivated: true, pdActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("PD Dispatched", "🚔", "#7ab8f5", "pd")) }).then(function(){ var cc = mDispCallCache[mDispSelectedCallId] || {}; var hit = mFindMutualAidHit(cc); mTextResourceToAssigned(cc, "🚔 PD DISPATCHED", hit && hit.borough ? hit.borough + " PD" : "PD notified"); })
     .then(function(){ mToast("🚔 PD Notified"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
@@ -5594,7 +5611,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.72</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.75</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
