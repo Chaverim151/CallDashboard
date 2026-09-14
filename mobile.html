@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.85";
+  var BUILD = "1.87";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.85</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.87</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.85</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.87</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3856,9 +3856,19 @@ function mTextNoteToAssigned(call, noteText) {
   if (!units.length) return;
   mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, "📝 CALL UPDATE\n" + mSmsAddress(call) + "\n" + noteText); });
 }
+// Every SMS ends with a timestamp — added here so no message can go out without one
+function mSmsStamp() {
+  var d = new Date();
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + d.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
+}
+function mStampMessage(msg) {
+  msg = String(msg || "");
+  return /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(msg) ? msg : msg.replace(/\s+$/, "") + "\n" + mSmsStamp();
+}
 function mSendClickSendSMS(toNumbers, message) {
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
   if (!toNumbers.length || !message) return Promise.resolve();
+  message = mStampMessage(message);
   // Test Dispatch Mode ON — only send to the logged-in unit's own phone, prefixed [TEST]
   if (MSysTestingMode) {
     if (!mCurrentUser) return Promise.resolve();
@@ -3931,21 +3941,6 @@ function mPushCallbackSMS() {
     mSendClickSendSMS(phones, msg);
     mToast("📱 Callback # pushed to " + targetUnits.join(", "));
   }).catch(function(e){ mToast("Error: " + e.message, true); });
-}
-function mSendCallUpdateSMS(callId, message) {
-  db.collection("activeCalls").doc(callId).get().then(function(snap) {
-    if (!snap.exists) return;
-    var assignedUnits = snap.data().assignedUnits || [];
-    if (!assignedUnits.length) return;
-    db.collection("users").get().then(function(uSnap) {
-      var phones = [];
-      uSnap.forEach(function(doc) {
-        var d = doc.data();
-        if (assignedUnits.indexOf(d.unit) !== -1) { var phone = mGetFirstPhone(d.phone); if (phone) phones.push(phone); }
-      });
-      if (phones.length) mSendClickSendSMS(phones, "🚨 CALL UPDATE\n" + message);
-    });
-  });
 }
 
 // ── NEW CALL FORM ──
@@ -5727,7 +5722,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.85</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.87</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

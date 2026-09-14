@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.85');
+  window.location.replace('/CallDashboard/mobile.html?v=1.87');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -629,7 +629,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.20a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.20c</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -4125,10 +4125,20 @@ function sendClickSendEmail(opts) {
   }).then(function(r) { return r.json(); });
 }
 
+// Every SMS ends with a timestamp — added here so no message can go out without one
+function smsStamp() {
+  var d = new Date();
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + d.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
+}
+function stampMessage(msg) {
+  msg = String(msg || "");
+  return /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(msg) ? msg : msg.replace(/\s+$/, "") + "\n" + smsStamp();
+}
 function sendClickSendSMS(toNumbers, message) {
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers so one bad record can't block the broadcast
   if (!toNumbers.length) return Promise.resolve();
   if (!toNumbers || !toNumbers.length || !message) return Promise.resolve();
+  message = stampMessage(message);
   // In SMS testing mode OR system testing mode — only send to admin's own number
   if (SYS_TESTING_MODE || SMS_TESTING_MODE) {
     db.collection("users").doc(currentUser.uid).get().then(function(snap) {
@@ -4188,25 +4198,6 @@ window.sendCallbackSMS = function(callId) {
   }).catch(function(e) { showToast("Error: " + e.message, true); });
 };
 
-window.sendCallUpdateSMS = function(callId, message) {
-  // Send SMS to all assigned units on this call
-  db.collection("activeCalls").doc(callId).get().then(function(snap) {
-    if (!snap.exists) return;
-    var assignedUnits = snap.data().assignedUnits || [];
-    if (!assignedUnits.length) return;
-    db.collection("users").get().then(function(uSnap) {
-      var phones = [];
-      uSnap.forEach(function(doc) {
-        var d = doc.data();
-        if (assignedUnits.indexOf(d.unit) !== -1) {
-          var phone = getFirstPhone(d.phone);
-          if (phone) phones.push(phone);
-        }
-      });
-      if (phones.length) sendClickSendSMS(phones, "🚨 CALL UPDATE\n" + message);
-    });
-  });
-};
 
 window.sendClickSendSMS = sendClickSendSMS;
 function sendTicketEmail(opts) {
