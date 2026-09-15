@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.89";
+  var BUILD = "1.92";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.89</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.92</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.89</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.92</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -4636,26 +4636,37 @@ function mLoadUnitConflicts(excludeCallId) {
   }).catch(function(){ mUnitConflictMap = {}; return {}; });
 }
 var mRigConflictMap = {};   // rigId -> { id, address } for rigs committed on OTHER active calls
+// Statuses where a rig has no patient and no remaining leg — available to divert to another call
+var M_RIG_FREE_STATUSES = ["back_at_base","cleared_scene","other_status","clearing_facility","returning_base"];
+var mRigFreeingMap = {};   // rigs that are available but still wrapping up another call
 function mLoadRigConflicts(excludeCallId) {
   return db.collection("activeCalls").where("status","==","active").get().then(function(snap) {
-    var map = {};
+    var map = {}, freeing = {};
     snap.forEach(function(d) {
       if (d.id === excludeCallId) return;
       var data = d.data(), addr = (data.address||"").split(",")[0], ud = data.unitDetails || {};
+      var isRMA = data.disposition && data.disposition.type === "rma";   // no patient — the rig can be diverted
       (data.crews||[]).forEach(function(crew, ci) {
         if (!crew || !crew.rig) return;
-        // still in use unless every rig-path unit on that call is back at base / cleared
-        var busy = false;
+        // A rig is free once it has no patient and no leg left to run: back at base, cleared,
+        // heading back, or cleared the ER. It's also free on an RMA call (nobody to transport).
+        var busy = false, wrapping = "";
         Object.keys(crew).forEach(function(k) {
           if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
           var det = ud[ci+"_"+k] || {};
-          if (det.response === "rig" && ["back_at_base","cleared_scene","other_status"].indexOf(det.status||"") === -1) busy = true;
+          if (det.response !== "rig") return;
+          var st = det.status || "";
+          if (M_RIG_FREE_STATUSES.indexOf(st) !== -1) { if (st === "clearing_facility" || st === "returning_base") wrapping = st; return; }
+          // RMA frees the rig only if nobody's aboard — a transport already under way still counts as busy
+          if (isRMA && ["transporting","at_facility"].indexOf(st) === -1) { wrapping = "rma"; return; }
+          busy = true;
         });
         if (busy) map[crew.rig] = { id: d.id, address: addr };
+        else if (wrapping) freeing[crew.rig] = { id: d.id, address: addr, why: wrapping === "rma" ? "RMA — no transport" : wrapping === "clearing_facility" ? "cleared the ER" : "heading back to base" };
       });
     });
-    mRigConflictMap = map; return map;
-  }).catch(function(){ mRigConflictMap = {}; return {}; });
+    mRigConflictMap = map; mRigFreeingMap = freeing; return map;
+  }).catch(function(){ mRigConflictMap = {}; mRigFreeingMap = {}; return {}; });
 }
 function mOpenAssignSheet(crewIdx, role, mode) {
   mAssignSheetCrewIdx = crewIdx; mAssignSheetRole = role; mAssignSheetMode = mode || "unit";
@@ -4668,16 +4679,33 @@ function mOpenAssignSheet(crewIdx, role, mode) {
   mOpenSheet("m-sheet-assign");
   if (mode === "rig") {
     Promise.all([mLoadLiveRigs(), mLoadRigConflicts(mDispSelectedCallId)]).then(function(res) {
-      var rigs = res[0];
-      if (!rigs.length) { roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">No rigs on file — type below</div>'; return; }
-      roster.innerHTML = rigs.map(function(r) {
-        var busy = mRigConflictMap[r.id];
-        var style = (r.isOOS || busy) ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px;border-color:rgba(255,200,74,0.4);color:#ffc84a";
-        var label = r.id + (r.isOOS ? " (OOS)" : busy ? " ⚠ on call" : "");
-        var onclick = r.isOOS ? 'mConfirmOosRig(\'' + mJsAttr(r.id) + '\')' : busy ? 'mConfirmBusyRig(\'' + mJsAttr(r.id) + '\')' : 'mConfirmAssignRoster(\'' + mJsAttr(r.id) + '\')';
-        var title = busy ? ' title="In use on: ' + mEscHtml(busy.address) + '"' : '';
-        return '<button class="m-disp-btn" style="' + style + '"' + title + ' onclick="' + onclick + '">' + label + '</button>';
-      }).join("") + (Object.keys(mRigConflictMap).some(function(id){ return rigs.some(function(r){ return r.id===id; }); }) ? '<div style="width:100%;font-size:0.68rem;color:#ff9090;margin-top:6px">⚠ Rigs marked "on call" are committed to another active call</div>' : '');
+      // Out-of-service rigs are removed outright — they are never an option.
+      var rigs = res[0].filter(function(r){ return !r.isOOS; });
+      var oosCount = res[0].length - rigs.length;
+      if (!res[0].length) { roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">No rigs on file — type below</div>'; return; }
+      var call = mDispCallCache[mDispSelectedCallId] || {};
+      var usedHere = {};
+      (call.crews || []).forEach(function(cr, ci){ if (cr && cr.rig && ci !== mAssignSheetCrewIdx) usedHere[cr.rig] = true; });
+      var free = rigs.filter(function(r){ return !mRigConflictMap[r.id] && !usedHere[r.id]; });
+      if (!free.length) {
+        // Nothing available anywhere — recommend BLS mutual aid rather than a dead end
+        var why = [];
+        if (oosCount) why.push(oosCount + " out of service");
+        var busyCount = rigs.length - free.length;
+        if (busyCount) why.push(busyCount + " on a call");
+        roster.innerHTML = '<div style="width:100%;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.5);border-radius:9px;padding:12px;margin-bottom:10px">' +
+            '<div style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#ff9090;margin-bottom:4px">⚠ No rigs available</div>' +
+            '<div style="font-size:0.76rem;color:#ffb3b3">' + (why.length ? why.join(" · ") : "all rigs are committed") + '. Request BLS mutual aid for this call.</div></div>' +
+          '<button class="m-disp-btn" style="width:100%;border-color:rgba(167,139,250,0.6);background:rgba(167,139,250,0.12);color:#a78bfa" onclick="mCloseAllSheets();mOpenBLSSheet()">🔵 Request BLS Mutual Aid</button>' +
+          '<div style="width:100%;font-size:0.68rem;color:var(--gray);margin-top:8px">Or type a rig below to override.</div>';
+        return;
+      }
+      roster.innerHTML = free.map(function(r) {
+        var fr = mRigFreeingMap[r.id];
+        var title = fr ? ' title="Available — ' + mEscHtml(fr.why) + ' on ' + mEscHtml(fr.address) + '"' : '';
+        return '<button class="m-disp-btn" style="padding:6px 10px;border-color:rgba(255,200,74,0.4);color:#ffc84a"' + title + ' onclick="mConfirmAssignRoster(\'' + mJsAttr(r.id) + '\')">' + mEscHtml(r.id) + (fr ? ' <span style="font-size:0.58rem;color:var(--gray)">· ' + mEscHtml(fr.why) + '</span>' : '') + '</button>';
+      }).join("") +
+      (oosCount || rigs.length > free.length ? '<div style="width:100%;font-size:0.68rem;color:var(--gray);margin-top:6px">' + (oosCount ? oosCount + " rig" + (oosCount>1?"s":"") + " out of service" : "") + (oosCount && rigs.length>free.length ? " · " : "") + (rigs.length>free.length ? (rigs.length-free.length) + " on another call" : "") + ' — not shown</div>' : "");
     });
   } else {
     mLoadUnitConflicts(mDispSelectedCallId).then(function() {
@@ -4837,7 +4865,7 @@ function mAddRigPrompt() {
   document.getElementById("m-addrig-bls").style.display = "none";
   mOpenSheet("m-sheet-addrig");   // show the sheet immediately; availability fills in below
   mNextFreeRig().then(function(res) {
-    if (res.rig) { info.innerHTML = 'Next available rig: <b style="color:#ffc84a">' + mEscHtml(res.rig) + '</b> — it will be assigned automatically.'; info.style.color = "var(--gray)"; }
+    if (res.rig) { var fr = mRigFreeingMap[res.rig]; info.innerHTML = 'Next available rig: <b style="color:#ffc84a">' + mEscHtml(res.rig) + '</b> — it will be assigned automatically.' + (fr ? ' <span style="color:#ffc84a">Diverting from ' + mEscHtml(fr.address) + ' (' + mEscHtml(fr.why) + ').</span>' : ''); info.style.color = "var(--gray)"; }
     else { info.innerHTML = '⚠ <b>No rigs available</b>' + (res.taken.length ? ' (' + mEscHtml(res.taken.join(", ")) + ' in use)' : '') + ' — request BLS mutual aid instead.'; info.style.color = "#ff9090"; }
     var blsBtn = document.getElementById("m-addrig-bls");
     blsBtn.style.display = res.rig ? "none" : "block";
@@ -5722,7 +5750,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.89</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.92</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

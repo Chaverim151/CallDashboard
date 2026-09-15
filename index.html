@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=1.89');
+  window.location.replace('/CallDashboard/mobile.html?v=1.92');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -629,7 +629,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.20f</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.20m</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1075,7 +1075,9 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
           <button class="submit-btn" style="padding:10px 18px;white-space:nowrap;margin-bottom:0" onclick="addVehicle()">+ Add</button>
         </div>
         <div class="form-msg" id="veh-msg"></div>
-        <div id="vehicles-list" style="margin-top:14px"></div>
+        <div style="font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin:14px 0 6px">🏠 Home Base Map</div>
+      <div id="veh-base-map" style="height:300px;border:1px solid var(--card-border);border-radius:10px;background:#0b1526;margin-bottom:16px"></div>
+      <div id="vehicles-list" style="margin-top:14px"></div>
       </div>
     </div>
 
@@ -1649,6 +1651,8 @@ function setAdminTab(tab) {
   if (tab === "protocols" && typeof renderDispatchSettings === "function") renderDispatchSettings();
   if (tab === "codes" && typeof renderCodesEditor === "function") renderCodesEditor();
   if (tab === "fleet" && typeof loadVehicleStatusPanel === "function") loadVehicleStatusPanel();
+  if (tab === "fleet" && typeof loadVehiclesList === "function") loadVehiclesList();
+  if (tab === "fleet" && typeof initVehBaseMap === "function") initVehBaseMap();
 }
 
 // ── TOKEN ACCEPT ──
@@ -5410,16 +5414,16 @@ function loadVehicleStatusPanel() {
       return '<div style="border:1px solid ' + (isOut?'rgba(224,85,85,0.35)':'rgba(76,175,128,0.25)') + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;background:' + (isOut?'rgba(224,85,85,0.06)':'rgba(76,175,128,0.04)') + '">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:' + (isOut?'8':'0') + 'px">' +
           '<div>' +
-            '<span style="font-family:\'Oswald\',sans-serif;font-weight:700;font-size:0.85rem;color:var(--white)">' + (v.id||v.docId) + '</span>' +
-            (v.description ? '<span style="font-size:0.68rem;color:var(--gray);margin-left:6px">' + v.description + '</span>' : '') +
+            '<span style="font-family:\'Oswald\',sans-serif;font-weight:700;font-size:0.85rem;color:var(--white)">' + escapeHtml(v.id||v.docId) + '</span>' +
+            (v.description ? '<span style="font-size:0.68rem;color:var(--gray);margin-left:6px">' + escapeHtml(v.description) + '</span>' : '') +
             (outUntilStr ? '<div style="font-size:0.65rem;color:#ff9090;margin-top:1px">' + outUntilStr + '</div>' : '') +
-            (outReason ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:1px;font-style:italic">' + outReason + '</div>' : '') +
+            (outReason ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:1px;font-style:italic">' + escapeHtml(outReason) + '</div>' : '') +
           '</div>' +
           '<div style="display:flex;gap:5px;align-items:center">' +
             '<span style="font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;color:' + (isOut?'#ff9090':'#7dedb5') + '">' + (isOut?'OOS':'IN SVC') + '</span>' +
             (isOut ?
               '<button onclick="window.setVehIn(\'' + v.docId + '\')" style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:5px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">Restore</button>' :
-              '<button onclick="window.openVehOOS(\'' + v.docId + '\',\'' + (v.id||v.docId) + '\')" style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);border-radius:5px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">OOS</button>'
+              '<button onclick="window.openVehOOS(\'' + v.docId + '\',\'' + escapeHtml(String(v.id||v.docId).replace(/'/g,"\\\\'")) + '\')" style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.3);border-radius:5px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-size:0.58rem;font-weight:700;padding:3px 8px;cursor:pointer">OOS</button>'
             ) +
           '</div>' +
         '</div>' +
@@ -5472,6 +5476,13 @@ window.openVehOOS = function(docId, label) {
   var el = document.getElementById("veh-status-list");
   el.insertAdjacentHTML("afterbegin", formHtml);
   document.getElementById("veh-oos-label").textContent = label;
+  // Typing a duration selects its own option, so a typed value can't be silently ignored
+  ["hours","until"].forEach(function(kind) {
+    var f = document.getElementById("veh-oos-" + kind);
+    if (!f) return;
+    var pick = function() { var r = document.querySelector('input[name="veh-oos-dur"][value="' + kind + '"]'); if (r) r.checked = true; };
+    f.addEventListener("input", pick); f.addEventListener("focus", pick);
+  });
 };
 
 window.confirmVehOOS = function() {
@@ -5481,11 +5492,18 @@ window.confirmVehOOS = function() {
   var outUntil = null;
 
   if (durType === "hours") {
-    var hrs = parseFloat(document.getElementById("veh-oos-hours").value)||2;
+    var hrs = parseFloat(document.getElementById("veh-oos-hours").value);
+    if (!isFinite(hrs) || hrs <= 0) { showToast("Enter how many hours (a number above 0)", true); return; }
+    if (hrs > 8760) { showToast("That's over a year — use Indefinitely instead", true); return; }
     outUntil = new Date(Date.now() + hrs*3600000).toISOString();
   } else if (durType === "until") {
     var untilVal = document.getElementById("veh-oos-until").value;
-    if (untilVal) outUntil = new Date(untilVal).toISOString();
+    if (untilVal) {
+      var dt = new Date(untilVal);
+      if (isNaN(dt.getTime())) { showToast("That return time isn't valid", true); return; }
+      if (dt.getTime() <= Date.now()) { showToast("Pick a return time in the future", true); return; }
+      outUntil = dt.toISOString();
+    }
   }
 
   db.collection("vehicles").doc(docId).set({
@@ -5998,6 +6016,83 @@ function addVehicle() {
     .then(function() { msg.className = "form-msg success"; msg.textContent = "✓ " + id.toUpperCase() + " added."; document.getElementById("veh-id").value = ""; document.getElementById("veh-desc").value = ""; loadVehiclesList(); loadTicketUnitDropdown(); })
     .catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
 }
+// Each rig can have a home base — the address it returns to, shown as a pin on the dispatch map
+var _vehBaseMapTries = 0;
+function initVehBaseMap(fresh) {
+  var host = document.getElementById("veh-base-map"); if (!host) return;
+  if (fresh !== false) _vehBaseMapTries = 0;
+  if (!window.google || !google.maps || !google.maps.Map || !host.offsetWidth) {
+    if (_vehBaseMapTries++ < 40) { setTimeout(function(){ initVehBaseMap(false); }, 250); return; }
+    host.innerHTML = '<div style="padding:20px;color:#ff9090">Google Maps did not load. <button class="edit-mode-btn" onclick="initVehBaseMap()">Retry</button></div>'; return;
+  }
+  host.innerHTML = "";
+  vehBaseMapAdmin = new google.maps.Map(host, { center: { lat: 40.505, lng: -74.41 }, zoom: 12, mapTypeControl: false, streetViewControl: false, styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }] });
+  google.maps.event.addListenerOnce(vehBaseMapAdmin, "idle", renderVehicleBasePins);
+  renderVehicleBasePins();
+}
+function homeBaseEditor(v) {
+  var hasPin = v.baseLat && v.baseLng;
+  return '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06)">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+      '<span style="font-size:0.66rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);white-space:nowrap">🏠 Home base</span>' +
+      '<div style="position:relative;flex:1;min-width:200px"><input id="veh-base-' + v.docId + '" value="' + escapeHtml(v.baseAddress || "") + '" placeholder="Address (type to search…)" autocomplete="off" oninput="window.vehBaseSearch(this,\'' + v.docId + '\')" onfocus="window.vehBaseSearch(this,\'' + v.docId + '\')" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.84rem;outline:none">' +
+        '<div id="veh-base-dd-' + v.docId + '" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:60;background:#16283f;border:1px solid var(--card-border);border-radius:8px;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5)"></div></div>' +
+      '<span id="veh-base-pin-' + v.docId + '" style="font-size:0.8rem;white-space:nowrap" title="' + (hasPin ? "Pinned on the map" : "Not geocoded — pick from the dropdown") + '">' + (hasPin ? "📍" : "⚠") + '</span>' +
+      '<button class="card-save-btn" style="padding:7px 14px" onclick="window.saveVehBase(\'' + v.docId + '\')">Save</button>' +
+      (v.baseAddress ? '<button class="del-btn" style="padding:7px 11px" title="Clear home base" onclick="window.clearVehBase(\'' + v.docId + '\')">✕</button>' : '') +
+    '</div></div>';
+}
+var _vehBaseTimer = null, _vehBasePick = {};
+window.vehBaseSearch = function(inp, docId) {
+  var dd = document.getElementById("veh-base-dd-" + docId); if (!dd) return;
+  var q = inp.value.trim();
+  if (_vehBasePick[docId] && _vehBasePick[docId].address !== q) delete _vehBasePick[docId];   // typed over a pick → needs re-geocoding
+  var pin = document.getElementById("veh-base-pin-" + docId); if (pin && !_vehBasePick[docId]) pin.textContent = "⚠";
+  clearTimeout(_vehBaseTimer);
+  if (q.length < 3 || !window.google || !google.maps || !google.maps.places) { dd.style.display = "none"; return; }
+  _vehBaseTimer = setTimeout(function() {
+    new google.maps.places.AutocompleteService().getPlacePredictions(
+      { input: q, componentRestrictions: { country: "us" }, locationBias: { center: { lat: 40.505, lng: -74.41 }, radius: 25000 } },
+      function(preds, status) {
+        if (status !== "OK" || !preds || !preds.length) { dd.style.display = "none"; return; }
+        dd.innerHTML = preds.slice(0, 5).map(function(p) {
+          return '<div onclick="window.vehBasePick(\'' + docId + '\',\'' + p.place_id + '\')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.82rem;color:var(--white)">' +
+            escapeHtml(p.structured_formatting.main_text) + '<span style="color:var(--gray);font-size:0.72rem"> · ' + escapeHtml(p.structured_formatting.secondary_text || "") + '</span></div>';
+        }).join("");
+        dd.style.display = "block";
+      });
+  }, 250);
+};
+window.vehBasePick = function(docId, placeId) {
+  var dd = document.getElementById("veh-base-dd-" + docId); if (dd) dd.style.display = "none";
+  new google.maps.places.PlacesService(document.createElement("div")).getDetails({ placeId: placeId, fields: ["formatted_address","geometry","name"] }, function(r, status) {
+    if (status !== "OK" || !r || !r.geometry) return;
+    var addr = r.formatted_address || r.name;
+    document.getElementById("veh-base-" + docId).value = addr;
+    _vehBasePick[docId] = { address: addr, lat: r.geometry.location.lat(), lng: r.geometry.location.lng() };
+    var pin = document.getElementById("veh-base-pin-" + docId); if (pin) pin.textContent = "📍";
+  });
+};
+window.saveVehBase = function(docId) {
+  var addr = (document.getElementById("veh-base-" + docId).value || "").trim();
+  if (!addr) { window.clearVehBase(docId); return; }
+  var picked = _vehBasePick[docId];
+  var write = function(lat, lng) {
+    db.collection("vehicles").doc(docId).set({ baseAddress: addr, baseLat: lat, baseLng: lng }, { merge: true })
+      .then(function(){ showToast("🏠 Home base saved"); delete _vehBasePick[docId]; loadVehiclesList(); if (typeof renderVehicleBasePins === "function") renderVehicleBasePins(); })
+      .catch(function(e){ showToast("Error: " + e.message, true); });
+  };
+  if (picked && picked.address === addr) return write(picked.lat, picked.lng);
+  if (!window.google || !google.maps || !google.maps.Geocoder) return write(null, null);
+  new google.maps.Geocoder().geocode({ address: addr, region: "us" }, function(res, status) {     // typed by hand → geocode it
+    if (status === "OK" && res && res[0] && res[0].geometry) write(res[0].geometry.location.lat(), res[0].geometry.location.lng());
+    else { showToast("Couldn't find that address — pick one from the dropdown", true); write(null, null); }
+  });
+};
+window.clearVehBase = function(docId) {
+  db.collection("vehicles").doc(docId).set({ baseAddress: "", baseLat: null, baseLng: null }, { merge: true })
+    .then(function(){ showToast("Home base cleared"); loadVehiclesList(); if (typeof renderVehicleBasePins === "function") renderVehicleBasePins(); });
+};
 function loadVehiclesList() {
   var el = document.getElementById("vehicles-list"); if (!el) return;
   db.collection("vehicles").get().then(function(snap) {
@@ -6014,12 +6109,13 @@ function loadVehiclesList() {
       var bagRows = ab.length ? ab.map(function(b) { return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span>🎒</span><span style="font-family:\'Oswald\',sans-serif;font-size:0.8rem;color:var(--gold-light)">' + b.id + '</span>' + (b.description ? '<span style="font-size:0.72rem;color:var(--gray)">' + b.description + '</span>' : '') + '<button onclick="unassignBag(\'' + b.docId + '\')" style="margin-left:auto;background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.25);border-radius:4px;color:#ff9090;font-size:0.68rem;padding:2px 7px;cursor:pointer">Unassign</button></div>'; }).join("") : '<div style="font-size:0.75rem;color:var(--gray);margin-bottom:5px">No bags assigned</div>';
       var assignDrop = ub.length ? '<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><select id="assign-bag-' + v.docId + '" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 10px;color:var(--white);font-family:\'Source Sans 3\',sans-serif;font-size:0.8rem;outline:none"><option value="">Assign a bag…</option>' + ub.map(function(b) { return '<option value="' + b.docId + '">' + b.id + (b.description ? " — " + b.description : "") + '</option>'; }).join("") + '</select><button onclick="assignBag(\'' + v.id + '\',\'' + v.docId + '\')" class="card-save-btn" style="padding:6px 12px;font-size:0.76rem;white-space:nowrap">+ Assign</button></div>' : "";
       html += '<div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.06)">' +
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:1.2rem">🚑</span><div style="flex:1"><div style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;color:var(--white)">' + v.id + '</div>' + (v.description ? '<div style="font-size:0.72rem;color:var(--gray)">' + v.description + '</div>' : '') + '</div><button onclick="deleteVehicle(\'' + v.docId + '\')" class="del-btn" style="padding:4px 10px;font-size:0.68rem">✕</button></div>' +
-        '<div style="padding-left:28px">' + bagRows + assignDrop + '</div></div>';
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:1.2rem">🚑</span><div style="flex:1"><div style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;color:var(--white)">' + escapeHtml(v.id) + '</div>' + (v.description ? '<div style="font-size:0.72rem;color:var(--gray)">' + escapeHtml(v.description) + '</div>' : '') + '</div><button onclick="deleteVehicle(\'' + v.docId + '\')" class="del-btn" style="padding:4px 10px;font-size:0.68rem">✕</button></div>' +
+        '<div style="padding-left:28px">' + bagRows + homeBaseEditor(v) +
+        assignDrop + '</div></div>';
     });
     var unassigned = bags.filter(function(b) { return !b.assignedTo; });
     if (unassigned.length) { html += '<div style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06)"><div style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Unassigned Bags</div>' + unassigned.map(function(b) { return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span>🎒</span><span style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;color:var(--white)">' + b.id + '</span>' + (b.description ? '<span style="font-size:0.72rem;color:var(--gray)">' + b.description + '</span>' : '') + '<button onclick="deleteVehicle(\'' + b.docId + '\')" class="del-btn" style="margin-left:auto;padding:4px 10px;font-size:0.68rem">✕</button></div>'; }).join("") + '</div>'; }
-    if (others.length) { html += '<div style="padding:12px 16px"><div style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Other</div>' + others.map(function(v) { return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span>📋</span><span style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;color:var(--white)">' + v.id + '</span>' + (v.description ? '<span style="font-size:0.72rem;color:var(--gray)">' + v.description + '</span>' : '') + '<button onclick="deleteVehicle(\'' + v.docId + '\')" class="del-btn" style="margin-left:auto;padding:4px 10px;font-size:0.68rem">✕</button></div>'; }).join("") + '</div>'; }
+    if (others.length) { html += '<div style="padding:12px 16px"><div style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Other</div>' + others.map(function(v) { return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span>📋</span><span style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;color:var(--white)">' + escapeHtml(v.id) + '</span>' + (v.description ? '<span style="font-size:0.72rem;color:var(--gray)">' + escapeHtml(v.description) + '</span>' : '') + '<button onclick="deleteVehicle(\'' + v.docId + '\')" class="del-btn" style="margin-left:auto;padding:4px 10px;font-size:0.68rem">✕</button></div>'; }).join("") + '</div>'; }
     html += '</div>'; el.innerHTML = html;
   });
 }
@@ -6044,7 +6140,7 @@ function loadTicketUnitDropdown() {
     var storage = all.filter(function(v) { return v.type === "storage"; });
     var others = all.filter(function(v) { return v.type !== "vehicle" && v.type !== "jumpbag" && v.type !== "storage"; });
     var html = '<option value="">Select location…</option>';
-    if (vehicles.length) { vehicles.forEach(function(v) { html += '<optgroup label="🚑 ' + v.id + (v.description ? " — " + v.description : "") + '"><option value="' + v.id + '">' + v.id + ' (vehicle)</option>'; bags.filter(function(b) { return b.assignedTo === v.id; }).forEach(function(b) { html += '<option value="' + b.id + '">　🎒 ' + b.id + (b.description ? " — " + b.description : "") + '</option>'; }); html += '</optgroup>'; }); }
+    if (vehicles.length) { vehicles.forEach(function(v) { html += '<optgroup label="🚑 ' + escapeHtml(v.id) + (v.description ? " — " + escapeHtml(v.description) : "") + '"><option value="' + escapeHtml(v.id) + '">' + escapeHtml(v.id) + ' (vehicle)</option>'; bags.filter(function(b) { return b.assignedTo === v.id; }).forEach(function(b) { html += '<option value="' + b.id + '">　🎒 ' + b.id + (b.description ? " — " + b.description : "") + '</option>'; }); html += '</optgroup>'; }); }
     var ub = bags.filter(function(b) { return !b.assignedTo; });
     if (ub.length) { html += '<optgroup label="🎒 Unassigned Bags">'; ub.forEach(function(b) { html += '<option value="' + b.id + '">' + b.id + (b.description ? " — " + b.description : "") + '</option>'; }); html += '</optgroup>'; }
     if (storage.length) { html += '<optgroup label="📦 Storage">'; storage.forEach(function(s) { html += '<option value="' + s.id + '">' + s.id + (s.description ? " — " + s.description : "") + '</option>'; }); html += '</optgroup>'; }
@@ -7686,6 +7782,35 @@ function initMapsPage() {
 
 // ── DISPATCHER DASHBOARD ──
 var ddMap = null, ddStreetView = null, ddStreetViewActive = false;
+var vehBasePins = [], vehBasePinsAdmin = [], vehBaseMapAdmin = null;
+// Home-base pins: a rig's base shows on the dispatch map (and in Admin ▸ Fleet)
+function renderVehicleBasePins() {
+  db.collection("vehicles").get().then(function(snap) {
+    var bases = [];
+    snap.forEach(function(doc) {
+      var v = doc.data();
+      if (v.type === "vehicle" && v.baseLat && v.baseLng) bases.push({ docId: doc.id, id: v.id || doc.id, address: v.baseAddress || "", lat: +v.baseLat, lng: +v.baseLng, oos: v.serviceStatus === "out" });
+    });
+    drawBasePins(ddMap, bases, vehBasePins);
+    drawBasePins(vehBaseMapAdmin, bases, vehBasePinsAdmin, true);
+  }).catch(function(){});
+}
+function drawBasePins(map, bases, store, fit) {
+  store.forEach(function(p){ p.setMap(null); }); store.length = 0;
+  if (!map || !window.google || !google.maps) return;
+  var bounds = new google.maps.LatLngBounds();
+  bases.forEach(function(b) {
+    var mk = new google.maps.Marker({
+      position: { lat: b.lat, lng: b.lng }, map: map, title: b.id + " home base" + (b.address ? " — " + b.address : ""),
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: b.oos ? "#e05555" : "#c9a84c", fillOpacity: 0.95, strokeColor: "#0d1c33", strokeWeight: 2 },
+      label: { text: "🏠", fontSize: "11px" }, zIndex: 5
+    });
+    var info = new google.maps.InfoWindow({ content: '<div style="color:#111;font-family:sans-serif;font-size:12px"><b>' + escapeHtml(b.id) + '</b> — home base' + (b.oos ? ' <span style="color:#b00">(out of service)</span>' : '') + (b.address ? '<br>' + escapeHtml(b.address) : '') + '</div>' });
+    mk.addListener("click", function(){ info.open(map, mk); });
+    store.push(mk); bounds.extend({ lat: b.lat, lng: b.lng });
+  });
+  if (fit && bases.length) { if (bases.length === 1) { map.setCenter({ lat: bases[0].lat, lng: bases[0].lng }); map.setZoom(14); } else map.fitBounds(bounds); }
+}
 var ddCallMarkers = {}, ddSelectedCallId = null, ddCallsListener = null;
 var allRespondersCache = [];
 var allAmbulancesCache = [];
@@ -8695,6 +8820,7 @@ function buildDDMap() {
       });
     });
   });
+  renderVehicleBasePins();
   function placeLandmark(lm) {
     var isBase = lm.name === "Hatzolah Base";
 
