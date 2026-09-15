@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.01";
+  var BUILD = "2.02";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.01</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.02</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.01</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.02</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -4868,7 +4868,17 @@ function mDoAssign(unitId) {
       crews[crewIdx].rig = unitId;   // one ambulance per crew — set once at crew level
       var ud = call.unitDetails || {};
       if (role && role !== "__crew__") ud[mUdKey(crewIdx, role)] = Object.assign({}, ud[mUdKey(crewIdx, role)]||{}, { pickedAmbo: unitId, pickedAmboIsERV: false });
-      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("Rig " + unitId + " selected for Crew " + (crewIdx+1), "🚑", "#ffc84a", "assign")) });
+      // Diverting rig: the crew is already aboard, so skip "heading to base" and go straight to responding
+      var divert = mRigFreeingMap[unitId];
+      if (divert) {
+        Object.keys(crews[crewIdx] || {}).forEach(function(k) {
+          if (k === "rig" || !crews[crewIdx][k] || crews[crewIdx][k] === "__added__") return;
+          var key = mUdKey(crewIdx, k), det = ud[key] || {};
+          if (det.response === "rig" && ["", "picking_up_ambo", "onboard_rig"].indexOf(det.status || "") !== -1)
+            ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
+        });
+      }
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("Rig " + unitId + " selected for Crew " + (crewIdx+1) + (divert ? " — diverting from " + divert.address + ", responding to scene" : ""), "🚑", "#ffc84a", "assign")) });
     } else {
       crews[crewIdx][role] = unitId;
       var assignedUnits = [];
@@ -5017,12 +5027,16 @@ function mAddRigWithUnit(unitId) {
       if (res.rig) crew.rig = res.rig;
       crews.push(crew);
       var ud = call.unitDetails || {};
-      ud[idx + "_rigUnit"] = { response: "rig", status: "picking_up_ambo", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
+      // A diverting rig already has its crew aboard — it responds to the scene, it doesn't head to base
+      var divert = res.rig ? mRigFreeingMap[res.rig] : null;
+      ud[idx + "_rigUnit"] = { response: "rig", status: divert ? "ambo_responding" : "picking_up_ambo", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
       var assigned = (call.assignedUnits || []).slice(); if (assigned.indexOf(unitId) === -1) assigned.push(unitId);
       mTextAssignedUnit(unitId, call);
       return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assigned, updatedAt: new Date().toISOString(),
-        callEvents: mEvtUnion(mEvt(unitId + " responding to " + (res.rig || "a rig") + " (Crew " + (idx+1) + ")", "🚑", "#ffc84a", "assign")) })
-        .then(function(){ mCloseAllSheets(); mToast(res.rig ? unitId + " → " + res.rig : unitId + " added (no rig assigned)"); });
+        callEvents: mEvtUnion(mEvt(divert
+          ? res.rig + " diverting from " + divert.address + " — " + unitId + " responding to scene (Crew " + (idx+1) + ")"
+          : unitId + " responding to " + (res.rig || "a rig") + " (Crew " + (idx+1) + ")", "🚑", "#ffc84a", "assign")) })
+        .then(function(){ mCloseAllSheets(); mToast(divert ? res.rig + " diverting — responding to scene" : res.rig ? unitId + " → " + res.rig : unitId + " added (no rig assigned)"); });
     });
   }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
@@ -5858,7 +5872,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.01</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.02</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
