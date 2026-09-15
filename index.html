@@ -629,7 +629,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.20e</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.20f</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -642,22 +642,18 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     </div>
     <!-- RIGHT -->
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0">
-      <button onclick="window.openVehicleStatus()" id="veh-status-btn" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.66rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:7px 11px;cursor:pointer;color:var(--white);position:relative;transition:all 0.2s;white-space:nowrap">
-        🚑 Fleet
-        <span id="veh-oos-badge" style="display:none;position:absolute;top:-5px;right:-5px;background:#ff9090;color:#000;font-family:'Oswald',sans-serif;font-size:0.52rem;font-weight:700;padding:1px 5px;border-radius:8px">0</span>
-      </button>
       <button onclick="openNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a,#c9a84c);background-size:200% auto;color:var(--navy);border:none;border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:8px 14px;cursor:pointer;box-shadow:0 2px 16px rgba(201,168,76,0.5);animation:newCallBtnPulse 3s ease-in-out infinite;white-space:nowrap">+ New Call</button>
     </div>
   </div>
 
-  <!-- VEHICLE STATUS PANEL -->
-  <div id="veh-status-panel" onclick="if(event.target===this)window.closeVehicleStatus()" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px">
+  <!-- VEHICLE STATUS PANEL — management lives in Admin ▸ Fleet; this shell stays hidden -->
+  <div id="veh-status-panel-legacy" onclick="if(event.target===this)window.closeVehicleStatus()" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px">
   <div style="background:#0f1e38;border:1px solid rgba(201,168,76,0.4);border-radius:14px;width:100%;max-width:440px;max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.6);animation:fadeUp 0.2s ease both">
     <div style="padding:12px 14px;border-bottom:1px solid var(--card-border);display:flex;justify-content:space-between;align-items:center">
       <span style="font-family:'Oswald',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold)">Fleet Status</span>
       <button onclick="window.closeVehicleStatus()" style="background:none;border:none;color:var(--gray);font-size:1.2rem;cursor:pointer;line-height:1">×</button>
     </div>
-    <div id="veh-status-list" style="padding:10px 12px"></div>
+    <div id="veh-status-list-legacy" style="padding:10px 12px"></div>
   </div>
   </div>
 
@@ -1057,6 +1053,12 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
           🧪 SYSTEM TESTING MODE ACTIVE — Your actions are not being saved to the live system
         </div>
       </div>
+    </div>
+
+    <div class="admin-section" data-admin-tab="fleet">
+      <div class="admin-section-title">🔧 Service Status</div>
+      <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">Take a rig out of service and it stops being offered to dispatchers on both apps — it's skipped by "Add Additional Rig" and flagged in the rig picker. Set an optional return time and it comes back automatically.</p>
+      <div id="veh-status-list"></div>
     </div>
 
     <div class="admin-section" data-admin-tab="fleet">
@@ -1646,6 +1648,7 @@ function setAdminTab(tab) {
   var sc = document.querySelector("#pg-admin .inner-scroll"); if (sc) sc.scrollTop = 0;
   if (tab === "protocols" && typeof renderDispatchSettings === "function") renderDispatchSettings();
   if (tab === "codes" && typeof renderCodesEditor === "function") renderCodesEditor();
+  if (tab === "fleet" && typeof loadVehicleStatusPanel === "function") loadVehicleStatusPanel();
 }
 
 // ── TOKEN ACCEPT ──
@@ -5356,16 +5359,9 @@ window.closeQRModal = closeQRModal;
 // ── VEHICLE STATUS PANEL ──
 var vehStatusOpen = false;
 
-window.openVehicleStatus = function() {
-  vehStatusOpen = true;
-  document.getElementById("veh-status-panel").style.display = "flex";
-  loadVehicleStatusPanel();
-};
-
-window.closeVehicleStatus = function() {
-  vehStatusOpen = false;
-  document.getElementById("veh-status-panel").style.display = "none";
-};
+// Fleet service status is managed in Admin ▸ Fleet
+window.openVehicleStatus = function() { showPage("admin"); setAdminTab("fleet"); };
+window.closeVehicleStatus = function() { vehStatusOpen = false; var p = document.getElementById("veh-status-panel-legacy"); if (p) p.style.display = "none"; };
 
 function loadVehicleStatusPanel() {
   var el = document.getElementById("veh-status-list");
@@ -5432,7 +5428,7 @@ function loadVehicleStatusPanel() {
     }).join("");
 
     // Update badge
-    var badge = document.getElementById("veh-oos-badge");
+    var badge = document.getElementById("veh-oos-badge-gone");
     if (badge) { badge.textContent = oosCount; badge.style.display = oosCount > 0 ? "inline" : "none"; }
   }).catch(function(e) {
     var el2 = document.getElementById("veh-status-list");
