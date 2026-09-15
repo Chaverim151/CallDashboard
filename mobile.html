@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.92";
+  var BUILD = "1.95";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.92</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.95</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.92</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.95</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2591,7 +2591,41 @@ function mHospitalOptionsHTML() {
 
 // ── Live rig/vehicle fleet cache (mirrors desktop's loadAmbulancesCache) ──
 var mLiveRigs = [];
-function mLoadLiveRigs() {
+var mActiveCallsLive = [], mRigsCache = null, mRigsCacheAt = 0, mRigsInFlight = null;
+// Availability computed from the already-subscribed active calls — no extra read, no wait
+function mComputeRigConflicts(excludeCallId) {
+  var map = {}, freeing = {};
+  (mActiveCallsLive || []).forEach(function(data) {
+    if (!data || data.id === excludeCallId || (data.status && data.status !== "active")) return;
+    var addr = (data.address||"").split(",")[0], ud = data.unitDetails || {};
+    var isRMA = data.disposition && data.disposition.type === "rma";
+    (data.crews||[]).forEach(function(crew, ci) {
+      if (!crew || !crew.rig) return;
+      var busy = false, wrapping = "";
+      Object.keys(crew).forEach(function(k) {
+        if (k === "rig" || !crew[k] || crew[k] === "__added__") return;
+        var det = ud[ci+"_"+k] || {};
+        if (det.response !== "rig") return;
+        var st = det.status || "";
+        if (M_RIG_FREE_STATUSES.indexOf(st) !== -1) { if (st === "clearing_facility" || st === "returning_base") wrapping = st; return; }
+        if (isRMA && ["transporting","at_facility"].indexOf(st) === -1) { wrapping = "rma"; return; }
+        busy = true;
+      });
+      if (busy) map[crew.rig] = { id: data.id, address: addr };
+      else if (wrapping) freeing[crew.rig] = { id: data.id, address: addr, why: wrapping === "rma" ? "RMA — no transport" : wrapping === "clearing_facility" ? "cleared the ER" : "heading back to base" };
+    });
+  });
+  mRigConflictMap = map; mRigFreeingMap = freeing; return map;
+}
+function mPrefetchRigs() { mLoadLiveRigs(true); }     // warm the cache when a call is opened
+function mLoadLiveRigs(forceRefresh) {
+  if (mRigsCache && !forceRefresh && (Date.now() - mRigsCacheAt) < 120000) { mRefreshRigsSoon(); return Promise.resolve(mRigsCache); }
+  if (mRigsInFlight) return mRigsInFlight;
+  mRigsInFlight = mFetchLiveRigs().then(function(l){ mRigsInFlight = null; return l; }, function(e){ mRigsInFlight = null; throw e; });
+  return mRigsInFlight;
+}
+function mRefreshRigsSoon() { if (!mRigsInFlight) mRigsInFlight = mFetchLiveRigs().then(function(l){ mRigsInFlight = null; return l; }, function(){ mRigsInFlight = null; }); }
+function mFetchLiveRigs() {
   return db.collection("vehicles").get().then(function(snap) {
     var now = Date.now(), list = [];
     snap.forEach(function(d) {
@@ -2610,6 +2644,7 @@ function mLoadLiveRigs() {
       list.push({ id: id || d.id, isOOS: isOOS, description: v.description || "" });
     });
     list.sort(function(a,b){ return a.id.localeCompare(b.id, undefined, {numeric:true}); });
+    mRigsCache = list; mRigsCacheAt = Date.now();
     mLiveRigs = list;
     return list;
   }).catch(function(){ mLiveRigs = []; return []; });
@@ -3200,6 +3235,8 @@ function mOpenDispatch() {
         var calls = [];
         snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
         calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
+        mActiveCallsLive = calls;              // reused for instant rig-availability checks
+        mComputeRigConflicts(mDispSelectedCallId);
         mRenderDispatchList(calls);
       }, function(e) { mToast("Dispatch listener error: " + e.message, true); });
   }
@@ -4138,6 +4175,7 @@ function mOpenDispatchCall(callId) {
   mDispSelectedCallId = callId;
   mGoTo("dispatch-detail");
   if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
+  mPrefetchRigs();   // warm the fleet cache so Choose Rig opens with no wait
   mDispatchDetailListener = db.collection("activeCalls").doc(callId).onSnapshot(function(snap) {
     if (!snap.exists) { mToast("Call closed"); mCloseDispatchDetail(); return; }
     var call = Object.assign({id:snap.id}, snap.data());
@@ -4640,6 +4678,7 @@ var mRigConflictMap = {};   // rigId -> { id, address } for rigs committed on OT
 var M_RIG_FREE_STATUSES = ["back_at_base","cleared_scene","other_status","clearing_facility","returning_base"];
 var mRigFreeingMap = {};   // rigs that are available but still wrapping up another call
 function mLoadRigConflicts(excludeCallId) {
+  if ((mActiveCallsLive || []).length) return Promise.resolve(mComputeRigConflicts(excludeCallId));   // instant, from the live subscription
   return db.collection("activeCalls").where("status","==","active").get().then(function(snap) {
     var map = {}, freeing = {};
     snap.forEach(function(d) {
@@ -4678,6 +4717,7 @@ function mOpenAssignSheet(crewIdx, role, mode) {
   roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">Loading…</div>';
   mOpenSheet("m-sheet-assign");
   if (mode === "rig") {
+    roster.innerHTML = '<div style="font-size:0.75rem;color:var(--gray)">Loading rigs…</div>';
     Promise.all([mLoadLiveRigs(), mLoadRigConflicts(mDispSelectedCallId)]).then(function(res) {
       // Out-of-service rigs are removed outright — they are never an option.
       var rigs = res[0].filter(function(r){ return !r.isOOS; });
@@ -4862,13 +4902,24 @@ function mAddRigPrompt() {
   document.getElementById("m-addrig-custom").value = "";
   var info = document.getElementById("m-addrig-info");
   info.textContent = "Checking rig availability…";
-  document.getElementById("m-addrig-bls").style.display = "none";
+  document.getElementById("m-addrig-none").style.display = "none";
+  document.getElementById("m-addrig-pick").style.display = "block";
   mOpenSheet("m-sheet-addrig");   // show the sheet immediately; availability fills in below
   mNextFreeRig().then(function(res) {
-    if (res.rig) { var fr = mRigFreeingMap[res.rig]; info.innerHTML = 'Next available rig: <b style="color:#ffc84a">' + mEscHtml(res.rig) + '</b> — it will be assigned automatically.' + (fr ? ' <span style="color:#ffc84a">Diverting from ' + mEscHtml(fr.address) + ' (' + mEscHtml(fr.why) + ').</span>' : ''); info.style.color = "var(--gray)"; }
-    else { info.innerHTML = '⚠ <b>No rigs available</b>' + (res.taken.length ? ' (' + mEscHtml(res.taken.join(", ")) + ' in use)' : '') + ' — request BLS mutual aid instead.'; info.style.color = "#ff9090"; }
-    var blsBtn = document.getElementById("m-addrig-bls");
-    blsBtn.style.display = res.rig ? "none" : "block";
+    var none = document.getElementById("m-addrig-none"), pick = document.getElementById("m-addrig-pick");
+    if (res.rig) {
+      var fr = mRigFreeingMap[res.rig];
+      info.innerHTML = 'Next available rig: <b style="color:#ffc84a">' + mEscHtml(res.rig) + '</b> — it will be assigned automatically.' + (fr ? ' <span style="color:#ffc84a">Diverting from ' + mEscHtml(fr.address) + ' (' + mEscHtml(fr.why) + ').</span>' : '');
+      info.style.color = "var(--gray)";
+      none.style.display = "none"; pick.style.display = "block";
+    } else {
+      // No rig to hand out — don't ask for a unit; point at BLS instead
+      info.innerHTML = '<div style="font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#ff9090;margin-bottom:4px">⚠ No rigs available</div>' +
+        '<div style="font-size:0.78rem;color:#ffb3b3">' + (res.taken.length ? mEscHtml(res.taken.join(", ")) + " in use or out of service" : "every rig is committed") + '. Request BLS mutual aid for this call.</div>';
+      info.style.color = "#ff9090";
+      none.style.display = "block"; pick.style.display = "none";
+      mRenderAddRigBlsContact();
+    }
   });
 }
 // Rigs in service, minus any committed to this call or another active call
@@ -4891,7 +4942,30 @@ function mNextFreeRig() {
   }).catch(function(){ return { rig: null, taken: [], total: 0 }; });
 }
 function mAddRigCustom() { var v = document.getElementById("m-addrig-custom").value.trim().toUpperCase(); if (!v) { mToast("Enter a unit", true); return; } mAddRigWithUnit(v); }
+// Who to call for this town's BLS, with a tap-to-dial number
+function mRenderAddRigBlsContact() {
+  var box = document.getElementById("m-addrig-blsinfo"); if (!box) return;
+  var call = mDispCallCache[mDispSelectedCallId] || {};
+  var hit = mFindMutualAidHit(call);
+  if (!hit || !hit.bls) { box.style.display = "none"; return; }
+  var parts = String(hit.bls).split(":");
+  var name = parts.length > 1 ? parts[0].trim() : hit.bls;
+  var phone = parts.length > 1 ? parts.slice(1).join(":").trim() : "";
+  var digits = phone.replace(/\D/g, "");
+  box.innerHTML = '<div style="font-size:0.6rem;letter-spacing:0.09em;text-transform:uppercase;color:var(--gray);margin-bottom:4px">BLS for ' + mEscHtml(hit.borough || "this area") + '</div>' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<span style="font-family:\'Oswald\',sans-serif;font-size:0.9rem;font-weight:700;color:#a78bfa">' + mEscHtml(name) + '</span>' +
+      (digits ? '<a href="tel:' + digits + '" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:rgba(167,139,250,0.18);border:1px solid rgba(167,139,250,0.5);border-radius:7px;padding:7px 12px;color:#a78bfa;text-decoration:none;font-size:0.82rem">📞 ' + mEscHtml(phone) + '</a>' : '') +
+    '</div>' + (hit.pd ? '<div style="font-size:0.66rem;color:var(--gray);margin-top:6px">PD: ' + mEscHtml(hit.pd) + '</div>' : '');
+  box.style.display = "block";
+}
 function mAddRigBls() { mCloseAllSheets(); mOpenBLSSheet(); }
+// Escape hatch: the dispatcher knows about a rig the system doesn't
+function mAddRigShowAnyway() {
+  document.getElementById("m-addrig-none").style.display = "none";
+  document.getElementById("m-addrig-pick").style.display = "block";
+  document.getElementById("m-addrig-pick").querySelector("div").textContent = "Adding without a rig — which unit?";
+}
 function mAddRigWithUnit(unitId) {
   var callId = mDispSelectedCallId;
   mNextFreeRig().then(function(res) {
@@ -5750,7 +5824,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.92</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.95</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -5971,12 +6045,18 @@ function mCloseAllSheets() {
 <div class="m-disp-sheet" id="m-sheet-addrig">
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:var(--gold)">🚑 Add Additional Rig</div><button onclick="mCloseAllSheets()" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:7px 12px;cursor:pointer">✕ Close</button></div>
-  <div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px">Which unit is responding to the rig?</div>
   <div id="m-addrig-info" style="font-size:0.74rem;color:var(--gray);margin-bottom:12px"></div>
-  <button id="m-addrig-bls" class="m-disp-btn" style="display:none;width:100%;border-color:rgba(167,139,250,0.5);color:#a78bfa;margin-bottom:12px" onclick="mAddRigBls()">🔵 Request BLS Mutual Aid instead</button>
-  <div id="m-addrig-roster" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
-  <div class="m-disp-label">Other unit</div>
-  <div style="display:flex;gap:8px"><input type="text" id="m-addrig-custom" class="m-disp-input" placeholder="e.g. MC-31" style="flex:1"><button class="m-disp-btn" style="border-color:rgba(201,168,76,0.5);color:var(--gold)" onclick="mAddRigCustom()">Add</button></div>
+  <div id="m-addrig-none" style="display:none">
+    <div id="m-addrig-blsinfo" style="display:none;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.4);border-radius:9px;padding:10px 12px;margin-bottom:10px"></div>
+    <button class="m-disp-btn" style="width:100%;border-color:rgba(167,139,250,0.6);background:rgba(167,139,250,0.12);color:#a78bfa;margin-bottom:10px" onclick="mAddRigBls()">🔵 Request BLS Mutual Aid</button>
+    <button class="m-disp-btn" style="width:100%;border-color:rgba(255,255,255,0.15);color:var(--gray);font-size:0.62rem" onclick="mAddRigShowAnyway()">Add a unit without a rig anyway</button>
+  </div>
+  <div id="m-addrig-pick">
+    <div style="font-size:0.78rem;color:var(--gray);margin-bottom:8px">Which unit is responding to the rig?</div>
+    <div id="m-addrig-roster" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+    <div class="m-disp-label">Other unit</div>
+    <div style="display:flex;gap:8px"><input type="text" id="m-addrig-custom" class="m-disp-input" placeholder="e.g. MC-31" style="flex:1"><button class="m-disp-btn" style="border-color:rgba(201,168,76,0.5);color:var(--gold)" onclick="mAddRigCustom()">Add</button></div>
+  </div>
 </div>
 
 <div class="m-disp-sheet" id="m-sheet-edu-form" style="max-height:92vh;overflow-y:auto">
