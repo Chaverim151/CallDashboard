@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.05";
+  var BUILD = "2.08";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.05</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.08</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.05</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.08</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -4491,7 +4491,10 @@ function mBuildCrewBlock(call, crew, crewIdx) {
   // Load-a-Rig calls need the rig up front (everyone goes to base). On a Standard call, only ask
   // once a unit actually chooses the rig path — don't front-load it.
   var rigNeededNow = (call.zone === "secondary");   // Standard calls: the picker lives under the unit responding to the rig
-  if (!crew.rig && rigNeededNow) {
+  var crewRigAvail = mRigAvailabilityFor(call, crewIdx);
+  if (!crew.rig && rigNeededNow && !crewRigAvail.ok) {
+    // No rig to pick — stay quiet here; the response-mode stage below shows the warning and the BLS option
+  } else if (!crew.rig && rigNeededNow) {
     html += '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Crew Rig</div>';
     html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.4);color:#ffc84a;margin-bottom:8px" onclick="mOpenAssignSheet(' + crewIdx + ',\'__crew__\',\'rig\')">🚑 Choose Rig for Crew ' + (crewIdx+1) + '</button>';
   } else if (crew.rig) {
@@ -4628,6 +4631,14 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   var canDivert = (det.response === "scene" && status === "enroute_scene") || (det.response === "rig" && status === "picking_up_ambo");
   if (canDivert) {
     var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
+    if (det.response !== "rig") {                      // diverting TO a rig needs a rig to exist
+      var divAvail = mRigAvailabilityFor(call, crewIdx);
+      if (!divAvail.ok) {
+        html += '<div style="font-size:0.62rem;color:var(--gray);margin-top:6px;line-height:1.35">🏠 Can\'t divert to a rig — ' + mEscHtml(divAvail.why) + '</div>';
+        html += '</div>';
+        return html;
+      }
+    }
     html += '<button onclick="mDivertResponse(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(unit) + '\')" class="m-disp-btn" style="width:100%;margin-top:6px;border-color:rgba(255,200,74,0.35);color:#ffc84a">↔ ' + toLabel + '</button>';
   }
 
@@ -5931,7 +5942,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.05</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.08</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
