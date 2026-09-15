@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "1.98";
+  var BUILD = "2.01";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v1.98</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.01</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v1.98</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.01</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2638,7 +2638,11 @@ function mLoadLiveRigs(forceRefresh) {
   mRigsInFlight = mFetchLiveRigs().then(function(l){ mRigsInFlight = null; return l; }, function(e){ mRigsInFlight = null; throw e; });
   return mRigsInFlight;
 }
-function mRefreshRigsSoon() { if (!mRigsInFlight) mRigsInFlight = mFetchLiveRigs().then(function(l){ mRigsInFlight = null; return l; }, function(){ mRigsInFlight = null; }); }
+// Background top-up, at most every 30s — never blocks the UI
+function mRefreshRigsSoon() {
+  if (mRigsInFlight || (Date.now() - mRigsCacheAt) < 30000) return;
+  mRigsInFlight = mFetchLiveRigs().then(function(l){ mRigsInFlight = null; return l; }, function(){ mRigsInFlight = null; });
+}
 function mFetchLiveRigs() {
   return db.collection("vehicles").get().then(function(snap) {
     var now = Date.now(), list = [];
@@ -4691,9 +4695,13 @@ var mRigConflictMap = {};   // rigId -> { id, address } for rigs committed on OT
 // Statuses where a rig has no patient and no remaining leg — available to divert to another call
 var M_RIG_FREE_STATUSES = ["back_at_base","cleared_scene","other_status","clearing_facility","returning_base"];
 var mRigFreeingMap = {};   // rigs that are available but still wrapping up another call
+var mConflictsFetchedAt = 0, mConflictsInFlight = null;
 function mLoadRigConflicts(excludeCallId) {
   if ((mActiveCallsLive || []).length) return Promise.resolve(mComputeRigConflicts(excludeCallId));   // instant, from the live subscription
-  return db.collection("activeCalls").where("status","==","active").get().then(function(snap) {
+  // No live list yet (call opened directly from a push): fetch once, then reuse for 15s
+  if (Date.now() - mConflictsFetchedAt < 15000) return Promise.resolve(mRigConflictMap);
+  if (mConflictsInFlight) return mConflictsInFlight;
+  mConflictsInFlight = db.collection("activeCalls").where("status","==","active").get().then(function(snap) {
     var map = {}, freeing = {};
     snap.forEach(function(d) {
       if (d.id === excludeCallId) return;
@@ -4718,8 +4726,11 @@ function mLoadRigConflicts(excludeCallId) {
         else if (wrapping) freeing[crew.rig] = { id: d.id, address: addr, why: wrapping === "rma" ? "RMA — no transport" : wrapping === "clearing_facility" ? "cleared the ER" : "heading back to base" };
       });
     });
-    mRigConflictMap = map; mRigFreeingMap = freeing; return map;
-  }).catch(function(){ mRigConflictMap = {}; mRigFreeingMap = {}; return {}; });
+    mRigConflictMap = map; mRigFreeingMap = freeing;
+    mConflictsFetchedAt = Date.now(); mConflictsInFlight = null;
+    return map;
+  }).catch(function(){ mRigConflictMap = {}; mRigFreeingMap = {}; mConflictsInFlight = null; return {}; });
+  return mConflictsInFlight;
 }
 function mOpenAssignSheet(crewIdx, role, mode) {
   mAssignSheetCrewIdx = crewIdx; mAssignSheetRole = role; mAssignSheetMode = mode || "unit";
@@ -4923,7 +4934,7 @@ function mAddRigPrompt() {
   }).join("") || '<div style="font-size:0.75rem;color:var(--gray)">No available units — type one below</div>';
   document.getElementById("m-addrig-custom").value = "";
   var info = document.getElementById("m-addrig-info");
-  info.textContent = "Checking rig availability…";
+  if (!mRigsCache) info.textContent = "Checking rig availability…";
   document.getElementById("m-addrig-none").style.display = "none";
   document.getElementById("m-addrig-pick").style.display = "block";
   mOpenSheet("m-sheet-addrig");   // show the sheet immediately; availability fills in below
@@ -4950,12 +4961,13 @@ function mAddRigPrompt() {
   });
 }
 // Rigs in service, minus any committed to this call or another active call
-function mNextFreeRig() {
-  return Promise.all([
-    mLoadLiveRigs(),
-    mLoadRigConflicts(mDispSelectedCallId),
-    db.collection("activeCalls").doc(mDispSelectedCallId).get().then(function(s){ return s.exists ? s.data() : (mDispCallCache[mDispSelectedCallId] || {}); }).catch(function(){ return mDispCallCache[mDispSelectedCallId] || {}; })
-  ]).then(function(res) {
+// authoritative=true re-reads the call doc (used when actually assigning). For display we use the
+// cached call, which the detail listener keeps live — no network, no wait.
+function mNextFreeRig(authoritative) {
+  var callP = authoritative
+    ? db.collection("activeCalls").doc(mDispSelectedCallId).get().then(function(s){ return s.exists ? s.data() : (mDispCallCache[mDispSelectedCallId] || {}); }).catch(function(){ return mDispCallCache[mDispSelectedCallId] || {}; })
+    : Promise.resolve(mDispCallCache[mDispSelectedCallId] || {});
+  return Promise.all([ mLoadLiveRigs(), mLoadRigConflicts(mDispSelectedCallId), callP ]).then(function(res) {
     var rigs = res[0].filter(function(r){ return !r.isOOS; });
     var call = res[2] || {};
     var usedHere = {};
@@ -4990,7 +5002,7 @@ function mRenderAddRigBlsContact() {
 function mAddRigBls() { mCloseAllSheets(); mOpenBLSSheet(); }
 function mAddRigWithUnit(unitId) {
   var callId = mDispSelectedCallId;
-  mNextFreeRig().then(function(res) {
+  mNextFreeRig(true).then(function(res) {
     if (!res.rig) {
       if (!confirm("No rigs are available" + (res.taken.length ? " (" + res.taken.join(", ") + " in use)" : "") + ".\n\nAdd " + unitId + " without a rig anyway?\n\nCancel to request BLS mutual aid instead.")) { mCloseAllSheets(); mOpenBLSSheet(); return null; }
     }
@@ -5846,7 +5858,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v1.98</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.01</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
