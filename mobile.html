@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.02";
+  var BUILD = "2.03";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.02</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.03</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.02</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.03</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3262,7 +3262,7 @@ function mOpenDispatch() {
 
 // ── ACTIVE CALLS LIST ──
 function mRenderDispatchList(calls) {
-  calls = (calls || []).map(mSanitizeCall);
+  calls = (calls || []).filter(function(c){ return !c.status || c.status === "active"; }).map(mSanitizeCall);
   var el = document.getElementById("m-dispatch-list");
   if (!calls.length) { el.innerHTML = '<div style="text-align:center;color:var(--gray);padding:40px 20px;font-size:0.85rem">No active calls</div>'; return; }
   el.innerHTML = calls.map(function(call) {
@@ -3270,7 +3270,15 @@ function mRenderDispatchList(calls) {
     var zoneLabel = call.zone === "primary" ? "Standard" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
     var nature = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "").split(" (")[0] : "";
     var patient = [call.patientAgeNum ? call.patientAgeNum+"y" : (call.patientAge||""), call.patientSex==="male"?"M":call.patientSex==="female"?"F":""].filter(Boolean).join(" ");
-    var unitCount = (call.assignedUnits||[]).length;
+    // Count the units actually on the crews; assignedUnits can drift if a unit is removed
+  var crewUnits = [];
+  (call.crews||[]).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__" && crewUnits.indexOf(cr[k]) === -1) crewUnits.push(cr[k]); }); });
+  var unitCount = crewUnits.length || (call.assignedUnits||[]).length;
+  var elapsedMin = call.createdAt ? Math.max(0, Math.round((Date.now() - new Date(call.createdAt).getTime()) / 60000)) : null;
+  var elapsedTxt = elapsedMin === null ? "" : (elapsedMin < 60 ? elapsedMin + "m" : Math.floor(elapsedMin/60) + "h " + (elapsedMin%60) + "m");
+  var destTxt = (call.disposition && call.disposition.type === "transport")
+    ? ((call.disposition.transports||[]).length > 1 ? call.disposition.transports.length + " destinations" : (call.disposition.hospital || ""))
+    : (call.disposition && call.disposition.type === "rma" ? "RMA" : "");
     var addr = (call.address||"Unknown").split(",")[0];
     return '<div class="m-disp-card" onclick="mOpenDispatchCall(\'' + call.id + '\')">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
@@ -3283,7 +3291,9 @@ function mRenderDispatchList(calls) {
         (patient ? '<span>' + patient + '</span>' : '') +
         (call.alsActivated ? '<span style="color:#ff9090">🚨 ALS</span>' : '') +
         (call.testMode ? '<span style="font-size:0.6rem;font-weight:700;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.4);border-radius:4px;padding:1px 6px;color:#f0a500">🧪 TEST</span>' : '') +
-        '<span style="margin-left:auto">👥 ' + unitCount + '</span>' +
+        (elapsedTxt ? '<span style="color:' + (elapsedMin >= 30 ? "#ff9090" : "var(--gray)") + '">⏱ ' + elapsedTxt + '</span>' : '') +
+        (destTxt ? '<span style="color:#7ab8f5">🏥 ' + mEscHtml(destTxt) + '</span>' : '') +
+        '<span style="margin-left:auto' + (unitCount ? '' : ';color:#ff9090') + '">' + (unitCount ? '👥 ' + unitCount : '⚠ No units') + '</span>' +
       '</div>' +
     '</div>';
   }).join("");
@@ -5872,7 +5882,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.02</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.03</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
