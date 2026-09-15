@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.09";
+  var BUILD = "2.10";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.09</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.10</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.09</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.10</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -2617,12 +2617,25 @@ function mCrewRigStatusLabel(call, crewIdx, crew) {
     var rank = order.indexOf(det.status || "");
     if (rank > bestRank) { bestRank = rank; best = det.status || ""; }
   });
-  // Short phrasing for "why this rig isn't available" — the timeline uses the longer labels
-  var short = { picking_up_ambo:"heading to the rig", onboard_rig:"onboard", ambo_responding:"responding",
-                on_scene_ambo:"on scene", transporting:"transporting", at_facility:"at hospital",
-                clearing_facility:"cleared ER", returning_base:"heading back", back_at_base:"at base",
-                cleared_scene:"cleared", other_status:"assigned" };
-  return short[best] || (best ? best.replace(/_/g, " ") : "assigned");
+  return best;   // raw status; mRigBusyPhrase turns it into words
+}
+// Why a rig can't be taken, worded about the RIG — "assigned to a call at X", "at the hospital"…
+// Statuses where the call's address doesn't help (hospital, returning) leave it out.
+function mRigBusyPhrase(status, address) {
+  var at = address ? " at " + address : "";
+  switch (status) {
+    case "picking_up_ambo":
+    case "onboard_rig":      return "assigned to a call" + at;
+    case "ambo_responding":  return "responding to a call" + at;
+    case "on_scene_ambo":    return "on a call" + at;
+    case "transporting":     return "transporting a patient";
+    case "at_facility":      return "at the hospital";
+    case "clearing_facility":return "clearing the hospital";
+    case "returning_base":   return "returning to base";
+    case "back_at_base":
+    case "cleared_scene":    return "on a call" + at;
+    default:                 return "on a call" + at;
+  }
 }
 function mComputeRigConflicts(excludeCallId) {
   var map = {}, freeing = {};
@@ -4552,7 +4565,7 @@ function mRigAvailabilityFor(call, crewIdx) {
   var reasons = mRigsCache.map(function(r) {
     if (r.isOOS) return r.id + " out of service";
     var b = mRigConflictMap[r.id];
-    if (b) return r.id + " " + (b.status || "in use") + " at " + b.address;
+    if (b) return r.id + " " + mRigBusyPhrase(b.status, b.address);
     if (usedHere[r.id]) return r.id + " already on this call";
     return r.id;
   });
@@ -4832,7 +4845,7 @@ function mOpenAssignSheet(crewIdx, role, mode) {
             '<div style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#ff9090;margin-bottom:6px">⚠ No rigs available</div>' +
             res[0].map(function(r) {
               var b = mRigConflictMap[r.id];
-              return '<div style="font-size:0.76rem;color:#ffb3b3;margin-bottom:2px"><b>' + mEscHtml(r.id) + '</b> — ' + (r.isOOS ? 'out of service' : b ? mEscHtml(b.status) + ' at ' + mEscHtml(b.address) : 'on this call') + '</div>';
+              return '<div style="font-size:0.76rem;color:#ffb3b3;margin-bottom:2px"><b>' + mEscHtml(r.id) + '</b> — ' + (r.isOOS ? 'out of service' : b ? mEscHtml(mRigBusyPhrase(b.status, b.address)) : 'on this call') + '</div>';
             }).join("") +
             '<div style="font-size:0.76rem;color:#ffb3b3;margin-top:6px">Request BLS mutual aid for this call.</div></div>' +
           '<button class="m-disp-btn" style="width:100%;border-color:rgba(167,139,250,0.6);background:rgba(167,139,250,0.12);color:#a78bfa" onclick="mCloseAllSheets();mOpenBLSSheet()">🔵 Request BLS Mutual Aid</button>' +
@@ -4847,7 +4860,7 @@ function mOpenAssignSheet(crewIdx, role, mode) {
       (oosCount || rigs.length > free.length ? '<div style="width:100%;font-size:0.68rem;color:var(--gray);margin-top:6px;line-height:1.5">' +
         rigs.filter(function(r){ return free.indexOf(r) === -1; }).map(function(r) {
           var b = mRigConflictMap[r.id];
-          return b ? mEscHtml(r.id) + " — " + mEscHtml(b.status) + " at " + mEscHtml(b.address) : mEscHtml(r.id) + " — on this call";
+          return b ? mEscHtml(r.id) + " — " + mEscHtml(mRigBusyPhrase(b.status, b.address)) : mEscHtml(r.id) + " — on this call";
         }).concat(oosCount ? [oosCount + " rig" + (oosCount>1?"s":"") + " out of service"] : []).join("<br>") + '</div>' : "");
     });
   } else {
@@ -5030,7 +5043,7 @@ function mAddRigPrompt() {
       info.innerHTML = '<div style="font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#ff9090;margin-bottom:6px">⚠ No rigs available</div>' +
         (res.taken || []).map(function(id) {
           var b = mRigConflictMap[id];
-          var why = (res.oos && res.oos[id]) ? "out of service" : b ? (b.status + " at " + b.address) : "already on this call";
+          var why = (res.oos && res.oos[id]) ? "out of service" : b ? mRigBusyPhrase(b.status, b.address) : "already on this call";
           return '<div style="font-size:0.78rem;color:#ffb3b3;margin-bottom:2px"><b>' + mEscHtml(id) + '</b> — ' + mEscHtml(why) + '</div>';
         }).join("") +
         '<div style="font-size:0.78rem;color:#ffb3b3;margin-top:6px">Request BLS mutual aid for this call.</div>';
@@ -5942,7 +5955,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.09</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.10</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
