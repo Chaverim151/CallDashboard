@@ -4532,6 +4532,25 @@ function mBuildCrewBlock(call, crew, crewIdx) {
 }
 
 // ── UNIT BOX ──
+// Can this crew actually get a rig? "known" stays false until the fleet list loads, so we never
+// block a dispatcher on data we don't have yet.
+function mRigAvailabilityFor(call, crewIdx) {
+  var crew = mCrewOf(call, crewIdx);
+  if (crew && crew.rig) return { known: true, ok: true, why: "" };            // crew already has one
+  if (!mRigsCache) { mPrefetchRigs(); return { known: false, ok: true, why: "" }; }
+  var usedHere = {};
+  (call.crews || []).forEach(function(cr){ if (cr && cr.rig) usedHere[cr.rig] = true; });
+  var free = mRigsCache.filter(function(r){ return !r.isOOS && !mRigConflictMap[r.id] && !usedHere[r.id]; });
+  if (free.length) return { known: true, ok: true, why: "" };
+  var reasons = mRigsCache.map(function(r) {
+    if (r.isOOS) return r.id + " out of service";
+    var b = mRigConflictMap[r.id];
+    if (b) return r.id + " " + String(b.status || "in use").toLowerCase() + " at " + b.address;
+    if (usedHere[r.id]) return r.id + " already on this call";
+    return r.id;
+  });
+  return { known: true, ok: false, why: reasons.join(" · ") };
+}
 function mBuildUnitBox(call, crewIdx, role, label) {
   var crew = mCrewOf(call, crewIdx);
   var unit = crew[role];
@@ -4556,6 +4575,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
 
   if (!det.response) {
     var isLoadRig = call.zone === "secondary";
+    var rigAvail = mRigAvailabilityFor(call, crewIdx);
     var rigLbl = "🏠 Respond to Rig" + (crew.rig ? " → " + crew.rig : "");   // rig is chosen once per crew, never per unit
     if (isLoadRig) {
       // LOAD A RIG call: expected flow is Base → load rig → respond with rig. Direct-to-scene is the exception (close by only).
@@ -4563,6 +4583,15 @@ function mBuildUnitBox(call, crewIdx, role, label) {
         '<div style="font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#ffc84a">🚑 Load a Rig call</div>' +
         '<div style="font-size:0.68rem;color:#ffe0a0;margin-top:2px;line-height:1.35">Respond to <b>Base</b>, load the rig, then respond to the scene with it.</div>' +
       '</div>';
+      if (!rigAvail.ok) {
+        html += '<div style="background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.5);border-radius:7px;padding:8px 10px;margin-bottom:8px">' +
+          '<div style="font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#ff9090">⚠ No rig available</div>' +
+          '<div style="font-size:0.68rem;color:#ffb3b3;margin-top:2px;line-height:1.35">' + mEscHtml(rigAvail.why) + '</div></div>' +
+          '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(167,139,250,0.6);background:rgba(167,139,250,0.12);color:#a78bfa;margin-bottom:6px" onclick="mOpenBLSSheet()">🔵 Request BLS Mutual Aid</button>' +
+          '<button class="m-disp-btn" style="width:100%;border-color:rgba(122,184,245,0.45);color:#7ab8f5" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Respond Direct to Scene</button>' +
+          '</div>';
+        return html;
+      }
       html += '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(255,200,74,0.6);background:rgba(255,200,74,0.15);color:#ffc84a;margin-bottom:6px" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>';
       html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(122,184,245,0.3);color:var(--gray);font-size:0.62rem" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Direct to Scene <span style="opacity:0.7">(only if close to the scene)</span></button>';
       html += '</div>';
@@ -4570,8 +4599,11 @@ function mBuildUnitBox(call, crewIdx, role, label) {
     }
     html += '<div style="display:flex;gap:6px">' +
       '<button class="m-disp-btn m-pulse-blue" style="flex:1;border-color:rgba(122,184,245,0.6);background:rgba(122,184,245,0.12);color:#7ab8f5" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Respond to Scene</button>' +
-      '<button class="m-disp-btn m-pulse-gold" style="flex:1;border-color:rgba(232,160,255,0.6);background:rgba(232,160,255,0.12);color:#e8a0ff" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>' +
-    '</div>';
+      (rigAvail.ok
+        ? '<button class="m-disp-btn m-pulse-gold" style="flex:1;border-color:rgba(232,160,255,0.6);background:rgba(232,160,255,0.12);color:#e8a0ff" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>'
+        : '<button class="m-disp-btn" disabled title="' + mEscHtml(rigAvail.why) + '" style="flex:1;border-color:rgba(255,255,255,0.12);color:var(--gray);opacity:0.55">🏠 No rig available</button>') +
+    '</div>' +
+    (rigAvail.ok ? '' : '<div style="font-size:0.64rem;color:#ffb3b3;margin-top:5px;line-height:1.35">' + mEscHtml(rigAvail.why) + ' — <span style="color:#a78bfa;text-decoration:underline" onclick="mOpenBLSSheet()">request BLS mutual aid</span></div>');
     html += '</div>';
     return html;
   }
