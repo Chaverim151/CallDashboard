@@ -665,20 +665,17 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
    so let the address show in full instead of being cut to "TOPGOLF E…". */
 #pg-console #m-dd-header-addr,#pg-console .m-page-title{max-width:none !important;overflow:visible !important;text-overflow:clip !important;white-space:normal !important;line-height:1.25}
 #pg-console .m-subpage-header{align-items:flex-start;gap:8px}
+/* Always leave breathing room under the Post Call button so it never sits flush on the window edge */
+#pg-console #m-pg-dispatch-newcall{padding-bottom:64px}
+#pg-console #m-pg-dispatch-newcall .m-scroll{padding-bottom:64px}
 /* ── console layout corrections for a desktop window ── */
 /* Sheets are phone-width bottom sheets: centre them over the console column instead of
    stretching the full 1440px of a desktop screen. */
-#pg-console .m-disp-sheet{left:0 !important;right:0 !important;margin:0 auto !important;width:100% !important;max-width:900px !important;border-radius:16px 16px 0 0 !important;box-shadow:0 -8px 28px rgba(0,0,0,0.55)}
-/* Use the whole window: the console fills the screen, and the call's own sections sit in a
-   readable grid instead of one very wide column. */
-#desk-console-left{max-width:none;padding:0 22px}
-#pg-console #m-dd-content,#pg-console #m-dispatch-list,#pg-console #m-pg-dispatch-newcall .m-scroll{max-width:1500px;margin:0 auto}
-@media(min-width:1150px){
-  #pg-console #m-dd-content{column-count:2;column-gap:22px}
-  #pg-console #m-dd-content > *{break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid}
-  #pg-console #m-dispatch-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;align-items:start}
-}
-@media(min-width:1700px){ #pg-console #m-dd-content{column-count:3} }
+#pg-console .m-disp-sheet{left:0 !important;right:0 !important;margin:0 auto !important;width:100% !important;max-width:430px !important;zoom:var(--console-zoom,1);border-radius:16px 16px 0 0 !important;box-shadow:0 -8px 28px rgba(0,0,0,0.55)}
+/* Mobile's proportions, scaled up to fill the screen — the column keeps its phone aspect ratio
+   and everything inside grows together instead of stretching. */
+#desk-console-left{width:430px;max-width:430px;margin:0 auto;padding:0;zoom:var(--console-zoom,1)}
+#pg-console #m-dd-content,#pg-console #m-dispatch-list{column-count:1 !important;display:block !important;max-width:none;margin:0}
 /* The floating "New Call" pill is positioned for a phone screen; anchor it to the bottom of the
    console column so it stops covering the Add Responder/Supervisor/Observer row. */
 /* The floating "New Call" pill is a phone affordance — on desktop it sits on top of the call's own
@@ -943,7 +940,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.25a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.25d</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -11601,8 +11598,17 @@ function deskConsoleBackToList() {
   if (typeof mDispatchDetailListener !== "undefined" && mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
   mDispSelectedCallId = null; deskShowConsolePage("m-pg-dispatch");
 }
+function deskFitConsole() {
+  // Scale the phone-proportioned column to use the window without distorting it
+  var vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  var z = Math.min(vw / 470, (vh - 60) / 820);          // leave room for the header
+  z = Math.max(1, Math.min(z, 2.1));
+  document.documentElement.style.setProperty("--console-zoom", z.toFixed(3));
+}
+window.addEventListener("resize", function(){ if (document.getElementById("pg-console").classList.contains("active")) deskFitConsole(); });
 function openDispatchConsole() {
   deskSyncMobileGlobals();
+  deskFitConsole();
   if (typeof mLoadAllResponders === "function") mLoadAllResponders();   // fills the unit roster for the assign sheets
   showPage("console");
   // Keep sheets INSIDE the console: the mobile stylesheet is scoped to #pg-console, so moving them
