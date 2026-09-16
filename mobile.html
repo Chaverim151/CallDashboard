@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.14";
+  var BUILD = "2.15";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.14</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.15</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.14</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.15</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3937,6 +3937,16 @@ function mPhonesForUnits(units) {
 }
 // Units that are notified of every call, assigned or not
 var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];
+// The admin group is copied on every call notification, under their own header
+function mPlainHeader(h) { return String(h || "").replace(/^[^A-Za-z0-9]+\s*/, ""); }
+function mAdminCopy(call, header, detail) {
+  var already = {};
+  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
+  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call already got it
+  if (!units.length) return;
+  var body = "📟 ADMIN CALL NOTIFICATION\n" + mPlainHeader(header) + "\n" + mSmsAddress(call) + (detail ? "\n" + detail : "");
+  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, body); });
+}
 function mNotifyAdminUnits(call) {
   var assigned = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") assigned[cr[k]] = true; }); });
@@ -3950,6 +3960,7 @@ function mNotifyAdminUnits(call) {
 // Text one unit the full call details the moment it's assigned
 function mTextAssignedUnit(unitId, call) {
   mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, mCallDetailsSMS(call)); });
+  mAdminCopy(call, "UNIT ASSIGNED", unitId + " assigned to this call");
 }
 // One address format for every SMS: POI name + street/town, never the raw ", USA" string
 function mSmsAddress(call) {
@@ -3966,6 +3977,7 @@ function mTextResourceToAssigned(call, header, detail) {
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
   mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, header + "\n" + mSmsAddress(call) + (detail ? "\n" + detail : "")); });
+  mAdminCopy(call, header, detail);
 }
 // Text every assigned unit a new dispatcher note
 function mTextNoteToAssigned(call, noteText) {
@@ -3973,6 +3985,7 @@ function mTextNoteToAssigned(call, noteText) {
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
   mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, "📝 CALL UPDATE\n" + mSmsAddress(call) + "\n" + noteText); });
+  mAdminCopy(call, "📝 CALL UPDATE", noteText);
 }
 // Every SMS ends with a timestamp — added here so no message can go out without one
 function mSmsStamp() {
@@ -5952,7 +5965,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.14</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.15</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

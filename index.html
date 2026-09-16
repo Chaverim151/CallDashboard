@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.14');
+  window.location.replace('/CallDashboard/mobile.html?v=2.15');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -929,7 +929,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.24h</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.24i</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13188,6 +13188,16 @@ function mPhonesForUnits(units) {
 }
 // Units that are notified of every call, assigned or not
 var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];
+// The admin group is copied on every call notification, under their own header
+function mPlainHeader(h) { return String(h || "").replace(/^[^A-Za-z0-9]+\s*/, ""); }
+function mAdminCopy(call, header, detail) {
+  var already = {};
+  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
+  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call already got it
+  if (!units.length) return;
+  var body = "📟 ADMIN CALL NOTIFICATION\n" + mPlainHeader(header) + "\n" + mSmsAddress(call) + (detail ? "\n" + detail : "");
+  mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, body); });
+}
 function mNotifyAdminUnits(call) {
   var assigned = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") assigned[cr[k]] = true; }); });
@@ -13200,6 +13210,7 @@ function mNotifyAdminUnits(call) {
 }
 function mTextAssignedUnit(unitId, call) {
   mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, mCallDetailsSMS(call)); });
+  mAdminCopy(call, "UNIT ASSIGNED", unitId + " assigned to this call");
 }
 function mSmsAddress(call) {
   var raw = String(call.address || "");
@@ -13213,12 +13224,14 @@ function mTextResourceToAssigned(call, header, detail) {
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
   mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, header + "\n" + mSmsAddress(call) + (detail ? "\n" + detail : "")); });
+  mAdminCopy(call, header, detail);
 }
 function mTextNoteToAssigned(call, noteText) {
   var units = [];
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
   mPhonesForUnits(units).then(function(phones) { if (phones.length) mSendClickSendSMS(phones, "📝 CALL UPDATE\n" + mSmsAddress(call) + "\n" + noteText); });
+  mAdminCopy(call, "📝 CALL UPDATE", noteText);
 }
 function mSmsStamp() {
   var d = new Date();
