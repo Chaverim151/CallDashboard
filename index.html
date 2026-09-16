@@ -661,10 +661,24 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 #pg-console .m-subpage-header,#pg-console .m-topbar{position:sticky !important;top:0;z-index:20}
 #desk-console-wrap{overscroll-behavior:contain}
 
+/* Mobile caps the call header at 140px for a narrow phone bar; the console column has room,
+   so let the address show in full instead of being cut to "TOPGOLF E…". */
+#pg-console #m-dd-header-addr,#pg-console .m-page-title{max-width:none !important;overflow:visible !important;text-overflow:clip !important;white-space:normal !important;line-height:1.25}
+#pg-console .m-subpage-header{align-items:flex-start;gap:8px}
 /* ── console layout corrections for a desktop window ── */
 /* Sheets are phone-width bottom sheets: centre them over the console column instead of
    stretching the full 1440px of a desktop screen. */
-#pg-console .m-disp-sheet{left:0 !important;right:0 !important;margin:0 auto !important;width:100% !important;max-width:430px !important;border-radius:16px 16px 0 0 !important;box-shadow:0 -8px 28px rgba(0,0,0,0.55)}
+#pg-console .m-disp-sheet{left:0 !important;right:0 !important;margin:0 auto !important;width:100% !important;max-width:900px !important;border-radius:16px 16px 0 0 !important;box-shadow:0 -8px 28px rgba(0,0,0,0.55)}
+/* Use the whole window: the console fills the screen, and the call's own sections sit in a
+   readable grid instead of one very wide column. */
+#desk-console-left{max-width:none;padding:0 22px}
+#pg-console #m-dd-content,#pg-console #m-dispatch-list,#pg-console #m-pg-dispatch-newcall .m-scroll{max-width:1500px;margin:0 auto}
+@media(min-width:1150px){
+  #pg-console #m-dd-content{column-count:2;column-gap:22px}
+  #pg-console #m-dd-content > *{break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid}
+  #pg-console #m-dispatch-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;align-items:start}
+}
+@media(min-width:1700px){ #pg-console #m-dd-content{column-count:3} }
 /* The floating "New Call" pill is positioned for a phone screen; anchor it to the bottom of the
    console column so it stops covering the Add Responder/Supervisor/Observer row. */
 /* The floating "New Call" pill is a phone affordance — on desktop it sits on top of the call's own
@@ -929,7 +943,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.24i</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.25a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1163,7 +1177,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     </div>
   </div>
   <div id="desk-console-wrap" style="height:calc(100vh - 52px);overflow-y:auto;background:#0a1628;display:flex;justify-content:center">
-    <div id="desk-console-left" style="width:100%;max-width:430px;position:relative"></div>
+    <div id="desk-console-left" style="width:100%;position:relative"></div>
   </div>
 </div>
 <div class="page" id="pg-contacts">
@@ -2437,8 +2451,12 @@ function renderCallCard(call, i) {
 }
 
 function openManageCall(callId) {
+  // Open the ported console straight on this call (selectDDCall belonged to the old map console)
   openDispatchConsole();
-  setTimeout(function() { selectDDCall(callId); }, 300);
+  setTimeout(function() {
+    if (typeof mOpenDispatchCall === "function") mOpenDispatchCall(callId);
+    else if (typeof selectDDCall === "function") selectDDCall(callId);
+  }, 250);
 }
 
 function completeCall(callId) {
@@ -11327,7 +11345,6 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
     <button onclick="mDrawerGoHome()" class="m-drawer-item">🏠 Home</button>
     <button onclick="mDrawerGoTo('dispatch')" class="m-drawer-item">📋 Active Calls</button>
     <button onclick="mDrawerGoTo('dispatch-newcall')" class="m-drawer-item">➕ New Call</button>
-    <button onclick="mDrawerGoTo('dispatch-map')" class="m-drawer-item">🗺️ Map View</button>
     <div id="m-drawer-call-section" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--card-border)">
       <div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);padding:0 12px 8px;font-family:'Oswald',sans-serif;font-weight:700" id="m-drawer-call-label">Current Call</div>
       <button onclick="mDrawerJump('info')" class="m-drawer-item">📍 Call Info</button>
@@ -11514,6 +11531,26 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
+/* — roster loader (mobile calls this at login; the console needs it too) — */
+function mLoadAllResponders() {
+  db.collection("users").get().then(function(snap) {
+    var list = [];
+    snap.forEach(function(d) {
+      var u = d.data(); if (!u.unit) return;
+      if (mIs7xxUnit(u.unit)) return; // 700-series are dispatch console units — never field-assignable
+      // Combine BOTH the primary role field and the additional-roles array — a pure dispatcher
+      // may be marked either way (role:"dispatcher" alone, or roles:["dispatcher"])
+      var r = (u.roles||[]).map(function(x){ return (x||"").toLowerCase().trim(); });
+      var primary = (u.role||"").toLowerCase().trim();
+      var allRoles = primary ? r.concat([primary]).filter(function(v,i,a){ return a.indexOf(v)===i; }) : r;
+      // Exclude pure-dispatcher-only members from field-unit assignment (mirrors desktop's intent)
+      if (allRoles.indexOf("dispatcher") !== -1 && allRoles.length <= 1) return;
+      list.push({ unit: u.unit, roles: allRoles, isSupervisor: allRoles.indexOf("captain") !== -1 || allRoles.indexOf("chief") !== -1, isObserver: allRoles.indexOf("observer") !== -1 });
+    });
+    list.sort(function(a,b){ return a.unit.localeCompare(b.unit, undefined, {numeric:true}); });
+    mAllRespondersCache = list;
+  }).catch(function() {});
+}
 /* — mobile state declarations — */
 var M_LANDMARK_GEO_VERSION = 3;
 var mAssignSheetCrewIdx = 0, mAssignSheetRole = null, mAssignSheetMode = "unit";
@@ -11566,6 +11603,7 @@ function deskConsoleBackToList() {
 }
 function openDispatchConsole() {
   deskSyncMobileGlobals();
+  if (typeof mLoadAllResponders === "function") mLoadAllResponders();   // fills the unit roster for the assign sheets
   showPage("console");
   // Keep sheets INSIDE the console: the mobile stylesheet is scoped to #pg-console, so moving them
   // to <body> stripped their styling (including display:none) and spilled raw markup onto other pages.
@@ -15054,7 +15092,7 @@ function mDrawerGoTo(page) {
     mGoTo("dispatch");
   }
   else if (page === "dispatch-newcall") mOpenNewCallForm();
-  else if (page === "dispatch-map") mOpenDispatchMap();
+  else if (page === "dispatch-map") return;   // no map view in the desktop console
 }
 function mOpenDispatchMap() {
   mGoTo("dispatch-map");
