@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.10";
+  var BUILD = "2.11";
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -337,7 +337,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.10</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.11</div>
     </div>
   </div>
 </div>
@@ -368,7 +368,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.10</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.11</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3984,33 +3984,7 @@ function mSendClickSendSMS(toNumbers, message) {
     body: JSON.stringify({ type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
   }).then(function(r){ return r.json(); }).catch(function(e){ console.warn("SMS send failed:", e); });
 }
-function mBroadcastNewCallSMS(call) {
-  var nature = (function() {
-    if (!call.callNature) return "";
-    var m = call.callNature.match(/\(CODE\s*(25|26|44|100)\)/i);
-    if (m) return "Code " + m[1];
-    return call.callNature.replace(/^\d+\s*-\s*/, "");
-  })();
-  var ageStr = call.patientAgeNum ? call.patientAgeNum + " YO" : (call.patientAge === "pediatric" ? "Ped" : call.patientAge === "adult" ? "Adult" : call.patientAge === "uto" ? "UTO" : "");
-  var sexStr = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
-  var patientStr = [ageStr, sexStr].filter(Boolean).join(" ");
-  var naturePatient = [nature, patientStr].filter(Boolean).join(" | ");
-  var now = new Date();
-  var timeStamp = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
-  var zonePrefix = call.zone === "secondary" ? "LOAD A RIG\n" : call.zone === "outside" ? "OUTSIDE ZONE\n" : "";
-  // POI calls are stored as "Topgolf Edison — 1013 US-1, Edison, NJ 08817, USA":
-  //   line 1 = POI name, line 2 = the actual street address (street, town, zip; no ", USA")
-  var rawA = String(call.address || "");
-  var poiName = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ")[0].trim() : "";
-  var fullA = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ").slice(1).join(" — ") : rawA;
-  var streetAddr = fullA.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 3).join(", ");
-  var smsBody = "🚨 NEW CALL\n" + zonePrefix + (poiName ? poiName + "\n" : "") + streetAddr + (call.apt ? " | Apt: " + call.apt : "") + "\n" + (naturePatient ? naturePatient + "\n" : "") + (call.mapsLink ? call.mapsLink + "\n" : "") + timeStamp;
-  db.collection("users").get().then(function(snap) {
-    var phones = [];
-    snap.forEach(function(doc) { var phone = mGetFirstPhone(doc.data().phone); if (phone) phones.push(phone); });
-    if (phones.length) mSendClickSendSMS(phones, smsBody);
-  }).catch(function(){});
-}
+/* New-call broadcast SMS removed — the first text a member gets is their assignment */
 function mPushCallbackSMS() {
   var call = mDispCallCache[mDispSelectedCallId];
   if (!call || !call.callbackNumber) { mToast("No callback number on this call", true); return; }
@@ -4220,7 +4194,6 @@ function mPostNewCallNow() {
   db.collection("activeCalls").add(call).then(function(ref) {
     mToast("🚑 Call posted!");
     btn.disabled = false; btn.textContent = "🚑 Post Call";
-    mBroadcastNewCallSMS(call);
     mOpenDispatchCall(ref.id);
   }).catch(function(e) {
     mToast("Error: " + e.message, true);
@@ -5955,7 +5928,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.10</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.11</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
