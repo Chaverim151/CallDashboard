@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.53"; window.M_BUILD = BUILD;
+  var BUILD = "2.55"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -377,7 +377,7 @@ body.m-tile-dragging{overscroll-behavior:none}
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.53</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.55</div>
     </div>
   </div>
 </div>
@@ -408,7 +408,7 @@ body.m-tile-dragging{overscroll-behavior:none}
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.53</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.55</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -3013,18 +3013,33 @@ function mPointInPolygon(point, polygon) {
   }
   return inside;
 }
-function mDetectZone(lat, lng) {
+// Which coverage area a point falls in, and what that area is called, so the form can name it
+function mDetectZoneInfo(lat, lng) {
   if (!lat || !lng) return null;
   var pt = { lat: lat, lng: lng };
-  var inPrimary = false, inSecondary = false;
+  var primaryName = "", secondaryName = "";
   M_COVERAGE_ZONES.forEach(function(zone) {
-    if (mPointInPolygon(pt, zone.points)) {
-      if (/primary/i.test(zone.name)) inPrimary = true;
-      else if (/secondary/i.test(zone.name)) inSecondary = true;
-      else inPrimary = true;
-    }
+    if (!mPointInPolygon(pt, zone.points)) return;
+    var isSecondary = /secondary/i.test(zone.name);
+    if (isSecondary) { if (!secondaryName) secondaryName = zone.name; }
+    else { if (!primaryName) primaryName = zone.name; }
   });
-  return inPrimary ? "primary" : inSecondary ? "secondary" : "outside";
+  if (primaryName) return { type: "primary", area: primaryName };
+  if (secondaryName) return { type: "secondary", area: secondaryName };
+  return { type: "outside", area: "" };
+}
+function mDetectZone(lat, lng) {
+  var info = mDetectZoneInfo(lat, lng);
+  return info ? info.type : null;
+}
+// Tidy the stored area name for display: "MC Primary Response Area — Highland Park" → "Highland Park"
+function mZoneAreaLabel(name) {
+  name = String(name || "").trim();
+  if (!name) return "";
+  var i = name.indexOf(" — ");
+  if (i !== -1) return name.slice(i + 3).trim();
+  // an unnamed area carries only the generic label — nothing extra to show
+  return /^(MC Primary Response Area|Secondary Response Area)/i.test(name) ? "" : name;
 }
 
 // ── Access code fuzzy matching (mirrors desktop's checkAccessCodeOnFile) ──
@@ -3058,45 +3073,60 @@ function mHouseNumber(s) {
   var m = String(s || "").trim().match(/^(\d+)[a-z]?\b/i);
   return m ? m[1] : "";
 }
+function mStreetWords(s) {
+  return String(s || "").toLowerCase().split(",")[0].replace(/^\d+[a-z]?\s+/i, "")
+    .split(/[\s\-\/]+/).filter(function(w){ return w.length >= 3 && !mIsNoiseWord(w); });
+}
+function mNameKey(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+// Returns 100 when it is certainly this building (the code is filled in), 50 when it might be
+// (offered as a suggestion, never filled), 0 otherwise.
+//   Certain: house number + street agree · the picked place IS the saved place by name ·
+//            or the saved pin sits on the address AND the saved entry has a matching number.
+//   A saved pin with no house number is never certain on its own — pins are often geocoded to the
+//   road or the town, which is exactly how a shul's code ended up on a Walmart on the same route.
 function mScoreCodeEntry(entry, addrLower, haystack, selLat, selLng) {
   if (!entry.code) return 0;
-  var score = 0;
   var hasGeo = entry.lat && entry.lng && selLat && selLng;
   var hasAddr = !!entry.address;
   var dist = hasGeo ? mDistMeters(selLat, selLng, entry.lat, entry.lng) : null;
-
-  // A different street number is a different building, however close it is. 505 Raritan is not
-  // 415 Raritan, even though they're a block apart — never offer that code.
   var callNum = mHouseNumber(addrLower);
   var entryNum = hasAddr ? mHouseNumber(entry.address) : "";
-  if (callNum && entryNum && callNum !== entryNum) return 0;
+  if (callNum && entryNum && callNum !== entryNum) return 0;          // a different building, however close
 
-  if (hasGeo) {
-    // Same coordinates AND nothing contradicting the number → certain
-    if (dist <= 25 && (!entryNum || !callNum || callNum === entryNum)) return 100;
-    if (dist <= 80) score += 8;
-    else if (dist <= 150) score += 4;
-    else return 0;
-  }
-  var nameClean = (entry.name||"").toLowerCase();
-  var nameWords = nameClean.split(/[\s,()\/&\-]+/).filter(function(w){ return !mIsNoiseWord(w) && w.length >= 3; });
-  nameWords.forEach(function(w) { if (haystack.indexOf(w) !== -1) score += 4; });
-  var nameStripped = nameClean.replace(/[^a-z0-9 ]/g,'').trim();
-  if (nameStripped.length > 4 && haystack.indexOf(nameStripped) !== -1) score += 8;   // the whole place name appears
-  if (hasAddr) {
-    var entryAddrLower = entry.address.toLowerCase();
-    var hasNumMatch = entryNum && callNum && entryNum === callNum;
-    if (hasNumMatch) score += 8;
-    var eWords = entryAddrLower.split(/[\s,]+/).filter(function(w){ return !mIsNoiseWord(w) && w.length >= 4; });
-    eWords.forEach(function(w) { if (addrLower.indexOf(w) !== -1) score += 1; });      // a shared street name is weak evidence
-    if (entryAddrLower.length > 8 && addrLower.indexOf(entryAddrLower) !== -1) score += 12;
-    if (!hasGeo && !hasNumMatch) return 0;
-  }
-  if (!hasGeo && !hasAddr && score < 12) return 0;
-  return score;
+  var callStreet = mStreetWords(addrLower);
+  var entryStreet = hasAddr ? mStreetWords(entry.address) : [];
+  var streetAgree = entryStreet.length > 0 && entryStreet.some(function(w){ return callStreet.indexOf(w) !== -1; });
+  var numberAndStreet = callNum && entryNum && callNum === entryNum && streetAgree;
 
+  var entryName = mNameKey(entry.name);
+  var hayKey = mNameKey(haystack);
+  // The picked place is the saved place when every meaningful word of the saved name appears in
+  // what was picked ("Young Israel of East Brunswick" ↔ "Young Israel-East Brunswick")
+  var sigWords = entryName.split(" ").filter(function(w){ return w.length >= 4 && !mIsNoiseWord(w); });
+  var placeIsEntry = entryName.length >= 5 && (hayKey.indexOf(entryName) !== -1 ||
+    (sigWords.length >= 2 && sigWords.every(function(w){ return hayKey.indexOf(w) !== -1; })));
+
+  var pinOnAddress = hasGeo && dist <= 25;
+  var pinConfirmed = pinOnAddress && ((entryNum && callNum && entryNum === callNum) || (!callNum && !entryNum && placeIsEntry));
+
+  if (numberAndStreet || placeIsEntry || pinConfirmed) return 100;
+
+  // Not certain. Is it worth suggesting?
+  var near = hasGeo && dist <= 80;
+  var sameStreet = streetAgree && (!callNum || !entryNum);
+  var nameWords = entryName.split(" ").filter(function(w){ return w.length >= 4 && !mIsNoiseWord(w); });
+  var nameHit = nameWords.some(function(w){ return haystack.indexOf(w) !== -1; });
+  if (near) return 50;                      // close enough to be worth asking about, never filling
+  return 0;
 }
 var mAccessCodeSuggestion = null;
+function mUseSuggestedCode() {
+  var m = mAccessCodeSuggestion; if (!m) return;
+  var codeInp = document.getElementById("m-nc-accesscode"); if (!codeInp) return;
+  codeInp.value = (mCodesSummary(m) || m.code || "") + (m.note ? " (" + m.note + ")" : "");
+  codeInp.dataset.userEdited = "1";
+  var t = document.getElementById("m-nc-code-suggestion-text"); if (t) t.innerHTML = "Access code filled in from <b>" + mEscHtml(m.name || "a saved location") + "</b>";
+}
 function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
   var banner = document.getElementById("m-nc-code-suggestion");
   if (!banner) return;
@@ -3109,13 +3139,19 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
     var s = mScoreCodeEntry(entry, addrLower, haystack, lat, lng);
     if (s > bestScore) { bestScore = s; match = entry; }
   });
-  // A lone word match ("Israel", "Center") is not evidence this is the same building — require
-  // real proximity or a strong combined match, otherwise leave the code blank.
-  if (match && bestScore >= 12) {
+  var codeInp = document.getElementById("m-nc-accesscode");
+  var codeText = match ? ((mCodesSummary(match) || match.code || "") + (match.note ? " (" + match.note + ")" : "")) : "";
+  if (match && bestScore >= 100) {
+    // Certain — fill it in and say where it came from
     mAccessCodeSuggestion = match;
-    var codeInp = document.getElementById("m-nc-accesscode");   // populate directly; dispatcher can still edit or clear
-    if (codeInp && !codeInp.dataset.userEdited) codeInp.value = (mCodesSummary(match) || match.code || "") + (match.note ? " (" + match.note + ")" : "");
-    document.getElementById("m-nc-code-suggestion-text").textContent = "Be advised — access code filled in from " + (match.name || "a saved location");
+    if (codeInp && !codeInp.dataset.userEdited) codeInp.value = codeText;
+    document.getElementById("m-nc-code-suggestion-text").innerHTML = "Access code filled in from <b>" + mEscHtml(match.name || "a saved location") + "</b>";
+    banner.style.display = "flex";
+  } else if (match && bestScore >= 50) {
+    // Plausible only — never fill the field; offer it with one tap
+    mAccessCodeSuggestion = match;
+    document.getElementById("m-nc-code-suggestion-text").innerHTML = "Possibly <b>" + mEscHtml(match.name || "a saved location") + "</b>? " +
+      '<button type="button" onclick="mUseSuggestedCode()" style="margin-left:6px;background:rgba(201,168,76,0.2);border:1px solid rgba(201,168,76,0.6);border-radius:6px;color:#ffd97a;font-size:0.68rem;font-weight:700;padding:3px 9px;cursor:pointer">Use code</button>';
     banner.style.display = "flex";
   } else {
     mAccessCodeSuggestion = null;
@@ -4495,7 +4531,8 @@ function mPushCallbackSMS() {
 // ── NEW CALL FORM ──
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null;
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
+  var _ac = document.getElementById("m-nc-accesscode"); if (_ac) _ac.dataset.userEdited = "";
   mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
@@ -4526,8 +4563,10 @@ function mOpenNewCallForm() {
   mLoadLiveCodes();
   mInitNcAddressAutocomplete();
 }
-function mSetNcZone(z, isAuto) {
+var mNcZoneArea = "";
+function mSetNcZone(z, isAuto, areaName) {
   mNcZone = z;
+  if (areaName !== undefined) mNcZoneArea = areaName || "";
   mShowNcZoneBanner(z); // always shown now — zone is fully automatic, no manual toggle to update
 }
 function mShowNcZoneBanner(zone) {
@@ -4535,8 +4574,9 @@ function mShowNcZoneBanner(zone) {
   if (!banner) return;
   var icon, label, sub, bg, border, color, extra;
   extra = "";
-  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area"; bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
-  else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area"; bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
+  var areaLabel = mZoneAreaLabel(mNcZoneArea);
+  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
+  else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
   else {
     icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
     extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area.' + (M_OUTSIDE_CONTACTS.length ? ' <b>Call a coordinator, in this order:</b>' : '') + '</div>' +
@@ -4685,8 +4725,8 @@ window.mBindNcAutocomplete = function() {
       mCheckAccessCode(street, placeName, lat, lng);
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
     });
-    var zone = mDetectZone(lat, lng);
-    if (zone) mSetNcZone(zone, false);
+    var zInfo = mDetectZoneInfo(lat, lng);
+    if (zInfo) mSetNcZone(zInfo.type, false, zInfo.area);
   });
 };
 // Resolve a typed address (no suggestion tapped) via the Geocoder so the zone is detected from real coordinates
@@ -4711,7 +4751,7 @@ function mResolveTypedAddress(address) {
       document.getElementById("m-nc-lat").value = lat;
       document.getElementById("m-nc-lng").value = lng;
       document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
-      var zone = mDetectZone(lat, lng); if (zone) mSetNcZone(zone, false);
+      var zInfo2 = mDetectZoneInfo(lat, lng); if (zInfo2) mSetNcZone(zInfo2.type, false, zInfo2.area);
       mCheckAccessCode(results[0].formatted_address || address, "", lat, lng);
       resolve({ lat: lat, lng: lng });
     });
@@ -4791,7 +4831,7 @@ function mPostNewCallNow() {
   var _lat0 = parseFloat(document.getElementById("m-nc-lat").value) || null;
   var _lng0 = parseFloat(document.getElementById("m-nc-lng").value) || null;
   if (!mNcZone) {
-    if (_lat0 && _lng0 && typeof mDetectZone === "function") mSetNcZone(mDetectZone(_lat0, _lng0) || "", false);
+    if (_lat0 && _lng0 && typeof mDetectZoneInfo === "function") { var zi = mDetectZoneInfo(_lat0, _lng0); if (zi) mSetNcZone(zi.type, false, zi.area); }
     if (!mNcZone) {
       var _b0 = document.getElementById("m-nc-post-btn"); if (_b0) { _b0.disabled = false; _b0.textContent = "Post Call"; }
       mToast("Pick the address from the suggestions so the response area can be worked out", true);
@@ -4811,6 +4851,7 @@ function mPostNewCallNow() {
     lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
     zone: mNcZone, // always a detected value — posting is blocked below if it's unknown
+    zoneArea: mNcZoneArea || "",   // which coverage area it fell in, for the card and call info
     callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }],
     callNature: nature,
     patientAge: mNcAge,
@@ -6603,7 +6644,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.53</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.55</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

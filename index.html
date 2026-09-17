@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.54');
+  window.location.replace('/CallDashboard/mobile.html?v=2.55');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1283,7 +1283,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.51b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.52a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -12518,7 +12518,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.51b";
+var DESKTOP_VERSION = "9.52a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -13754,45 +13754,60 @@ function mHouseNumber(s) {
   var m = String(s || "").trim().match(/^(\d+)[a-z]?\b/i);
   return m ? m[1] : "";
 }
+function mStreetWords(s) {
+  return String(s || "").toLowerCase().split(",")[0].replace(/^\d+[a-z]?\s+/i, "")
+    .split(/[\s\-\/]+/).filter(function(w){ return w.length >= 3 && !mIsNoiseWord(w); });
+}
+function mNameKey(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+// Returns 100 when it is certainly this building (the code is filled in), 50 when it might be
+// (offered as a suggestion, never filled), 0 otherwise.
+//   Certain: house number + street agree · the picked place IS the saved place by name ·
+//            or the saved pin sits on the address AND the saved entry has a matching number.
+//   A saved pin with no house number is never certain on its own — pins are often geocoded to the
+//   road or the town, which is exactly how a shul's code ended up on a Walmart on the same route.
 function mScoreCodeEntry(entry, addrLower, haystack, selLat, selLng) {
   if (!entry.code) return 0;
-  var score = 0;
   var hasGeo = entry.lat && entry.lng && selLat && selLng;
   var hasAddr = !!entry.address;
   var dist = hasGeo ? mDistMeters(selLat, selLng, entry.lat, entry.lng) : null;
-
-  // A different street number is a different building, however close it is. 505 Raritan is not
-  // 415 Raritan, even though they're a block apart — never offer that code.
   var callNum = mHouseNumber(addrLower);
   var entryNum = hasAddr ? mHouseNumber(entry.address) : "";
-  if (callNum && entryNum && callNum !== entryNum) return 0;
+  if (callNum && entryNum && callNum !== entryNum) return 0;          // a different building, however close
 
-  if (hasGeo) {
-    // Same coordinates AND nothing contradicting the number → certain
-    if (dist <= 25 && (!entryNum || !callNum || callNum === entryNum)) return 100;
-    if (dist <= 80) score += 8;
-    else if (dist <= 150) score += 4;
-    else return 0;
-  }
-  var nameClean = (entry.name||"").toLowerCase();
-  var nameWords = nameClean.split(/[\s,()\/&\-]+/).filter(function(w){ return !mIsNoiseWord(w) && w.length >= 3; });
-  nameWords.forEach(function(w) { if (haystack.indexOf(w) !== -1) score += 4; });
-  var nameStripped = nameClean.replace(/[^a-z0-9 ]/g,'').trim();
-  if (nameStripped.length > 4 && haystack.indexOf(nameStripped) !== -1) score += 8;   // the whole place name appears
-  if (hasAddr) {
-    var entryAddrLower = entry.address.toLowerCase();
-    var hasNumMatch = entryNum && callNum && entryNum === callNum;
-    if (hasNumMatch) score += 8;
-    var eWords = entryAddrLower.split(/[\s,]+/).filter(function(w){ return !mIsNoiseWord(w) && w.length >= 4; });
-    eWords.forEach(function(w) { if (addrLower.indexOf(w) !== -1) score += 1; });      // a shared street name is weak evidence
-    if (entryAddrLower.length > 8 && addrLower.indexOf(entryAddrLower) !== -1) score += 12;
-    if (!hasGeo && !hasNumMatch) return 0;
-  }
-  if (!hasGeo && !hasAddr && score < 12) return 0;
-  return score;
+  var callStreet = mStreetWords(addrLower);
+  var entryStreet = hasAddr ? mStreetWords(entry.address) : [];
+  var streetAgree = entryStreet.length > 0 && entryStreet.some(function(w){ return callStreet.indexOf(w) !== -1; });
+  var numberAndStreet = callNum && entryNum && callNum === entryNum && streetAgree;
 
+  var entryName = mNameKey(entry.name);
+  var hayKey = mNameKey(haystack);
+  // The picked place is the saved place when every meaningful word of the saved name appears in
+  // what was picked ("Young Israel of East Brunswick" ↔ "Young Israel-East Brunswick")
+  var sigWords = entryName.split(" ").filter(function(w){ return w.length >= 4 && !mIsNoiseWord(w); });
+  var placeIsEntry = entryName.length >= 5 && (hayKey.indexOf(entryName) !== -1 ||
+    (sigWords.length >= 2 && sigWords.every(function(w){ return hayKey.indexOf(w) !== -1; })));
+
+  var pinOnAddress = hasGeo && dist <= 25;
+  var pinConfirmed = pinOnAddress && ((entryNum && callNum && entryNum === callNum) || (!callNum && !entryNum && placeIsEntry));
+
+  if (numberAndStreet || placeIsEntry || pinConfirmed) return 100;
+
+  // Not certain. Is it worth suggesting?
+  var near = hasGeo && dist <= 80;
+  var sameStreet = streetAgree && (!callNum || !entryNum);
+  var nameWords = entryName.split(" ").filter(function(w){ return w.length >= 4 && !mIsNoiseWord(w); });
+  var nameHit = nameWords.some(function(w){ return haystack.indexOf(w) !== -1; });
+  if (near) return 50;                      // close enough to be worth asking about, never filling
+  return 0;
 }
 var mAccessCodeSuggestion = null;
+function mUseSuggestedCode() {
+  var m = mAccessCodeSuggestion; if (!m) return;
+  var codeInp = document.getElementById("m-nc-accesscode"); if (!codeInp) return;
+  codeInp.value = (mCodesSummary(m) || m.code || "") + (m.note ? " (" + m.note + ")" : "");
+  codeInp.dataset.userEdited = "1";
+  var t = document.getElementById("m-nc-code-suggestion-text"); if (t) t.innerHTML = "Access code filled in from <b>" + mEscHtml(m.name || "a saved location") + "</b>";
+}
 function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
   var banner = document.getElementById("m-nc-code-suggestion");
   if (!banner) return;
@@ -13805,13 +13820,19 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
     var s = mScoreCodeEntry(entry, addrLower, haystack, lat, lng);
     if (s > bestScore) { bestScore = s; match = entry; }
   });
-  // A lone word match ("Israel", "Center") is not evidence this is the same building — require
-  // real proximity or a strong combined match, otherwise leave the code blank.
-  if (match && bestScore >= 12) {
+  var codeInp = document.getElementById("m-nc-accesscode");
+  var codeText = match ? ((mCodesSummary(match) || match.code || "") + (match.note ? " (" + match.note + ")" : "")) : "";
+  if (match && bestScore >= 100) {
+    // Certain — fill it in and say where it came from
     mAccessCodeSuggestion = match;
-    var codeInp = document.getElementById("m-nc-accesscode");   // populate directly; dispatcher can still edit or clear
-    if (codeInp && !codeInp.dataset.userEdited) codeInp.value = (mCodesSummary(match) || match.code || "") + (match.note ? " (" + match.note + ")" : "");
-    document.getElementById("m-nc-code-suggestion-text").textContent = "Be advised — access code filled in from " + (match.name || "a saved location");
+    if (codeInp && !codeInp.dataset.userEdited) codeInp.value = codeText;
+    document.getElementById("m-nc-code-suggestion-text").innerHTML = "Access code filled in from <b>" + mEscHtml(match.name || "a saved location") + "</b>";
+    banner.style.display = "flex";
+  } else if (match && bestScore >= 50) {
+    // Plausible only — never fill the field; offer it with one tap
+    mAccessCodeSuggestion = match;
+    document.getElementById("m-nc-code-suggestion-text").innerHTML = "Possibly <b>" + mEscHtml(match.name || "a saved location") + "</b>? " +
+      '<button type="button" onclick="mUseSuggestedCode()" style="margin-left:6px;background:rgba(201,168,76,0.2);border:1px solid rgba(201,168,76,0.6);border-radius:6px;color:#ffd97a;font-size:0.68rem;font-weight:700;padding:3px 9px;cursor:pointer">Use code</button>';
     banner.style.display = "flex";
   } else {
     mAccessCodeSuggestion = null;
@@ -16250,7 +16271,8 @@ function mShowMapInfo(lm) {
 // ── NEW CALL FORM ──
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = "";
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
+  var _ac = document.getElementById("m-nc-accesscode"); if (_ac) _ac.dataset.userEdited = "";
   mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
