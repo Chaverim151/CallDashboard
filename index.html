@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.53');
+  window.location.replace('/CallDashboard/mobile.html?v=2.54');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1283,7 +1283,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.49a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.51a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -12518,7 +12518,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.49a";
+var DESKTOP_VERSION = "9.51a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -13696,18 +13696,33 @@ function mPointInPolygon(point, polygon) {
   }
   return inside;
 }
-function mDetectZone(lat, lng) {
+// Which coverage area a point falls in, and what that area is called, so the form can name it
+function mDetectZoneInfo(lat, lng) {
   if (!lat || !lng) return null;
   var pt = { lat: lat, lng: lng };
-  var inPrimary = false, inSecondary = false;
+  var primaryName = "", secondaryName = "";
   M_COVERAGE_ZONES.forEach(function(zone) {
-    if (mPointInPolygon(pt, zone.points)) {
-      if (/primary/i.test(zone.name)) inPrimary = true;
-      else if (/secondary/i.test(zone.name)) inSecondary = true;
-      else inPrimary = true;
-    }
+    if (!mPointInPolygon(pt, zone.points)) return;
+    var isSecondary = /secondary/i.test(zone.name);
+    if (isSecondary) { if (!secondaryName) secondaryName = zone.name; }
+    else { if (!primaryName) primaryName = zone.name; }
   });
-  return inPrimary ? "primary" : inSecondary ? "secondary" : "outside";
+  if (primaryName) return { type: "primary", area: primaryName };
+  if (secondaryName) return { type: "secondary", area: secondaryName };
+  return { type: "outside", area: "" };
+}
+function mDetectZone(lat, lng) {
+  var info = mDetectZoneInfo(lat, lng);
+  return info ? info.type : null;
+}
+// Tidy the stored area name for display: "MC Primary Response Area — Highland Park" → "Highland Park"
+function mZoneAreaLabel(name) {
+  name = String(name || "").trim();
+  if (!name) return "";
+  var i = name.indexOf(" — ");
+  if (i !== -1) return name.slice(i + 3).trim();
+  // an unnamed area carries only the generic label — nothing extra to show
+  return /^(MC Primary Response Area|Secondary Response Area)/i.test(name) ? "" : name;
 }
 var mLiveCodes = { buildings: [], shuls: [] };
 var mLiveCodesLoaded = false;
@@ -13825,883 +13840,6 @@ function mLoadUnitDirectory() {
   }).catch(function(){});
 }
 
-function mJsAttr(s) { return String(s||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function mSafeUrl(u) { u = String(u||""); return /^https?:\/\//i.test(u) ? u.replace(/"/g,"&quot;") : ""; }
-function mCodesOf(item) {
-  var list = Array.isArray(item.codes) ? item.codes.filter(function(c){ return c && (c.code||"").trim(); }) : [];
-  if (!list.length && (item.code||"").trim()) list = [{ label: "", code: item.code }];
-  return list;
-}
-function mCodesBadges(item) {
-  return mCodesOf(item).map(function(c){ return '<div class="m-code-badge">' + (c.label ? '<span style="font-size:0.62rem;color:var(--gray);margin-right:6px;font-weight:400">' + mEscHtml(c.label) + '</span>' : '') + mEscHtml(c.code) + '</div>'; }).join("");
-}
-function mCodesSummary(item) { return mCodesOf(item).map(function(c){ return (c.label ? c.label + ": " : "") + c.code; }).join(" · "); }
-function mRenderMentions(text) {
-  return String(text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-    .replace(/@(MC-?\d{1,4})\b/gi, function(m, u) { return '<span style="color:var(--gold);font-weight:700">@' + u.toUpperCase().replace(/^MC(\d)/, "MC-$1") + '</span>'; });
-}
-function mAttachMentions(textareaId, boxId) {
-  var ta = document.getElementById(textareaId), box = document.getElementById(boxId);
-  if (!ta || !box || ta.dataset.mentionsBound) return;
-  ta.dataset.mentionsBound = "1";
-  function hide() { box.style.display = "none"; box.innerHTML = ""; }
-  function currentToken() {
-    var pos = ta.selectionStart || 0, before = ta.value.slice(0, pos);
-    var m = before.match(/(?:^|\s)@([A-Za-z0-9-]*)$/);
-    return m ? { start: pos - m[1].length - 1, q: m[1].toUpperCase() } : null;
-  }
-  ta.addEventListener("input", function() {
-    var tok = currentToken(); if (!tok) { hide(); return; }
-    var q = tok.q.replace(/^MC-?/, "");
-    var hits = mUnitDirectory.filter(function(u) { var num = u.unit.replace(/^MC-?/i, ""); return !q || num.indexOf(q) === 0 || u.name.toUpperCase().indexOf(tok.q) !== -1; }).slice(0, 6);
-    if (!hits.length) { hide(); return; }
-    box.innerHTML = hits.map(function(u) {
-      return '<div onmousedown="event.preventDefault();mInsertMention(\'' + textareaId + '\',\'' + boxId + '\',' + tok.start + ',\'' + u.unit + '\')" style="padding:9px 12px;border-bottom:1px solid var(--card-border);cursor:pointer;display:flex;justify-content:space-between;align-items:center">' +
-        '<span style="font-family:\'Oswald\',sans-serif;font-weight:700;color:var(--gold)">@' + u.unit + '</span><span style="font-size:0.72rem;color:var(--gray)">' + mRenderMentions(u.name) + '</span></div>';
-    }).join("");
-    box.style.display = "block";
-  });
-  ta.addEventListener("blur", function() { setTimeout(hide, 150); });
-}
-function mInsertMention(textareaId, boxId, start, unit) {
-  var ta = document.getElementById(textareaId), box = document.getElementById(boxId);
-  var pos = ta.selectionStart || ta.value.length;
-  ta.value = ta.value.slice(0, start) + "@" + unit + " " + ta.value.slice(pos);
-  var np = start + unit.length + 2; ta.setSelectionRange(np, np); ta.focus();
-  box.style.display = "none"; box.innerHTML = "";
-}
-function mEscHtml(s) { return String(s||"").replace(/&(?!(?:amp|lt|gt|quot|#\d+);)/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-function mSanitizeCall(call) {
-  function walk(v) {
-    if (typeof v === "string") return mEscHtml(v);
-    if (Array.isArray(v)) return v.map(walk);
-    if (v && typeof v === "object") { var o = {}; Object.keys(v).forEach(function(k){ o[k] = walk(v[k]); }); return o; }
-    return v;
-  }
-  return call ? walk(call) : call;
-}
-function mOpenDispatch() {
-  mGoTo("dispatch");
-  mLoadLiveCodes();
-  if (!mDispatchListener) {
-    mDispatchListener = db.collection("activeCalls").where("status","==","active")
-      .onSnapshot(function(snap) {
-        var calls = [];
-        snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
-        calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
-        mActiveCallsLive = calls;              // reused for instant rig-availability checks
-        mComputeRigConflicts(mDispSelectedCallId);
-        mRenderDispatchList(calls);
-      }, function(e) { mToast("Dispatch listener error: " + e.message, true); });
-  }
-}
-function mRenderDispatchList(calls) {
-  calls = (calls || []).filter(function(c){ return !c.status || c.status === "active"; }).map(mSanitizeCall);
-  var el = document.getElementById("m-dispatch-list");
-  if (!calls.length) { el.innerHTML = '<div style="text-align:center;color:var(--gray);padding:40px 20px;font-size:0.85rem">No active calls</div>'; return; }
-  el.innerHTML = calls.map(function(call) {
-    var zoneColor = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
-    var zoneLabel = call.zone === "primary" ? "Standard" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
-    var nature = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "").split(" (")[0] : "";
-    var patient = [call.patientAgeNum ? call.patientAgeNum+"y" : (call.patientAge||""), call.patientSex==="male"?"M":call.patientSex==="female"?"F":""].filter(Boolean).join(" ");
-    // Count the units actually on the crews; assignedUnits can drift if a unit is removed
-  var crewUnits = [];
-  (call.crews||[]).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__" && crewUnits.indexOf(cr[k]) === -1) crewUnits.push(cr[k]); }); });
-  var unitCount = crewUnits.length || (call.assignedUnits||[]).length;
-  var elapsedMin = call.createdAt ? Math.max(0, Math.round((Date.now() - new Date(call.createdAt).getTime()) / 60000)) : null;
-  var elapsedTxt = elapsedMin === null ? "" : (elapsedMin < 60 ? elapsedMin + "m" : Math.floor(elapsedMin/60) + "h " + (elapsedMin%60) + "m");
-  var destTxt = (call.disposition && call.disposition.type === "transport")
-    ? ((call.disposition.transports||[]).length > 1 ? call.disposition.transports.length + " destinations" : (call.disposition.hospital || ""))
-    : (call.disposition && call.disposition.type === "rma" ? "RMA" : "");
-    var addr = mPoiName(call.address) || (mCleanAddress(call.address)||"Unknown").split(",")[0];
-    var addrStreet = mPoiName(call.address) ? mStreetPart(call.address) : "";
-    return '<div class="m-disp-card" onclick="mOpenDispatchCall(\'' + call.id + '\')">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-        '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + zoneLabel + '</span>' +
-        '<span style="font-size:0.7rem;color:var(--gray)">' + (call.times&&call.times.dispatched||"") + '</span>' +
-      '</div>' +
-      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.98rem;font-weight:700;color:var(--white)">' + addr + (call.apt ? ' <span style="color:var(--gold);font-size:0.8rem">· ' + mEscHtml(call.apt) + '</span>' : '') + '</div>' +
-      (addrStreet ? '<div style="font-size:0.78rem;color:#c9d4e6;margin-top:1px">' + mEscHtml(addrStreet) + '</div>' : '') +
-      '<div style="display:flex;gap:8px;align-items:center;margin-top:4px;font-size:0.75rem;color:var(--gray)">' +
-        (nature ? '<span style="color:' + zoneColor + '">' + nature + '</span>' : '') +
-        (patient ? '<span>' + patient + '</span>' : '') +
-        (call.alsActivated ? '<span style="color:#ff9090">🚨 ALS</span>' : '') +
-        (call.testMode ? '<span style="font-size:0.6rem;font-weight:700;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.4);border-radius:4px;padding:1px 6px;color:#f0a500">🧪 TEST</span>' : '') +
-        (elapsedTxt ? '<span style="color:' + (elapsedMin >= 30 ? "#ff9090" : "var(--gray)") + '">⏱ ' + elapsedTxt + '</span>' : '') +
-        (destTxt ? '<span style="color:#7ab8f5">🏥 ' + mEscHtml(destTxt) + '</span>' : '') +
-        '<span style="margin-left:auto' + (unitCount ? '' : ';color:#ff9090') + '">' + (unitCount ? '👥 ' + unitCount : '⚠ No units') + '</span>' +
-      '</div>' +
-    '</div>';
-  }).join("");
-}
-function mLoadStorage() {
-  var el = document.getElementById("m-storage-content");
-  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
-  db.collection("appdata").doc("codes").get().then(function(snap) {
-    var items = (snap.exists && snap.data().sections && snap.data().sections.storage) || [];
-    if (!items.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No storage locations on file.</div>'; return; }
-    el.innerHTML = items.map(function(s) {
-      return '<div class="m-info-card">' +
-        '<div class="m-info-name">' + mEscHtml(s.name||"") + '</div>' +
-        (s.address ? '<div class="m-info-sub">' + mEscHtml(s.address) + '</div>' : "") +
-        mCodesBadges(s) +
-        (s.note ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">' + mEscHtml(s.note) + '</div>' : "") +
-      '</div>';
-    }).join("");
-  }).catch(function(e) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; });
-}
-var mAllCallLogs = [];
-function mLoadCallLogs() {
-  var el = document.getElementById("m-cl-list");
-  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading...</div>';
-  var from = document.getElementById("m-cl-from").value;
-  var to = document.getElementById("m-cl-to").value;
-  var zone = document.getElementById("m-cl-zone").value;
-  var disp = document.getElementById("m-cl-disp").value;
-  var nature = document.getElementById("m-cl-nature").value;
-  var unit = (document.getElementById("m-cl-unit").value||"").trim().toUpperCase();
-  function process(snap) {
-    var logs = [];
-    snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
-    if (from) logs = logs.filter(function(l) { return (l.createdAt||"") >= from + "T00:00:00.000Z"; });
-    if (to)   logs = logs.filter(function(l) { return (l.createdAt||"") <= to   + "T23:59:59.999Z"; });
-    if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
-    if (disp) logs = logs.filter(function(l) { return (l.disposition||{}).type === disp; });
-    if (nature === "__custom__") logs = logs.filter(function(l) { return l.callNature && !M_CALL_NATURES.some(function(nn){ return nn.value === l.callNature; }); });
-    else if (nature) logs = logs.filter(function(l) { return l.callNature === nature; });
-    if (unit) logs = logs.filter(function(l) {
-      return (l.crews||[]).some(function(crew){ return Object.values(crew||{}).indexOf(unit) !== -1; }) || (l.assignedUnits||[]).indexOf(unit) !== -1;
-    });
-    logs.sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
-    mAllCallLogs = logs;
-    mRenderCallLogs(logs);
-  }
-  // Matches desktop exactly: only status=="complete" is queried (cancelled calls aren't stored under this status)
-  db.collection("activeCalls").where("status","==","complete").orderBy("createdAt","desc").limit(500).get()
-    .then(process)
-    .catch(function() {
-      db.collection("activeCalls").where("status","==","complete").get()
-        .then(process)
-        .catch(function(e) { el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
-    });
-}
-function mPopulateCLNatureFilter() {
-  var sel = document.getElementById("m-cl-nature");
-  if (!sel || sel.options.length > 1) return;
-  sel.innerHTML = '<option value="">All Natures</option>' + M_CALL_NATURES.map(function(nn){ return '<option value="' + nn.value.replace(/"/g,"&quot;") + '">' + nn.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom</option>';
-}
-function mRenderCallLogs(logs) {
-  logs = (logs || []).map(mSanitizeCall);
-  var el = document.getElementById("m-cl-list");
-  if (!logs.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">No call records found.</div>'; return; }
-  el.innerHTML = logs.map(function(l) {
-    var zoneColor = l.zone === "primary" ? "#7dedb5" : l.zone === "secondary" ? "#ffc84a" : "#ff9090";
-    var nature = l.callNature ? l.callNature.replace(/^\d+\s*-\s*/, "").split(" (")[0] : "";
-    var date = l.createdAt ? new Date(l.createdAt).toLocaleDateString() : "—";
-    var dispText = l.status === "cancelled" ? "Cancelled" : (l.disposition && l.disposition.type === "transport" ? "Transport" : l.disposition && l.disposition.type === "rma" ? "RMA" : "—");
-    return '<div class="m-disp-card" onclick="mOpenCallLogDetail(\'' + l.id + '\')">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-        '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + (nature||"—") + '</span>' +
-        '<span style="font-size:0.68rem;color:var(--gray)">' + date + '</span>' +
-      '</div>' +
-      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.9rem;font-weight:700;color:var(--white)">' + (l.address||"Unknown").split(",")[0] + '</div>' +
-      '<div style="font-size:0.72rem;color:var(--gray);margin-top:2px">' + (l.assignedUnits||[]).join(", ") + ' · ' + dispText + '</div>' +
-    '</div>';
-  }).join("");
-}
-function mOpenCallLogDetail(id) {
-  var l = mSanitizeCall(mAllCallLogs.find(function(x){ return x.id === id; }));
-  if (!l) return;
-  mGoTo("calllog-detail");
-  var timeline = mBuildDispTimeline(l);
-  document.getElementById("m-cl-detail-content").innerHTML =
-    '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:12px">' +
-      '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + (l.address||"Unknown") + (l.apt ? ' <span style="color:var(--gold);font-size:0.85rem">· ' + mEscHtml(l.apt) + '</span>' : '') + '</div>' +
-      '<div style="font-size:0.8rem;color:var(--gray)">' + (l.callNature||"") + '</div>' +
-      '<div style="font-size:0.8rem;color:var(--gray);margin-top:4px">Units: ' + (l.assignedUnits||[]).join(", ") + '</div>' +
-      (l.disposition && l.disposition.hospital ? '<div style="font-size:0.8rem;color:#7ab8f5;margin-top:4px">🏥 ' + l.disposition.hospital + '</div>' : '') +
-    '</div>' + timeline;
-}
-var mAllTickets = [];
-var mTicketStatusFilter = "all";
-var M_CAT_ICONS = { general: "📋" };
-var M_PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
-function mLoadTickets() {
-  document.getElementById("m-tickets-list").innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading service requests…</div>';
-  db.collection("tickets").get().then(function(snap) {
-    mAllTickets = [];
-    snap.forEach(function(d) { mAllTickets.push(Object.assign({ id: d.id }, d.data())); });
-    mAllTickets.sort(function(a, b) {
-      var po = (M_PRIORITY_ORDER[a.priority] != null ? M_PRIORITY_ORDER[a.priority] : 2) - (M_PRIORITY_ORDER[b.priority] != null ? M_PRIORITY_ORDER[b.priority] : 2);
-      return po !== 0 ? po : (b.createdAt || "").localeCompare(a.createdAt || "");
-    });
-    mRenderTickets();
-  }).catch(function(e) { document.getElementById("m-tickets-list").innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
-}
-function mRenderTickets() {
-  var list = mTicketStatusFilter === "all" ? mAllTickets : mAllTickets.filter(function(t) { return t.status === mTicketStatusFilter; });
-  var el = document.getElementById("m-tickets-list");
-  if (!list.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">No service requests.</div>'; return; }
-  var statusColor = { open: "#ff9090", "in-progress": "#ffc84a", resolved: "#7dedb5" };
-  el.innerHTML = list.map(function(t) {
-    var date = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—";
-    var snippet = (t.details || "").substring(0, 90) + ((t.details || "").length > 90 ? "…" : "");
-    var sc = statusColor[t.status||"open"] || "#ff9090";
-    return '<div class="m-disp-card" onclick="mOpenTicket(\'' + t.id + '\')">' +
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px">' +
-        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.9rem;font-weight:700;color:var(--white)">' + (M_CAT_ICONS[t.category]||"📋") + " " + mEscHtml(t.title||"Untitled") + '</span>' +
-        '<span style="font-size:0.65rem;color:var(--gray);white-space:nowrap">' + date + '</span>' +
-      '</div>' +
-      '<div style="font-size:0.72rem;color:var(--gray);margin-bottom:6px">' + mEscHtml(t.unit||"") + ' · ' + mEscHtml(t.submittedBy||"—") + '</div>' +
-      (snippet ? '<div style="font-size:0.75rem;color:var(--white);margin-bottom:6px">' + snippet + '</div>' : '') +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-        '<span class="m-disp-zone" style="background:' + sc + '22;color:' + sc + ';border:1px solid ' + sc + '55">' + (t.status||"open") + '</span>' +
-        '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + (t.priority||"medium") + '</span>' +
-        (t.assignedTo ? '<span class="m-disp-zone" style="background:rgba(125,237,181,0.12);color:#7dedb5;border:1px solid rgba(125,237,181,0.3)">✋ ' + mEscHtml(t.assignedTo) + '</span>' : '') +
-      '</div>' +
-    '</div>';
-  }).join("");
-}
-function mPhotoStorage() { try { return firebase.storage(); } catch (e) { return null; } }
-function mDownscaleImage(file, maxPx) {
-  return new Promise(function(resolve, reject) {
-    var img = new Image(), url = URL.createObjectURL(file);
-    img.onload = function() {
-      var w = img.width, h = img.height, s = Math.min(1, maxPx / Math.max(w, h));
-      var cv = document.createElement("canvas"); cv.width = Math.round(w * s); cv.height = Math.round(h * s);
-      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
-      URL.revokeObjectURL(url);
-      cv.toBlob(function(b) { b ? resolve(b) : reject(new Error("Could not process image")); }, "image/jpeg", 0.8);
-    };
-    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error("Not a valid image")); };
-    img.src = url;
-  });
-}
-function mUploadTicketPhotos(ticketId, files, onProgress) {
-  var st = mPhotoStorage(); if (!st) return Promise.reject(new Error("Photo storage isn't available"));
-  var list = Array.prototype.slice.call(files || []).filter(function(f){ return /^image\//.test(f.type); }).slice(0, 6);
-  if (!list.length) return Promise.resolve([]);
-  var by = (mCurrentUserUnit || ""), byUid = (mCurrentUser ? mCurrentUser.uid : "");
-  var done = 0, results = [];
-  return list.reduce(function(chain, file) {
-    return chain.then(function() { return mDownscaleImage(file, 1280); }).then(function(blob) {
-      var path = "tickets/" + ticketId + "/" + Date.now() + "_" + Math.random().toString(36).slice(2, 7) + ".jpg";
-      return st.ref(path).put(blob, { contentType: "image/jpeg", customMetadata: { uploaderUid: byUid || "" } }).then(function(snap) { return snap.ref.getDownloadURL(); }).then(function(url) {
-        results.push({ url: url, path: path, by: by, byUid: byUid, at: new Date().toISOString() });
-        done++; if (onProgress) onProgress(done, list.length);
-      });
-    });
-  }, Promise.resolve()).then(function() {
-    if (!results.length) return results;
-    return db.collection("tickets").doc(ticketId).set({ photos: firebase.firestore.FieldValue.arrayUnion.apply(null, results) }, { merge: true }).then(function(){ return results; });
-  });
-}
-function mTicketPhotosHtml(t, canDelete) {
-  var ph = t.photos || []; if (!ph.length) return "";
-  return '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">' + ph.map(function(p, i) {
-    var esc = mSafeUrl(p.url); if (!esc) return "";
-    return '<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--card-border);background:#000">' +
-      '<a href="' + esc + '" target="_blank" rel="noopener"><img src="' + esc + '" alt="Ticket photo" style="width:100%;height:100%;object-fit:cover;display:block"></a>' +
-      (canDelete(p) ? '<button onclick="mDeleteTicketPhoto(\'' + t.id + '\',' + i + ')" style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,0.65);border:1px solid rgba(255,144,144,0.6);color:#ff9090;font-size:0.8rem;cursor:pointer;line-height:1">✕</button>' : '') +
-    '</div>';
-  }).join("") + '</div>';
-}
-function mDeleteTicketPhoto(ticketId, idx) {
-  if (!confirm("Remove this photo?")) return;
-  db.collection("tickets").doc(ticketId).get().then(function(s) {
-    if (!s.exists) return; var ph = (s.data().photos || []).slice(); var p = ph[idx]; if (!p) return;
-    ph.splice(idx, 1);
-    var st = mPhotoStorage();
-    var del = (st && p.path) ? st.ref(p.path).delete().catch(function(){}) : Promise.resolve();
-    return del.then(function(){ return db.collection("tickets").doc(ticketId).set({ photos: ph }, { merge: true }); });
-  }).then(function(){ mOpenTicket(ticketId); }).catch(function(e){ mToast("Error: " + e.message, true); });
-}
-function mAddPhotosToTicket(id) {
-  var inp = document.getElementById("m-tk-detail-photo-input"); if (!inp || !inp.files || !inp.files.length) return;
-  mToast("Uploading " + inp.files.length + " photo" + (inp.files.length>1?"s":"") + "…");
-  mUploadTicketPhotos(id, inp.files, function(d, tot){ if (d === tot) mToast("✓ " + tot + " photo" + (tot>1?"s":"") + " added"); })
-    .then(function(){ inp.value = ""; mOpenTicket(id); }).catch(function(e){ mToast("Upload failed: " + e.message, true); });
-}
-function mTicketHistoryHtml(t) {
-  var h = (t.history || []).slice().sort(function(a,b){ return (a.at||"").localeCompare(b.at||""); });
-  if (!h.length) return '<div style="color:var(--gray);font-size:0.8rem">No activity yet.</div>';
-  var icons = { created:"🆕", accepted:"✋", unassigned:"↩️", status:"🔁", resolved:"✅", comment:"💬" };
-  var labels = { created:"Submitted", accepted:"Accepted", unassigned:"Unassigned", status:"Status changed", resolved:"Resolved", comment:"Comment" };
-  return h.map(function(e) {
-    var d = e.at ? new Date(e.at) : null;
-    var when = d ? d.toLocaleDateString([], {month:"short",day:"numeric"}) + " " + d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "";
-    var note = e.note ? '<span style="color:var(--gray)"> — ' + String(e.note).replace(/&/g,"&amp;").replace(/</g,"&lt;") + '</span>' : "";
-    return '<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.8rem">' +
-      '<span style="flex-shrink:0">' + (icons[e.action]||"•") + '</span>' +
-      '<div style="flex:1;min-width:0"><span style="color:var(--white);font-weight:600">' + (labels[e.action]||e.action) + '</span>' + note +
-        '<div style="font-size:0.68rem;color:var(--gray);margin-top:1px">' + String(e.by||"").replace(/</g,"&lt;") + (when ? " · " + when : "") + '</div></div>' +
-    '</div>';
-  }).join("");
-}
-function mOpenTicket(id) {
-  var t = mAllTickets.find(function(x){ return x.id === id; });
-  if (!t) return;
-  // pull the latest copy so the server-written activity log is current
-  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) Object.assign(t, s.data()); mRenderTicketDetail(id, t); }).catch(function(){ mRenderTicketDetail(id, t); });
-}
-function mRenderTicketDetail(id, t) {
-  var isAdmin = mCurrentRole === "admin";
-  var isServiceUnit = isAdmin || (mCurrentUserRoles||[]).includes("logistics");
-  var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
-  document.getElementById("m-tk-detail-title").textContent = "#" + id.slice(-6).toUpperCase();
-  db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
-    var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
-    if (!csnap.empty) {
-      var all = csnap.docs.map(function(c) { return Object.assign({ id: c.id }, c.data()); });
-      var byParent = {}; all.forEach(function(d) { var p = d.parentId || "__root__"; (byParent[p] = byParent[p] || []).push(d); });
-      function renderComment(d, depth) {
-        var isMine = d.authorUid && mCurrentUser && d.authorUid === mCurrentUser.uid;
-        var canEdit = mCommentEditable(d, all, mCurrentUser && mCurrentUser.uid);
-        var html = '<div id="cmt-' + d.id + '" style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:8px 10px;margin-bottom:6px' + (depth ? ';margin-left:' + Math.min(depth,3)*14 + 'px;border-left:2px solid rgba(201,168,76,0.35)' : '') + '">' +
-          (d.parentAuthor ? '<div style="font-size:0.6rem;color:var(--gray);margin-bottom:2px">↪ replying to <b>' + mRenderMentions(d.parentAuthor) + '</b></div>' : '') +
-          '<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--gray);margin-bottom:2px"><span style="color:var(--white);font-weight:700">' + mRenderMentions(d.author||"—") + '</span><span>' + (d.createdAt ? new Date(d.createdAt).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "") + '</span></div>' +
-          '<div class="cmt-text" data-raw="' + String(d.text||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;") + '" style="font-size:0.8rem;color:var(--white);white-space:pre-wrap">' + mRenderMentions(d.text) + (d.editedAt ? ' <span style="font-size:0.6rem;color:var(--gray)">(edited)</span>' : '') + '</div>' +
-          '<div class="cmt-actions" style="display:flex;gap:14px;margin-top:6px">' +
-            '<button onclick="mReplyTo(\'' + d.id + '\',\'' + mJsAttr(d.author) + '\')" style="background:none;border:none;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">↩ Reply</button>' +
-            (canEdit ? '<button onclick="mEditComment(\'' + t.id + '\',\'' + d.id + '\')" style="background:none;border:none;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:0;cursor:pointer">✎ Edit</button>' : '') +
-          '</div>' +
-        '</div>';
-        (byParent[d.id] || []).forEach(function(r) { html += renderComment(r, depth + 1); });
-        return html;
-      }
-      commentsHtml = (byParent["__root__"] || []).map(function(d) { return renderComment(d, 0); }).join("");
-    }
-    var statusControl = isAdmin
-      ? '<select class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.75rem" onchange="mUpdateTicketStatus(\'' + id + '\',this.value)"><option value="open"' + (t.status==="open"?" selected":"") + '>🔴 Open</option><option value="in-progress"' + (t.status==="in-progress"?" selected":"") + '>🟡 In Progress</option><option value="resolved"' + (t.status==="resolved"?" selected":"") + '>🟢 Resolved</option></select>'
-      : '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--white);border:1px solid var(--card-border)">' + (t.status||"open") + '</span>';
-    var assignmentHtml = "";
-    if (t.assignedTo) {
-      assignmentHtml = '<div style="font-size:0.85rem;color:var(--white)">✋ ' + mEscHtml(t.assignedTo) + '</div><div style="font-size:0.68rem;color:var(--gray)">Accepted ' + (t.assignedAt ? new Date(t.assignedAt).toLocaleString() : "") + '</div>';
-      if (t.assignedByUid === mCurrentUser.uid || isAdmin) assignmentHtml += '<button class="m-disp-btn" style="margin-top:8px;border-color:rgba(255,144,144,0.4);color:#ff9090" onclick="mUnassignTicket(\'' + id + '\')">Unassign</button>';
-    var canResolve = isServiceUnit || (t.assignedByUid && mCurrentUser && t.assignedByUid === mCurrentUser.uid);
-    var resolveHtml = "";
-    if (canResolve && t.status !== "resolved") {
-      resolveHtml = '<button onclick="mResolveTicket(\'' + id + '\')" style="width:100%;margin-top:12px;background:rgba(125,237,181,0.14);border:1px solid rgba(125,237,181,0.5);border-radius:9px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:13px;cursor:pointer">✓ Mark Resolved</button>';
-    } else if (canResolve && t.status === "resolved") {
-      resolveHtml = '<div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(125,237,181,0.08);border:1px solid rgba(125,237,181,0.3);border-radius:9px;padding:10px 12px"><span style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-weight:700;font-size:0.8rem">✓ Resolved</span><button onclick="mReopenTicket(\'' + id + '\')" style="background:none;border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px 10px;cursor:pointer">↩ Reopen</button></div>';
-    }
-    } else if (isServiceUnit) {
-      assignmentHtml = '<span style="color:var(--gray);font-size:0.84rem">Unassigned</span><button class="m-disp-btn" style="margin-top:8px;border-color:rgba(201,168,76,0.4);color:var(--gold)" onclick="mAcceptTicket(\'' + id + '\')">✋ Accept</button>';
-    } else {
-      assignmentHtml = '<span style="color:var(--gray);font-size:0.84rem">Unassigned</span>';
-    }
-    document.getElementById("m-tk-detail-content").innerHTML =
-      '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:12px">' +
-        '<div style="font-size:0.85rem;color:var(--white);margin-bottom:4px"><span style="color:var(--gray)">Priority:</span> ' + (t.priority||"—") + '</div>' +
-        '<div style="font-size:0.85rem;color:var(--white);margin-bottom:4px"><span style="color:var(--gray)">Unit:</span> ' + (t.unit||"—") + '</div>' +
-        '<div style="font-size:0.85rem;color:var(--white);margin-bottom:4px"><span style="color:var(--gray)">Submitted:</span> ' + date + '</div>' +
-        '<div style="font-size:0.85rem;color:var(--white);margin-bottom:8px"><span style="color:var(--gray)">By:</span> ' + mEscHtml(t.submittedBy||"—") + '</div>' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="color:var(--gray);font-size:0.85rem">Status:</span>' + statusControl + '</div>' +
-        '<div style="border-top:1px solid var(--card-border);padding-top:10px">' + assignmentHtml + '</div>' +
-      '</div>' +
-      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Details</div>' +
-      '<div style="font-size:0.85rem;color:var(--white);margin-bottom:16px;white-space:pre-wrap">' + (t.details ? mRenderMentions(t.details) : "No details provided.") + '</div>' +
-      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Photos' + ((t.photos||[]).length ? ' (' + t.photos.length + ')' : '') + '</div>' +
-      mTicketPhotosHtml(t, function(p){ return isAdmin || (p.byUid && mCurrentUser && p.byUid === mCurrentUser.uid); }) +
-      ((t.photos||[]).length < 12 ? '<label style="display:inline-flex;align-items:center;gap:8px;border:1px dashed rgba(201,168,76,0.45);border-radius:8px;padding:9px 12px;margin-bottom:16px;cursor:pointer;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase">📷 Add photos<input type="file" id="m-tk-detail-photo-input" accept="image/*" multiple style="display:none" onchange="mAddPhotosToTicket(\'' + id + '\')"></label>' : '') +
-      resolveHtml +
-      '<div style="height:16px"></div>' +
-      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Activity Log</div>' +
-      '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:6px 12px;margin-bottom:16px">' + mTicketHistoryHtml(t) + '</div>' +
-      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Comments</div>' +
-      commentsHtml +
-      '<div id="m-tk-replying" style="display:none;font-size:0.72rem;color:var(--gold);margin-top:8px;align-items:center;justify-content:space-between"><span id="m-tk-replying-label"></span><button onclick="mCancelReply()" style="background:none;border:none;color:var(--gray);cursor:pointer;font-size:0.9rem">✕</button></div>' +
-      '<div style="position:relative"><textarea id="m-tk-new-comment" class="m-disp-input" rows="3" placeholder="Add a comment… type @ to tag a unit" style="margin-top:8px;margin-bottom:8px;resize:vertical"></textarea>' +
-      '<div id="m-tk-mention-box" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:-8px;background:#16283f;border:1px solid var(--card-border);border-radius:8px;z-index:30;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5)"></div></div>' +
-      '<button onclick="mAddComment(\'' + id + '\')" style="width:100%;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);border-radius:8px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-weight:700;padding:10px;cursor:pointer;margin-bottom:16px">Post Comment</button>' +
-      (isAdmin ? '<button onclick="mDeleteTicket(\'' + id + '\')" style="width:100%;background:rgba(224,85,85,0.1);border:1px solid rgba(255,144,144,0.4);border-radius:8px;color:#ff9090;font-family:\'Oswald\',sans-serif;font-weight:700;padding:10px;cursor:pointer">🗑 Delete</button>' : "");
-    mGoTo("service-detail");
-    mReplyTarget = null;
-    mAttachMentions("m-tk-new-comment", "m-tk-mention-box");
-  }).catch(function(e) { mToast("Error: " + e.message, true); });
-}
-function mCommentEditable(d, all, myUid) {
-  if (!myUid || d.authorUid !== myUid) return false;
-  var lastOther = all.filter(function(x){ return x.authorUid && x.authorUid !== myUid; }).map(function(x){ return x.createdAt || ""; }).sort().pop() || "";
-  return !lastOther || (d.createdAt || "") > lastOther;
-}
-function mEditComment(ticketId, commentId) {
-  var box = document.getElementById("cmt-" + commentId); if (!box) return;
-  var textEl = box.querySelector(".cmt-text"); var cur = textEl ? textEl.getAttribute("data-raw") : "";
-  box.querySelector(".cmt-actions").style.display = "none";
-  textEl.innerHTML = '<textarea id="cmt-edit-' + commentId + '" rows="3" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-family:inherit;font-size:0.85rem;outline:none;resize:vertical"></textarea>' +
-    '<div style="display:flex;gap:6px;margin-top:6px">' +
-      '<button onclick="mSaveCommentEdit(\'' + ticketId + '\',\'' + commentId + '\')" style="flex:1;background:rgba(125,237,181,0.14);border:1px solid rgba(125,237,181,0.5);border-radius:7px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:8px;cursor:pointer">Save</button>' +
-      '<button onclick="mOpenTicket(\'' + ticketId + '\')" style="flex:1;background:none;border:1px solid var(--card-border);border-radius:7px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:8px;cursor:pointer">Cancel</button>' +
-    '</div>';
-  var ta = document.getElementById("cmt-edit-" + commentId); ta.value = cur; ta.focus();
-}
-function mSaveCommentEdit(ticketId, commentId) {
-  var ta = document.getElementById("cmt-edit-" + commentId); if (!ta) return;
-  var text = ta.value.trim(); if (!text) { mToast("Comment can't be empty", true); return; }
-  db.collection("tickets").doc(ticketId).collection("comments").doc(commentId).update({ text: text, editedAt: new Date().toISOString() })
-    .then(function(){ mToast("Comment updated"); mOpenTicket(ticketId); })
-    .catch(function(e){ mToast(/permission/i.test(e.message) ? "Can't edit — someone has replied since" : "Error: " + e.message, true); });
-}
-var mReplyTarget = null;
-function mReplyTo(commentId, author) {
-  mReplyTarget = { id: commentId, author: author };
-  var w = document.getElementById("m-tk-replying"); if (w) { w.style.display = "flex"; document.getElementById("m-tk-replying-label").textContent = "↪ Replying to " + author; }
-  var ta = document.getElementById("m-tk-new-comment"); if (ta) { ta.focus(); ta.scrollIntoView({ block: "center", behavior: "smooth" }); }
-}
-function mCancelReply() { mReplyTarget = null; var w = document.getElementById("m-tk-replying"); if (w) w.style.display = "none"; }
-function mAcceptTicket(id) {
-  if (mCurrentRole !== "admin" && !(mCurrentUserRoles||[]).includes("logistics")) { mToast("Only service units can accept tickets", true); return; }
-  var t = mAllTickets.find(function(x){ return x.id === id; });
-  db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
-    var d = snap.data();
-    var assignedTo = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
-    var update = { assignedTo: assignedTo, assignedByUid: mCurrentUser.uid, assignedAt: new Date().toISOString(), status: "in-progress" };
-    return db.collection("tickets").doc(id).set(update, { merge: true }).then(function() {
-      if (t) Object.assign(t, update); // onTicketUpdated Cloud Function notifies submitter + logistics team
-    });
-  }).then(function() { mToast("✋ Assigned to you!"); mOpenTicket(id); }).catch(function(e) { mToast("Error: " + e.message, true); });
-}
-function mUnassignTicket(id) {
-  if (!confirm("Remove assignment?")) return;
-  db.collection("tickets").doc(id).set({ assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true }).then(function() {
-    var t = mAllTickets.find(function(x){ return x.id === id; });
-    if (t) { t.assignedTo = null; t.assignedByUid = null; t.assignedAt = null; }
-    mToast("Unassigned"); mOpenTicket(id);
-  }).catch(function(e) { mToast("Error: " + e.message, true); });
-}
-function mResolveTicket(id) {
-  if (!confirm("Mark this service request as resolved?")) return;
-  mUpdateTicketStatus(id, "resolved");
-}
-function mReopenTicket(id) {
-  if (!confirm("Reopen this service request?")) return;
-  var t = mAllTickets.find(function(x){ return x.id === id; });
-  mUpdateTicketStatus(id, (t && t.assignedTo) ? "in-progress" : "open");
-}
-function mUpdateTicketStatus(id, status) {
-  db.collection("tickets").doc(id).set({ status: status, statusByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true }).then(function() {
-    var t = mAllTickets.find(function(x){ return x.id === id; }); if (t) t.status = status;
-    mToast("Status updated!");
-  }).catch(function(e) { mToast("Error: " + e.message, true); });
-}
-function mAddComment(id) {
-  var text = document.getElementById("m-tk-new-comment").value.trim();
-  if (!text) return;
-  db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
-    var d = snap.data();
-    var author = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
-    var doc = { text: text, author: author, authorUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() };
-    if (mReplyTarget) { doc.parentId = mReplyTarget.id; doc.parentAuthor = mReplyTarget.author; }
-    return db.collection("tickets").doc(id).collection("comments").add(doc).then(function() {
-      // onTicketComment Cloud Function notifies assigned/submitter/logistics, plus @tagged units and the person replied to
-    });
-  }).then(function() { document.getElementById("m-tk-new-comment").value = ""; mReplyTarget = null; mOpenTicket(id); }).catch(function(e){ mToast("Error: " + e.message, true); });
-}
-function mDeleteTicket(id) {
-  if (!confirm("Delete this service request permanently?")) return;
-  db.collection("tickets").doc(id).delete().then(function() { mToast("Deleted"); mGoTo("service"); mLoadTickets(); }).catch(function(e){ mToast("Error: " + e.message, true); });
-}
-var M_CLICKSEND_WORKER = "https://hatzolah-email.shmueleidelman-work.workers.dev/";
-var M_APP_SHARED_SECRET = "hzmc-2026-9f3a7d1c";
-function mGetFirstPhone(phone) {
-  if (!phone) return "";
-  var raw = phone.split(/[\/|]/)[0].trim().replace(/\D/g, "");
-  if (!raw) return "";
-  if (raw.length === 10) return "+1" + raw;
-  if (raw.length === 11 && raw[0] === "1") return "+" + raw;
-  return "+" + raw;
-}
-// ─── Message templates ────────────────────────────────────────────────────────
-// Admins can rewrite any outgoing message in Admin ▸ Message Templates. A template is plain
-// text with {variables}; a line whose variables are all empty is dropped, so optional fields
-// (cross streets, access code…) never leave a blank line behind.
-var M_SMS_TEMPLATE_DEFAULTS = {
-  assignment: "🚑 YOU HAVE BEEN ASSIGNED\n{zoneLine}\n{poi}\n{address}\n{patient} | {nature}\nAccess code: {accessCode}\n{mapsLink}\n{time}",
-  admin:      "📟 ADMIN CALL NOTIFICATION\n{zoneLine}\n{poi}\n{address}\n{patient} | {nature}\nAccess code: {accessCode}\n{mapsLink}\n{time}",
-  resource:   "{header}\n{address}\n{detail}\n{time}",
-  note:       "📝 CALL UPDATE\n{address}\n{note}\n{time}",
-  callback:   "📞 CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}"
-};
-var M_SMS_TEMPLATES = {};
-function mLoadSmsTemplates() {
-  if (typeof db === "undefined" || !db || !db.collection) return Promise.resolve();
-  return db.collection("appdata").doc("smsTemplates").get().then(function(snap) {
-    M_SMS_TEMPLATES = (snap && snap.exists) ? (snap.data() || {}) : {};
-  }).catch(function(){ M_SMS_TEMPLATES = {}; });
-}
-function mTemplateFor(key) {
-  var t = M_SMS_TEMPLATES && M_SMS_TEMPLATES[key];
-  return (typeof t === "string" && t.trim()) ? t : M_SMS_TEMPLATE_DEFAULTS[key];
-}
-// Fill {variables}; drop any line left with nothing but punctuation and labels.
-function mRenderTemplate(tpl, vars) {
-  return String(tpl || "").split("\n").map(function(line) {
-    var used = [], filled = line.replace(/\{(\w+)\}/g, function(_, k) {
-      var v = vars[k] == null ? "" : String(vars[k]);
-      used.push(v);
-      return v;
-    });
-    if (used.length && used.every(function(v){ return !v.trim(); })) return null;   // all its variables were empty
-    filled = filled.replace(/\s*\|\s*\|\s*/g, " | ").replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, "");   // tidy dividers left by empty values
-    return filled.trim() ? filled : null;
-  }).filter(function(l){ return l !== null; }).join("\n");
-}
-function mCallVars(call) {
-  var rawA = mCleanAddress(call.address || "");
-  var poi = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ")[0].trim() : "";
-  var fullA = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ").slice(1).join(" — ") : rawA;
-  var street = fullA.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 3).join(", ");
-  var sex = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
-  var patient = call.patientAgeNum ? (call.patientAgeNum + " YO" + sex)
-              : (call.patientAge === "pediatric" ? ("Pediatric " + sex).trim()
-              : call.patientAge === "adult" ? ("Adult " + sex).trim() : sex);
-  var now = new Date();
-  return {
-    zoneLine: call.zone === "secondary" ? "LOAD A RIG" : call.zone === "outside" ? "OUTSIDE ZONE" : "",
-    poi: poi,
-    address: street + (call.apt ? " | Apt: " + call.apt : ""),
-    addressOnly: street,
-    apt: call.apt || "",
-    patient: patient,
-    age: call.patientAgeNum || "",
-    sex: sex,
-    nature: (call.callNature || "").replace(/^\d+\s*-\s*/, ""),
-    accessCode: call.accessCode || "",
-    callback: call.callbackNumber || "",
-    notes: call.dispatchNotes || "",
-    als: (call.alsActivated && call.alsProvider) ? (call.alsProvider + (call.alsEta ? " (ETA " + call.alsEta + " min)" : "")) : "",
-    mapsLink: call.mapsLink || "",
-    time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" })
-  };
-}
-// Cross streets are worked out from the address on their own — there's nothing for a dispatcher to fill in.
-function mCallDetailsSMS(call, header) {
-  var key = (header && /ADMIN/.test(header)) ? "admin" : "assignment";
-  var out = mRenderTemplate(mTemplateFor(key), mCallVars(call));
-  if (header && key === "assignment") out = out.replace(/^[^\n]*/, header);   // caller supplied its own header
-  return out;
-}
-// Who gets SMS: chiefs, captains, responders, observers and admins.
-// Logistics-only and dispatcher-only accounts are skipped.
-var M_SMS_ROLES = ["responder", "captain", "chief", "observer", "admin"];
-function mSmsEligible(u) {
-  if (!u) return false;
-  if (String(u.role || "").toLowerCase() === "admin") return true;          // account-level admin
-  var roles = (u.roles || []).map(function(r){ return String(r).toLowerCase(); }).filter(Boolean);
-  if (roles.length) return roles.some(function(r){ return M_SMS_ROLES.indexOf(r) !== -1; });
-  // No duty roles recorded: fall back to the account type so plain members aren't silently dropped
-  return String(u.role || "").toLowerCase() === "responder";
-}
-function mPhonesForUnits(units) {
-  var want = {}; (units || []).forEach(function(u){ if (u) want[u] = true; });
-  if (!Object.keys(want).length) return Promise.resolve([]);
-  return db.collection("users").get().then(function(snap) {
-    var phones = [];
-    snap.forEach(function(d) { var u = d.data(); if (u.unit && want[u.unit] && mSmsEligible(u)) { var p = mGetFirstPhone(u.phone); if (p) { mPhoneUnitMap[p] = u.unit; phones.push(p); } } });
-    return phones;
-  }).catch(function(){ return []; });
-}
-// Units that are notified of every call, assigned or not
-var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];
-// The admin group is copied on every call notification, under their own header
-function mPlainHeader(h) { return String(h || "").replace(/^[^A-Za-z0-9]+\s*/, ""); }
-function mAdminCopy(call, header, detail) {
-  var already = {};
-  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
-  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call already got it
-  if (!units.length) return;
-  var body = "📟 ADMIN CALL NOTIFICATION\n" + mPlainHeader(header) + "\n" + mSmsAddress(call) + (detail ? "\n" + detail : "");
-  mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
-}
-function mNotifyAdminUnits(call) {
-  var assigned = {};
-  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") assigned[cr[k]] = true; }); });
-  (call.assignedUnits || []).forEach(function(u){ assigned[u] = true; });
-  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !assigned[u]; });   // if they're on the call they get the assignment text instead
-  if (!units.length) return;
-  mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) {
-    if (phones.length) return mSendClickSendSMS(phones, mCallDetailsSMS(call, "📟 ADMIN CALL NOTIFICATION"));
-  }); });
-}
-function mTextAssignedUnit(unitId, call) {
-  mSmsEnqueue(function(){ return mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, mCallDetailsSMS(call)); }); });
-  mAdminCopy(call, "UNIT ASSIGNED", unitId + " assigned to this call");
-}
-function mLogKind(message) {
-  var head = String(message || "").split("\n")[0].replace(/^\[TEST\]\s*/, "");
-  return head.replace(/^[^A-Za-z0-9]+\s*/, "").trim() || "Message";
-}
-var mPhoneUnitMap = {};   // phone → unit, filled as recipients are resolved
-function mUnitsForPhones(phones) {
-  return (phones || []).map(function(p){ return mPhoneUnitMap[p] || p; });
-}
-// Every outgoing message is recorded so admins can see exactly what went out, to whom, and when.
-function mLogNotification(entry) {
-  try {
-    if (typeof db === "undefined" || !db || !db.collection) return;
-    db.collection("notificationLog").add({
-      at: new Date().toISOString(),
-      channel: entry.channel || "sms",
-      kind: entry.kind || "",
-      body: String(entry.body || "").slice(0, 900),
-      to: (entry.to || []).slice(0, 60),
-      units: (entry.units || mUnitsForPhones(entry.to)).slice(0, 60),
-      count: (entry.to || []).length,
-      testMode: !!entry.testMode,
-      sentBy: entry.sentBy || "",
-      status: entry.status || "sent",
-      intendedUnits: (entry.intendedUnits || []).slice(0, 60)
-    }).catch(function(){});
-  } catch (e) {}
-}
-// SMS ordering: every message goes through one queue, so a slow recipient lookup on an early
-// event can't let a later event's text overtake it. Each send waits for the previous to be away.
-var mSmsChain = Promise.resolve();
-function mSmsEnqueue(job) {
-  mSmsChain = mSmsChain.then(function() {
-    try { return job(); } catch (e) { console.warn("SMS job failed:", e); }
-  }, function() { try { return job(); } catch (e) {} });
-  return mSmsChain;
-}
-function mSmsAddress(call) {
-  var raw = String(call.address || "");
-  var poi = raw.indexOf(" — ") !== -1 ? raw.split(" — ")[0].trim() : "";
-  var rest = raw.indexOf(" — ") !== -1 ? raw.split(" — ").slice(1).join(" — ") : raw;
-  var street = rest.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 2).join(", ");
-  return (poi ? poi + " — " : "") + street;
-}
-function mTextResourceToAssigned(call, header, detail) {
-  var units = [];
-  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
-  if (!units.length) return;
-  var _body = mRenderTemplate(mTemplateFor("resource"), Object.assign(mCallVars(call), { header: header, detail: detail || "", address: mSmsAddress(call) }));
-  mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, _body); }); });
-  mAdminCopy(call, header, detail);
-}
-function mTextNoteToAssigned(call, noteText) {
-  var units = [];
-  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
-  if (!units.length) return;
-  var _nbody = mRenderTemplate(mTemplateFor("note"), Object.assign(mCallVars(call), { note: noteText, address: mSmsAddress(call) }));
-  mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, _nbody); }); });
-  mAdminCopy(call, "📝 CALL UPDATE", noteText);
-}
-function mSmsStamp() {
-  var d = new Date();
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + d.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
-}
-function mStampMessage(msg) {
-  msg = String(msg || "");
-  return /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(msg) ? msg : msg.replace(/\s+$/, "") + "\n" + mSmsStamp();
-}
-function mSendClickSendSMS(toNumbers, message) {
-  toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
-  if (!toNumbers.length || !message) return Promise.resolve();
-  message = mStampMessage(message);
-  // Test Dispatch Mode ON — only send to the logged-in unit's own phone, prefixed [TEST]
-  if (MSysTestingMode) {
-    if (!mCurrentUser) return Promise.resolve();
-    return db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
-      if (!snap.exists) return;
-      var phone = mGetFirstPhone(snap.data().phone);
-      if (!phone) { mToast("Test Mode: no phone on your profile — the text wasn't sent anywhere", true); mLogNotification({ kind: mLogKind(message), body: message, to: [], testMode: true, status: "not sent — no phone on profile", sentBy: mCurrentUserUnit }); return; }
-      mLogNotification({ kind: mLogKind(message), body: message, to: [phone], units: [mCurrentUserUnit || "you"], intendedUnits: mUnitsForPhones(toNumbers), testMode: true, sentBy: mCurrentUserUnit });
-      return fetch(M_CLICKSEND_WORKER, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-App-Secret": M_APP_SHARED_SECRET },
-        body: JSON.stringify({ type: "sms", messages: [{ to: phone, body: "[TEST] " + message }] })
-      });
-    }).catch(function(e){ console.warn("SMS test send failed:", e); });
-  }
-  mLogNotification({ kind: mLogKind(message), body: message, to: toNumbers, testMode: false, sentBy: mCurrentUserUnit });
-  return fetch(M_CLICKSEND_WORKER, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-App-Secret": M_APP_SHARED_SECRET },
-    body: JSON.stringify({ type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
-  }).then(function(r){ return r.json(); }).catch(function(e){ console.warn("SMS send failed:", e); });
-}
-/* ported mobile new-call broadcast removed too */
-function mPushCallbackSMS() {
-  var call = mDispCallCache[mDispSelectedCallId];
-  if (!call || !call.callbackNumber) { mToast("No callback number on this call", true); return; }
-  var ON_SCENE = ["on_scene_direct","on_scene_ambo","rma_scene","transporting","at_facility"]; // for callback push
-  var onSceneUnits = [];
-  (call.crews||[]).forEach(function(crew, ci) {
-    Object.keys(crew||{}).forEach(function(role) {
-      if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
-      if (ON_SCENE.indexOf(mUdOf(call, ci, role).status || "") !== -1) onSceneUnits.push(crew[role]);
-    });
-  });
-  var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
-  if (!targetUnits.length) { mToast("No units assigned", true); return; }
-  var addr = (call.address||"").split(",")[0];
-  var msg = "📞 CALLBACK NUMBER\n" + mSmsAddress(call) + "\nCallback: " + call.callbackNumber;
-  db.collection("users").get().then(function(snap) {
-    var phones = [];
-    snap.forEach(function(doc) {
-      var d = doc.data();
-      if (targetUnits.indexOf(d.unit) !== -1 && mSmsEligible(d)) { var phone = mGetFirstPhone(d.phone); if (phone) { mPhoneUnitMap[phone] = d.unit; phones.push(phone); } }
-    });
-    if (!phones.length) { mToast("No phone numbers found", true); return; }
-    mSmsEnqueue(function(){ return mSendClickSendSMS(phones, msg); });
-    mToast("📱 Callback # pushed to " + targetUnits.join(", "));
-  }).catch(function(e){ mToast("Error: " + e.message, true); });
-}
-function mOpenNewCallForm() {
-  mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null;
-  mBindNcValidation();
-  [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
-  document.getElementById("m-nc-address").value = "";
-  document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
-  document.getElementById("m-nc-age-num").value = "";
-  document.getElementById("m-nc-callback").value = "";
-  document.getElementById("m-nc-accesscode").value = "";
-  document.getElementById("m-nc-apt").value = "";
-  document.getElementById("m-nc-notes").value = "";
-  document.getElementById("m-nc-code-suggestion").style.display = "none";
-  document.getElementById("m-nc-zone-banner").style.display = "none";
-  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge(""); mSetNcSex("");
-  var natSel = document.getElementById("m-nc-nature");
-  if (!natSel.options.length) {
-    natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
-    natSel.onchange = function() {
-      var found = M_CALL_NATURES.find(function(n){ return n.value === natSel.value; });
-      document.getElementById("m-nc-als-hint").style.display = (found && found.als) ? "block" : "none";
-      document.getElementById("m-nc-als-hint-spacer").style.display = (found && found.als) ? "none" : "block";
-      document.getElementById("m-nc-nature-custom-wrap").style.display = natSel.value === "__custom__" ? "block" : "none";
-    };
-  }
-  natSel.value = "";
-  document.getElementById("m-nc-nature-custom").value = "";
-  document.getElementById("m-nc-nature-custom-wrap").style.display = "none";
-  document.getElementById("m-nc-als-hint").style.display = "none";
-  document.getElementById("m-nc-als-hint-spacer").style.display = "block";
-  mLoadLiveCodes();
-  mInitNcAddressAutocomplete();
-}
-function mSetNcZone(z, isAuto) {
-  mNcZone = z;
-  mShowNcZoneBanner(z); // always shown now — zone is fully automatic, no manual toggle to update
-}
-function mShowNcZoneBanner(zone) {
-  var banner = document.getElementById("m-nc-zone-banner");
-  if (!banner) return;
-  var icon, label, sub, bg, border, color, extra;
-  extra = "";
-  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area"; bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
-  else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area"; bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
-  else {
-    icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
-    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area.' + (M_OUTSIDE_CONTACTS.length ? ' <b>Call a coordinator, in this order:</b>' : '') + '</div>' +
-      (M_OUTSIDE_CONTACTS.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + M_OUTSIDE_CONTACTS.map(function(ct, i) { var digits = String(ct.phone||"").replace(/\D/g,""); return '<a href="tel:' + digits + '" style="display:flex;align-items:center;gap:8px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:9px 12px;color:#ff9090;text-decoration:none;font-size:0.8rem"><span style="font-family:\'Oswald\',sans-serif;font-weight:700">' + (i+1) + '.</span> ' + mEscHtml(ct.name) + (ct.phone ? ' <span style="margin-left:auto">📞 ' + mEscHtml(ct.phone) + '</span>' : '') + '</a>'; }).join("") + '</div>' : '');
-  }
-  banner.style.display = "block";
-  banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
-  banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:1.4rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:' + color + '">' + label + '</div><div style="font-size:0.7rem;color:' + color + ';opacity:0.85">' + sub + '</div></div></div>' + extra;
-}
-// Required fields on a new call: address, nature, patient age. Red until answered.
-function mNcValidateMarks() {
-  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form) return;
-  var addr = document.getElementById("m-nc-address");
-  var nat  = document.getElementById("m-nc-nature");
-  var ageGroup = document.getElementById("m-nc-age-toggle");
-  // An address with no coordinates can't be zoned, so it counts as incomplete even when typed
-  var hasCoords = !!(parseFloat((document.getElementById("m-nc-lat")||{}).value) && parseFloat((document.getElementById("m-nc-lng")||{}).value));
-  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim() || !hasCoords);
-  if (nat) {
-    var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
-    nat.classList.toggle("m-nc-need", !natVal);
-  }
-  if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
-  // patient sex is required as well — its row gets the same outline
-  var sexBtn = form.querySelector("[data-sex]");
-  var sexRow = sexBtn ? sexBtn.parentElement : null;
-  if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
-}
-// Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
-function mBindNcValidation() {
-  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.valBound) return;
-  form.dataset.valBound = "1";
-  ["input", "change", "click", "blur"].forEach(function(ev) {
-    form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
-  });
-}
-function mSetNcAge(a) {
-  mNcAge = a;
-  setTimeout(mNcValidateMarks, 0);
-  document.querySelectorAll("#m-nc-age-toggle button").forEach(function(b) {
-    var isThis = b.getAttribute("data-age") === a;
-    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
-  });
-}
-function mInitNcAddressAutocomplete() {
-  if (window.google && window.google.maps && window.google.maps.places) { mBindNcAutocomplete(); return; }
-  if (document.getElementById("m-maps-script")) return;
-  var s = document.createElement("script");
-  s.id = "m-maps-script";
-  s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=mBindNcAutocomplete";
-  document.head.appendChild(s);
-}
-function mResolveTypedAddress(address) {
-  if (!window.google || !google.maps || !google.maps.Geocoder) return Promise.reject(new Error("maps not loaded"));
-  return new Promise(function(resolve, reject) {
-    new google.maps.Geocoder().geocode({ address: address, region: "us" }, function(results, status) {
-      if (status !== "OK" || !results || !results[0] || !results[0].geometry) return reject(new Error(status || "no result"));
-      var loc = results[0].geometry.location, lat = loc.lat(), lng = loc.lng();
-      document.getElementById("m-nc-lat").value = lat;
-      document.getElementById("m-nc-lng").value = lng;
-      document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
-      var zone = mDetectZone(lat, lng); if (zone) mSetNcZone(zone, false);
-      mCheckAccessCode(results[0].formatted_address || address, "", lat, lng);
-      resolve({ lat: lat, lng: lng });
-    });
-  });
-}
-function mPostNewCall() {
-  var address = mCleanAddress(document.getElementById("m-nc-address").value.trim());
-  if (!address) { mToast("Enter an address", true); return; }
-  // Never assume the zone: if the address hasn't resolved to coordinates yet, resolve it now, then post
-  if (!document.getElementById("m-nc-lat").value) {
-    var pbtn = document.getElementById("m-nc-post-btn"); if (pbtn) { pbtn.disabled = true; pbtn.textContent = "Locating…"; }
-    mResolveTypedAddress(address).then(function() {
-      if (pbtn) { pbtn.disabled = false; pbtn.textContent = "🚑 Post Call"; }
-      mPostNewCall();
-    }).catch(function() {
-      if (pbtn) { pbtn.disabled = false; pbtn.textContent = "🚑 Post Call"; }
-      if (!confirm("Couldn't verify this address's location, so the response zone can't be detected.\n\nPost anyway as STANDARD RESPONSE?")) return;
-      mNcZone = "primary"; mPostNewCallNow();
-    });
-    return;
-  }
-  mPostNewCallNow();
-}
-var mPostAddrResolved = false;
-var mNcLastPlace = null;   // the place the dispatcher picked, for its address components
-// Whatever route the dispatcher took to enter the address, make sure what gets stored has a house
-// number when one exists. "Walmart — New Jersey 27, Edison" becomes "Walmart — 2220 NJ-27, Edison".
-// Build the street address straight from the place's own components — street number + road, town,
-// state, ZIP. This needs no extra lookup, so it can't time out or come back empty: the reason POI
-// addresses resolved only sometimes.
-function mAddressFromComponents(place) {
-  var comps = (place && place.address_components) || [];
-  var get = function(type, useShort) {
-    for (var i = 0; i < comps.length; i++) {
-      if ((comps[i].types || []).indexOf(type) !== -1) return useShort ? comps[i].short_name : comps[i].long_name;
-    }
-    return "";
-  };
-  var num = get("street_number");
-  var road = get("route", true) || get("route");
-  if (!num || !road) return "";
-  var town = get("locality") || get("sublocality") || get("neighborhood") || get("administrative_area_level_3");
-  var state = get("administrative_area_level_1", true);
-  var zip = get("postal_code");
-  return num + " " + road + (town ? ", " + town : "") + (state ? ", " + state : "") + (zip ? " " + zip : "");
-}
 function mUpgradeAddressForPost(address, lat, lng) {
   address = mCleanAddress(address);
   var name = mPoiName(address);
@@ -14754,7 +13892,7 @@ function mPostNewCallNow() {
   var _lat0 = parseFloat(document.getElementById("m-nc-lat").value) || null;
   var _lng0 = parseFloat(document.getElementById("m-nc-lng").value) || null;
   if (!mNcZone) {
-    if (_lat0 && _lng0 && typeof mDetectZone === "function") mSetNcZone(mDetectZone(_lat0, _lng0) || "", false);
+    if (_lat0 && _lng0 && typeof mDetectZoneInfo === "function") { var zi = mDetectZoneInfo(_lat0, _lng0); if (zi) mSetNcZone(zi.type, false, zi.area); }
     if (!mNcZone) {
       var _b0 = document.getElementById("m-nc-post-btn"); if (_b0) { _b0.disabled = false; _b0.textContent = "Post Call"; }
       mToast("Pick the address from the suggestions so the response area can be worked out", true);
@@ -14774,6 +13912,7 @@ function mPostNewCallNow() {
     lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
     zone: mNcZone, // always a detected value — posting is blocked below if it's unknown
+    zoneArea: mNcZoneArea || "",   // which coverage area it fell in, for the card and call info
     callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }],
     callNature: nature,
     patientAge: mNcAge,
@@ -16233,6 +15372,304 @@ function mShowMapInfo(lm) {
   el.style.display = "block";
 }
 /* — map + address autocomplete for the ported new-call form — */
+// ── NEW CALL FORM ──
+function mOpenNewCallForm() {
+  mGoTo("dispatch-newcall");
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = "";
+  mBindNcValidation();
+  [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
+  document.getElementById("m-nc-address").value = "";
+  document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
+  document.getElementById("m-nc-age-num").value = "";
+  document.getElementById("m-nc-callback").value = "";
+  document.getElementById("m-nc-accesscode").value = "";
+  document.getElementById("m-nc-apt").value = "";
+  document.getElementById("m-nc-notes").value = "";
+  document.getElementById("m-nc-code-suggestion").style.display = "none";
+  document.getElementById("m-nc-zone-banner").style.display = "none";
+  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge(""); mSetNcSex("");
+  var natSel = document.getElementById("m-nc-nature");
+  if (!natSel.options.length) {
+    natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
+    natSel.onchange = function() {
+      var found = M_CALL_NATURES.find(function(n){ return n.value === natSel.value; });
+      document.getElementById("m-nc-als-hint").style.display = (found && found.als) ? "block" : "none";
+      document.getElementById("m-nc-als-hint-spacer").style.display = (found && found.als) ? "none" : "block";
+      document.getElementById("m-nc-nature-custom-wrap").style.display = natSel.value === "__custom__" ? "block" : "none";
+    };
+  }
+  natSel.value = "";
+  document.getElementById("m-nc-nature-custom").value = "";
+  document.getElementById("m-nc-nature-custom-wrap").style.display = "none";
+  document.getElementById("m-nc-als-hint").style.display = "none";
+  document.getElementById("m-nc-als-hint-spacer").style.display = "block";
+  mLoadLiveCodes();
+  mInitNcAddressAutocomplete();
+}
+var mNcZoneArea = "";
+function mSetNcZone(z, isAuto, areaName) {
+  mNcZone = z;
+  if (areaName !== undefined) mNcZoneArea = areaName || "";
+  mShowNcZoneBanner(z); // always shown now — zone is fully automatic, no manual toggle to update
+}
+function mShowNcZoneBanner(zone) {
+  var banner = document.getElementById("m-nc-zone-banner");
+  if (!banner) return;
+  var icon, label, sub, bg, border, color, extra;
+  extra = "";
+  var areaLabel = mZoneAreaLabel(mNcZoneArea);
+  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
+  else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
+  else {
+    icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
+    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area.' + (M_OUTSIDE_CONTACTS.length ? ' <b>Call a coordinator, in this order:</b>' : '') + '</div>' +
+      (M_OUTSIDE_CONTACTS.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + M_OUTSIDE_CONTACTS.map(function(ct, i) { var digits = String(ct.phone||"").replace(/\D/g,""); return '<a href="tel:' + digits + '" style="display:flex;align-items:center;gap:8px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:9px 12px;color:#ff9090;text-decoration:none;font-size:0.8rem"><span style="font-family:\'Oswald\',sans-serif;font-weight:700">' + (i+1) + '.</span> ' + mEscHtml(ct.name) + (ct.phone ? ' <span style="margin-left:auto">📞 ' + mEscHtml(ct.phone) + '</span>' : '') + '</a>'; }).join("") + '</div>' : '');
+  }
+  banner.style.display = "block";
+  banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
+  banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:1.4rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:' + color + '">' + label + '</div><div style="font-size:0.7rem;color:' + color + ';opacity:0.85">' + sub + '</div></div></div>' + extra;
+}
+// Required fields on a new call: address, nature, patient age. Red until answered.
+function mNcValidateMarks() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form) return;
+  var addr = document.getElementById("m-nc-address");
+  var nat  = document.getElementById("m-nc-nature");
+  var ageGroup = document.getElementById("m-nc-age-toggle");
+  // An address with no coordinates can't be zoned, so it counts as incomplete even when typed
+  var hasCoords = !!(parseFloat((document.getElementById("m-nc-lat")||{}).value) && parseFloat((document.getElementById("m-nc-lng")||{}).value));
+  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim() || !hasCoords);
+  if (nat) {
+    var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
+    nat.classList.toggle("m-nc-need", !natVal);
+  }
+  if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
+  // patient sex is required as well — its row gets the same outline
+  var sexBtn = form.querySelector("[data-sex]");
+  var sexRow = sexBtn ? sexBtn.parentElement : null;
+  if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
+}
+// Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
+function mBindNcValidation() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.valBound) return;
+  form.dataset.valBound = "1";
+  ["input", "change", "click", "blur"].forEach(function(ev) {
+    form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
+  });
+}
+function mSetNcAge(a) {
+  mNcAge = a;
+  setTimeout(mNcValidateMarks, 0);
+  document.querySelectorAll("#m-nc-age-toggle button").forEach(function(b) {
+    var isThis = b.getAttribute("data-age") === a;
+    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
+    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
+    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
+  });
+}
+function mSetNcSex(s) {
+  mNcSex = (s === "" ? "" : (mNcSex === s ? "" : s));
+  mPaintNcSex();
+  setTimeout(mNcValidateMarks, 0);
+}
+function mPaintNcSex() {
+  document.querySelectorAll("#m-pg-dispatch-newcall [data-sex]").forEach(function(b) {
+    var isThis = b.getAttribute("data-sex") === mNcSex;
+    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
+    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
+    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
+  });
+}
+var mNcAutocomplete = null;
+function mInitNcAddressAutocomplete() {
+  if (window.google && window.google.maps && window.google.maps.places) { mBindNcAutocomplete(); return; }
+  if (document.getElementById("m-maps-script")) return;
+  var s = document.createElement("script");
+  s.id = "m-maps-script";
+  s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=mBindNcAutocomplete";
+  document.head.appendChild(s);
+}
+// A genuine place name — not the street line Google echoes back for ordinary addresses
+function mRealPoiName(place) {
+  var name = String((place && place.name) || "").trim();
+  var formatted = String((place && place.formatted_address) || "").trim();
+  if (!name || !formatted) return "";
+  if (name === formatted) return "";
+  if (formatted.toLowerCase().indexOf(name.toLowerCase()) !== -1) return "";   // the name is part of the address
+  if (/^\d/.test(name)) return "";                                             // starts with a house number → a street, not a place
+  return name;
+}
+// ── NEW CALL FORM ──
+function mOpenNewCallForm() {
+  mGoTo("dispatch-newcall");
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = "";
+  mBindNcValidation();
+  [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
+  document.getElementById("m-nc-address").value = "";
+  document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
+  document.getElementById("m-nc-age-num").value = "";
+  document.getElementById("m-nc-callback").value = "";
+  document.getElementById("m-nc-accesscode").value = "";
+  document.getElementById("m-nc-apt").value = "";
+  document.getElementById("m-nc-notes").value = "";
+  document.getElementById("m-nc-code-suggestion").style.display = "none";
+  document.getElementById("m-nc-zone-banner").style.display = "none";
+  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge(""); mSetNcSex("");
+  var natSel = document.getElementById("m-nc-nature");
+  if (!natSel.options.length) {
+    natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
+    natSel.onchange = function() {
+      var found = M_CALL_NATURES.find(function(n){ return n.value === natSel.value; });
+      document.getElementById("m-nc-als-hint").style.display = (found && found.als) ? "block" : "none";
+      document.getElementById("m-nc-als-hint-spacer").style.display = (found && found.als) ? "none" : "block";
+      document.getElementById("m-nc-nature-custom-wrap").style.display = natSel.value === "__custom__" ? "block" : "none";
+    };
+  }
+  natSel.value = "";
+  document.getElementById("m-nc-nature-custom").value = "";
+  document.getElementById("m-nc-nature-custom-wrap").style.display = "none";
+  document.getElementById("m-nc-als-hint").style.display = "none";
+  document.getElementById("m-nc-als-hint-spacer").style.display = "block";
+  mLoadLiveCodes();
+  mInitNcAddressAutocomplete();
+}
+var mNcZoneArea = "";
+function mSetNcZone(z, isAuto, areaName) {
+  mNcZone = z;
+  if (areaName !== undefined) mNcZoneArea = areaName || "";
+  mShowNcZoneBanner(z); // always shown now — zone is fully automatic, no manual toggle to update
+}
+function mShowNcZoneBanner(zone) {
+  var banner = document.getElementById("m-nc-zone-banner");
+  if (!banner) return;
+  var icon, label, sub, bg, border, color, extra;
+  extra = "";
+  var areaLabel = mZoneAreaLabel(mNcZoneArea);
+  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
+  else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
+  else {
+    icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
+    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area.' + (M_OUTSIDE_CONTACTS.length ? ' <b>Call a coordinator, in this order:</b>' : '') + '</div>' +
+      (M_OUTSIDE_CONTACTS.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + M_OUTSIDE_CONTACTS.map(function(ct, i) { var digits = String(ct.phone||"").replace(/\D/g,""); return '<a href="tel:' + digits + '" style="display:flex;align-items:center;gap:8px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:9px 12px;color:#ff9090;text-decoration:none;font-size:0.8rem"><span style="font-family:\'Oswald\',sans-serif;font-weight:700">' + (i+1) + '.</span> ' + mEscHtml(ct.name) + (ct.phone ? ' <span style="margin-left:auto">📞 ' + mEscHtml(ct.phone) + '</span>' : '') + '</a>'; }).join("") + '</div>' : '');
+  }
+  banner.style.display = "block";
+  banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
+  banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:1.4rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:' + color + '">' + label + '</div><div style="font-size:0.7rem;color:' + color + ';opacity:0.85">' + sub + '</div></div></div>' + extra;
+}
+// Required fields on a new call: address, nature, patient age. Red until answered.
+function mNcValidateMarks() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form) return;
+  var addr = document.getElementById("m-nc-address");
+  var nat  = document.getElementById("m-nc-nature");
+  var ageGroup = document.getElementById("m-nc-age-toggle");
+  // An address with no coordinates can't be zoned, so it counts as incomplete even when typed
+  var hasCoords = !!(parseFloat((document.getElementById("m-nc-lat")||{}).value) && parseFloat((document.getElementById("m-nc-lng")||{}).value));
+  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim() || !hasCoords);
+  if (nat) {
+    var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
+    nat.classList.toggle("m-nc-need", !natVal);
+  }
+  if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
+  // patient sex is required as well — its row gets the same outline
+  var sexBtn = form.querySelector("[data-sex]");
+  var sexRow = sexBtn ? sexBtn.parentElement : null;
+  if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
+}
+// Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
+function mBindNcValidation() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.valBound) return;
+  form.dataset.valBound = "1";
+  ["input", "change", "click", "blur"].forEach(function(ev) {
+    form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
+  });
+}
+function mSetNcAge(a) {
+  mNcAge = a;
+  setTimeout(mNcValidateMarks, 0);
+  document.querySelectorAll("#m-nc-age-toggle button").forEach(function(b) {
+    var isThis = b.getAttribute("data-age") === a;
+    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
+    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
+    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
+  });
+}
+function mSetNcSex(s) {
+  mNcSex = (s === "" ? "" : (mNcSex === s ? "" : s));
+  mPaintNcSex();
+  setTimeout(mNcValidateMarks, 0);
+}
+function mPaintNcSex() {
+  document.querySelectorAll("#m-pg-dispatch-newcall [data-sex]").forEach(function(b) {
+    var isThis = b.getAttribute("data-sex") === mNcSex;
+    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
+    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
+    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
+  });
+}
+var mNcAutocomplete = null;
+function mInitNcAddressAutocomplete() {
+  if (window.google && window.google.maps && window.google.maps.places) { mBindNcAutocomplete(); return; }
+  if (document.getElementById("m-maps-script")) return;
+  var s = document.createElement("script");
+  s.id = "m-maps-script";
+  s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=mBindNcAutocomplete";
+  document.head.appendChild(s);
+}
+// A genuine place name — not the street line Google echoes back for ordinary addresses
+function mRealPoiName(place) {
+  var name = String((place && place.name) || "").trim();
+  var formatted = String((place && place.formatted_address) || "").trim();
+  if (!name || !formatted) return "";
+  if (name === formatted) return "";
+  if (formatted.toLowerCase().indexOf(name.toLowerCase()) !== -1) return "";   // the name is part of the address
+  if (/^\d/.test(name)) return "";                                             // starts with a house number → a street, not a place
+  return name;
+}
+// The street address for a place, with a house number wherever one exists.
+// Places like Walmart come back as "New Jersey 27, Edison, NJ" — a road, no number — so we ask the
+// geocoder what the street address at those coordinates is and prefer that.
+// Build the street address straight from the place's own components — street number + road, town,
+// state, ZIP. This needs no extra lookup, so it can't time out or come back empty: the reason POI
+// addresses resolved only sometimes.
+function mAddressFromComponents(place) {
+  var comps = (place && place.address_components) || [];
+  var get = function(type, useShort) {
+    for (var i = 0; i < comps.length; i++) {
+      if ((comps[i].types || []).indexOf(type) !== -1) return useShort ? comps[i].short_name : comps[i].long_name;
+    }
+    return "";
+  };
+  var num = get("street_number");
+  var road = get("route", true) || get("route");
+  if (!num || !road) return "";
+  var town = get("locality") || get("sublocality") || get("neighborhood") || get("administrative_area_level_3");
+  var state = get("administrative_area_level_1", true);
+  var zip = get("postal_code");
+  return num + " " + road + (town ? ", " + town : "") + (state ? ", " + state : "") + (zip ? " " + zip : "");
+}
+function mBestStreetAddress(place, lat, lng) {
+  var formatted = String((place && place.formatted_address) || "").trim();
+  if (/^\d/.test(formatted)) return Promise.resolve(formatted);
+  var fromComps = mAddressFromComponents(place);          // no network call — always available if Google sent components
+  if (fromComps) return Promise.resolve(fromComps);
+  if (!window.google || !google.maps || !google.maps.Geocoder) return Promise.resolve(formatted);
+  return new Promise(function(resolve) {
+    var done = false;
+    var bail = setTimeout(function(){ if (!done) { done = true; resolve(formatted); } }, 3500);
+    new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
+      if (done) return;
+      done = true; clearTimeout(bail);
+      if (st !== "OK" || !res || !res.length) return resolve(formatted);
+      var best = "";
+      res.forEach(function(r) {
+        if (best) return;
+        var types = r.types || [];
+        if ((types.indexOf("street_address") !== -1 || types.indexOf("premise") !== -1 || types.indexOf("subpremise") !== -1)
+            && /^\d/.test(r.formatted_address || "")) best = r.formatted_address;
+      });
+      resolve(best || formatted);
+    });
+  });
+}
 var mBindNcAutocomplete = function() {
   if (mNcAutocomplete || !window.google || !google.maps.places) return;
   var input = document.getElementById("m-nc-address");
@@ -16256,8 +15693,8 @@ var mBindNcAutocomplete = function() {
       mCheckAccessCode(street, placeName, lat, lng);
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
     });
-    var zone = mDetectZone(lat, lng);
-    if (zone) mSetNcZone(zone, false);
+    var zInfo = mDetectZoneInfo(lat, lng);
+    if (zInfo) mSetNcZone(zInfo.type, false, zInfo.area);
   });
 };
 var mInitDispMap = function() {
