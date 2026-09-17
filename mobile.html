@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.50"; window.M_BUILD = BUILD;
+  var BUILD = "2.51"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -375,7 +375,7 @@ body.m-tile-dragging,body.m-tile-dragging .m-scroll{overflow:hidden !important;o
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.50</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.51</div>
     </div>
   </div>
 </div>
@@ -406,7 +406,7 @@ body.m-tile-dragging,body.m-tile-dragging .m-scroll{overflow:hidden !important;o
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.50</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.51</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -932,17 +932,31 @@ function mInitTileReorder() {
 
   function press(tile, x, y) {
     mTD.armed = true; mTD.el = tile; mTD.sx = x; mTD.sy = y;
+    var grid0 = document.getElementById("m-home-grid");
+    var alreadyJiggling = grid0 && grid0.classList.contains("jiggle");
     mTD.timer = setTimeout(function() {
       if (!mTD.armed) return;
       mTD.dragging = true;
       try { var sel = window.getSelection(); if (sel && sel.removeAllRanges) sel.removeAllRanges(); } catch (e) {}
       document.body.classList.add("m-tile-dragging");     // hold the page still while dragging
       mEnterJiggle(); mTileLift(tile, x, y);
-    }, 450);
+    }, alreadyJiggling ? 90 : 420);     // already rearranging → pick tiles up immediately
   }
   function move(x, y, ev) {
     if (mTD.dragging) { ev.preventDefault(); mTileMoveGhost(x, y); mTileReorderAt(x, y); return; }
-    if (mTD.armed && (Math.abs(x - mTD.sx) > 10 || Math.abs(y - mTD.sy) > 10)) { clearTimeout(mTD.timer); mTD.armed = false; mTD.el = null; }  // that was a scroll
+    // Grid is already jiggling and a tile is under the finger → start dragging on movement
+    var g0 = document.getElementById("m-home-grid");
+    if (mTD.armed && mTD.el && g0 && g0.classList.contains("jiggle")) {
+      clearTimeout(mTD.timer);
+      mTD.dragging = true;
+      document.body.classList.add("m-tile-dragging");
+      mTileLift(mTD.el, x, y);
+      ev.preventDefault(); mTileMoveGhost(x, y); mTileReorderAt(x, y);
+      return;
+    }
+    // Fingers drift while holding still. Only treat it as a scroll on a decisive move — 10px was
+    // tight enough that a steady press often got cancelled, which is why this worked only sometimes.
+    if (mTD.armed && (Math.abs(x - mTD.sx) > 22 || Math.abs(y - mTD.sy) > 22)) { clearTimeout(mTD.timer); mTD.armed = false; mTD.el = null; }
   }
 
   grid.addEventListener("contextmenu", function(e) { if (grid.classList.contains("jiggle") || mTD.armed || mTD.dragging) e.preventDefault(); });
@@ -4458,7 +4472,7 @@ function mPushCallbackSMS() {
 // ── NEW CALL FORM ──
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false;
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null;
   mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
@@ -4579,10 +4593,31 @@ function mRealPoiName(place) {
 // The street address for a place, with a house number wherever one exists.
 // Places like Walmart come back as "New Jersey 27, Edison, NJ" — a road, no number — so we ask the
 // geocoder what the street address at those coordinates is and prefer that.
+// Build the street address straight from the place's own components — street number + road, town,
+// state, ZIP. This needs no extra lookup, so it can't time out or come back empty: the reason POI
+// addresses resolved only sometimes.
+function mAddressFromComponents(place) {
+  var comps = (place && place.address_components) || [];
+  var get = function(type, useShort) {
+    for (var i = 0; i < comps.length; i++) {
+      if ((comps[i].types || []).indexOf(type) !== -1) return useShort ? comps[i].short_name : comps[i].long_name;
+    }
+    return "";
+  };
+  var num = get("street_number");
+  var road = get("route", true) || get("route");
+  if (!num || !road) return "";
+  var town = get("locality") || get("sublocality") || get("neighborhood") || get("administrative_area_level_3");
+  var state = get("administrative_area_level_1", true);
+  var zip = get("postal_code");
+  return num + " " + road + (town ? ", " + town : "") + (state ? ", " + state : "") + (zip ? " " + zip : "");
+}
 function mBestStreetAddress(place, lat, lng) {
   var formatted = String((place && place.formatted_address) || "").trim();
-  var hasNumber = /^\d/.test(formatted);
-  if (hasNumber || !window.google || !google.maps || !google.maps.Geocoder) return Promise.resolve(formatted);
+  if (/^\d/.test(formatted)) return Promise.resolve(formatted);
+  var fromComps = mAddressFromComponents(place);          // no network call — always available if Google sent components
+  if (fromComps) return Promise.resolve(fromComps);
+  if (!window.google || !google.maps || !google.maps.Geocoder) return Promise.resolve(formatted);
   return new Promise(function(resolve) {
     var done = false;
     var bail = setTimeout(function(){ if (!done) { done = true; resolve(formatted); } }, 3500);
@@ -4615,6 +4650,7 @@ window.mBindNcAutocomplete = function() {
     document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
     // Google returns place.name for plain addresses too ("1013 US-1"), which would double the
     // address. It's only a POI when the name isn't already part of the formatted address.
+    mNcLastPlace = place;
     var placeName = mRealPoiName(place);
     // The field still holds Google's prediction text ("Walmart, New Jersey 27, Edison, NJ"), which
     // has no house number. The real street address is on the place itself — use that, and if it
@@ -4675,6 +4711,7 @@ function mPostNewCall() {
   mPostNewCallNow();
 }
 var mPostAddrResolved = false;
+var mNcLastPlace = null;   // the place the dispatcher picked, for its address components
 // Whatever route the dispatcher took to enter the address, make sure what gets stored has a house
 // number when one exists. "Walmart — New Jersey 27, Edison" becomes "Walmart — 2220 NJ-27, Edison".
 function mUpgradeAddressForPost(address, lat, lng) {
@@ -4683,6 +4720,10 @@ function mUpgradeAddressForPost(address, lat, lng) {
   var street = name ? mStreetPart(address) : address;
   if (/^\d/.test(String(street).trim())) return Promise.resolve(address);        // already numbered
   if (!lat || !lng || !window.google || !google.maps || !google.maps.Geocoder) return Promise.resolve(address);
+  if (mNcLastPlace && mAddressFromComponents(mNcLastPlace)) {                    // the place we just picked knows its own address
+    var fromComps = mAddressFromComponents(mNcLastPlace);
+    return Promise.resolve(name ? (name + " — " + fromComps) : fromComps);
+  }
   return new Promise(function(resolve) {
     var done = false;
     var bail = setTimeout(function(){ if (!done) { done = true; resolve(address); } }, 3000);
@@ -6523,7 +6564,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.50</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.51</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

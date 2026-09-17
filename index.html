@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.50');
+  window.location.replace('/CallDashboard/mobile.html?v=2.51');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1283,7 +1283,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.46a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.47a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -6402,6 +6402,7 @@ function tplBindAutocomplete() {
     var formatted = place.formatted_address || input.value;
     // Google returns place.name for plain addresses too ("1013 US-1"), which would double the
     // address. It's only a POI when the name isn't already part of the formatted address.
+    mNcLastPlace = place;
     var placeName = mRealPoiName(place);
     // Keep the street address with the POI name — "Topgolf — 1013 US-1, Edison, NJ" — so the card,
     // the call info and the text all show where it actually is, not just the name and town.
@@ -12517,7 +12518,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.46a";
+var DESKTOP_VERSION = "9.47a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -14530,7 +14531,7 @@ function mPushCallbackSMS() {
 }
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false;
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null;
   mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
@@ -14658,13 +14659,37 @@ function mPostNewCall() {
   mPostNewCallNow();
 }
 var mPostAddrResolved = false;
+var mNcLastPlace = null;   // the place the dispatcher picked, for its address components
 // Whatever route the dispatcher took to enter the address, make sure what gets stored has a house
 // number when one exists. "Walmart — New Jersey 27, Edison" becomes "Walmart — 2220 NJ-27, Edison".
+// Build the street address straight from the place's own components — street number + road, town,
+// state, ZIP. This needs no extra lookup, so it can't time out or come back empty: the reason POI
+// addresses resolved only sometimes.
+function mAddressFromComponents(place) {
+  var comps = (place && place.address_components) || [];
+  var get = function(type, useShort) {
+    for (var i = 0; i < comps.length; i++) {
+      if ((comps[i].types || []).indexOf(type) !== -1) return useShort ? comps[i].short_name : comps[i].long_name;
+    }
+    return "";
+  };
+  var num = get("street_number");
+  var road = get("route", true) || get("route");
+  if (!num || !road) return "";
+  var town = get("locality") || get("sublocality") || get("neighborhood") || get("administrative_area_level_3");
+  var state = get("administrative_area_level_1", true);
+  var zip = get("postal_code");
+  return num + " " + road + (town ? ", " + town : "") + (state ? ", " + state : "") + (zip ? " " + zip : "");
+}
 function mUpgradeAddressForPost(address, lat, lng) {
   address = mCleanAddress(address);
   var name = mPoiName(address);
   var street = name ? mStreetPart(address) : address;
   if (/^\d/.test(String(street).trim())) return Promise.resolve(address);        // already numbered
+  if (mNcLastPlace && mAddressFromComponents(mNcLastPlace)) {                    // the picked place knows its own address
+    var fromComps = mAddressFromComponents(mNcLastPlace);
+    return Promise.resolve(name ? (name + " — " + fromComps) : fromComps);
+  }
   if (!lat || !lng || !window.google || !google.maps || !google.maps.Geocoder) return Promise.resolve(address);
   return new Promise(function(resolve) {
     var done = false;
