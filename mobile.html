@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.39"; window.M_BUILD = BUILD;
+  var BUILD = "2.40"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -306,13 +306,17 @@ select.m-disp-input option{background-color:#122040;color:#f4f6fa}
 #tpl-modal .m-disp-label{color:#e8eef8;font-size:0.64rem;opacity:1}
 
 /* Home tiles rearrange like an iPhone: long-press to jiggle, drag to reorder, Done to finish */
-#m-home-grid.jiggle .m-tile{animation:mJiggle 0.28s infinite;transform-origin:50% 50%}
-#m-home-grid.jiggle .m-tile:nth-child(2n){animation-delay:-0.14s}
-@keyframes mJiggle{0%{transform:rotate(-1.1deg)}50%{transform:rotate(1.1deg)}100%{transform:rotate(-1.1deg)}}
-#m-home-grid .m-tile.lifting{animation:none !important;transform:scale(1.06);opacity:0.85;z-index:5;box-shadow:0 10px 26px rgba(0,0,0,0.55)}
+#m-home-grid.jiggle .m-tile{animation:mJiggle 0.3s infinite;transform-origin:50% 50%}
+#m-home-grid.jiggle .m-tile:nth-child(2n){animation-delay:-0.15s}
+@keyframes mJiggle{0%{transform:rotate(-1.2deg)}50%{transform:rotate(1.2deg)}100%{transform:rotate(-1.2deg)}}
+#m-home-grid .m-tile{transition:transform .18s ease}
+#m-home-grid .m-tile.placeholder{opacity:0.25;animation:none !important}
+.m-tile-ghost{animation:none !important;transition:none !important}
 #m-home-grid.jiggle .m-tile{touch-action:none}
-#m-tile-done-bar{display:none;position:sticky;top:0;z-index:20;margin:10px 0 -4px;text-align:center}
+#m-tile-done-bar{display:none;margin:10px 0 2px;text-align:center}
 #m-tile-done-bar button{background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:10px 22px;cursor:pointer}
+
+.m-call-street{font-size:0.82rem;color:#c9d4e6;margin-top:-2px;margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -361,7 +365,7 @@ select.m-disp-input option{background-color:#122040;color:#f4f6fa}
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.39</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.40</div>
     </div>
   </div>
 </div>
@@ -392,7 +396,7 @@ select.m-disp-input option{background-color:#122040;color:#f4f6fa}
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.39</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.40</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -846,32 +850,30 @@ setInterval(tickMClock, 1000);
 
 // ── PAGES ──
 // ── Home tiles: long-press to rearrange, like an iPhone home screen ──
-// Order is saved per device. Tiles the member can't see (hidden by role) keep their place.
-var mTileDrag = { on: false, el: null, startY: 0, startX: 0, timer: null };
+// The pressed tile lifts and follows the finger; the others slide out of its way. Order is saved
+// per device, and tiles hidden by role keep their place in the list.
+var mTD = { armed: false, dragging: false, el: null, ghost: null, timer: null, sx: 0, sy: 0, dx: 0, dy: 0 };
 function mTileKey(el) {
   return el.id || el.getAttribute("href") || (el.getAttribute("onclick") || "").replace(/\W+/g, "") || (el.textContent || "").trim().slice(0, 20);
 }
 function mLoadTileOrder() {
   var grid = document.getElementById("m-home-grid"); if (!grid) return;
-  var saved;
-  try { saved = JSON.parse(localStorage.getItem("mTileOrder") || "null"); } catch (e) { saved = null; }
+  var saved; try { saved = JSON.parse(localStorage.getItem("mTileOrder") || "null"); } catch (e) { saved = null; }
   if (!saved || !saved.length) return;
   var byKey = {};
   Array.prototype.forEach.call(grid.querySelectorAll(".m-tile"), function(t){ byKey[mTileKey(t)] = t; });
-  saved.forEach(function(k){ if (byKey[k]) grid.appendChild(byKey[k]); });          // known tiles first, in saved order
-  Array.prototype.forEach.call(grid.querySelectorAll(".m-tile"), function(t){ if (saved.indexOf(mTileKey(t)) === -1) grid.appendChild(t); });   // anything new goes last
+  saved.forEach(function(k){ if (byKey[k]) grid.appendChild(byKey[k]); });
+  Array.prototype.forEach.call(grid.querySelectorAll(".m-tile"), function(t){ if (saved.indexOf(mTileKey(t)) === -1) grid.appendChild(t); });
 }
 function mSaveTileOrder() {
   var grid = document.getElementById("m-home-grid"); if (!grid) return;
-  var order = Array.prototype.map.call(grid.querySelectorAll(".m-tile"), mTileKey);
-  try { localStorage.setItem("mTileOrder", JSON.stringify(order)); } catch (e) {}
+  try { localStorage.setItem("mTileOrder", JSON.stringify(Array.prototype.map.call(grid.querySelectorAll(".m-tile"), mTileKey))); } catch (e) {}
 }
 function mEnterJiggle() {
   var grid = document.getElementById("m-home-grid"); if (!grid || grid.classList.contains("jiggle")) return;
   grid.classList.add("jiggle");
-  if (navigator.vibrate) navigator.vibrate(12);
-  var bar = document.getElementById("m-tile-done-bar");
-  if (bar) bar.style.display = "block";
+  if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+  var bar = document.getElementById("m-tile-done-bar"); if (bar) bar.style.display = "block";
 }
 function mExitJiggle() {
   var grid = document.getElementById("m-home-grid"); if (!grid) return;
@@ -879,61 +881,77 @@ function mExitJiggle() {
   var bar = document.getElementById("m-tile-done-bar"); if (bar) bar.style.display = "none";
   mSaveTileOrder();
 }
-function mTileCenter(el) { var r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+function mTileLift(tile, x, y) {
+  var r = tile.getBoundingClientRect();
+  var g = tile.cloneNode(true);
+  g.className = "m-tile m-tile-ghost";
+  g.style.cssText = "position:fixed;left:" + r.left + "px;top:" + r.top + "px;width:" + r.width + "px;height:" + r.height + "px;margin:0;z-index:9999;pointer-events:none;transform:scale(1.07);opacity:0.95;box-shadow:0 14px 30px rgba(0,0,0,0.6)";
+  document.body.appendChild(g);
+  mTD.ghost = g; mTD.dx = x - r.left; mTD.dy = y - r.top;
+  tile.classList.add("placeholder");
+}
+function mTileMoveGhost(x, y) {
+  if (!mTD.ghost) return;
+  mTD.ghost.style.left = (x - mTD.dx) + "px";
+  mTD.ghost.style.top  = (y - mTD.dy) + "px";
+}
+function mTileReorderAt(x, y) {
+  var grid = document.getElementById("m-home-grid"); if (!grid || !mTD.el) return;
+  var tiles = Array.prototype.filter.call(grid.querySelectorAll(".m-tile"), function(t){ return t !== mTD.el && t.getBoundingClientRect().width > 0; });
+  for (var i = 0; i < tiles.length; i++) {
+    var r = tiles[i].getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+      var after = x > r.left + r.width / 2;
+      grid.insertBefore(mTD.el, after ? tiles[i].nextSibling : tiles[i]);
+      return;
+    }
+  }
+}
+function mTileDrop() {
+  clearTimeout(mTD.timer);
+  if (mTD.ghost) { mTD.ghost.remove(); mTD.ghost = null; }
+  if (mTD.el) mTD.el.classList.remove("placeholder");
+  if (mTD.dragging) mSaveTileOrder();
+  mTD.armed = false; mTD.dragging = false; mTD.el = null;
+}
 function mInitTileReorder() {
   var grid = document.getElementById("m-home-grid"); if (!grid || grid.dataset.reorderBound) return;
   grid.dataset.reorderBound = "1";
   mLoadTileOrder();
+
+  function press(tile, x, y) {
+    mTD.armed = true; mTD.el = tile; mTD.sx = x; mTD.sy = y;
+    mTD.timer = setTimeout(function() {
+      if (!mTD.armed) return;
+      mTD.dragging = true; mEnterJiggle(); mTileLift(tile, x, y);
+    }, 450);
+  }
+  function move(x, y, ev) {
+    if (mTD.dragging) { ev.preventDefault(); mTileMoveGhost(x, y); mTileReorderAt(x, y); return; }
+    if (mTD.armed && (Math.abs(x - mTD.sx) > 10 || Math.abs(y - mTD.sy) > 10)) { clearTimeout(mTD.timer); mTD.armed = false; mTD.el = null; }  // that was a scroll
+  }
+
   grid.addEventListener("touchstart", function(e) {
     var tile = e.target.closest(".m-tile"); if (!tile) return;
-    var t = e.touches[0];
-    mTileDrag.startX = t.clientX; mTileDrag.startY = t.clientY;
-    mTileDrag.timer = setTimeout(function() { mEnterJiggle(); mTileDrag.on = true; mTileDrag.el = tile; tile.classList.add("lifting"); }, 500);
+    var t = e.touches[0]; press(tile, t.clientX, t.clientY);
   }, { passive: true });
   grid.addEventListener("touchmove", function(e) {
-    var t = e.touches[0];
-    if (!mTileDrag.on) {                                    // moved before the long-press fired → it's a scroll
-      if (Math.abs(t.clientY - mTileDrag.startY) > 8 || Math.abs(t.clientX - mTileDrag.startX) > 8) clearTimeout(mTileDrag.timer);
-      return;
-    }
-    e.preventDefault();
-    var over = document.elementFromPoint(t.clientX, t.clientY);
-    var target = over && over.closest ? over.closest(".m-tile") : null;
-    if (target && target !== mTileDrag.el && target.parentElement === grid) {
-      var c = mTileCenter(target);
-      var after = (t.clientY > c.y) || (Math.abs(t.clientY - c.y) < 20 && t.clientX > c.x);
-      grid.insertBefore(mTileDrag.el, after ? target.nextSibling : target);
-    }
+    var t = e.touches[0]; move(t.clientX, t.clientY, e);
   }, { passive: false });
-  function endDrag() {
-    clearTimeout(mTileDrag.timer);
-    if (mTileDrag.el) mTileDrag.el.classList.remove("lifting");
-    if (mTileDrag.on) mSaveTileOrder();
-    mTileDrag.on = false; mTileDrag.el = null;
-  }
-  grid.addEventListener("touchend", endDrag);
-  grid.addEventListener("touchcancel", endDrag);
-  // a tap while jiggling shouldn't open the tile
-  grid.addEventListener("click", function(e) {
-    if (grid.classList.contains("jiggle")) { e.preventDefault(); e.stopPropagation(); }
-  }, true);
-  // mouse support, for anyone using the app on a laptop
+  grid.addEventListener("touchend", mTileDrop);
+  grid.addEventListener("touchcancel", mTileDrop);
+
   grid.addEventListener("mousedown", function(e) {
     var tile = e.target.closest(".m-tile"); if (!tile) return;
-    mTileDrag.startX = e.clientX; mTileDrag.startY = e.clientY;
-    mTileDrag.timer = setTimeout(function() { mEnterJiggle(); mTileDrag.on = true; mTileDrag.el = tile; tile.classList.add("lifting"); }, 500);
+    press(tile, e.clientX, e.clientY);
   });
-  document.addEventListener("mousemove", function(e) {
-    if (!mTileDrag.on) { if (mTileDrag.timer && (Math.abs(e.clientY - mTileDrag.startY) > 8 || Math.abs(e.clientX - mTileDrag.startX) > 8)) clearTimeout(mTileDrag.timer); return; }
-    var over = document.elementFromPoint(e.clientX, e.clientY);
-    var target = over && over.closest ? over.closest(".m-tile") : null;
-    if (target && target !== mTileDrag.el && target.parentElement === grid) {
-      var c = mTileCenter(target);
-      var after = (e.clientY > c.y) || (Math.abs(e.clientY - c.y) < 20 && e.clientX > c.x);
-      grid.insertBefore(mTileDrag.el, after ? target.nextSibling : target);
-    }
-  });
-  document.addEventListener("mouseup", endDrag);
+  document.addEventListener("mousemove", function(e) { move(e.clientX, e.clientY, e); });
+  document.addEventListener("mouseup", mTileDrop);
+
+  // while rearranging, a tap must not open the tile
+  grid.addEventListener("click", function(e) {
+    if (grid.classList.contains("jiggle") || mTD.dragging) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
 }
 document.addEventListener("DOMContentLoaded", function(){ setTimeout(mInitTileReorder, 300); });
 function mGoTo(page) {
@@ -1222,6 +1240,19 @@ function mCheckNewCall(calls) {
 
 // ── RENDER CALLS ──
 // Display form of an address: keeps the POI name, drops ", USA" and country noise
+// A POI address is stored as "Name — street, town". These split it so the name can sit on top
+// and the street underneath, instead of the street being dropped.
+function mPoiName(raw) {
+  raw = String(raw || "");
+  return raw.indexOf(" — ") !== -1 ? raw.split(" — ")[0].trim() : "";
+}
+function mStreetPart(raw) {
+  raw = String(raw || "");
+  var rest = raw.indexOf(" — ") !== -1 ? raw.split(" — ").slice(1).join(" — ") : raw;
+  return rest.split(",").map(function(s){ return s.trim().replace(/\s+\d{5}(-\d{4})?$/, ""); })   // drop the ZIP
+             .filter(function(s){ return s && !/^(USA|United States)$/i.test(s) && !/^\d{5}(-\d{4})?$/.test(s); })
+             .slice(0, 3).join(", ");
+}
 function mShortAddress(raw) {
   raw = String(raw || "");
   if (!raw) return "Unknown";
@@ -1336,7 +1367,10 @@ function mRenderCalls(calls) {
           '<span class="m-zone-pill ' + zone + '">' + zoneLabel + '</span>' +
           '<span style="font-size:0.65rem;color:var(--gray)">' + time + '</span>' +
         '</div>' +
-        '<div class="m-call-addr">' + mEscHtml(mShortAddress(call.address)) + '</div>' +
+        (mPoiName(call.address)
+          ? '<div class="m-call-addr">' + mEscHtml(mPoiName(call.address)) + '</div>' +
+            '<div class="m-call-street">' + mEscHtml(mStreetPart(call.address)) + '</div>'
+          : '<div class="m-call-addr">' + mEscHtml(mShortAddress(call.address)) + '</div>') +
         (call.apt ? '<div style="font-family:\'Oswald\',sans-serif;font-size:0.82rem;font-weight:700;color:var(--gold);margin-top:2px">🚪 ' + mEscHtml(call.apt) + '</div>' : "") +
         (call.patientName && mCanSeePatientName(call) ? '<div style="font-size:0.78rem;color:var(--white);margin-top:2px">🧑 ' + mEscHtml(call.patientName) + '</div>' : "") +
       '</div>' +
@@ -3450,13 +3484,15 @@ function mRenderDispatchList(calls) {
   var destTxt = (call.disposition && call.disposition.type === "transport")
     ? ((call.disposition.transports||[]).length > 1 ? call.disposition.transports.length + " destinations" : (call.disposition.hospital || ""))
     : (call.disposition && call.disposition.type === "rma" ? "RMA" : "");
-    var addr = (call.address||"Unknown").split(",")[0];
+    var addr = mPoiName(call.address) || (call.address||"Unknown").split(",")[0];
+    var addrStreet = mPoiName(call.address) ? mStreetPart(call.address) : "";
     return '<div class="m-disp-card" onclick="mOpenDispatchCall(\'' + call.id + '\')">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
         '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + zoneLabel + '</span>' +
         '<span style="font-size:0.7rem;color:var(--gray)">' + (call.times&&call.times.dispatched||"") + '</span>' +
       '</div>' +
       '<div style="font-family:\'Oswald\',sans-serif;font-size:0.98rem;font-weight:700;color:var(--white)">' + addr + (call.apt ? ' <span style="color:var(--gold);font-size:0.8rem">· ' + mEscHtml(call.apt) + '</span>' : '') + '</div>' +
+      (addrStreet ? '<div style="font-size:0.78rem;color:#c9d4e6;margin-top:1px">' + mEscHtml(addrStreet) + '</div>' : '') +
       '<div style="display:flex;gap:8px;align-items:center;margin-top:4px;font-size:0.75rem;color:var(--gray)">' +
         (nature ? '<span style="color:' + zoneColor + '">' + nature + '</span>' : '') +
         (patient ? '<span>' + patient + '</span>' : '') +
@@ -4335,6 +4371,7 @@ function mPushCallbackSMS() {
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = "";
+  mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
   document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
@@ -4345,7 +4382,7 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-notes").value = "";
   document.getElementById("m-nc-code-suggestion").style.display = "none";
   document.getElementById("m-nc-zone-banner").style.display = "none";
-  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge("");
+  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge(""); mSetNcSex("");
   var natSel = document.getElementById("m-nc-nature");
   if (!natSel.options.length) {
     natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
@@ -4386,6 +4423,7 @@ function mShowNcZoneBanner(zone) {
 }
 // Required fields on a new call: address, nature, patient age. Red until answered.
 function mNcValidateMarks() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form) return;
   var addr = document.getElementById("m-nc-address");
   var nat  = document.getElementById("m-nc-nature");
   var ageGroup = document.getElementById("m-nc-age-toggle");
@@ -4395,6 +4433,18 @@ function mNcValidateMarks() {
     nat.classList.toggle("m-nc-need", !natVal);
   }
   if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
+  // patient sex is required as well — its row gets the same outline
+  var sexBtn = form.querySelector("[data-sex]");
+  var sexRow = sexBtn ? sexBtn.parentElement : null;
+  if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
+}
+// Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
+function mBindNcValidation() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.valBound) return;
+  form.dataset.valBound = "1";
+  ["input", "change", "click", "blur"].forEach(function(ev) {
+    form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
+  });
 }
 function mSetNcAge(a) {
   mNcAge = a;
@@ -4407,8 +4457,12 @@ function mSetNcAge(a) {
   });
 }
 function mSetNcSex(s) {
-  mNcSex = mNcSex === s ? "" : s;
-  document.querySelectorAll("[data-sex]").forEach(function(b) {
+  mNcSex = (s === "" ? "" : (mNcSex === s ? "" : s));
+  mPaintNcSex();
+  setTimeout(mNcValidateMarks, 0);
+}
+function mPaintNcSex() {
+  document.querySelectorAll("#m-pg-dispatch-newcall [data-sex]").forEach(function(b) {
     var isThis = b.getAttribute("data-sex") === mNcSex;
     b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
     b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
@@ -4614,7 +4668,7 @@ function mEditCallTime(key, label) {
 }
 function mRenderDispatchDetail(call) {
   call = mSanitizeCall(call);
-  document.getElementById("m-dd-header-addr").textContent = (call.address||"Call").split(",")[0];
+  document.getElementById("m-dd-header-addr").textContent = mPoiName(call.address) || (call.address||"Call").split(",")[0];
   var content = "";
   // ── Call times: the six milestones, editable in place ──
   var tms = call.times || {};
@@ -4650,7 +4704,10 @@ function mRenderDispatchDetail(call) {
           '</a>' +
         '</div>'
       : '') +
-    '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + mEscHtml(call.address||"Unknown") + '</div>' +
+    (mPoiName(call.address)
+      ? '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white)">' + mEscHtml(mPoiName(call.address)) + '</div>' +
+        '<div style="font-size:0.85rem;color:#c9d4e6;margin-bottom:6px">' + mEscHtml(mStreetPart(call.address)) + '</div>'
+      : '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + mEscHtml(call.address||"Unknown") + '</div>') +
     (call.apt ? '<div style="display:inline-block;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--gold);background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:3px 9px;margin-bottom:8px;margin-right:6px">🚪 ' + mEscHtml(call.apt) + '</div>' : '') +
     (call.patientName ? '<div style="display:inline-block;font-size:0.8rem;font-weight:600;color:var(--white);background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:3px 9px;margin-bottom:8px">🧑 ' + mEscHtml(call.patientName) + '</div>' : '') +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
@@ -6296,7 +6353,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.39</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.40</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

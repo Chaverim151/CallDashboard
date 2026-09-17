@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.39');
+  window.location.replace('/CallDashboard/mobile.html?v=2.40');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1023,6 +1023,8 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 /* H) field titles brighter than the old grey */
 #m-pg-dispatch-newcall .m-disp-label,
 #tpl-modal .m-disp-label{color:#e8eef8;font-size:0.64rem;opacity:1}
+
+#pg-console .m-call-street,#tpl-modal .m-call-street{font-size:0.82rem;color:#c9d4e6;margin-top:-2px;margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -1281,7 +1283,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.39a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.40a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -12457,7 +12459,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.39a";
+var DESKTOP_VERSION = "9.40a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -13821,13 +13823,15 @@ function mRenderDispatchList(calls) {
   var destTxt = (call.disposition && call.disposition.type === "transport")
     ? ((call.disposition.transports||[]).length > 1 ? call.disposition.transports.length + " destinations" : (call.disposition.hospital || ""))
     : (call.disposition && call.disposition.type === "rma" ? "RMA" : "");
-    var addr = (call.address||"Unknown").split(",")[0];
+    var addr = mPoiName(call.address) || (call.address||"Unknown").split(",")[0];
+    var addrStreet = mPoiName(call.address) ? mStreetPart(call.address) : "";
     return '<div class="m-disp-card" onclick="mOpenDispatchCall(\'' + call.id + '\')">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
         '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + zoneLabel + '</span>' +
         '<span style="font-size:0.7rem;color:var(--gray)">' + (call.times&&call.times.dispatched||"") + '</span>' +
       '</div>' +
       '<div style="font-family:\'Oswald\',sans-serif;font-size:0.98rem;font-weight:700;color:var(--white)">' + addr + (call.apt ? ' <span style="color:var(--gold);font-size:0.8rem">· ' + mEscHtml(call.apt) + '</span>' : '') + '</div>' +
+      (addrStreet ? '<div style="font-size:0.78rem;color:#c9d4e6;margin-top:1px">' + mEscHtml(addrStreet) + '</div>' : '') +
       '<div style="display:flex;gap:8px;align-items:center;margin-top:4px;font-size:0.75rem;color:var(--gray)">' +
         (nature ? '<span style="color:' + zoneColor + '">' + nature + '</span>' : '') +
         (patient ? '<span>' + patient + '</span>' : '') +
@@ -14457,6 +14461,7 @@ function mPushCallbackSMS() {
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = "";
+  mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
   document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
@@ -14467,7 +14472,7 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-notes").value = "";
   document.getElementById("m-nc-code-suggestion").style.display = "none";
   document.getElementById("m-nc-zone-banner").style.display = "none";
-  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge("");
+  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge(""); mSetNcSex("");
   var natSel = document.getElementById("m-nc-nature");
   if (!natSel.options.length) {
     natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
@@ -14508,6 +14513,7 @@ function mShowNcZoneBanner(zone) {
 }
 // Required fields on a new call: address, nature, patient age. Red until answered.
 function mNcValidateMarks() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form) return;
   var addr = document.getElementById("m-nc-address");
   var nat  = document.getElementById("m-nc-nature");
   var ageGroup = document.getElementById("m-nc-age-toggle");
@@ -14517,6 +14523,18 @@ function mNcValidateMarks() {
     nat.classList.toggle("m-nc-need", !natVal);
   }
   if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
+  // patient sex is required as well — its row gets the same outline
+  var sexBtn = form.querySelector("[data-sex]");
+  var sexRow = sexBtn ? sexBtn.parentElement : null;
+  if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
+}
+// Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
+function mBindNcValidation() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.valBound) return;
+  form.dataset.valBound = "1";
+  ["input", "change", "click", "blur"].forEach(function(ev) {
+    form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
+  });
 }
 function mSetNcAge(a) {
   mNcAge = a;
@@ -14672,9 +14690,22 @@ function mEditCallTime(key, label) {
     .then(function(){ mToast(v ? "🕒 " + label + " set to " + v : label + " time cleared"); })
     .catch(function(e){ mToast("Error: " + e.message, true); });
 }
+// A POI address is stored as "Name — street, town". These split it so the name can sit on top
+// and the street underneath, instead of the street being dropped.
+function mPoiName(raw) {
+  raw = String(raw || "");
+  return raw.indexOf(" — ") !== -1 ? raw.split(" — ")[0].trim() : "";
+}
+function mStreetPart(raw) {
+  raw = String(raw || "");
+  var rest = raw.indexOf(" — ") !== -1 ? raw.split(" — ").slice(1).join(" — ") : raw;
+  return rest.split(",").map(function(s){ return s.trim().replace(/\s+\d{5}(-\d{4})?$/, ""); })   // drop the ZIP
+             .filter(function(s){ return s && !/^(USA|United States)$/i.test(s) && !/^\d{5}(-\d{4})?$/.test(s); })
+             .slice(0, 3).join(", ");
+}
 function mRenderDispatchDetail(call) {
   call = mSanitizeCall(call);
-  document.getElementById("m-dd-header-addr").textContent = (call.address||"Call").split(",")[0];
+  document.getElementById("m-dd-header-addr").textContent = mPoiName(call.address) || (call.address||"Call").split(",")[0];
   var content = "";
   // ── Call times: the six milestones, editable in place ──
   var tms = call.times || {};
@@ -14710,7 +14741,10 @@ function mRenderDispatchDetail(call) {
           '</a>' +
         '</div>'
       : '') +
-    '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + mEscHtml(call.address||"Unknown") + '</div>' +
+    (mPoiName(call.address)
+      ? '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white)">' + mEscHtml(mPoiName(call.address)) + '</div>' +
+        '<div style="font-size:0.85rem;color:#c9d4e6;margin-bottom:6px">' + mEscHtml(mStreetPart(call.address)) + '</div>'
+      : '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + mEscHtml(call.address||"Unknown") + '</div>') +
     (call.apt ? '<div style="display:inline-block;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--gold);background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:3px 9px;margin-bottom:8px;margin-right:6px">🚪 ' + mEscHtml(call.apt) + '</div>' : '') +
     (call.patientName ? '<div style="display:inline-block;font-size:0.8rem;font-weight:600;color:var(--white);background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:3px 9px;margin-bottom:8px">🧑 ' + mEscHtml(call.patientName) + '</div>' : '') +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
@@ -16423,8 +16457,12 @@ function mSelectSearchedHospital(display) {
   mUpdateTransportPrompts();
 }
 function mSetNcSex(s) {
-  mNcSex = mNcSex === s ? "" : s;
-  document.querySelectorAll("[data-sex]").forEach(function(b) {
+  mNcSex = (s === "" ? "" : (mNcSex === s ? "" : s));
+  mPaintNcSex();
+  setTimeout(mNcValidateMarks, 0);
+}
+function mPaintNcSex() {
+  document.querySelectorAll("#m-pg-dispatch-newcall [data-sex]").forEach(function(b) {
     var isThis = b.getAttribute("data-sex") === mNcSex;
     b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
     b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
