@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.52');
+  window.location.replace('/CallDashboard/mobile.html?v=2.53');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1283,7 +1283,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.48a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.49a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -12518,7 +12518,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.48a";
+var DESKTOP_VERSION = "9.49a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -14607,7 +14607,9 @@ function mNcValidateMarks() {
   var addr = document.getElementById("m-nc-address");
   var nat  = document.getElementById("m-nc-nature");
   var ageGroup = document.getElementById("m-nc-age-toggle");
-  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim());
+  // An address with no coordinates can't be zoned, so it counts as incomplete even when typed
+  var hasCoords = !!(parseFloat((document.getElementById("m-nc-lat")||{}).value) && parseFloat((document.getElementById("m-nc-lng")||{}).value));
+  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim() || !hasCoords);
   if (nat) {
     var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
     nat.classList.toggle("m-nc-need", !natVal);
@@ -14746,6 +14748,20 @@ function mPostNewCallNow() {
   }
   mPostAddrResolved = false;
   var address = mCleanAddress(document.getElementById("m-nc-address").value.trim());
+  // The response type decides whether a rig is loaded and who is toned out. If the address was
+  // never resolved to coordinates the zone is unknown, and guessing "Standard Response" could send
+  // a crew the wrong way — so stop and say so instead.
+  var _lat0 = parseFloat(document.getElementById("m-nc-lat").value) || null;
+  var _lng0 = parseFloat(document.getElementById("m-nc-lng").value) || null;
+  if (!mNcZone) {
+    if (_lat0 && _lng0 && typeof mDetectZone === "function") mSetNcZone(mDetectZone(_lat0, _lng0) || "", false);
+    if (!mNcZone) {
+      var _b0 = document.getElementById("m-nc-post-btn"); if (_b0) { _b0.disabled = false; _b0.textContent = "Post Call"; }
+      mToast("Pick the address from the suggestions so the response area can be worked out", true);
+      var _a0 = document.getElementById("m-nc-address"); if (_a0) { _a0.classList.add("m-nc-need"); _a0.focus(); }
+      return;
+    }
+  }
   var natSelVal = document.getElementById("m-nc-nature").value;
   var nature = natSelVal === "__custom__" ? document.getElementById("m-nc-nature-custom").value.trim() : natSelVal;
   var btn = document.getElementById("m-nc-post-btn");
@@ -14757,7 +14773,7 @@ function mPostNewCallNow() {
     lat: parseFloat(document.getElementById("m-nc-lat").value) || null,
     lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
-    zone: mNcZone || "primary", // only reachable after zone detection or an explicit dispatcher confirmation
+    zone: mNcZone, // always a detected value — posting is blocked below if it's unknown
     callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }],
     callNature: nature,
     patientAge: mNcAge,

@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.51"; window.M_BUILD = BUILD;
+  var BUILD = "2.53"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -312,7 +312,7 @@ select.m-disp-input option{background-color:#122040;color:#f4f6fa}
 #m-home-grid .m-tile{transition:transform .18s ease}
 #m-home-grid .m-tile.placeholder{opacity:0.25;animation:none !important}
 .m-tile-ghost{animation:none !important;transition:none !important}
-#m-home-grid.jiggle .m-tile{touch-action:none}
+#m-home-grid.jiggle .m-tile{touch-action:pan-y}
 #m-tile-done-bar{display:none;margin:10px 0 2px;text-align:center}
 #m-tile-done-bar button{background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:10px 22px;cursor:pointer}
 
@@ -325,8 +325,10 @@ select.m-disp-input option{background-color:#122040;color:#f4f6fa}
 #m-home-grid .m-tile{touch-action:manipulation}
 /* While rearranging, the tile owns the gesture — otherwise the page scrolls under the finger,
    which is why this broke as soon as active calls made the home screen scrollable. */
-#m-home-grid.jiggle .m-tile,#m-home-grid.jiggle{touch-action:none !important}
-body.m-tile-dragging,body.m-tile-dragging .m-scroll{overflow:hidden !important;overscroll-behavior:none}
+/* Jiggling still scrolls — only a tile actually in hand takes over the gesture */
+#m-home-grid.jiggle .m-tile,#m-home-grid.jiggle{touch-action:pan-y !important}
+body.m-tile-dragging,body.m-tile-dragging #m-home-grid,body.m-tile-dragging #m-home-grid.jiggle,body.m-tile-dragging #m-home-grid.jiggle .m-tile,body.m-tile-dragging #m-home-grid .m-tile{touch-action:none !important}
+body.m-tile-dragging{overscroll-behavior:none}
 </style>
 </head>
 <body>
@@ -375,7 +377,7 @@ body.m-tile-dragging,body.m-tile-dragging .m-scroll{overflow:hidden !important;o
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.51</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.53</div>
     </div>
   </div>
 </div>
@@ -406,7 +408,7 @@ body.m-tile-dragging,body.m-tile-dragging .m-scroll{overflow:hidden !important;o
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.51</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.53</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -904,6 +906,27 @@ function mTileMoveGhost(x, y) {
   if (!mTD.ghost) return;
   mTD.ghost.style.left = (x - mTD.dx) + "px";
   mTD.ghost.style.top  = (y - mTD.dy) + "px";
+  mTileEdgeScroll(y);
+}
+// Holding a tile near the top or bottom scrolls the list, so it can be dropped anywhere
+function mTileEdgeScroll(y) {
+  var sc = mTileScrollParent(); if (!sc) return;
+  var r = (sc === document.scrollingElement) ? { top: 0, bottom: window.innerHeight } : sc.getBoundingClientRect();
+  var edge = 90, speed = 0;
+  if (y < r.top + edge) speed = -Math.ceil((r.top + edge - y) / 6);
+  else if (y > r.bottom - edge) speed = Math.ceil((y - (r.bottom - edge)) / 6);
+  if (!speed) return;
+  sc.scrollTop = Math.max(0, Math.min(sc.scrollHeight, sc.scrollTop + speed));
+}
+function mTileScrollParent() {
+  var g = document.getElementById("m-home-grid"); if (!g) return null;
+  var el = g.parentElement;
+  while (el && el !== document.body) {
+    var cs = getComputedStyle(el);
+    if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 4) return el;
+    el = el.parentElement;
+  }
+  return document.scrollingElement;
 }
 function mTileReorderAt(x, y) {
   var grid = document.getElementById("m-home-grid"); if (!grid || !mTD.el) return;
@@ -4529,7 +4552,9 @@ function mNcValidateMarks() {
   var addr = document.getElementById("m-nc-address");
   var nat  = document.getElementById("m-nc-nature");
   var ageGroup = document.getElementById("m-nc-age-toggle");
-  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim());
+  // An address with no coordinates can't be zoned, so it counts as incomplete even when typed
+  var hasCoords = !!(parseFloat((document.getElementById("m-nc-lat")||{}).value) && parseFloat((document.getElementById("m-nc-lng")||{}).value));
+  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim() || !hasCoords);
   if (nat) {
     var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
     nat.classList.toggle("m-nc-need", !natVal);
@@ -4760,6 +4785,20 @@ function mPostNewCallNow() {
   }
   mPostAddrResolved = false;
   var address = mCleanAddress(document.getElementById("m-nc-address").value.trim());
+  // The response type decides whether a rig is loaded and who is toned out. If the address was
+  // never resolved to coordinates the zone is unknown, and guessing "Standard Response" could send
+  // a crew the wrong way — so stop and say so instead.
+  var _lat0 = parseFloat(document.getElementById("m-nc-lat").value) || null;
+  var _lng0 = parseFloat(document.getElementById("m-nc-lng").value) || null;
+  if (!mNcZone) {
+    if (_lat0 && _lng0 && typeof mDetectZone === "function") mSetNcZone(mDetectZone(_lat0, _lng0) || "", false);
+    if (!mNcZone) {
+      var _b0 = document.getElementById("m-nc-post-btn"); if (_b0) { _b0.disabled = false; _b0.textContent = "Post Call"; }
+      mToast("Pick the address from the suggestions so the response area can be worked out", true);
+      var _a0 = document.getElementById("m-nc-address"); if (_a0) { _a0.classList.add("m-nc-need"); _a0.focus(); }
+      return;
+    }
+  }
   var natSelVal = document.getElementById("m-nc-nature").value;
   var nature = natSelVal === "__custom__" ? document.getElementById("m-nc-nature-custom").value.trim() : natSelVal;
   var btn = document.getElementById("m-nc-post-btn");
@@ -4771,7 +4810,7 @@ function mPostNewCallNow() {
     lat: parseFloat(document.getElementById("m-nc-lat").value) || null,
     lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
-    zone: mNcZone || "primary", // only reachable after zone detection or an explicit dispatcher confirmation
+    zone: mNcZone, // always a detected value — posting is blocked below if it's unknown
     callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }],
     callNature: nature,
     patientAge: mNcAge,
@@ -6564,7 +6603,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.51</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.53</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
