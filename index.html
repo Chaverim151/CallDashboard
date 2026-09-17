@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.51');
+  window.location.replace('/CallDashboard/mobile.html?v=2.52');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1283,7 +1283,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.47a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.48a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -12518,7 +12518,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.47a";
+var DESKTOP_VERSION = "9.48a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -12688,6 +12688,7 @@ function openNewCallFromHome() {
   setTimeout(function() { if (typeof mOpenNewCallForm === "function") mOpenNewCallForm(); }, 120);
 }
 function openDispatchConsole() {
+  if (typeof mLoadDispatchSettings === "function") mLoadDispatchSettings();   // pick up any admin changes
   if (typeof tplReleaseCallForm === "function") tplReleaseCallForm();
   if (typeof tplReleaseCallForm === "function") tplReleaseCallForm();
   if (_deskBodyOverflow === null) _deskBodyOverflow = document.body.style.overflow || "";
@@ -12696,6 +12697,7 @@ function openDispatchConsole() {
   if (typeof mLoadAllResponders === "function") mLoadAllResponders();   // fills the unit roster for the assign sheets
   if (typeof mLoadSmsTemplates === "function") mLoadSmsTemplates();     // admin-edited message wording
   if (typeof mLoadUnitDirectory === "function") mLoadUnitDirectory();   // @mention suggestions
+  if (typeof mLoadDispatchSettings === "function") mLoadDispatchSettings();   // coverage areas, natures, hospitals, ALS codes
   showPage("console");
   // Keep sheets INSIDE the console: the mobile stylesheet is scoped to #pg-console, so moving them
   // to <body> stripped their styling (including display:none) and spilled raw markup onto other pages.
@@ -13449,6 +13451,23 @@ function mStartScanner(eventId) {
     };
     document.head.appendChild(script);
   }
+}
+function mLoadDispatchSettings() {
+  return db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
+    if (!s.exists) return; var ds = s.data() || {};
+    if (Array.isArray(ds.mutualAid) && ds.mutualAid.length) M_MUTUAL_AID_911 = ds.mutualAid.map(function(r){ return { match: (r.match||[]).map(function(x){ return String(x).toLowerCase(); }), borough: r.borough||"", bls: r.bls||"", als: r.als||"", pd: r.pd||"" }; });
+    if (Array.isArray(ds.hospitals) && ds.hospitals.length) { M_HOSPITALS = ds.hospitals.slice(); if (M_HOSPITALS.indexOf("Other") === -1) M_HOSPITALS.push("Other"); }
+    if (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length) M_ALS_NATURE_CODES = ds.alsNatureCodes.slice();
+    M_OUTSIDE_CONTACTS = Array.isArray(ds.outsideContacts) ? ds.outsideContacts.slice() : [];
+    if (Array.isArray(ds.natures) && ds.natures.length) {
+      M_CALL_NATURES = ds.natures.map(function(nn){ return { value: nn.value, label: nn.label || nn.value, als: !!nn.als }; });
+      M_ALS_NATURE_CODES = M_CALL_NATURES.filter(function(nn){ return nn.als; }).map(function(nn){ return (nn.value.match(/^(\d{2})\s*-/)||[])[1]; }).filter(Boolean);
+    }
+    if (Array.isArray(ds.zones) && ds.zones.length) {
+      var zs = ds.zones.map(function(z){ return { name: (z.type === "primary" ? "MC Primary Response Area" : "Secondary Response Area") + (z.name ? " — " + z.name : ""), points: (z.points||[]).map(function(p){ return { lat:+p.lat, lng:+p.lng }; }) }; }).filter(function(z){ return z.points.length >= 3; });
+      if (zs.length) M_COVERAGE_ZONES = zs;
+    }
+  }).catch(function(){});
 }
 var M_COVERAGE_ZONES = [
   {
