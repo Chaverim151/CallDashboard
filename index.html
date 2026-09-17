@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.38');
+  window.location.replace('/CallDashboard/mobile.html?v=2.39');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1013,6 +1013,16 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 #pg-console select, #tpl-modal select, #pg-admin select{color-scheme:dark;background-color:#122040;color:#f4f6fa;appearance:auto;-webkit-appearance:auto;padding-right:28px;cursor:pointer}
 #pg-console select option, #tpl-modal select option, #pg-admin select option{background-color:#122040;color:#f4f6fa}
 #pg-console select:focus, #tpl-modal select:focus{outline:2px solid rgba(201,168,76,0.6);outline-offset:1px}
+
+/* Required on a new call: Location, Nature, Patient. Outlined red until answered, so nothing is
+   posted half-filled; the outline clears the moment the field has a value. */
+#m-pg-dispatch-newcall .m-nc-need,
+#tpl-modal .m-nc-need{border-color:#e05555 !important;box-shadow:0 0 0 1px rgba(224,85,85,0.35)}
+#m-pg-dispatch-newcall .m-nc-need-group,
+#tpl-modal .m-nc-need-group{border:1px solid #e05555;border-radius:9px;padding:6px;box-shadow:0 0 0 1px rgba(224,85,85,0.25)}
+/* H) field titles brighter than the old grey */
+#m-pg-dispatch-newcall .m-disp-label,
+#tpl-modal .m-disp-label{color:#e8eef8;font-size:0.64rem;opacity:1}
 </style>
 </head>
 <body>
@@ -1271,7 +1281,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.38a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.39a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -6333,6 +6343,11 @@ function tplBindAutocomplete() {
     var lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
     var formatted = place.formatted_address || input.value;
     var placeName = (place.name && place.name !== place.formatted_address) ? place.name : "";
+    // Keep the street address with the POI name — "Topgolf — 1013 US-1, Edison, NJ" — so the card,
+    // the call info and the text all show where it actually is, not just the name and town.
+    if (placeName && place.formatted_address && input.value.indexOf(" — ") === -1) {
+      input.value = placeName + " — " + place.formatted_address;
+    }
     input.value = placeName ? (placeName + " — " + formatted) : formatted;
     var zone = (typeof mDetectZone === "function") ? mDetectZone(lat, lng) : "";
     if (zone) {
@@ -8086,7 +8101,9 @@ function checkAccessCodeOnFile(formattedAddress, placeName) {
   });
   console.log("AccessCode best match:", match && match.name, "score:", bestScore, "| haystack:", haystack);
 
-  if (match && bestScore >= 4) {
+  // A lone word match ("Israel", "Center") is not evidence this is the same building — require
+  // real proximity or a strong combined match, otherwise leave the code blank.
+  if (match && bestScore >= 12) {
     window._accessCodeSuggestion = match;
     document.getElementById("access-code-suggestion-name").textContent = match.name || "";
     document.getElementById("access-code-suggestion-code").textContent = codesSummary(match) || match.code || "";
@@ -9467,7 +9484,7 @@ function setUnitStatus(callId, crewIdx, role, status) {
           });
         });
         selectDDCall(callId, "units");
-        if (allCleared) showToast("🏠 Rig back at base — all units cleared. Ready to close call.", false);
+        if (allCleared) showToast("🏠 Rig Back At Base", false);
       });
     } else {
       selectDDCall(callId, "units");
@@ -12209,42 +12226,42 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   </div>
   <div class="m-scroll">
     <div class="m-disp-label">Location</div>
-    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" class="m-disp-input" placeholder="Start typing address…" style="padding-right:38px;" oninput="mNcAddressTouched=true"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcValidateMarks()" class="m-disp-input" style="padding-right:38px;" oninput="mNcAddressTouched=true"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
     <div class="m-disp-label">Apt / Suite / Unit</div>
-    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-apt" class="m-disp-input" placeholder="e.g. Apt 4B, 2nd floor, Unit 12…" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-apt')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-apt" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-apt')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
 
     <div id="m-nc-zone-banner" style="display:none;margin-bottom:12px"></div>
 
     <div class="m-disp-label">Call Nature</div>
-    <select id="m-nc-nature" class="m-disp-input" style="margin-bottom:4px"></select>
-    <div id="m-nc-nature-custom-wrap" style="display:none;position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-custom" class="m-disp-input" placeholder="Type custom call nature…" style="padding-right:38px;margin-top:6px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-nature-custom')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <select id="m-nc-nature" class="m-disp-input" onchange="setTimeout(mNcValidateMarks,0)" style="margin-bottom:4px"></select>
+    <div id="m-nc-nature-custom-wrap" style="display:none;position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-custom" class="m-disp-input" style="padding-right:38px;margin-top:6px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-nature-custom')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <div id="m-nc-als-hint" style="display:none;font-size:0.68rem;color:#ff9090;margin-bottom:12px">🚨 ALS recommended by protocol for this nature</div>
     <div id="m-nc-als-hint-spacer" style="height:12px"></div>
     <div class="m-disp-label">Patient</div>
     <div style="display:flex;gap:6px;margin-bottom:8px" id="m-nc-age-toggle">
-      <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1;border-color:#7ab8f5;background:rgba(122,184,245,0.15);color:#7ab8f5">Adult</button>
+      <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1">Adult</button>
       <button type="button" class="m-disp-btn" data-age="pediatric" onclick="mSetNcAge('pediatric')" style="flex:1">Pediatric</button>
       <button type="button" class="m-disp-btn" data-age="uto" onclick="mSetNcAge('uto')" style="flex:1">UTO</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:12px">
-      <div style="position:relative;flex:1;margin-bottom:0"><input type="number" id="m-nc-age-num" class="m-disp-input" placeholder="Age" style="padding-right:38px;flex:1"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-age-num')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+      <div style="position:relative;flex:1;margin-bottom:0"><input type="number" id="m-nc-age-num" class="m-disp-input" style="padding-right:38px;flex:1"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-age-num')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
       <button type="button" class="m-disp-btn" data-sex="male" onclick="mSetNcSex('male')" style="flex:1">♂ Male</button>
       <button type="button" class="m-disp-btn" data-sex="female" onclick="mSetNcSex('female')" style="flex:1">♀ Female</button>
     </div>
 
     <div class="m-disp-label">Callback Number</div>
-    <div style="position:relative;margin-bottom:12px"><input type="tel" id="m-nc-callback" class="m-disp-input" placeholder="Caller's phone number" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-callback')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div style="position:relative;margin-bottom:12px"><input type="tel" id="m-nc-callback" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-callback')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
 
     <div id="m-nc-code-suggestion" style="display:none;align-items:center;gap:8px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.4);border-radius:8px;padding:8px 10px;margin-bottom:10px">
       <span style="font-size:1rem">🔑</span>
       <span id="m-nc-code-suggestion-text" style="flex:1;font-size:0.75rem;color:var(--gold)"></span>
     </div>
     <div class="m-disp-label">Access Code</div>
-    <div style="position:relative;margin-bottom:12px"><input type="text" id="m-nc-accesscode" class="m-disp-input" placeholder="Gate / door / building code" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-accesscode')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div style="position:relative;margin-bottom:12px"><input type="text" id="m-nc-accesscode" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-accesscode')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
 
     <div class="m-disp-label">Dispatch Notes</div>
-    <div style="position:relative;margin-bottom:16px"><textarea id="m-nc-notes" class="m-disp-input" rows="3" placeholder="Floor, apartment, special instructions…" style="padding-right:38px;resize:vertical"></textarea><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-notes')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div style="position:relative;margin-bottom:16px"><textarea id="m-nc-notes" class="m-disp-input" rows="3" style="padding-right:38px;resize:vertical"></textarea><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-notes')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
 
     <button onclick="mPostNewCall()" id="m-nc-post-btn" style="width:100%;background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:14px;cursor:pointer">🚑 Post Call</button>
   </div>
@@ -12440,7 +12457,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.38a";
+var DESKTOP_VERSION = "9.39a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -12493,7 +12510,7 @@ var mConflictsFetchedAt = 0, mConflictsInFlight = null;
 var mCurrentUser = null, mCurrentRole = null, mCurrentUserRoles = [], mCurrentUserUnit = "", mCurrentUserDisplayName = "";
 var mMapInfoOpenFor = null;
 var mMapLandmarkMarkers = [];
-var mNcZone = "primary", mNcAge = "adult", mNcSex = "";
+var mNcZone = "primary", mNcAge = "", mNcSex = "";
 var mNcAutocomplete = null;
 var mActiveCallsLive = [], mRigsCache = null, mRigsCacheAt = 0, mRigsInFlight = null;
 var MSysTestingMode = false;   /* the rest are declared with mobile's state above */
@@ -12617,6 +12634,7 @@ function openDispatchConsole() {
   deskFitConsole();
   if (typeof mLoadAllResponders === "function") mLoadAllResponders();   // fills the unit roster for the assign sheets
   if (typeof mLoadSmsTemplates === "function") mLoadSmsTemplates();     // admin-edited message wording
+  if (typeof mLoadUnitDirectory === "function") mLoadUnitDirectory();   // @mention suggestions
   showPage("console");
   // Keep sheets INSIDE the console: the mobile stylesheet is scoped to #pg-console, so moving them
   // to <body> stripped their styling (including display:none) and spilled raw markup onto other pages.
@@ -13680,7 +13698,9 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
     var s = mScoreCodeEntry(entry, addrLower, haystack, lat, lng);
     if (s > bestScore) { bestScore = s; match = entry; }
   });
-  if (match && bestScore >= 4) {
+  // A lone word match ("Israel", "Center") is not evidence this is the same building — require
+  // real proximity or a strong combined match, otherwise leave the code blank.
+  if (match && bestScore >= 12) {
     mAccessCodeSuggestion = match;
     var codeInp = document.getElementById("m-nc-accesscode");   // populate directly; dispatcher can still edit or clear
     if (codeInp && !codeInp.dataset.userEdited) codeInp.value = (mCodesSummary(match) || match.code || "") + (match.note ? " (" + match.note + ")" : "");
@@ -13696,13 +13716,23 @@ var mDispatchDetailListener = null;
 var mDispSelectedCallId = null;
 var mDispCallCache = {};
 var mNcAddressTouched = false;
-var mNcZone = "primary", mNcAge = "adult", mNcSex = "";
+var mNcZone = "primary", mNcAge = "", mNcSex = "";
 var mAssignSheetCrewIdx = 0, mAssignSheetRole = null, mAssignSheetMode = "unit";
 function mNowHHMM() {
   var d = new Date();
   return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
 }
+// ── UNIT DIRECTORY (for @mentions: everyone with a unit number) ──
 var mUnitDirectory = [];
+function mLoadUnitDirectory() {
+  db.collection("users").get().then(function(snap) {
+    var list = [];
+    snap.forEach(function(d) { var u = d.data(); if (u.unit) list.push({ unit: u.unit, name: ((u.firstName||"") + " " + (u.lastName||"")).trim() }); });
+    list.sort(function(a,b){ return a.unit.localeCompare(b.unit, undefined, {numeric:true}); });
+    mUnitDirectory = list;
+  }).catch(function(){});
+}
+
 function mJsAttr(s) { return String(s||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function mSafeUrl(u) { u = String(u||""); return /^https?:\/\//i.test(u) ? u.replace(/"/g,"&quot;") : ""; }
 function mCodesOf(item) {
@@ -14426,7 +14456,8 @@ function mPushCallbackSMS() {
 }
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = "adult"; mNcSex = "";
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = "";
+  [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
   document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
   document.getElementById("m-nc-age-num").value = "";
@@ -14436,7 +14467,7 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-notes").value = "";
   document.getElementById("m-nc-code-suggestion").style.display = "none";
   document.getElementById("m-nc-zone-banner").style.display = "none";
-  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge("adult");
+  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge("");
   var natSel = document.getElementById("m-nc-nature");
   if (!natSel.options.length) {
     natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
@@ -14475,13 +14506,26 @@ function mShowNcZoneBanner(zone) {
   banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
   banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:1.4rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:' + color + '">' + label + '</div><div style="font-size:0.7rem;color:' + color + ';opacity:0.85">' + sub + '</div></div></div>' + extra;
 }
+// Required fields on a new call: address, nature, patient age. Red until answered.
+function mNcValidateMarks() {
+  var addr = document.getElementById("m-nc-address");
+  var nat  = document.getElementById("m-nc-nature");
+  var ageGroup = document.getElementById("m-nc-age-toggle");
+  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim());
+  if (nat) {
+    var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
+    nat.classList.toggle("m-nc-need", !natVal);
+  }
+  if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
+}
 function mSetNcAge(a) {
   mNcAge = a;
+  setTimeout(mNcValidateMarks, 0);
   document.querySelectorAll("#m-nc-age-toggle button").forEach(function(b) {
     var isThis = b.getAttribute("data-age") === a;
-    b.style.borderColor = isThis ? "#7ab8f5" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(122,184,245,0.15)" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? "#7ab8f5" : "var(--white)";
+    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
+    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
+    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
   });
 }
 function mInitNcAddressAutocomplete() {
@@ -14834,7 +14878,7 @@ function mBuildCrewRigPanel(call, crewIdx) {
   } else if (every("clearing_facility") || every("returning_base")) {
     body = btn("Mark " + rig + " Back at Base", "back_at_base", "#7ab8f5", "blue");
   } else if (every("back_at_base")) {
-    body = '<div style="font-size:0.7rem;color:#7dedb5">✓ ' + mEscHtml(rig) + ' back at base — all units cleared</div>';
+    body = '<div style="font-size:0.7rem;color:#7dedb5">✓ ' + mEscHtml(rig) + ' Back At Base</div>';
   } else {
     body = '<div style="font-size:0.7rem;color:var(--gray)">Units are at different stages: ' + rigUnits.map(function(u){ return mEscHtml(u.unit) + " (" + (M_STATUS_LOG[u.status] ? M_STATUS_LOG[u.status].text : "—") + ")"; }).join(", ") + '</div>';
   }
@@ -16008,6 +16052,11 @@ var mBindNcAutocomplete = function() {
     document.getElementById("m-nc-lng").value = lng;
     document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
     var placeName = (place.name && place.name !== place.formatted_address) ? place.name : "";
+    // Keep the street address with the POI name — "Topgolf — 1013 US-1, Edison, NJ" — so the card,
+    // the call info and the text all show where it actually is, not just the name and town.
+    if (placeName && place.formatted_address && input.value.indexOf(" — ") === -1) {
+      input.value = placeName + " — " + place.formatted_address;
+    }
     var zone = mDetectZone(lat, lng);
     if (zone) mSetNcZone(zone, false);
     mCheckAccessCode(place.formatted_address || input.value, placeName, lat, lng);
