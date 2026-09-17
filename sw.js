@@ -28,8 +28,10 @@ messaging.onBackgroundMessage(function(payload) {
                     tag.indexOf('hatzolah-note') !== -1;
 
   if (isCallNotif) {
+    // TEST pushes are tagged by the server; pass that through so the app plays the test chime
+    var isTest = /\[TEST\]|TEST MODE|🧪/i.test(String(title || '') + ' ' + String(body || ''));
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(cls) {
-      cls.forEach(function(c) { c.postMessage({ type: 'PLAY_TONE' }); });
+      cls.forEach(function(c) { c.postMessage({ type: 'PLAY_TONE', isTest: isTest }); });
     });
   }
 

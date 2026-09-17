@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.40');
+  window.location.replace('/CallDashboard/mobile.html?v=2.50');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1283,7 +1283,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.40a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.46a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2716,6 +2716,51 @@ function startActiveCallsListener() {
     });
 }
 
+// A POI address is stored as "Name — street, town". These split it so the name can sit on top
+// and the street underneath, instead of the street being dropped.
+// Some calls were saved as "505 Raritan Ave — 505 Raritan Ave, Highland Park" when Google echoed
+// the street back as a place name. Collapse that prefix wherever an address is read or shown.
+// Google also hands back POIs comma-joined — "Walmart, New Jersey 27, Edison, NJ, USA" — so the
+// place name is recognised there too and shown on its own line.
+function mLooksLikeStreet(s) {
+  s = String(s || "").trim();
+  if (/^\d/.test(s)) return true;                                   // 1013 US-1
+  return /\b(ave|avenue|st|street|rd|road|dr|drive|ln|lane|blvd|boulevard|ct|court|pl|place|ter|terrace|way|hwy|highway|pkwy|parkway|route|rt|us-?\d|nj-?\d|county road|cr-?\d)\b/i.test(s)
+      || /^(new jersey|state highway|us highway)\s+\d+/i.test(s);   // "New Jersey 27"
+}
+function mCleanAddress(raw) {
+  raw = String(raw || "").trim();
+  var i = raw.indexOf(" — ");
+  if (i !== -1) {
+    var head = raw.slice(0, i).trim(), rest = raw.slice(i + 3).trim();
+    if (!head) return rest;
+    if (rest.toLowerCase().indexOf(head.toLowerCase()) !== -1) return rest;   // the name repeats the address
+    if (/^\d/.test(head)) return rest;                                        // a street line, not a place name
+    return head + " — " + rest;
+  }
+  // Comma form: "Walmart, New Jersey 27, Edison, NJ, USA" → name, then the street
+  var parts = raw.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  if (parts.length >= 3 && !mLooksLikeStreet(parts[0]) && !/^\d/.test(parts[0]) && mLooksLikeStreet(parts[1])) {
+    return parts[0] + " — " + parts.slice(1).join(", ");
+  }
+  return raw;
+}
+function mPoiName(raw) {
+  raw = mCleanAddress(raw);
+  if (raw.indexOf(" — ") === -1) return "";
+  var name = raw.split(" — ")[0].trim();
+  var rest = raw.split(" — ").slice(1).join(" — ");
+  // Don't repeat the address as if it were a place name
+  if (!name || /^\d/.test(name) || rest.toLowerCase().indexOf(name.toLowerCase()) !== -1) return "";
+  return name;
+}
+function mStreetPart(raw) {
+  raw = mCleanAddress(raw);
+  var rest = raw.indexOf(" — ") !== -1 ? raw.split(" — ").slice(1).join(" — ") : raw;
+  return rest.split(",").map(function(s){ return s.trim().replace(/\s+\d{5}(-\d{4})?$/, ""); })   // drop the ZIP
+             .filter(function(s){ return s && !/^(USA|United States)$/i.test(s) && !/^\d{5}(-\d{4})?$/.test(s); })
+             .slice(0, 3).join(", ");
+}
 function renderActiveCallsHome(calls) {
   var section = document.getElementById("active-calls-section");
   var list = document.getElementById("active-calls-list");
@@ -2879,8 +2924,10 @@ function renderCallCard(call, i) {
           zoneBadge + testBadge +
           (!svThumb ? '<span style="font-size:0.68rem;color:var(--gray);margin-left:auto">' + time + '</span>' : '') +
         '</div>' +
-        '<div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;color:var(--white);line-height:1.3">' + (call.address||"Unknown Location") + '</div>' +
-        (call.crossStreet ? '<div style="font-size:0.75rem;color:var(--gray);margin-top:2px">↪ ' + call.crossStreet + '</div>' : '') +
+        (mPoiName(call.address)
+          ? '<div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;color:var(--white);line-height:1.3">' + escapeHtml(mPoiName(call.address)) + '</div>' +
+            '<div style="font-size:0.82rem;color:#c9d4e6;margin-top:1px">' + escapeHtml(mStreetPart(call.address)) + '</div>'
+          : '<div style="font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;color:var(--white);line-height:1.3">' + escapeHtml(mCleanAddress(call.address)||"Unknown Location") + '</div>') +
         '<div class="call-card-pills" style="margin-top:6px">' + alsPill + (natureParts.length?'<span class="call-pill nature">'+natureParts.join(" · ")+'</span>':"") + unitPills + dispBadge + '</div>' +
         timesRow +
         notesRow +
@@ -5233,7 +5280,7 @@ if ('serviceWorker' in navigator) {
           setTimeout(function() { selectDDCall(e.data.callId); }, 300);
         }
         if (e.data.type === 'PLAY_TONE') {
-          playDispatchTone();
+          playDispatchTone(e.data.isTest === true || (typeof SYS_TESTING_MODE !== "undefined" && SYS_TESTING_MODE));
         }
       });
     })
@@ -5242,49 +5289,58 @@ if ('serviceWorker' in navigator) {
 
 // In-app tone — plays when app is open/focused
 var toneCtx = null;
-function playDispatchTone() {
+function playDispatchTone(isTest) {
   try {
     if (!toneCtx) toneCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (toneCtx.state === 'suspended') toneCtx.resume();
-    var tones = [
-      { freq: 1050, start: 0.0, end: 0.4 },
-      { freq: 770,  start: 0.4, end: 0.8 },
-      { freq: 1050, start: 0.8, end: 1.2 },
-      { freq: 770,  start: 1.2, end: 1.6 },
-      { freq: 1050, start: 1.6, end: 2.0 },
-      { freq: 770,  start: 2.0, end: 2.4 },
-    ];
+    // A test call gets three short rising blips instead of the Hi-Lo dispatch alert, so a test is
+    // never mistaken for a real call.
+    var tones, vol, wave;
+    if (isTest) {
+      tones = [ { freq: 660, start: 0.0, end: 0.12 }, { freq: 880, start: 0.18, end: 0.30 }, { freq: 1100, start: 0.36, end: 0.56 } ];
+      vol = 0.32; wave = 'triangle';
+    } else {
+      tones = [
+        { freq: 1050, start: 0.0, end: 0.4 }, { freq: 770,  start: 0.4, end: 0.8 },
+        { freq: 1050, start: 0.8, end: 1.2 }, { freq: 770,  start: 1.2, end: 1.6 },
+        { freq: 1050, start: 1.6, end: 2.0 }, { freq: 770,  start: 2.0, end: 2.4 }
+      ];
+      vol = 0.7; wave = 'sine';
+    }
     var now = toneCtx.currentTime;
     tones.forEach(function(t) {
       var osc = toneCtx.createOscillator();
       var gain = toneCtx.createGain();
-      osc.type = 'sine';
+      osc.type = wave;
       osc.frequency.setValueAtTime(t.freq, now + t.start);
       gain.gain.setValueAtTime(0, now + t.start);
-      gain.gain.linearRampToValueAtTime(0.7, now + t.start + 0.02);
-      gain.gain.setValueAtTime(0.7, now + t.end - 0.02);
+      gain.gain.linearRampToValueAtTime(vol, now + t.start + 0.02);
+      gain.gain.setValueAtTime(vol, now + t.end - 0.02);
       gain.gain.linearRampToValueAtTime(0, now + t.end);
-      osc.connect(gain);
-      gain.connect(toneCtx.destination);
-      osc.start(now + t.start);
-      osc.stop(now + t.end);
+      osc.connect(gain); gain.connect(toneCtx.destination);
+      osc.start(now + t.start); osc.stop(now + t.end);
     });
-  } catch(e) { console.warn('Tone error:', e); }
+  } catch (e) {}
 }
 
 // Track new calls — play tone on new arrivals
 var knownCallIds = {};
 var initialLoadDone = false;
 function checkForNewCall(calls) {
-  var isNew = false;
+  var isNew = false, isTest = false;
   calls.forEach(function(call) {
-    if (!knownCallIds[call.id]) {
-      knownCallIds[call.id] = true;
-      if (initialLoadDone) isNew = true;
+    if (knownCallIds[call.id]) return;
+    knownCallIds[call.id] = true;
+    if (!initialLoadDone) return;
+    if (call.testMode) {
+      // A test call only sounds for the dispatcher who made it — same rule as its SMS and push
+      if (call.testModeUnit && call.testModeUnit === currentUserUnit) { isNew = true; isTest = true; }
+      return;
     }
+    isNew = true;
   });
   if (!initialLoadDone) { initialLoadDone = true; return; }
-  if (isNew) playDispatchTone();
+  if (isNew) playDispatchTone(isTest || (typeof SYS_TESTING_MODE !== "undefined" && SYS_TESTING_MODE));
 }
 
 // Request notification permission + get FCM token
@@ -6344,7 +6400,9 @@ function tplBindAutocomplete() {
     if (!place || !place.geometry) { tplLookupAddress(); return; }      // typed, no suggestion picked
     var lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
     var formatted = place.formatted_address || input.value;
-    var placeName = (place.name && place.name !== place.formatted_address) ? place.name : "";
+    // Google returns place.name for plain addresses too ("1013 US-1"), which would double the
+    // address. It's only a POI when the name isn't already part of the formatted address.
+    var placeName = mRealPoiName(place);
     // Keep the street address with the POI name — "Topgolf — 1013 US-1, Edison, NJ" — so the card,
     // the call info and the text all show where it actually is, not just the name and town.
     if (placeName && place.formatted_address && input.value.indexOf(" — ") === -1) {
@@ -10292,7 +10350,7 @@ function makeCallFlagClass() {
     var call = this.call;
     var sel = call.id === ddSelectedCallId;
     var zc = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
-    var rawA = call.address || "";
+    var rawA = mCleanAddress(call.address || "");
     var poi = rawA.indexOf("—") !== -1 ? rawA.split("—")[0].trim() : "";
     var addr = (rawA.indexOf("—") !== -1 ? rawA.split("—")[1] : rawA).split(",")[0].trim();
     var nature = call.callNature ? stripNatureNumber(call.callNature) : "";
@@ -12242,12 +12300,12 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
     <div id="m-nc-als-hint-spacer" style="height:12px"></div>
     <div class="m-disp-label">Patient</div>
     <div style="display:flex;gap:6px;margin-bottom:8px" id="m-nc-age-toggle">
-      <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1">Adult</button>
+      <div style="position:relative;flex:1"><input type="number" id="m-nc-age-num" class="m-disp-input" aria-label="Age" style="padding-right:30px;height:100%"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-age-num')" aria-label="Clear" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.75rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
       <button type="button" class="m-disp-btn" data-age="pediatric" onclick="mSetNcAge('pediatric')" style="flex:1">Pediatric</button>
+      <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1">Adult</button>
       <button type="button" class="m-disp-btn" data-age="uto" onclick="mSetNcAge('uto')" style="flex:1">UTO</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:12px">
-      <div style="position:relative;flex:1;margin-bottom:0"><input type="number" id="m-nc-age-num" class="m-disp-input" style="padding-right:38px;flex:1"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-age-num')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
       <button type="button" class="m-disp-btn" data-sex="male" onclick="mSetNcSex('male')" style="flex:1">♂ Male</button>
       <button type="button" class="m-disp-btn" data-sex="female" onclick="mSetNcSex('female')" style="flex:1">♀ Female</button>
     </div>
@@ -12459,7 +12517,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.40a";
+var DESKTOP_VERSION = "9.46a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -13657,35 +13715,47 @@ function mDistMeters(lat1, lng1, lat2, lng2) {
   var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
+function mHouseNumber(s) {
+  var m = String(s || "").trim().match(/^(\d+)[a-z]?\b/i);
+  return m ? m[1] : "";
+}
 function mScoreCodeEntry(entry, addrLower, haystack, selLat, selLng) {
   if (!entry.code) return 0;
   var score = 0;
   var hasGeo = entry.lat && entry.lng && selLat && selLng;
   var hasAddr = !!entry.address;
+  var dist = hasGeo ? mDistMeters(selLat, selLng, entry.lat, entry.lng) : null;
+
+  // A different street number is a different building, however close it is. 505 Raritan is not
+  // 415 Raritan, even though they're a block apart — never offer that code.
+  var callNum = mHouseNumber(addrLower);
+  var entryNum = hasAddr ? mHouseNumber(entry.address) : "";
+  if (callNum && entryNum && callNum !== entryNum) return 0;
+
   if (hasGeo) {
-    var dist = mDistMeters(selLat, selLng, entry.lat, entry.lng);
-    if (dist <= 30) return 100;
-    if (dist <= 80) score += 20;
-    if (dist <= 150) score += 10;
-    if (dist > 150) return 0;
+    // Same coordinates AND nothing contradicting the number → certain
+    if (dist <= 25 && (!entryNum || !callNum || callNum === entryNum)) return 100;
+    if (dist <= 80) score += 8;
+    else if (dist <= 150) score += 4;
+    else return 0;
   }
   var nameClean = (entry.name||"").toLowerCase();
   var nameWords = nameClean.split(/[\s,()\/&\-]+/).filter(function(w){ return !mIsNoiseWord(w) && w.length >= 3; });
   nameWords.forEach(function(w) { if (haystack.indexOf(w) !== -1) score += 4; });
   var nameStripped = nameClean.replace(/[^a-z0-9 ]/g,'').trim();
-  if (nameStripped.length > 4 && haystack.indexOf(nameStripped) !== -1) score += 6;
+  if (nameStripped.length > 4 && haystack.indexOf(nameStripped) !== -1) score += 8;   // the whole place name appears
   if (hasAddr) {
     var entryAddrLower = entry.address.toLowerCase();
-    var numMatch = entryAddrLower.match(/^\d+/);
-    var hasNumMatch = numMatch && addrLower.indexOf(numMatch[0] + " ") !== -1;
-    if (hasNumMatch) score += 6;
+    var hasNumMatch = entryNum && callNum && entryNum === callNum;
+    if (hasNumMatch) score += 8;
     var eWords = entryAddrLower.split(/[\s,]+/).filter(function(w){ return !mIsNoiseWord(w) && w.length >= 4; });
-    eWords.forEach(function(w) { if (addrLower.indexOf(w) !== -1) score += 2; });
-    if (entryAddrLower.length > 8 && addrLower.indexOf(entryAddrLower) !== -1) score += 10;
+    eWords.forEach(function(w) { if (addrLower.indexOf(w) !== -1) score += 1; });      // a shared street name is weak evidence
+    if (entryAddrLower.length > 8 && addrLower.indexOf(entryAddrLower) !== -1) score += 12;
     if (!hasGeo && !hasNumMatch) return 0;
   }
-  if (!hasGeo && !hasAddr && score < 10) return 0;
+  if (!hasGeo && !hasAddr && score < 12) return 0;
   return score;
+
 }
 var mAccessCodeSuggestion = null;
 function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
@@ -13823,7 +13893,7 @@ function mRenderDispatchList(calls) {
   var destTxt = (call.disposition && call.disposition.type === "transport")
     ? ((call.disposition.transports||[]).length > 1 ? call.disposition.transports.length + " destinations" : (call.disposition.hospital || ""))
     : (call.disposition && call.disposition.type === "rma" ? "RMA" : "");
-    var addr = mPoiName(call.address) || (call.address||"Unknown").split(",")[0];
+    var addr = mPoiName(call.address) || (mCleanAddress(call.address)||"Unknown").split(",")[0];
     var addrStreet = mPoiName(call.address) ? mStreetPart(call.address) : "";
     return '<div class="m-disp-card" onclick="mOpenDispatchCall(\'' + call.id + '\')">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
@@ -14258,7 +14328,7 @@ function mRenderTemplate(tpl, vars) {
   }).filter(function(l){ return l !== null; }).join("\n");
 }
 function mCallVars(call) {
-  var rawA = String(call.address || "");
+  var rawA = mCleanAddress(call.address || "");
   var poi = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ")[0].trim() : "";
   var fullA = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ").slice(1).join(" — ") : rawA;
   var street = fullA.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 3).join(", ");
@@ -14460,7 +14530,7 @@ function mPushCallbackSMS() {
 }
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = "";
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false;
   mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
@@ -14570,7 +14640,7 @@ function mResolveTypedAddress(address) {
   });
 }
 function mPostNewCall() {
-  var address = document.getElementById("m-nc-address").value.trim();
+  var address = mCleanAddress(document.getElementById("m-nc-address").value.trim());
   if (!address) { mToast("Enter an address", true); return; }
   // Never assume the zone: if the address hasn't resolved to coordinates yet, resolve it now, then post
   if (!document.getElementById("m-nc-lat").value) {
@@ -14587,8 +14657,51 @@ function mPostNewCall() {
   }
   mPostNewCallNow();
 }
+var mPostAddrResolved = false;
+// Whatever route the dispatcher took to enter the address, make sure what gets stored has a house
+// number when one exists. "Walmart — New Jersey 27, Edison" becomes "Walmart — 2220 NJ-27, Edison".
+function mUpgradeAddressForPost(address, lat, lng) {
+  address = mCleanAddress(address);
+  var name = mPoiName(address);
+  var street = name ? mStreetPart(address) : address;
+  if (/^\d/.test(String(street).trim())) return Promise.resolve(address);        // already numbered
+  if (!lat || !lng || !window.google || !google.maps || !google.maps.Geocoder) return Promise.resolve(address);
+  return new Promise(function(resolve) {
+    var done = false;
+    var bail = setTimeout(function(){ if (!done) { done = true; resolve(address); } }, 3000);
+    new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
+      if (done) return;
+      done = true; clearTimeout(bail);
+      if (st !== "OK" || !res || !res.length) return resolve(address);
+      var best = "";
+      res.forEach(function(r) {
+        if (best) return;
+        var types = r.types || [];
+        if ((types.indexOf("street_address") !== -1 || types.indexOf("premise") !== -1 || types.indexOf("subpremise") !== -1)
+            && /^\d/.test(r.formatted_address || "")) best = r.formatted_address;
+      });
+      if (!best) return resolve(address);
+      resolve(name ? (name + " — " + best) : best);
+    });
+  });
+}
 function mPostNewCallNow() {
-  var address = document.getElementById("m-nc-address").value.trim();
+  // Resolve a numbered street address first, if we don't already have one
+  var _rawAddr = mCleanAddress(document.getElementById("m-nc-address").value.trim());
+  var _lat = parseFloat(document.getElementById("m-nc-lat").value) || null;
+  var _lng = parseFloat(document.getElementById("m-nc-lng").value) || null;
+  if (!mPostAddrResolved) {
+    var _btn = document.getElementById("m-nc-post-btn");
+    if (_btn) { _btn.disabled = true; _btn.textContent = "Checking address…"; }
+    return mUpgradeAddressForPost(_rawAddr, _lat, _lng).then(function(better) {
+      document.getElementById("m-nc-address").value = better;
+      mPostAddrResolved = true;
+      if (_btn) { _btn.disabled = false; _btn.textContent = "Post Call"; }
+      return mPostNewCallNow();
+    });
+  }
+  mPostAddrResolved = false;
+  var address = mCleanAddress(document.getElementById("m-nc-address").value.trim());
   var natSelVal = document.getElementById("m-nc-nature").value;
   var nature = natSelVal === "__custom__" ? document.getElementById("m-nc-nature-custom").value.trim() : natSelVal;
   var btn = document.getElementById("m-nc-post-btn");
@@ -14690,22 +14803,9 @@ function mEditCallTime(key, label) {
     .then(function(){ mToast(v ? "🕒 " + label + " set to " + v : label + " time cleared"); })
     .catch(function(e){ mToast("Error: " + e.message, true); });
 }
-// A POI address is stored as "Name — street, town". These split it so the name can sit on top
-// and the street underneath, instead of the street being dropped.
-function mPoiName(raw) {
-  raw = String(raw || "");
-  return raw.indexOf(" — ") !== -1 ? raw.split(" — ")[0].trim() : "";
-}
-function mStreetPart(raw) {
-  raw = String(raw || "");
-  var rest = raw.indexOf(" — ") !== -1 ? raw.split(" — ").slice(1).join(" — ") : raw;
-  return rest.split(",").map(function(s){ return s.trim().replace(/\s+\d{5}(-\d{4})?$/, ""); })   // drop the ZIP
-             .filter(function(s){ return s && !/^(USA|United States)$/i.test(s) && !/^\d{5}(-\d{4})?$/.test(s); })
-             .slice(0, 3).join(", ");
-}
 function mRenderDispatchDetail(call) {
   call = mSanitizeCall(call);
-  document.getElementById("m-dd-header-addr").textContent = mPoiName(call.address) || (call.address||"Call").split(",")[0];
+  document.getElementById("m-dd-header-addr").textContent = mPoiName(call.address) || (mCleanAddress(call.address)||"Call").split(",")[0];
   var content = "";
   // ── Call times: the six milestones, editable in place ──
   var tms = call.times || {};
@@ -14744,7 +14844,7 @@ function mRenderDispatchDetail(call) {
     (mPoiName(call.address)
       ? '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white)">' + mEscHtml(mPoiName(call.address)) + '</div>' +
         '<div style="font-size:0.85rem;color:#c9d4e6;margin-bottom:6px">' + mEscHtml(mStreetPart(call.address)) + '</div>'
-      : '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + mEscHtml(call.address||"Unknown") + '</div>') +
+      : '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);margin-bottom:6px">' + mEscHtml(mCleanAddress(call.address)||"Unknown") + '</div>') +
     (call.apt ? '<div style="display:inline-block;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--gold);background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:3px 9px;margin-bottom:8px;margin-right:6px">🚪 ' + mEscHtml(call.apt) + '</div>' : '') +
     (call.patientName ? '<div style="display:inline-block;font-size:0.8rem;font-weight:600;color:var(--white);background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:3px 9px;margin-bottom:8px">🧑 ' + mEscHtml(call.patientName) + '</div>' : '') +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
@@ -16085,15 +16185,19 @@ var mBindNcAutocomplete = function() {
     document.getElementById("m-nc-lat").value = lat;
     document.getElementById("m-nc-lng").value = lng;
     document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
-    var placeName = (place.name && place.name !== place.formatted_address) ? place.name : "";
-    // Keep the street address with the POI name — "Topgolf — 1013 US-1, Edison, NJ" — so the card,
-    // the call info and the text all show where it actually is, not just the name and town.
-    if (placeName && place.formatted_address && input.value.indexOf(" — ") === -1) {
-      input.value = placeName + " — " + place.formatted_address;
-    }
+    // Google returns place.name for plain addresses too ("1013 US-1"), which would double the
+    // address. It's only a POI when the name isn't already part of the formatted address.
+    var placeName = mRealPoiName(place);
+    // The field still holds Google's prediction text ("Walmart, New Jersey 27, Edison, NJ"), which
+    // has no house number. The real street address is on the place itself — use that, and if it
+    // still has no number, ask the geocoder for the street address at these coordinates.
+    mBestStreetAddress(place, lat, lng).then(function(street) {
+      input.value = placeName ? (placeName + " — " + street) : street;
+      mCheckAccessCode(street, placeName, lat, lng);
+      if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+    });
     var zone = mDetectZone(lat, lng);
     if (zone) mSetNcZone(zone, false);
-    mCheckAccessCode(place.formatted_address || input.value, placeName, lat, lng);
   });
 };
 var mInitDispMap = function() {
@@ -16372,7 +16476,7 @@ function mMakeCallFlagClass() {
   MCallFlagOverlay.prototype.render = function() {
     var call = this.call;
     var zc = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
-    var rawA = call.address || "";
+    var rawA = mCleanAddress(call.address || "");
     var poi = rawA.indexOf("—") !== -1 ? rawA.split("—")[0].trim() : "";
     var addr = (rawA.indexOf("—") !== -1 ? rawA.split("—")[1] : rawA).split(",")[0].trim();
     var nature = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "") : "";
