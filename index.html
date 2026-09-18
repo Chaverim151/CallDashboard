@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.59');
+  window.location.replace('/CallDashboard/mobile.html?v=2.61');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1245,7 +1245,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
           <button type="button" class="edit-mode-btn tk-type-chip" data-type="it" onclick="tkPickType('it')" style="flex:1">💻 IT / App Issue</button>
         </div></div></div>
       <div id="tk-it-fields" style="display:none;background:rgba(122,184,245,0.07);border:1px solid rgba(122,184,245,0.3);border-radius:9px;padding:10px 12px;margin-bottom:12px">
-        <div style="font-size:0.74rem;color:#9fc8f0;margin-bottom:8px">Goes straight to the developer (MC-16). Device details are filled in for you — correct them if they're wrong.</div>
+        <div style="font-size:0.74rem;color:#9fc8f0;margin-bottom:8px">Goes straight to <span class="tk-it-recipients">the developer</span>. Device details are filled in for you — correct them if they're wrong.</div>
         <div class="form-row"><div><label>Device / OS</label><select id="tk-os"><option>iOS</option><option>Android</option><option>Windows</option><option>macOS</option><option>ChromeOS</option><option>Linux</option><option>Other</option></select></div>
           <div><label>OS Version</label><input type="text" id="tk-os-version" placeholder="e.g. 10 / 11"></div></div>
         <div class="form-row"><div><label>Browser / App</label><input type="text" id="tk-browser" placeholder="e.g. Chrome 128"></div>
@@ -1284,7 +1284,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.53b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.55a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1872,6 +1872,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         <button class="ticket-tab" data-ds="mutualAid" onclick="setDsTab('mutualAid')">🚔 Mutual Aid Directory</button>
         <button class="ticket-tab" data-ds="hospitals" onclick="setDsTab('hospitals')">🏥 Transport Hospitals</button>
         <button class="ticket-tab" data-ds="outside" onclick="setDsTab('outside')">📞 Outside-Coverage Contacts</button>
+        <button class="ticket-tab" data-ds="notify" onclick="setDsTab('notify')">🔔 Notifications &amp; Permissions</button>
       </div>
       <div id="ds-content"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
@@ -4665,7 +4666,7 @@ function openTicket(id) {
 }
 function renderTicketDetail(id, t) {
   var isAdmin = currentRole === "admin";
-  var isServiceUnit = isAdmin || (currentUserRoles || []).includes("logistics");
+  var isServiceUnit = (typeof canManageTickets === "function") ? canManageTickets() : (isAdmin || (currentUserRoles || []).includes("logistics"));
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
   document.getElementById("detail-title").textContent = "#" + id.slice(-6).toUpperCase();
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
@@ -4736,7 +4737,7 @@ function renderTicketDetail(id, t) {
   }).catch(function(e) { showToast("Error: " + e.message, true); });
 }
 function acceptTicket(id) {
-  if (currentRole !== "admin" && !(currentUserRoles || []).includes("logistics")) { showToast("Only service units can accept tickets", true); return; }
+  if (!(typeof canManageTickets === "function" ? canManageTickets() : (currentRole === "admin" || (currentUserRoles || []).includes("logistics")))) { showToast("Only service units can accept tickets", true); return; }
   var t = allTickets.find(function(x) { return x.id === id; });
   db.collection("users").doc(currentUser.uid).get().then(function(snap) {
     var d = snap.data();
@@ -4905,6 +4906,7 @@ function deleteTicket(id) {
 }
 var tkType = "general";
 function tkPickType(t) {
+  document.querySelectorAll(".tk-it-recipients").forEach(function(el){ el.textContent = (typeof M_IT_TICKET_UNITS !== "undefined" && M_IT_TICKET_UNITS.length) ? M_IT_TICKET_UNITS.join(", ") : "the developer"; });
   tkType = t;
   document.querySelectorAll(".tk-type-chip").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-type") === t); b.style.background = b.getAttribute("data-type") === t ? "rgba(201,168,76,0.22)" : ""; });
   var it = document.getElementById("tk-it-fields"); if (it) it.style.display = t === "it" ? "block" : "none";
@@ -4938,7 +4940,7 @@ function submitTicket() {
                  browser: (document.getElementById("tk-browser")||{}).value || dd.browser, appVersion: (document.getElementById("tk-app-version")||{}).value || "",
                  page: (document.getElementById("tk-page")||{}).value || "", screen: dd.screen, installed: dd.installed, userAgent: dd.userAgent };
     }
-    return db.collection("tickets").add({ title: title, details: details, category: isIT ? "it" : "general", itInfo: itInfo, notifyOnly: isIT ? ["MC-16"] : null, unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: currentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
+    return db.collection("tickets").add({ title: title, details: details, category: isIT ? "it" : "general", itInfo: itInfo, notifyOnly: isIT ? (typeof M_IT_TICKET_UNITS !== "undefined" ? M_IT_TICKET_UNITS.slice() : ["MC-16"]) : null, unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: currentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
       // notifications (push + SMS fallback) are sent server-side by the onTicketCreated Cloud Function
       var fi = document.getElementById("tk-it-files");
       if (isIT && fi && fi.files && fi.files.length && typeof UploadTicketPhotos === "function") {
@@ -7527,6 +7529,9 @@ function dsEnsureEdit() {
     mutualAid: (Array.isArray(ds.mutualAid) && ds.mutualAid.length ? ds.mutualAid : (MUTUAL_AID_911_DEFAULT||MUTUAL_AID_911)).map(function(r){ return { match: (r.match||[]).slice(), borough: r.borough||"", pd: r.pd||"", bls: r.bls||"", als: r.als||"" }; }),
     hospitals: (Array.isArray(ds.hospitals) && ds.hospitals.length ? ds.hospitals : DISPATCH_HOSPITALS_DEFAULT).filter(function(h){ return h !== "Other"; }),
     alsNatureCodes: (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length ? ds.alsNatureCodes : ALS_NATURE_CODES_DEFAULT).slice(),
+    adminNotifyUnits: (Array.isArray(ds.adminNotifyUnits) ? ds.adminNotifyUnits : (typeof M_ADMIN_NOTIFY_UNITS !== "undefined" ? M_ADMIN_NOTIFY_UNITS : ["MC-01","MC-10","MC-20"])).slice(),
+    ticketManagers: (Array.isArray(ds.ticketManagers) ? ds.ticketManagers : []).slice(),
+    itTicketUnits: (Array.isArray(ds.itTicketUnits) && ds.itTicketUnits.length ? ds.itTicketUnits : ["MC-16"]).slice(),
     outsideContacts: (Array.isArray(ds.outsideContacts) ? ds.outsideContacts : []).map(function(c){ return { name: c.name||"", phone: c.phone||"", note: c.note||"" }; }),
     natures: (Array.isArray(ds.natures) && ds.natures.length ? ds.natures.map(function(nn){ return { value: nn.value, label: nn.label, als: !!nn.als }; }) : (CALL_NATURES_DEFAULT||CALL_NATURES).map(function(nn){ return { value: nn.value, label: nn.label, als: !!nn.als }; })),
     zones: (Array.isArray(ds.zones) && ds.zones.length ? ds.zones : (COVERAGE_ZONES_DEFAULT||COVERAGE_ZONES).map(function(z, k){ return { name: (z.name.replace(/^(MC Primary Response Area|Secondary Response Area)( — )?/, "").replace(/[()]/g, "").trim() || (/primary/i.test(z.name) ? "Primary coverage" : "Secondary coverage" + (k > 1 ? " " + k : ""))), type: /primary/i.test(z.name) ? "primary" : "secondary", points: z.points }; })).map(function(z){ return { name: z.name||"", type: z.type === "primary" ? "primary" : "secondary", points: (z.points||[]).map(function(p){ return { lat:+p.lat, lng:+p.lng }; }) }; })
@@ -7534,9 +7539,52 @@ function dsEnsureEdit() {
 }
 function setDsTab(t) { dsTab = t; document.querySelectorAll("#ds-tabs .ticket-tab").forEach(function(b){ b.classList.toggle("active", b.getAttribute("data-ds") === t); }); renderDispatchSettings(); }
 var dsTab = "natures";
+function dsNormUnit(u) {
+  var m = String(u || "").toUpperCase().replace(/\s+/g, "").match(/^(?:MC-?)?(\d{1,4})$/);
+  return m ? "MC-" + m[1].padStart(2, "0") : "";
+}
+function dsUnitChips(list, key) {
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">' +
+    (list.length ? list.map(function(u, i) {
+      return '<span style="display:inline-flex;align-items:center;gap:6px;background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff;border-radius:7px;padding:5px 10px;font-family:\'Oswald\',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.04em">' + escapeHtml(u) +
+        '<button type="button" onclick="dsRemoveUnit(\'' + key + '\',' + i + ')" title="Remove" style="background:none;border:none;color:#ff9090;cursor:pointer;font-size:0.9rem;line-height:1;padding:0">✕</button></span>';
+    }).join("") : '<span style="font-size:0.78rem;color:var(--gray)">None</span>') +
+    '</div>' +
+    '<div style="display:flex;gap:8px;align-items:center">' +
+      '<input id="ds-add-' + key + '" placeholder="MC-##" onkeydown="if(event.key===\'Enter\'){event.preventDefault();dsAddUnit(\'' + key + '\');}" style="width:120px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.85rem">' +
+      '<button type="button" class="edit-mode-btn" onclick="dsAddUnit(\'' + key + '\')">+ Add unit</button>' +
+    '</div>';
+}
+function dsAddUnit(key) {
+  dsEnsureEdit();
+  var inp = document.getElementById("ds-add-" + key); if (!inp) return;
+  var u = dsNormUnit(inp.value);
+  if (!u) { showToast("Enter a unit number like MC-16", true); return; }
+  if (DS_EDIT[key].indexOf(u) === -1) DS_EDIT[key].push(u);
+  DS_EDIT[key].sort(function(a, b){ return a.localeCompare(b, undefined, { numeric: true }); });
+  inp.value = ""; renderDispatchSettings();
+  setTimeout(function(){ var i2 = document.getElementById("ds-add-" + key); if (i2) i2.focus(); }, 0);
+}
+function dsRemoveUnit(key, i) { dsEnsureEdit(); DS_EDIT[key].splice(i, 1); renderDispatchSettings(); }
+function renderDsNotify(el) {
+  var E = DS_EDIT;
+  el.innerHTML =
+    '<div class="admin-label" style="margin-bottom:4px">Admin call notifications</div>' +
+    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px;line-height:1.5">These units get a text for every call event — posted, unit assigned, ALS / BLS / PD, dispatcher notes. A chief who is also assigned to the call gets the normal unit text instead.</div>' +
+    dsUnitChips(E.adminNotifyUnits, "adminNotifyUnits") +
+    '<div class="admin-label" style="margin:22px 0 4px">Service ticket permissions</div>' +
+    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px;line-height:1.5">Who is notified of new service requests and may accept, comment on and resolve them. ' +
+      'Leave this empty to use everyone with the <b>Logistics</b> role (the default). Add units here to use this list <i>instead</i>. Admins can always manage tickets.</div>' +
+    dsUnitChips(E.ticketManagers, "ticketManagers") +
+    '<div class="admin-label" style="margin:22px 0 4px">IT / app tickets</div>' +
+    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px;line-height:1.5">Who receives IT / App Issue tickets — the developer(s). These never go to the service-ticket group above.</div>' +
+    dsUnitChips(E.itTicketUnits, "itTicketUnits") +
+    '<div style="font-size:0.72rem;color:var(--gray);margin-top:14px">Saved with the rest of the dispatch settings. Live on desktop immediately; phones pick it up at next sign-in.</div>';
+}
 function renderDispatchSettings() {
   var el = document.getElementById("ds-content"); if (!el) return;
   dsEnsureEdit(); var E = DS_EDIT;
+  if (dsTab === "notify") { renderDsNotify(el); return; }
   var inp = function(v, ph, oninput, extra) { return '<input value="' + String(v||"").replace(/"/g,"&quot;") + '" placeholder="' + ph + '" oninput="' + oninput + '" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.85rem;' + (extra||"") + '">'; };
   if (dsTab === "natures") {
     el.innerHTML = '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px">The call-nature list dispatchers pick from, in this order. <strong>Code</strong> is the 2-digit protocol number; <strong>ALS</strong> marks natures that flash "ALS Recommended by Protocol". Existing calls keep whatever nature they were posted with.</div>' +
@@ -7703,6 +7751,9 @@ function saveDispatchSettings() {
     alsNatureCodes: DS_EDIT.natures.filter(function(nn){ return nn.als; }).map(function(nn){ return (nn.value.match(/^(\d{2})\s*-/)||[])[1]; }).filter(Boolean),
     zones: DS_EDIT.zones.filter(function(z){ return z.points.length >= 3; }).map(function(z){ return { name: z.name||"", type: z.type === "primary" ? "primary" : "secondary", points: z.points.map(function(p){ return { lat:+p.lat, lng:+p.lng }; }) }; }),
     outsideContacts: DS_EDIT.outsideContacts.filter(function(c){ return (c.name||"").trim(); }),
+    adminNotifyUnits: (DS_EDIT.adminNotifyUnits || []).map(dsNormUnit).filter(Boolean),
+    ticketManagers: (DS_EDIT.ticketManagers || []).map(dsNormUnit).filter(Boolean),
+    itTicketUnits: (DS_EDIT.itTicketUnits || []).map(dsNormUnit).filter(Boolean),
     updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || (currentUser ? currentUser.email : "")
   };
   db.collection("appdata").doc("dispatchSettings").set(data).then(function() {
@@ -8054,6 +8105,9 @@ function applyDispatchSettings(ds) {
     CALL_NATURES = ds.natures.map(function(nn){ var v = (nn.code ? nn.code + " - " : "") + (nn.value || nn.label || ""); return { value: nn.value || v, label: nn.label || v, als: !!nn.als }; });
     ALS_NATURE_CODES = CALL_NATURES.filter(function(nn){ return nn.als; }).map(function(nn){ return (nn.value.match(/^(\d{2})\s*-/)||[])[1]; }).filter(Boolean);
   } else if (CALL_NATURES_DEFAULT) { CALL_NATURES = CALL_NATURES_DEFAULT.slice(); }
+  if (Array.isArray(ds.adminNotifyUnits) && typeof M_ADMIN_NOTIFY_UNITS !== "undefined") M_ADMIN_NOTIFY_UNITS = ds.adminNotifyUnits.slice();
+  if (typeof M_TICKET_MANAGERS !== "undefined") M_TICKET_MANAGERS = Array.isArray(ds.ticketManagers) ? ds.ticketManagers.slice() : [];
+  if (typeof M_IT_TICKET_UNITS !== "undefined" && Array.isArray(ds.itTicketUnits) && ds.itTicketUnits.length) M_IT_TICKET_UNITS = ds.itTicketUnits.slice();
   if (Array.isArray(ds.zones) && ds.zones.length && zonesFromSettings(ds.zones).length) COVERAGE_ZONES = zonesFromSettings(ds.zones);
   else if (COVERAGE_ZONES_DEFAULT) COVERAGE_ZONES = COVERAGE_ZONES_DEFAULT.slice();
 }
@@ -12520,7 +12574,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.53b";
+var DESKTOP_VERSION = "9.55a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -13459,6 +13513,9 @@ function mLoadDispatchSettings() {
     if (!s.exists) return; var ds = s.data() || {};
     if (Array.isArray(ds.mutualAid) && ds.mutualAid.length) M_MUTUAL_AID_911 = ds.mutualAid.map(function(r){ return { match: (r.match||[]).map(function(x){ return String(x).toLowerCase(); }), borough: r.borough||"", bls: r.bls||"", als: r.als||"", pd: r.pd||"" }; });
     if (Array.isArray(ds.hospitals) && ds.hospitals.length) { M_HOSPITALS = ds.hospitals.slice(); if (M_HOSPITALS.indexOf("Other") === -1) M_HOSPITALS.push("Other"); }
+    if (Array.isArray(ds.adminNotifyUnits)) M_ADMIN_NOTIFY_UNITS = ds.adminNotifyUnits.slice();
+    M_TICKET_MANAGERS = Array.isArray(ds.ticketManagers) ? ds.ticketManagers.slice() : [];
+    if (Array.isArray(ds.itTicketUnits) && ds.itTicketUnits.length) M_IT_TICKET_UNITS = ds.itTicketUnits.slice();
     if (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length) M_ALS_NATURE_CODES = ds.alsNatureCodes.slice();
     M_OUTSIDE_CONTACTS = Array.isArray(ds.outsideContacts) ? ds.outsideContacts.slice() : [];
     if (Array.isArray(ds.natures) && ds.natures.length) {
@@ -14441,7 +14498,19 @@ function mPhonesForUnits(units) {
   }).catch(function(){ return []; });
 }
 // Units that are notified of every call, assigned or not
-var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];
+var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];   // default; Admin ▸ Protocols ▸ Notifications overrides
+var M_TICKET_MANAGERS = [];                                  // empty = everyone with the Logistics role
+var M_IT_TICKET_UNITS = ["MC-16"];                           // IT / app tickets go here; Admin ▸ Protocols ▸ Notifications overrides
+function canManageTickets() {                                // desktop's own service page
+  if (currentRole === "admin" || (currentUserRoles || []).includes("admin")) return true;
+  if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.indexOf(currentUserUnit) !== -1;
+  return (currentUserRoles || []).includes("logistics");
+}
+function mCanManageTickets() {
+  if (mCurrentRole === "admin" || (mCurrentUserRoles || []).includes("admin")) return true;
+  if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.indexOf(mCurrentUserUnit) !== -1;
+  return (mCurrentUserRoles || []).includes("logistics");
+}
 // The admin group is copied on every call notification, under their own header
 function mPlainHeader(h) { return String(h || "").replace(/^[^A-Za-z0-9]+\s*/, ""); }
 function mAdminCopy(call, header, detail) {

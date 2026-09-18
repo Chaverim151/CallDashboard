@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.59"; window.M_BUILD = BUILD;
+  var BUILD = "2.61"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -377,7 +377,7 @@ body.m-tile-dragging{overscroll-behavior:none}
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.59</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.61</div>
     </div>
   </div>
 </div>
@@ -408,7 +408,7 @@ body.m-tile-dragging{overscroll-behavior:none}
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.59</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.61</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -692,7 +692,7 @@ body.m-tile-dragging{overscroll-behavior:none}
       <button type="button" class="m-disp-btn m-tk-type-chip" data-type="it" onclick="mTkPickType('it')" style="flex:1">💻 IT / App Issue</button>
     </div>
     <div id="m-tk-it-fields" style="display:none;background:rgba(122,184,245,0.07);border:1px solid rgba(122,184,245,0.3);border-radius:9px;padding:10px 12px;margin-bottom:12px">
-      <div style="font-size:0.7rem;color:#9fc8f0;margin-bottom:8px;line-height:1.45">Goes straight to the developer (MC-16). Device details are filled in for you — correct them if they're wrong.</div>
+      <div style="font-size:0.7rem;color:#9fc8f0;margin-bottom:8px;line-height:1.45">Goes straight to <span class="tk-it-recipients">the developer</span>. Device details are filled in for you — correct them if they're wrong.</div>
       <div class="m-disp-label">Device / OS</div>
       <select id="m-tk-os" class="m-disp-input" style="margin-bottom:8px">
         <option>iOS</option><option>Android</option><option>Windows</option><option>macOS</option><option>ChromeOS</option><option>Linux</option><option>Other</option>
@@ -3983,6 +3983,7 @@ function mDetectDevice() {
 }
 var mTkType = "general";
 function mTkPickType(t) {
+  document.querySelectorAll(".tk-it-recipients").forEach(function(el){ el.textContent = (typeof M_IT_TICKET_UNITS !== "undefined" && M_IT_TICKET_UNITS.length) ? M_IT_TICKET_UNITS.join(", ") : "the developer"; });
   mTkType = t;
   document.querySelectorAll(".m-tk-type-chip").forEach(function(b){ b.classList.toggle("on", b.getAttribute("data-type") === t); });
   var it = document.getElementById("m-tk-it-fields"), loc = document.getElementById("m-tk-loc-wrap");
@@ -4019,7 +4020,7 @@ function mSubmitTicket() {
                  browser: (document.getElementById("m-tk-browser")||{}).value || dd.browser, appVersion: (document.getElementById("m-tk-app-version")||{}).value || "",
                  page: (document.getElementById("m-tk-page")||{}).value || "", screen: dd.screen, installed: dd.installed, userAgent: dd.userAgent };
     }
-    return db.collection("tickets").add({ title: title, details: details, category: isIT ? "it" : "general", itInfo: itInfo, notifyOnly: isIT ? [M_IT_DEVELOPER_UNIT] : null, unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: mCurrentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
+    return db.collection("tickets").add({ title: title, details: details, category: isIT ? "it" : "general", itInfo: itInfo, notifyOnly: isIT ? M_IT_TICKET_UNITS.slice() : null, unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: mCurrentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
       // notifications (push + SMS fallback) are sent server-side by the onTicketCreated Cloud Function
       if (mPendingTicketFiles.length) {
         mToast("Uploading photos…");
@@ -4059,7 +4060,7 @@ function mOpenTicket(id) {
 }
 function mRenderTicketDetail(id, t) {
   var isAdmin = mCurrentRole === "admin";
-  var isServiceUnit = isAdmin || (mCurrentUserRoles||[]).includes("logistics");
+  var isServiceUnit = mCanManageTickets();
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
   document.getElementById("m-tk-detail-title").textContent = "#" + id.slice(-6).toUpperCase();
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
@@ -4176,7 +4177,7 @@ function mReplyTo(commentId, author) {
 }
 function mCancelReply() { mReplyTarget = null; var w = document.getElementById("m-tk-replying"); if (w) w.style.display = "none"; }
 function mAcceptTicket(id) {
-  if (mCurrentRole !== "admin" && !(mCurrentUserRoles||[]).includes("logistics")) { mToast("Only service units can accept tickets", true); return; }
+  if (!mCanManageTickets()) { mToast("Only service units can accept tickets", true); return; }
   var t = mAllTickets.find(function(x){ return x.id === id; });
   db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
     var d = snap.data();
@@ -4375,7 +4376,14 @@ function mPhonesForUnits(units) {
   }).catch(function(){ return []; });
 }
 // Units that are notified of every call, assigned or not
-var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];
+var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];   // default; Admin ▸ Protocols ▸ Notifications overrides
+var M_TICKET_MANAGERS = [];                                  // empty = everyone with the Logistics role
+var M_IT_TICKET_UNITS = ["MC-16"];                           // IT / app tickets go here; Admin ▸ Protocols ▸ Notifications overrides
+function mCanManageTickets() {
+  if (mCurrentRole === "admin" || (mCurrentUserRoles || []).includes("admin")) return true;
+  if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.indexOf(mCurrentUserUnit) !== -1;
+  return (mCurrentUserRoles || []).includes("logistics");
+}
 // The admin group is copied on every call notification, under their own header
 function mPlainHeader(h) { return String(h || "").replace(/^[^A-Za-z0-9]+\s*/, ""); }
 function mAdminCopy(call, header, detail) {
@@ -5935,6 +5943,9 @@ function mLoadDispatchSettings() {
     if (!s.exists) return; var ds = s.data() || {};
     if (Array.isArray(ds.mutualAid) && ds.mutualAid.length) M_MUTUAL_AID_911 = ds.mutualAid.map(function(r){ return { match: (r.match||[]).map(function(x){ return String(x).toLowerCase(); }), borough: r.borough||"", bls: r.bls||"", als: r.als||"", pd: r.pd||"" }; });
     if (Array.isArray(ds.hospitals) && ds.hospitals.length) { M_HOSPITALS = ds.hospitals.slice(); if (M_HOSPITALS.indexOf("Other") === -1) M_HOSPITALS.push("Other"); }
+    if (Array.isArray(ds.adminNotifyUnits)) M_ADMIN_NOTIFY_UNITS = ds.adminNotifyUnits.slice();
+    M_TICKET_MANAGERS = Array.isArray(ds.ticketManagers) ? ds.ticketManagers.slice() : [];
+    if (Array.isArray(ds.itTicketUnits) && ds.itTicketUnits.length) M_IT_TICKET_UNITS = ds.itTicketUnits.slice();
     if (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length) M_ALS_NATURE_CODES = ds.alsNatureCodes.slice();
     M_OUTSIDE_CONTACTS = Array.isArray(ds.outsideContacts) ? ds.outsideContacts.slice() : [];
     if (Array.isArray(ds.natures) && ds.natures.length) {
@@ -6643,7 +6654,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.59</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.61</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
