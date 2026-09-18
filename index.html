@@ -1284,7 +1284,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.55a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.55b</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7566,6 +7566,53 @@ function dsAddUnit(key) {
   setTimeout(function(){ var i2 = document.getElementById("ds-add-" + key); if (i2) i2.focus(); }, 0);
 }
 function dsRemoveUnit(key, i) { dsEnsureEdit(); DS_EDIT[key].splice(i, 1); renderDispatchSettings(); }
+var DS_ROSTER = null;   // [{unit, name, roles}] for the recipient matrix
+function dsLoadRoster() {
+  if (DS_ROSTER) return Promise.resolve(DS_ROSTER);
+  return db.collection("users").get().then(function(snap) {
+    var list = [];
+    snap.forEach(function(doc) { var u = doc.data(); if (u.unit) list.push({ unit: u.unit, name: ((u.firstName||"") + " " + (u.lastName||"")).trim(), roles: (u.roles || []).map(function(r){ return String(r).toLowerCase(); }), role: String(u.role || "").toLowerCase() }); });
+    list.sort(function(a, b){ return a.unit.localeCompare(b.unit, undefined, { numeric: true }); });
+    DS_ROSTER = list; return list;
+  }).catch(function(){ DS_ROSTER = []; return DS_ROSTER; });
+}
+function dsRenderNotifyMatrix() {
+  var host = document.getElementById("ds-notify-matrix"); if (!host || !DS_EDIT) return;
+  dsLoadRoster().then(function(roster) {
+    var byUnit = {}; roster.forEach(function(u){ byUnit[u.unit] = u; });
+    var label = function(units) {
+      units = Array.from(new Set(units.filter(Boolean)));
+      if (!units.length) return '<span style="color:#ff9090">nobody — check the lists above</span>';
+      return units.map(function(u) {
+        var known = byUnit[u];
+        return '<span title="' + escapeHtml(known ? known.name : "not on the roster") + '" style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-family:\'Oswald\',sans-serif;font-size:0.74rem;font-weight:700;' +
+          (known ? 'background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff' : 'background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.45);color:#ff9090') + '">' + escapeHtml(u) + (known ? '' : ' ?') + '</span>';
+      }).join("");
+    };
+    var admins = roster.filter(function(u){ return u.role === "admin" || u.roles.indexOf("admin") !== -1; }).map(function(u){ return u.unit; });
+    var logistics = roster.filter(function(u){ return u.roles.indexOf("logistics") !== -1; }).map(function(u){ return u.unit; });
+    var ticketGroup = DS_EDIT.ticketManagers.length ? DS_EDIT.ticketManagers.slice() : logistics;
+    var groupSource = DS_EDIT.ticketManagers.length ? "the units listed" : "everyone with the Logistics role";
+    var rows = [
+      ["📟 Admin call notification", "every call event — posted, unit assigned, ALS / BLS / PD, dispatcher notes", DS_EDIT.adminNotifyUnits],
+      ["🟡 New service ticket", "push; SMS too if High / Urgent (" + groupSource + ")", ticketGroup],
+      ["✋ Ticket accepted", "the submitter, plus the rest of the group", ticketGroup.concat(["(submitter)"])],
+      ["↩️ Ticket unassigned", "back to the group", ticketGroup],
+      ["💬 Comment", "whoever accepted it (or the group if nobody has), the submitter, and anyone @mentioned", ticketGroup.concat(["(submitter)", "(assignee)"])],
+      ["✅ Ticket resolved", "the submitter only", ["(submitter)"]],
+      ["💻 IT / app ticket", "never the service group", DS_EDIT.itTicketUnits],
+      ["🔧 May accept / resolve tickets", "the group, plus admins", ticketGroup.concat(admins)]
+    ];
+    host.innerHTML = '<table style="width:100%;border-collapse:collapse">' + rows.map(function(r) {
+      return '<tr style="border-top:1px solid var(--card-border)">' +
+        '<td style="padding:8px 8px 8px 0;vertical-align:top;white-space:nowrap;color:var(--white);font-size:0.8rem;width:210px">' + r[0] + '<div style="font-size:0.66rem;color:var(--gray);white-space:normal;margin-top:2px">' + escapeHtml(r[1]) + '</div></td>' +
+        '<td style="padding:8px 0;vertical-align:top">' + label(r[2].filter(function(x){ return x.charAt(0) !== "("; })) +
+          r[2].filter(function(x){ return x.charAt(0) === "("; }).map(function(x){ return '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-size:0.72rem;color:var(--gray);border:1px dashed var(--card-border)">' + escapeHtml(x.slice(1, -1)) + '</span>'; }).join("") +
+        '</td></tr>';
+    }).join("") + '</table>' +
+    (DS_EDIT.ticketManagers.length ? '' : '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">Logistics role right now: ' + (logistics.length ? logistics.join(", ") : "nobody") + '</div>');
+  });
+}
 function renderDsNotify(el) {
   var E = DS_EDIT;
   el.innerHTML =
@@ -7579,7 +7626,11 @@ function renderDsNotify(el) {
     '<div class="admin-label" style="margin:22px 0 4px">IT / app tickets</div>' +
     '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px;line-height:1.5">Who receives IT / App Issue tickets — the developer(s). These never go to the service-ticket group above.</div>' +
     dsUnitChips(E.itTicketUnits, "itTicketUnits") +
+    '<div class="admin-label" style="margin:26px 0 4px">Who receives what</div>' +
+    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:8px;line-height:1.5">Worked out from the lists above and the current member roster. Updates as you edit; save to make it live.</div>' +
+    '<div id="ds-notify-matrix" style="font-size:0.8rem;color:var(--gray)">Loading roster…</div>' +
     '<div style="font-size:0.72rem;color:var(--gray);margin-top:14px">Saved with the rest of the dispatch settings. Live on desktop immediately; phones pick it up at next sign-in.</div>';
+  dsRenderNotifyMatrix();
 }
 function renderDispatchSettings() {
   var el = document.getElementById("ds-content"); if (!el) return;
@@ -12574,7 +12625,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.55a";
+var DESKTOP_VERSION = "9.55b";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
