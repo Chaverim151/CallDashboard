@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.66"; window.M_BUILD = BUILD;
+  var BUILD = "2.68"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -377,7 +377,7 @@ body.m-tile-dragging{overscroll-behavior:none}
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.66</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.68</div>
     </div>
   </div>
 </div>
@@ -408,7 +408,7 @@ body.m-tile-dragging{overscroll-behavior:none}
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.66</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.68</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -741,7 +741,6 @@ body.m-tile-dragging{overscroll-behavior:none}
     <button class="m-back-btn" onclick="mGoTo('service')">← Service Requests</button>
     <span class="m-page-title" id="m-tk-detail-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;text-align:right">Service Request</span>
   </div>
-  <div id="m-tk-detail-heading" style="padding:10px 16px 6px;font-family:'Oswald',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);line-height:1.3;border-bottom:1px solid var(--card-border)"></div>
   <div class="m-scroll" id="m-tk-detail-content"></div>
 </div>
 
@@ -4108,7 +4107,6 @@ function mRenderTicketDetail(id, t) {
   var isServiceUnit = mCanManageTickets();
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
   document.getElementById("m-tk-detail-title").textContent = mTicketNo(t, id);
-  var _h = document.getElementById("m-tk-detail-heading"); if (_h) _h.textContent = t.title || "Service Request";
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
@@ -4156,6 +4154,7 @@ function mRenderTicketDetail(id, t) {
     document.getElementById("m-tk-detail-content").innerHTML =
       '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:12px">' +
         (t.category === "it" ? '<div style="display:inline-block;font-size:0.6rem;background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.45);color:#9fc8f0;border-radius:4px;padding:2px 8px;letter-spacing:0.06em;margin-bottom:8px">💻 IT / APP ISSUE</div>' : '') +
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);line-height:1.3;margin-bottom:8px">' + mEscHtml(t.title || "Service Request") + '</div>' +
         '<div style="font-size:0.85rem;color:var(--white);margin-bottom:4px"><span style="color:var(--gray)">Priority:</span> ' + (t.priority||"—") + '</div>' +
         (t.itInfo ? '<div style="font-size:0.8rem;color:var(--white);margin:6px 0 8px;padding:8px 10px;background:rgba(122,184,245,0.07);border:1px solid rgba(122,184,245,0.3);border-radius:7px;line-height:1.6">' +
             '<div><span style="color:var(--gray)">Device:</span> ' + mEscHtml((t.itInfo.os||"") + (t.itInfo.osVersion ? " " + t.itInfo.osVersion : "")) + '</div>' +
@@ -4593,6 +4592,57 @@ function mPushCallbackSMS() {
 }
 
 // ── NEW CALL FORM ──
+// ── New-call draft: everything typed is kept on the device until the call is posted or the form
+//    is cleared, so leaving the app mid-entry (a phone call, a text, an accidental swipe) loses nothing ──
+var M_NC_DRAFT_KEY = "mNewCallDraft";
+var M_NC_DRAFT_FIELDS = ["m-nc-address","m-nc-lat","m-nc-lng","m-nc-mapslink","m-nc-apt","m-nc-nature","m-nc-nature-custom","m-nc-age-num","m-nc-callback","m-nc-accesscode","m-nc-notes"];
+var mNcDraftTimer = null;
+function mNcDraftSnapshot() {
+  var d = { fields: {}, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", sex: mNcSex || "", savedAt: new Date().toISOString() };
+  M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d.fields[id] = el.value; });
+  return d;
+}
+function mNcDraftHasContent(d) {
+  if (!d) return false;
+  return !!((d.fields["m-nc-address"]||"").trim() || (d.fields["m-nc-nature"]||"") || (d.fields["m-nc-notes"]||"").trim() || (d.fields["m-nc-callback"]||"").trim() || (d.fields["m-nc-apt"]||"").trim() || d.age || d.sex);
+}
+function mNcDraftSave() {
+  clearTimeout(mNcDraftTimer);
+  mNcDraftTimer = setTimeout(function() {
+    try {
+      var d = mNcDraftSnapshot();
+      if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d));
+      else localStorage.removeItem(M_NC_DRAFT_KEY);
+    } catch (e) {}
+  }, 250);
+}
+function mNcDraftClear() { clearTimeout(mNcDraftTimer); try { localStorage.removeItem(M_NC_DRAFT_KEY); } catch (e) {} var b = document.getElementById("m-nc-draft-bar"); if (b) b.style.display = "none"; }
+function mNcDraftLoad() { try { var d = JSON.parse(localStorage.getItem(M_NC_DRAFT_KEY) || "null"); return mNcDraftHasContent(d) ? d : null; } catch (e) { return null; } }
+function mNcDraftRestore(d) {
+  M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el && d.fields[id] !== undefined) el.value = d.fields[id]; });
+  if (d.fields["m-nc-nature"] === "__custom__") { var w = document.getElementById("m-nc-nature-custom-wrap"); if (w) w.style.display = "block"; }
+  if (d.age) mSetNcAge(d.age);
+  if (d.sex) { mNcSex = ""; mSetNcSex(d.sex); }
+  if (d.zone) mSetNcZone(d.zone, false, d.zoneArea || "");
+  var an = document.getElementById("m-nc-age-num"); if (an && an.value && an.nextElementSibling) an.nextElementSibling.style.display = "block";
+  if (typeof mNcValidateMarks === "function") setTimeout(mNcValidateMarks, 50);
+  var b = document.getElementById("m-nc-draft-bar");
+  if (b) { b.style.display = "flex"; var when = d.savedAt ? new Date(d.savedAt) : null; var t = document.getElementById("m-nc-draft-when"); if (t) t.textContent = when ? "from " + when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""; }
+}
+function mNcDiscardDraft() {
+  mNcDraftClear();
+  mOpenNewCallForm();
+}
+function mNcBindDraft() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.draftBound) return;
+  form.dataset.draftBound = "1";
+  ["input", "change"].forEach(function(ev){ form.addEventListener(ev, mNcDraftSave, true); });
+  // zone / age / sex are set by buttons, not inputs
+  form.addEventListener("click", function(e){ if (e.target.closest("button")) mNcDraftSave(); }, true);
+  // and flush immediately when the app goes to the background
+  document.addEventListener("visibilitychange", function(){ if (document.hidden) { clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} } });
+  window.addEventListener("pagehide", function(){ clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} });
+}
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
@@ -4626,6 +4676,11 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-als-hint-spacer").style.display = "block";
   mLoadLiveCodes();
   mInitNcAddressAutocomplete();
+  // Bring back anything left unfinished, then keep saving as they type
+  var _bar = document.getElementById("m-nc-draft-bar"); if (_bar) _bar.style.display = "none";
+  var _draft = mNcDraftLoad();
+  if (_draft) setTimeout(function(){ mNcDraftRestore(_draft); if (natSel.onchange) natSel.onchange(); }, 80);
+  mNcBindDraft();
 }
 var mNcZoneArea = "";
 function mSetNcZone(z, isAuto, areaName) {
@@ -4940,6 +4995,7 @@ function mPostNewCallNow() {
   };
   db.collection("activeCalls").add(call).then(function(ref) {
     mNotifyAdminUnits(Object.assign({ id: ref.id }, call));   // chiefs are told about every call
+    mNcDraftClear();
     mToast("🚑 Call posted!");
     btn.disabled = false; btn.textContent = "🚑 Post Call";
     mOpenDispatchCall(ref.id);
@@ -6711,7 +6767,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.66</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.68</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -6733,6 +6789,10 @@ function mCloseAllSheets() {
     <span class="m-page-title">New Call</span>
   </div>
   <div class="m-scroll">
+    <div id="m-nc-draft-bar" style="display:none;align-items:center;justify-content:space-between;gap:10px;background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.45);border-radius:9px;padding:8px 12px;margin-bottom:12px">
+      <span style="font-size:0.78rem;color:#ffd97a">📝 Restored your unfinished call <span id="m-nc-draft-when" style="color:var(--gray)"></span></span>
+      <button type="button" onclick="mNcDiscardDraft()" style="background:none;border:1px solid rgba(255,144,144,0.5);border-radius:6px;color:#ff9090;font-size:0.7rem;font-weight:700;padding:5px 10px;cursor:pointer;white-space:nowrap">Start over</button>
+    </div>
     <div class="m-disp-label">Location</div>
     <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcValidateMarks()" class="m-disp-input" style="padding-right:38px;" oninput="mNcAddressTouched=true"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">

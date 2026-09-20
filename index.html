@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.67');
+  window.location.replace('/CallDashboard/mobile.html?v=2.68');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1285,7 +1285,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.61b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.62a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -12494,6 +12494,10 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
     <span class="m-page-title">New Call</span>
   </div>
   <div class="m-scroll">
+    <div id="m-nc-draft-bar" style="display:none;align-items:center;justify-content:space-between;gap:10px;background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.45);border-radius:9px;padding:8px 12px;margin-bottom:12px">
+      <span style="font-size:0.78rem;color:#ffd97a">📝 Restored your unfinished call <span id="m-nc-draft-when" style="color:var(--gray)"></span></span>
+      <button type="button" onclick="mNcDiscardDraft()" style="background:none;border:1px solid rgba(255,144,144,0.5);border-radius:6px;color:#ff9090;font-size:0.7rem;font-weight:700;padding:5px 10px;cursor:pointer;white-space:nowrap">Start over</button>
+    </div>
     <div class="m-disp-label">Location</div>
     <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcValidateMarks()" class="m-disp-input" style="padding-right:38px;" oninput="mNcAddressTouched=true"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
@@ -12726,7 +12730,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.61b";
+var DESKTOP_VERSION = "9.62a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -14820,6 +14824,57 @@ function mPushCallbackSMS() {
     mToast("📱 Callback # pushed to " + targetUnits.join(", "));
   }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
+// ── New-call draft: everything typed is kept on the device until the call is posted or the form
+//    is cleared, so leaving the app mid-entry (a phone call, a text, an accidental swipe) loses nothing ──
+var M_NC_DRAFT_KEY = "mNewCallDraft";
+var M_NC_DRAFT_FIELDS = ["m-nc-address","m-nc-lat","m-nc-lng","m-nc-mapslink","m-nc-apt","m-nc-nature","m-nc-nature-custom","m-nc-age-num","m-nc-callback","m-nc-accesscode","m-nc-notes"];
+var mNcDraftTimer = null;
+function mNcDraftSnapshot() {
+  var d = { fields: {}, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", sex: mNcSex || "", savedAt: new Date().toISOString() };
+  M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d.fields[id] = el.value; });
+  return d;
+}
+function mNcDraftHasContent(d) {
+  if (!d) return false;
+  return !!((d.fields["m-nc-address"]||"").trim() || (d.fields["m-nc-nature"]||"") || (d.fields["m-nc-notes"]||"").trim() || (d.fields["m-nc-callback"]||"").trim() || (d.fields["m-nc-apt"]||"").trim() || d.age || d.sex);
+}
+function mNcDraftSave() {
+  clearTimeout(mNcDraftTimer);
+  mNcDraftTimer = setTimeout(function() {
+    try {
+      var d = mNcDraftSnapshot();
+      if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d));
+      else localStorage.removeItem(M_NC_DRAFT_KEY);
+    } catch (e) {}
+  }, 250);
+}
+function mNcDraftClear() { clearTimeout(mNcDraftTimer); try { localStorage.removeItem(M_NC_DRAFT_KEY); } catch (e) {} var b = document.getElementById("m-nc-draft-bar"); if (b) b.style.display = "none"; }
+function mNcDraftLoad() { try { var d = JSON.parse(localStorage.getItem(M_NC_DRAFT_KEY) || "null"); return mNcDraftHasContent(d) ? d : null; } catch (e) { return null; } }
+function mNcDraftRestore(d) {
+  M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el && d.fields[id] !== undefined) el.value = d.fields[id]; });
+  if (d.fields["m-nc-nature"] === "__custom__") { var w = document.getElementById("m-nc-nature-custom-wrap"); if (w) w.style.display = "block"; }
+  if (d.age) mSetNcAge(d.age);
+  if (d.sex) { mNcSex = ""; mSetNcSex(d.sex); }
+  if (d.zone) mSetNcZone(d.zone, false, d.zoneArea || "");
+  var an = document.getElementById("m-nc-age-num"); if (an && an.value && an.nextElementSibling) an.nextElementSibling.style.display = "block";
+  if (typeof mNcValidateMarks === "function") setTimeout(mNcValidateMarks, 50);
+  var b = document.getElementById("m-nc-draft-bar");
+  if (b) { b.style.display = "flex"; var when = d.savedAt ? new Date(d.savedAt) : null; var t = document.getElementById("m-nc-draft-when"); if (t) t.textContent = when ? "from " + when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""; }
+}
+function mNcDiscardDraft() {
+  mNcDraftClear();
+  mOpenNewCallForm();
+}
+function mNcBindDraft() {
+  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.draftBound) return;
+  form.dataset.draftBound = "1";
+  ["input", "change"].forEach(function(ev){ form.addEventListener(ev, mNcDraftSave, true); });
+  // zone / age / sex are set by buttons, not inputs
+  form.addEventListener("click", function(e){ if (e.target.closest("button")) mNcDraftSave(); }, true);
+  // and flush immediately when the app goes to the background
+  document.addEventListener("visibilitychange", function(){ if (document.hidden) { clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} } });
+  window.addEventListener("pagehide", function(){ clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} });
+}
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null;
@@ -14852,6 +14907,11 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-als-hint-spacer").style.display = "block";
   mLoadLiveCodes();
   mInitNcAddressAutocomplete();
+  // Bring back anything left unfinished, then keep saving as they type
+  var _bar = document.getElementById("m-nc-draft-bar"); if (_bar) _bar.style.display = "none";
+  var _draft = mNcDraftLoad();
+  if (_draft) setTimeout(function(){ mNcDraftRestore(_draft); if (natSel.onchange) natSel.onchange(); }, 80);
+  mNcBindDraft();
 }
 function mSetNcZone(z, isAuto) {
   mNcZone = z;
@@ -15069,6 +15129,7 @@ function mPostNewCallNow() {
   };
   db.collection("activeCalls").add(call).then(function(ref) {
     mNotifyAdminUnits(Object.assign({ id: ref.id }, call));   // chiefs are told about every call
+    mNcDraftClear();
     mToast("🚑 Call posted!");
     btn.disabled = false; btn.textContent = "🚑 Post Call";
     mOpenDispatchCall(ref.id);
