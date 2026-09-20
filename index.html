@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.65');
+  window.location.replace('/CallDashboard/mobile.html?v=2.66');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1272,7 +1272,8 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 
 <!-- TICKET DETAIL -->
 <div class="page" id="pg-service-detail">
-  <div class="inner-topbar"><button class="back-btn" onclick="goTo('service')">← Service Requests</button><div class="page-title" id="detail-title">Service Request</div></div>
+  <div class="inner-topbar"><button class="back-btn" onclick="goTo('service')">← Service Requests</button><div class="page-title" id="detail-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">Service Request</div></div>
+  <div id="detail-heading" style="padding:12px 18px 8px;font-family:'Oswald',sans-serif;font-size:1.15rem;font-weight:700;color:var(--white);border-bottom:1px solid var(--card-border)"></div>
   <div class="inner-scroll"><div class="inner-content" style="max-width:700px" id="detail-content"></div></div>
 </div>
 
@@ -1285,7 +1286,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.60a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.60b</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3978,6 +3979,27 @@ function mNextTicketNumber() {
     });
   }).catch(function() { return null; });   // never block a ticket on the counter — the server backfills
 }
+// Older tickets predate numbering. The first admin to load the list numbers them in the order they
+// were created, then moves the counter past them — so every ticket has a real number, not a code.
+var mTicketBackfillDone = false;
+function mBackfillTicketNumbers(tickets) {
+  if (mTicketBackfillDone || mCurrentRole !== "admin") return;
+  var missing = (tickets || []).filter(function(t){ return !t.number; });
+  if (!missing.length) { mTicketBackfillDone = true; return; }
+  mTicketBackfillDone = true;
+  var ref = db.collection("appdata").doc("ticketCounter");
+  db.runTransaction(function(tx) {
+    return tx.get(ref).then(function(snap) {
+      var next = (snap.exists && Number(snap.data().next)) || 1;
+      var used = (tickets || []).filter(function(t){ return t.number; }).map(function(t){ return Number(t.number); });
+      if (used.length) next = Math.max(next, Math.max.apply(null, used) + 1);
+      missing.sort(function(a, b){ return String(a.createdAt||"").localeCompare(String(b.createdAt||"")); });
+      missing.forEach(function(t) { tx.set(db.collection("tickets").doc(t.id), { number: next++ }, { merge: true }); });
+      tx.set(ref, { next: next, updatedAt: new Date().toISOString() }, { merge: true });
+    });
+  }).then(function(){ mToast("Numbered " + missing.length + " older ticket" + (missing.length === 1 ? "" : "s")); })
+    .catch(function(e){ console.warn("ticket backfill:", e.message); });
+}
 function mTicketNo(t, id) { return (t && t.number) ? "#" + t.number : "#" + String(id || "").slice(-6).toUpperCase(); }
 var STANDARD_ROLES = ["responder","dispatcher","driver","logistics","observer","captain"];
 
@@ -4648,6 +4670,7 @@ function loadTickets() {
   db.collection("tickets").get().then(function(snap) {
     allTickets = [];
     snap.forEach(function(d) { allTickets.push(Object.assign({ id: d.id }, d.data())); });
+    if (typeof mBackfillTicketNumbers === "function") { var _r = mCurrentRole; mCurrentRole = currentRole; mBackfillTicketNumbers(allTickets); mCurrentRole = _r; }
     allTickets.sort(function(a, b) {
       var po = (PRIORITY_ORDER[a.priority] != null ? PRIORITY_ORDER[a.priority] : 2) - (PRIORITY_ORDER[b.priority] != null ? PRIORITY_ORDER[b.priority] : 2);
       return po !== 0 ? po : (b.createdAt || "").localeCompare(a.createdAt || "");
@@ -4690,7 +4713,8 @@ function renderTicketDetail(id, t) {
   var isAdmin = currentRole === "admin";
   var isServiceUnit = (typeof canManageTickets === "function") ? canManageTickets() : (isAdmin || (currentUserRoles || []).includes("logistics"));
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
-  document.getElementById("detail-title").textContent = mTicketNo(t, id) + " · " + (t.title || "Service Request");
+  document.getElementById("detail-title").textContent = mTicketNo(t, id);
+  var _dh = document.getElementById("detail-heading"); if (_dh) _dh.textContent = t.title || "Service Request";
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
@@ -12697,7 +12721,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.60a";
+var DESKTOP_VERSION = "9.60b";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -14249,6 +14273,7 @@ function mLoadTickets() {
   db.collection("tickets").get().then(function(snap) {
     mAllTickets = [];
     snap.forEach(function(d) { mAllTickets.push(Object.assign({ id: d.id }, d.data())); });
+    mBackfillTicketNumbers(mAllTickets);
     mAllTickets.sort(function(a, b) {
       var po = (M_PRIORITY_ORDER[a.priority] != null ? M_PRIORITY_ORDER[a.priority] : 2) - (M_PRIORITY_ORDER[b.priority] != null ? M_PRIORITY_ORDER[b.priority] : 2);
       return po !== 0 ? po : (b.createdAt || "").localeCompare(a.createdAt || "");
@@ -14366,7 +14391,8 @@ function mRenderTicketDetail(id, t) {
   var isAdmin = mCurrentRole === "admin";
   var isServiceUnit = isAdmin || (mCurrentUserRoles||[]).includes("logistics");
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
-  document.getElementById("m-tk-detail-title").textContent = mTicketNo(t, id) + " · " + (t.title || "Service Request");
+  document.getElementById("m-tk-detail-title").textContent = mTicketNo(t, id);
+  var _h = document.getElementById("m-tk-detail-heading"); if (_h) _h.textContent = t.title || "Service Request";
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
