@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.64');
+  window.location.replace('/CallDashboard/mobile.html?v=2.65');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1285,7 +1285,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.59b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.60a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3966,6 +3966,19 @@ var M_TICKET_STAGES = [
   { key: "resolved",    label: "Completed",   icon: "🟢", color: "#7dedb5" }
 ];
 function mTicketStage(key) { return M_TICKET_STAGES.filter(function(s){ return s.key === (key || "open"); })[0] || M_TICKET_STAGES[0]; }
+// Sequential ticket numbers (#1, #2 …) from a counter in appdata/ticketCounter. Allocated in a
+// transaction so two people submitting at once can't get the same number.
+function mNextTicketNumber() {
+  var ref = db.collection("appdata").doc("ticketCounter");
+  return db.runTransaction(function(tx) {
+    return tx.get(ref).then(function(snap) {
+      var next = (snap.exists && Number(snap.data().next)) || 1;
+      tx.set(ref, { next: next + 1, updatedAt: new Date().toISOString() }, { merge: true });
+      return next;
+    });
+  }).catch(function() { return null; });   // never block a ticket on the counter — the server backfills
+}
+function mTicketNo(t, id) { return (t && t.number) ? "#" + t.number : "#" + String(id || "").slice(-6).toUpperCase(); }
 var STANDARD_ROLES = ["responder","dispatcher","driver","logistics","observer","captain"];
 
 // ── ADD USER ──
@@ -4677,7 +4690,7 @@ function renderTicketDetail(id, t) {
   var isAdmin = currentRole === "admin";
   var isServiceUnit = (typeof canManageTickets === "function") ? canManageTickets() : (isAdmin || (currentUserRoles || []).includes("logistics"));
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
-  document.getElementById("detail-title").textContent = "#" + id.slice(-6).toUpperCase();
+  document.getElementById("detail-title").textContent = mTicketNo(t, id) + " · " + (t.title || "Service Request");
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
@@ -4950,14 +4963,14 @@ function submitTicket() {
                  browser: (document.getElementById("tk-browser")||{}).value || dd.browser, appVersion: (document.getElementById("tk-app-version")||{}).value || "",
                  page: (document.getElementById("tk-page")||{}).value || "", screen: dd.screen, installed: dd.installed, userAgent: dd.userAgent };
     }
-    return db.collection("tickets").add({ title: title, details: details, category: isIT ? "it" : "general", itInfo: itInfo, notifyOnly: isIT ? (typeof M_IT_TICKET_UNITS !== "undefined" ? M_IT_TICKET_UNITS.slice() : ["MC-16"]) : null, unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: currentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
+    return mNextTicketNumber().then(function(num) { return db.collection("tickets").add({ number: num || null, title: title, details: details, category: isIT ? "it" : "general", itInfo: itInfo, notifyOnly: isIT ? (typeof M_IT_TICKET_UNITS !== "undefined" ? M_IT_TICKET_UNITS.slice() : ["MC-16"]) : null, unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: currentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
       // notifications (push + SMS fallback) are sent server-side by the onTicketCreated Cloud Function
       var fi = document.getElementById("tk-it-files");
       if (isIT && fi && fi.files && fi.files.length && typeof UploadTicketPhotos === "function") {
         msg.textContent = "Uploading attachments…";
         return UploadTicketPhotos(ref.id, fi.files).then(function(){ fi.value = ""; }).catch(function(e){ showToast("Ticket saved, but attachments failed: " + e.message, true); });
       }
-    });
+    }); });
   }).then(function() {
     msg.className = "form-msg success"; msg.textContent = "✓ Service Request submitted!";
     ["tk-title","tk-details","tk-unit-custom"].forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ""; });
@@ -4979,7 +4992,7 @@ var APP_SHARED_SECRET = "hzmc-2026-9f3a7d1c";
 function buildEmailBody(opts) {
   var title = opts.title || "", details = opts.details || "", unit = opts.unit || "", priority = opts.priority || "", submittedBy = opts.submittedBy || "", acceptedBy = opts.acceptedBy || opts.accepted_by || "", acceptLink = opts.acceptLink || "", ticketId = opts.ticketId || "", commentText = opts.commentText || "", type = opts.type || "";
   var pe = { urgent: "🚨", high: "🔴", medium: "🟡", low: "🟢" }[priority] || "";
-  var tid = ticketId ? "#" + ticketId.slice(-6).toUpperCase() : "";
+  var tid = opts.number ? "#" + opts.number : (ticketId ? "#" + ticketId.slice(-6).toUpperCase() : "");
   if (type === "accept") {
     return '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,sans-serif"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:30px 0"><table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;border-radius:10px;overflow:hidden"><tr><td bgcolor="#0a1628" style="padding:24px;text-align:center"><img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" height="55"><div style="color:#4caf80;font-size:20px;font-weight:bold;letter-spacing:2px;margin-top:10px">TICKET ACCEPTED</div></td></tr><tr><td bgcolor="#ffffff" style="padding:24px"><p style="font-size:14px;color:#333"><strong>' + acceptedBy + '</strong> accepted this service request.</p><table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px"><tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666;width:130px">Title</td><td style="padding:10px"><strong>' + title + '</strong></td></tr><tr><td style="padding:10px;color:#666">Unit</td><td style="padding:10px">' + unit + '</td></tr><tr bgcolor="#f8f8f8"><td style="padding:10px;color:#666">Accepted By</td><td style="padding:10px;color:#4caf80"><strong>' + acceptedBy + '</strong></td></tr></table></td></tr><tr><td bgcolor="#0a1628" style="padding:14px;text-align:center;font-size:11px;color:#8a9ab5">HATZOLAH MIDDLESEX COUNTY</td></tr></table></td></tr></table></html>';
   }
@@ -5078,7 +5091,7 @@ function sendTicketEmail(opts) {
   var pe = { urgent: "🚨", high: "🔴", medium: "🟡", low: "🟢" }[opts.priority] || "";
   var appUrl = window.location.href.split("?")[0];
   var acceptLink = (opts.ticketId && opts.acceptToken) ? appUrl + "?tid=" + opts.ticketId + "&tok=" + opts.acceptToken : "";
-  var tid = opts.ticketId ? "#" + opts.ticketId.slice(-6).toUpperCase() : "";
+  var tid = opts.number ? "#" + opts.number : (opts.ticketId ? "#" + opts.ticketId.slice(-6).toUpperCase() : "");
   var subjects = { accept: "✋ Ticket Accepted: " + opts.title, comment: "💬 New Comment on: " + opts.title + " " + tid, default: pe + " New Service Request: " + opts.title + " " + tid };
   var subject = subjects[opts.type] || subjects.default;
   return sendClickSendEmail({ toEmail: opts.toEmail, subject: subject, htmlBody: buildEmailBody(Object.assign({}, opts, { acceptLink: acceptLink })) });
@@ -12684,7 +12697,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.59b";
+var DESKTOP_VERSION = "9.60a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -14254,7 +14267,7 @@ function mRenderTickets() {
     var sc = statusColor[t.status||"open"] || "#ff9090";
     return '<div class="m-disp-card" onclick="mOpenTicket(\'' + t.id + '\')">' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px">' +
-        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.9rem;font-weight:700;color:var(--white)">' + (M_CAT_ICONS[t.category]||"📋") + " " + mEscHtml(t.title||"Untitled") + '</span>' +
+        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.9rem;font-weight:700;color:var(--white)">' + (M_CAT_ICONS[t.category]||"📋") + " " + '<span style="color:var(--gold);margin-right:4px">' + mTicketNo(t, t.id) + '</span>' + mEscHtml(t.title||"Untitled") + '</span>' +
         '<span style="font-size:0.65rem;color:var(--gray);white-space:nowrap">' + date + '</span>' +
       '</div>' +
       '<div style="font-size:0.72rem;color:var(--gray);margin-bottom:6px">' + mEscHtml(t.unit||"") + ' · ' + mEscHtml(t.submittedBy||"—") + '</div>' +
@@ -14353,7 +14366,7 @@ function mRenderTicketDetail(id, t) {
   var isAdmin = mCurrentRole === "admin";
   var isServiceUnit = isAdmin || (mCurrentUserRoles||[]).includes("logistics");
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
-  document.getElementById("m-tk-detail-title").textContent = "#" + id.slice(-6).toUpperCase();
+  document.getElementById("m-tk-detail-title").textContent = mTicketNo(t, id) + " · " + (t.title || "Service Request");
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
