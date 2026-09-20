@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.61');
+  window.location.replace('/CallDashboard/mobile.html?v=2.62');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1284,7 +1284,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.57a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.58a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7530,9 +7530,9 @@ function dsEnsureEdit() {
     hospitals: (Array.isArray(ds.hospitals) && ds.hospitals.length ? ds.hospitals : DISPATCH_HOSPITALS_DEFAULT).filter(function(h){ return h !== "Other"; }),
     alsNatureCodes: (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length ? ds.alsNatureCodes : ALS_NATURE_CODES_DEFAULT).slice(),
     adminNotifyUnits: (Array.isArray(ds.adminNotifyUnits) ? ds.adminNotifyUnits : (typeof M_ADMIN_NOTIFY_UNITS !== "undefined" ? M_ADMIN_NOTIFY_UNITS : ["MC-01","MC-10","MC-20"])).slice(),
-    ticketManagers: (Array.isArray(ds.ticketManagers) ? ds.ticketManagers : []).slice(),
+    ticketManagers: dsEntries(ds.ticketManagers),
     itTicketUnits: (Array.isArray(ds.itTicketUnits) && ds.itTicketUnits.length ? ds.itTicketUnits : ["MC-16"]).slice(),
-    notifyRules: (function(r){ var o = {}; ["newTicket","accepted","unassigned","comment","resolved"].forEach(function(k){ o[k] = Array.isArray(r[k]) ? r[k].slice() : []; }); return o; })(ds.notifyRules || {}),
+    notifyRules: (function(r){ var o = {}; ["newTicket","accepted","unassigned","comment","resolved"].forEach(function(k){ o[k] = dsEntries(r[k]); }); return o; })(ds.notifyRules || {}),
     outsideContacts: (Array.isArray(ds.outsideContacts) ? ds.outsideContacts : []).map(function(c){ return { name: c.name||"", phone: c.phone||"", note: c.note||"" }; }),
     natures: (Array.isArray(ds.natures) && ds.natures.length ? ds.natures.map(function(nn){ return { value: nn.value, label: nn.label, als: !!nn.als }; }) : (CALL_NATURES_DEFAULT||CALL_NATURES).map(function(nn){ return { value: nn.value, label: nn.label, als: !!nn.als }; })),
     zones: (Array.isArray(ds.zones) && ds.zones.length ? ds.zones : (COVERAGE_ZONES_DEFAULT||COVERAGE_ZONES).map(function(z, k){ return { name: (z.name.replace(/^(MC Primary Response Area|Secondary Response Area)( — )?/, "").replace(/[()]/g, "").trim() || (/primary/i.test(z.name) ? "Primary coverage" : "Secondary coverage" + (k > 1 ? " " + k : ""))), type: /primary/i.test(z.name) ? "primary" : "secondary", points: z.points }; })).map(function(z){ return { name: z.name||"", type: z.type === "primary" ? "primary" : "secondary", points: (z.points||[]).map(function(p){ return { lat:+p.lat, lng:+p.lng }; }) }; })
@@ -7544,47 +7544,66 @@ function dsNormUnit(u) {
   var m = String(u || "").toUpperCase().replace(/\s+/g, "").match(/^(?:MC-?)?(\d{1,4})$/);
   return m ? "MC-" + m[1].padStart(2, "0") : "";
 }
-function dsUnitChips(list, key) {
-  return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">' +
-    (list.length ? list.map(function(u, i) {
-      return '<span style="display:inline-flex;align-items:center;gap:6px;background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff;border-radius:7px;padding:5px 10px;font-family:\'Oswald\',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.04em">' + escapeHtml(u) +
-        '<button type="button" onclick="dsRemoveUnit(\'' + key + '\',' + i + ')" title="Remove" style="background:none;border:none;color:#ff9090;cursor:pointer;font-size:0.9rem;line-height:1;padding:0">✕</button></span>';
-    }).join("") : '<span style="font-size:0.78rem;color:var(--gray)">None</span>') +
-    '</div>' +
-    '<div style="display:flex;gap:8px;align-items:center">' +
-      '<input id="ds-add-' + key + '" placeholder="MC-##" onkeydown="if(event.key===\'Enter\'){event.preventDefault();dsAddUnit(\'' + key + '\');}" style="width:120px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.85rem">' +
-      '<button type="button" class="edit-mode-btn" onclick="dsAddUnit(\'' + key + '\')">+ Add unit</button>' +
-    '</div>';
+// A unit on a ticket line remembers how it got there. "role": added automatically because it had the
+// Logistics role at the time — it drops off again the moment that role is removed. "manual": an admin
+// typed it in — it stays until an admin takes it off.
+function dsEntries(list) {
+  return (Array.isArray(list) ? list : []).map(function(x) {
+    if (typeof x === "string") return { u: dsNormUnit(x), src: "manual" };
+    return { u: dsNormUnit(x && x.u), src: (x && x.src === "role") ? "role" : "manual" };
+  }).filter(function(e){ return e.u; });
 }
-var DS_EFFECTIVE = {};                         // event → the units a default row currently shows
+function dsCleanEntries(list) { return dsEntries(list).map(function(e){ return { u: e.u, src: e.src }; }); }
+function dsHasLogistics(unit, roster) {
+  var r = (roster || DS_ROSTER || []).filter(function(x){ return x.unit === unit; })[0];
+  return !!(r && r.roles.indexOf("logistics") !== -1);
+}
+// The units a line actually reaches right now: manual ones always, role ones only while they still hold the role
+function dsEffectiveUnits(entries, roster) {
+  return dsEntries(entries).filter(function(e){ return e.src === "manual" || dsHasLogistics(e.u, roster); }).map(function(e){ return e.u; });
+}
+var DS_EFFECTIVE = {};                         // event → the entries a default row currently shows
 function dsListRef(key) {                      // "adminNotifyUnits" or "rules.newTicket"
   if (key.indexOf("rules.") === 0) {
     var ev = key.slice(6);
     DS_EDIT.notifyRules = DS_EDIT.notifyRules || {};
     if (!DS_EDIT.notifyRules[ev] || !DS_EDIT.notifyRules[ev].length) {
-      // First edit of a default row: start from the units it shows now, so a remove or an add
-      // changes that list rather than replacing the whole group with one unit
-      DS_EDIT.notifyRules[ev] = (DS_EFFECTIVE[ev] || []).slice();
+      // First edit of a default line: start from what it shows now, keeping each unit's source
+      DS_EDIT.notifyRules[ev] = dsEntries(DS_EFFECTIVE[ev] || []);
     }
     return DS_EDIT.notifyRules[ev];
   }
-  // First edit of the group while it's on the Logistics role: start from those units
-  if (key === "ticketManagers" && !(DS_EDIT.ticketManagers || []).length) DS_EDIT.ticketManagers = (DS_EFFECTIVE.group || []).slice();
+  // First edit of the group while it's on the Logistics role: those members come in as "role" entries
+  if (key === "ticketManagers" && !(DS_EDIT.ticketManagers || []).length) DS_EDIT.ticketManagers = dsEntries(DS_EFFECTIVE.group || []);
   return DS_EDIT[key];
+}
+function dsRefreshNotify(focusKey) {
+  if (dsTab === "notify") dsRenderNotifyMatrix(focusKey); else renderDispatchSettings();
 }
 function dsAddUnit(key) {
   dsEnsureEdit();
   var inp = document.getElementById("ds-add-" + key); if (!inp) return;
   var u = dsNormUnit(inp.value);
-  if (!u) { showToast("Enter a unit number like MC-16", true); return; }
+  if (!u) { showToast("Enter a unit number like MC-16", true); inp.select(); return; }
   var list = dsListRef(key);
-  if (list.indexOf(u) === -1) list.push(u);
-  list.sort(function(a, b){ return a.localeCompare(b, undefined, { numeric: true }); });
-  inp.value = ""; renderDispatchSettings();
-  setTimeout(function(){ var i2 = document.getElementById("ds-add-" + key); if (i2) i2.focus(); }, 0);
+  var isEntries = key.indexOf("rules.") === 0 || key === "ticketManagers";
+  var has = isEntries ? list.some(function(e){ return e.u === u; }) : list.indexOf(u) !== -1;
+  if (has) { showToast(u + " is already on this line", true); inp.select(); return; }
+  list.push(isEntries ? { u: u, src: "manual" } : u);
+  list.sort(function(a, b){ var A = isEntries ? a.u : a, B = isEntries ? b.u : b; return A.localeCompare(B, undefined, { numeric: true }); });
+  inp.value = ""; dsRefreshNotify(key);
 }
-function dsRemoveUnit(key, i) { dsEnsureEdit(); dsListRef(key).splice(i, 1); renderDispatchSettings(); }
-function dsResetRule(ev) { dsEnsureEdit(); if (ev === "ticketManagers") DS_EDIT.ticketManagers = []; else DS_EDIT.notifyRules[ev] = []; renderDispatchSettings(); }
+function dsRemoveUnit(key, i) {
+  dsEnsureEdit();
+  var list = dsListRef(key); list.splice(i, 1);
+  // an emptied ticket line falls back to its default — say so rather than leaving it looking blank
+  if (!list.length) {
+    if (key.indexOf("rules.") === 0) showToast(key.slice(6) === "resolved" ? "Back to the submitter only" : "Back to the service group", false);
+    else if (key === "ticketManagers") showToast("Back to everyone with the Logistics role", false);
+  }
+  dsRefreshNotify(key);
+}
+function dsResetRule(ev) { dsEnsureEdit(); if (ev === "ticketManagers") DS_EDIT.ticketManagers = []; else DS_EDIT.notifyRules[ev] = []; dsRefreshNotify(ev === "ticketManagers" ? ev : "rules." + ev); }
 var DS_ROSTER = null;   // [{unit, name, roles}] for the recipient matrix
 function dsLoadRoster() {
   if (DS_ROSTER) return Promise.resolve(DS_ROSTER);
@@ -7595,31 +7614,22 @@ function dsLoadRoster() {
     DS_ROSTER = list; return list;
   }).catch(function(){ DS_ROSTER = []; return DS_ROSTER; });
 }
-function dsRenderNotifyMatrix() {
+function dsRenderNotifyMatrix(focusKey) {
   var host = document.getElementById("ds-notify-matrix"); if (!host || !DS_EDIT) return;
   dsLoadRoster().then(function(roster) {
+    if (dsTab !== "notify") return;
     var byUnit = {}; roster.forEach(function(u){ byUnit[u.unit] = u; });
-    var label = function(units) {
-      units = Array.from(new Set(units.filter(Boolean)));
-      if (!units.length) return '<span style="color:#ff9090">nobody — check the lists above</span>';
-      return units.map(function(u) {
-        var known = byUnit[u];
-        return '<span title="' + escapeHtml(known ? known.name : "not on the roster") + '" style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-family:\'Oswald\',sans-serif;font-size:0.74rem;font-weight:700;' +
-          (known ? 'background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff' : 'background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.45);color:#ff9090') + '">' + escapeHtml(u) + (known ? '' : ' ?') + '</span>';
-      }).join("");
-    };
     var admins = roster.filter(function(u){ return u.role === "admin" || u.roles.indexOf("admin") !== -1; }).map(function(u){ return u.unit; });
     var logistics = roster.filter(function(u){ return u.roles.indexOf("logistics") !== -1; }).map(function(u){ return u.unit; });
-    var ticketGroup = DS_EDIT.ticketManagers.length ? DS_EDIT.ticketManagers.slice() : logistics;
-    var groupSource = DS_EDIT.ticketManagers.length ? "the units listed" : "everyone with the Logistics role";
+    var ticketGroup = DS_EDIT.ticketManagers.length ? dsEntries(DS_EDIT.ticketManagers) : logistics.map(function(u){ return { u: u, src: "role" }; });
     var R = DS_EDIT.notifyRules || {};
     var fixed = function(x) { return '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-size:0.72rem;color:var(--gray);border:1px dashed var(--card-border)">' + escapeHtml(x) + '</span>'; };
     // Each ticket event can carry its own unit list. Empty = the service group above (the default).
-    var rule = function(ev, dflt) { var custom = !!(R[ev] && R[ev].length); DS_EFFECTIVE[ev] = custom ? R[ev] : dflt; return { units: DS_EFFECTIVE[ev], custom: custom }; };
+    var rule = function(ev, dflt) { var custom = !!(R[ev] && R[ev].length); DS_EFFECTIVE[ev] = custom ? dsEntries(R[ev]) : dflt; return { units: DS_EFFECTIVE[ev], custom: custom }; };
     DS_EFFECTIVE.group = ticketGroup;
     var rows = [
       { title: "📟 Admin call notification", note: "every call event — posted, unit assigned, ALS / BLS / PD, dispatcher notes", units: DS_EDIT.adminNotifyUnits, editKey: "adminNotifyUnits", always: [] },
-      { title: "🔧 Service ticket group", note: DS_EDIT.ticketManagers.length ? "may accept, comment on and resolve; the default for the ticket lines below (plus admins)" : "currently everyone with the Logistics role — edit to set a fixed list instead (plus admins)", units: ticketGroup, editKey: "ticketManagers", groupRow: true, always: ["admins"] },
+      { title: "🔧 Service ticket group", note: DS_EDIT.ticketManagers.length ? "may accept, comment on and resolve; the default for the ticket lines below (plus admins)" : "everyone with the Logistics role — edit to fix the list (plus admins)", units: ticketGroup, editKey: "ticketManagers", groupRow: true, always: ["admins"] },
       { title: "🟡 New service ticket", note: "push; SMS too if High / Urgent", r: rule("newTicket", ticketGroup), editKey: "rules.newTicket", always: [] },
       { title: "✋ Ticket accepted", note: "plus the submitter", r: rule("accepted", ticketGroup), editKey: "rules.accepted", always: ["submitter"] },
       { title: "↩️ Ticket unassigned", note: "", r: rule("unassigned", ticketGroup), editKey: "rules.unassigned", always: [] },
@@ -7633,11 +7643,18 @@ function dsRenderNotifyMatrix() {
       var editor = "";
       if (r.editKey) {
         var key = r.editKey;
-        var chips = '<span>' + units.map(function(u, i) {
-            var known = byUnit[u];
-            return '<span title="' + escapeHtml(known ? known.name : "not on the roster") + '" style="display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-family:\'Oswald\',sans-serif;font-size:0.74rem;font-weight:700;' +
-              (known ? 'background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff' : 'background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.45);color:#ff9090') + '">' + escapeHtml(u) + (known ? '' : ' ?') +
-              '<button type="button" onclick="dsRemoveUnit(\'' + key + '\',' + i + ')" title="Remove" style="background:none;border:none;color:#ff9090;cursor:pointer;font-size:0.85rem;line-height:1;padding:0">✕</button></span>';
+        var entries = isRule ? dsEntries(units) : units.map(function(u){ return { u: u, src: "manual" }; });
+        var chips = (!entries.length && !(isRule && !custom) ? '<span style="font-size:0.72rem;color:#ff9090;margin-right:6px">nobody</span>' : '') + '<span>' + entries.map(function(e, i) {
+            var u = e.u, known = byUnit[u];
+            var auto = e.src === "role", lapsed = auto && !dsHasLogistics(u, roster);
+            var tip = !known ? "not on the roster" : lapsed ? "was added by the Logistics role — that role has been removed, so this unit no longer receives" : auto ? "added automatically by the Logistics role; leaves when the role does" : "added by an admin; stays until removed";
+            var style = !known ? 'background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.45);color:#ff9090'
+                      : lapsed ? 'background:rgba(255,255,255,0.03);border:1px dashed var(--card-border);color:var(--gray);text-decoration:line-through'
+                      : auto ? 'background:rgba(125,237,181,0.10);border:1px solid rgba(125,237,181,0.4);color:#7dedb5'
+                      : 'background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff';
+            return '<span title="' + escapeHtml((known ? known.name + " — " : "") + tip) + '" style="display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-family:\'Oswald\',sans-serif;font-size:0.74rem;font-weight:700;' + style + '">' +
+              escapeHtml(u) + (known ? '' : ' ?') + (auto && !lapsed && isRule ? '<span style="font-size:0.56rem;font-weight:400;opacity:0.8">role</span>' : '') +
+              (isRule && !custom && auto ? '' : '<button type="button" onclick="dsRemoveUnit(\'' + key + '\',' + i + ')" title="Remove" style="background:none;border:none;color:#ff9090;cursor:pointer;font-size:0.85rem;line-height:1;padding:0">✕</button>') + '</span>';
           }).join("") + '</span>' + ((isRule && !custom) ? '<span style="font-size:0.66rem;color:var(--gray);margin:0 4px">' + (r.groupRow ? "(Logistics role)" : (units.length ? "(service group)" : "(submitter only)")) + '</span>' : '');
         editor = chips +
           '<span style="display:inline-flex;gap:6px;align-items:center;margin-left:6px;vertical-align:middle">' +
@@ -7645,20 +7662,19 @@ function dsRenderNotifyMatrix() {
             '<button type="button" class="edit-mode-btn" style="padding:4px 9px;font-size:0.66rem" onclick="dsAddUnit(\'' + key + '\')">+ Add</button>' +
             (custom ? '<button type="button" class="edit-mode-btn" style="padding:4px 9px;font-size:0.66rem" onclick="dsResetRule(\'' + (r.groupRow ? "ticketManagers" : key.slice(6)) + '\')" title="' + (r.groupRow ? "Back to the Logistics role" : "Back to the service group") + '">↺ Default</button>' : '') +
           '</span>';
-      } else {
-        editor = label(units);
       }
       return '<tr style="border-top:1px solid var(--card-border)">' +
         '<td style="padding:8px 8px 8px 0;vertical-align:top;white-space:nowrap;color:var(--white);font-size:0.8rem;width:210px">' + r.title + (custom ? ' <span style="font-size:0.6rem;color:#ffc84a;letter-spacing:0.06em">CUSTOM</span>' : '') + '<div style="font-size:0.66rem;color:var(--gray);white-space:normal;margin-top:2px">' + escapeHtml(r.note) + '</div></td>' +
         '<td style="padding:8px 0;vertical-align:top">' + editor + r.always.map(fixed).join("") + '</td></tr>';
     }).join("") + '</table>';
+    if (focusKey) { var f = document.getElementById("ds-add-" + focusKey); if (f) f.focus(); }
   });
 }
 function renderDsNotify(el) {
   el.innerHTML =
     '<div class="admin-label" style="margin-bottom:4px">Who receives what</div>' +
     '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:8px;line-height:1.5">Edit the units on each line. Ticket lines follow the <b>Service ticket group</b> until you change them; ↺ Default puts a line back on the group. ' +
-      'A unit shown in red is not on the member roster and would receive nothing.</div>' +
+      'Green <b>role</b> units were added automatically by the Logistics role and leave when that role is removed; blue units were added by hand and stay until removed by hand. Red is not on the roster; struck through has lost the role.</div>' +
     '<div id="ds-notify-matrix" style="font-size:0.8rem;color:var(--gray)">Loading roster…</div>' +
     '<div style="font-size:0.72rem;color:var(--gray);margin-top:14px">Saved with the rest of the dispatch settings. Live on desktop immediately; phones pick it up at next sign-in.</div>';
   dsRenderNotifyMatrix();
@@ -7820,6 +7836,7 @@ function resetDispatchSettingsTab() {
   if (dsTab === "hospitals") DS_EDIT.hospitals = DISPATCH_HOSPITALS_DEFAULT.filter(function(h){ return h !== "Other"; });
   if (dsTab === "als") DS_EDIT.alsNatureCodes = ALS_NATURE_CODES_DEFAULT.slice();
   if (dsTab === "outside") DS_EDIT.outsideContacts = [];
+  if (dsTab === "notify") { DS_EDIT.adminNotifyUnits = ["MC-01","MC-10","MC-20"]; DS_EDIT.ticketManagers = []; DS_EDIT.itTicketUnits = ["MC-16"]; DS_EDIT.notifyRules = { newTicket: [], accepted: [], unassigned: [], comment: [], resolved: [] }; }
   if (dsTab === "natures") DS_EDIT.natures = (CALL_NATURES_DEFAULT||[]).map(function(nn){ return { value: nn.value, label: nn.label, als: !!nn.als }; });
   if (dsTab === "zones") { var saved = DISPATCH_SETTINGS; DISPATCH_SETTINGS = {}; var tmp = DS_EDIT; DS_EDIT = null; dsEnsureEdit(); tmp.zones = DS_EDIT.zones; DS_EDIT = tmp; DISPATCH_SETTINGS = saved; }
   renderDispatchSettings();
@@ -7834,9 +7851,9 @@ function saveDispatchSettings() {
     zones: DS_EDIT.zones.filter(function(z){ return z.points.length >= 3; }).map(function(z){ return { name: z.name||"", type: z.type === "primary" ? "primary" : "secondary", points: z.points.map(function(p){ return { lat:+p.lat, lng:+p.lng }; }) }; }),
     outsideContacts: DS_EDIT.outsideContacts.filter(function(c){ return (c.name||"").trim(); }),
     adminNotifyUnits: (DS_EDIT.adminNotifyUnits || []).map(dsNormUnit).filter(Boolean),
-    ticketManagers: (DS_EDIT.ticketManagers || []).map(dsNormUnit).filter(Boolean),
+    ticketManagers: dsCleanEntries(DS_EDIT.ticketManagers),
     itTicketUnits: (DS_EDIT.itTicketUnits || []).map(dsNormUnit).filter(Boolean),
-    notifyRules: (function(){ var o = {}; Object.keys(DS_EDIT.notifyRules || {}).forEach(function(k){ o[k] = (DS_EDIT.notifyRules[k] || []).map(dsNormUnit).filter(Boolean); }); return o; })(),
+    notifyRules: (function(){ var o = {}; Object.keys(DS_EDIT.notifyRules || {}).forEach(function(k){ o[k] = dsCleanEntries(DS_EDIT.notifyRules[k]); }); return o; })(),
     updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || (currentUser ? currentUser.email : "")
   };
   db.collection("appdata").doc("dispatchSettings").set(data).then(function() {
@@ -12657,7 +12674,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.57a";
+var DESKTOP_VERSION = "9.58a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -14586,12 +14603,19 @@ var M_TICKET_MANAGERS = [];                                  // empty = everyone
 var M_IT_TICKET_UNITS = ["MC-16"];                           // IT / app tickets go here; Admin ▸ Protocols ▸ Notifications overrides
 function canManageTickets() {                                // desktop's own service page
   if (currentRole === "admin" || (currentUserRoles || []).includes("admin")) return true;
-  if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.indexOf(currentUserUnit) !== -1;
+  if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.some(function(e){ return mTicketEntryApplies(e, currentUserUnit, currentUserRoles); });
   return (currentUserRoles || []).includes("logistics");
+}
+// Entries on the service-ticket group are {u, src}: src "role" means added automatically by the
+// Logistics role (and valid only while the member still holds it); "manual" means added by an admin.
+function mTicketEntryApplies(e, unit, roles) {
+  var u = typeof e === "string" ? e : (e && e.u), src = (e && e.src === "role") ? "role" : "manual";
+  if (u !== unit) return false;
+  return src === "manual" || (roles || []).includes("logistics");
 }
 function mCanManageTickets() {
   if (mCurrentRole === "admin" || (mCurrentUserRoles || []).includes("admin")) return true;
-  if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.indexOf(mCurrentUserUnit) !== -1;
+  if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.some(function(e){ return mTicketEntryApplies(e, mCurrentUserUnit, mCurrentUserRoles); });
   return (mCurrentUserRoles || []).includes("logistics");
 }
 // The admin group is copied on every call notification, under their own header
