@@ -1284,7 +1284,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.56b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.57a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7568,6 +7568,8 @@ function dsListRef(key) {                      // "adminNotifyUnits" or "rules.n
     }
     return DS_EDIT.notifyRules[ev];
   }
+  // First edit of the group while it's on the Logistics role: start from those units
+  if (key === "ticketManagers" && !(DS_EDIT.ticketManagers || []).length) DS_EDIT.ticketManagers = (DS_EFFECTIVE.group || []).slice();
   return DS_EDIT[key];
 }
 function dsAddUnit(key) {
@@ -7582,7 +7584,7 @@ function dsAddUnit(key) {
   setTimeout(function(){ var i2 = document.getElementById("ds-add-" + key); if (i2) i2.focus(); }, 0);
 }
 function dsRemoveUnit(key, i) { dsEnsureEdit(); dsListRef(key).splice(i, 1); renderDispatchSettings(); }
-function dsResetRule(ev) { dsEnsureEdit(); DS_EDIT.notifyRules[ev] = []; renderDispatchSettings(); }
+function dsResetRule(ev) { dsEnsureEdit(); if (ev === "ticketManagers") DS_EDIT.ticketManagers = []; else DS_EDIT.notifyRules[ev] = []; renderDispatchSettings(); }
 var DS_ROSTER = null;   // [{unit, name, roles}] for the recipient matrix
 function dsLoadRoster() {
   if (DS_ROSTER) return Promise.resolve(DS_ROSTER);
@@ -7614,19 +7616,20 @@ function dsRenderNotifyMatrix() {
     var fixed = function(x) { return '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-size:0.72rem;color:var(--gray);border:1px dashed var(--card-border)">' + escapeHtml(x) + '</span>'; };
     // Each ticket event can carry its own unit list. Empty = the service group above (the default).
     var rule = function(ev, dflt) { var custom = !!(R[ev] && R[ev].length); DS_EFFECTIVE[ev] = custom ? R[ev] : dflt; return { units: DS_EFFECTIVE[ev], custom: custom }; };
+    DS_EFFECTIVE.group = ticketGroup;
     var rows = [
       { title: "📟 Admin call notification", note: "every call event — posted, unit assigned, ALS / BLS / PD, dispatcher notes", units: DS_EDIT.adminNotifyUnits, editKey: "adminNotifyUnits", always: [] },
+      { title: "🔧 Service ticket group", note: DS_EDIT.ticketManagers.length ? "may accept, comment on and resolve; the default for the ticket lines below (plus admins)" : "currently everyone with the Logistics role — edit to set a fixed list instead (plus admins)", units: ticketGroup, editKey: "ticketManagers", groupRow: true, always: ["admins"] },
       { title: "🟡 New service ticket", note: "push; SMS too if High / Urgent", r: rule("newTicket", ticketGroup), editKey: "rules.newTicket", always: [] },
       { title: "✋ Ticket accepted", note: "plus the submitter", r: rule("accepted", ticketGroup), editKey: "rules.accepted", always: ["submitter"] },
       { title: "↩️ Ticket unassigned", note: "", r: rule("unassigned", ticketGroup), editKey: "rules.unassigned", always: [] },
       { title: "💬 Comment", note: "plus the submitter, whoever accepted it, and anyone @mentioned", r: rule("comment", ticketGroup), editKey: "rules.comment", always: ["submitter", "assignee"] },
       { title: "✅ Ticket resolved", note: "plus the submitter", r: rule("resolved", []), editKey: "rules.resolved", always: ["submitter"] },
-      { title: "💻 IT / app ticket", note: "never the service group", units: DS_EDIT.itTicketUnits, editKey: "itTicketUnits", always: [] },
-      { title: "🔧 May accept / resolve tickets", note: "the service group, plus admins", units: ticketGroup.concat(admins), always: [] }
+      { title: "💻 IT / app ticket", note: "never the service group", units: DS_EDIT.itTicketUnits, editKey: "itTicketUnits", always: [] }
     ];
     host.innerHTML = '<table style="width:100%;border-collapse:collapse">' + rows.map(function(r) {
       var units = r.r ? r.r.units : r.units;
-      var isRule = !!r.r, custom = isRule && r.r.custom;
+      var isRule = !!r.r || !!r.groupRow, custom = r.r ? r.r.custom : (r.groupRow ? DS_EDIT.ticketManagers.length > 0 : false);
       var editor = "";
       if (r.editKey) {
         var key = r.editKey;
@@ -7635,12 +7638,12 @@ function dsRenderNotifyMatrix() {
             return '<span title="' + escapeHtml(known ? known.name : "not on the roster") + '" style="display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-family:\'Oswald\',sans-serif;font-size:0.74rem;font-weight:700;' +
               (known ? 'background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff' : 'background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.45);color:#ff9090') + '">' + escapeHtml(u) + (known ? '' : ' ?') +
               '<button type="button" onclick="dsRemoveUnit(\'' + key + '\',' + i + ')" title="Remove" style="background:none;border:none;color:#ff9090;cursor:pointer;font-size:0.85rem;line-height:1;padding:0">✕</button></span>';
-          }).join("") + '</span>' + ((isRule && !custom) ? '<span style="font-size:0.66rem;color:var(--gray);margin:0 4px">(service group)</span>' : '');
+          }).join("") + '</span>' + ((isRule && !custom) ? '<span style="font-size:0.66rem;color:var(--gray);margin:0 4px">' + (r.groupRow ? "(Logistics role)" : (units.length ? "(service group)" : "(submitter only)")) + '</span>' : '');
         editor = chips +
           '<span style="display:inline-flex;gap:6px;align-items:center;margin-left:6px;vertical-align:middle">' +
             '<input id="ds-add-' + key + '" placeholder="MC-##" onkeydown="if(event.key===\'Enter\'){event.preventDefault();dsAddUnit(\'' + key + '\');}" style="width:84px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:0.78rem">' +
             '<button type="button" class="edit-mode-btn" style="padding:4px 9px;font-size:0.66rem" onclick="dsAddUnit(\'' + key + '\')">+ Add</button>' +
-            (custom ? '<button type="button" class="edit-mode-btn" style="padding:4px 9px;font-size:0.66rem" onclick="dsResetRule(\'' + key.slice(6) + '\')" title="Back to the service group">↺ Default</button>' : '') +
+            (custom ? '<button type="button" class="edit-mode-btn" style="padding:4px 9px;font-size:0.66rem" onclick="dsResetRule(\'' + (r.groupRow ? "ticketManagers" : key.slice(6)) + '\')" title="' + (r.groupRow ? "Back to the Logistics role" : "Back to the service group") + '">↺ Default</button>' : '') +
           '</span>';
       } else {
         editor = label(units);
@@ -7648,25 +7651,14 @@ function dsRenderNotifyMatrix() {
       return '<tr style="border-top:1px solid var(--card-border)">' +
         '<td style="padding:8px 8px 8px 0;vertical-align:top;white-space:nowrap;color:var(--white);font-size:0.8rem;width:210px">' + r.title + (custom ? ' <span style="font-size:0.6rem;color:#ffc84a;letter-spacing:0.06em">CUSTOM</span>' : '') + '<div style="font-size:0.66rem;color:var(--gray);white-space:normal;margin-top:2px">' + escapeHtml(r.note) + '</div></td>' +
         '<td style="padding:8px 0;vertical-align:top">' + editor + r.always.map(fixed).join("") + '</td></tr>';
-    }).join("") + '</table>' +
-    (DS_EDIT.ticketManagers.length ? '' : '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">Logistics role right now: ' + (logistics.length ? logistics.join(", ") : "nobody") + '</div>');
+    }).join("") + '</table>';
   });
 }
 function renderDsNotify(el) {
-  var E = DS_EDIT;
   el.innerHTML =
-    '<div class="admin-label" style="margin-bottom:4px">Admin call notifications</div>' +
-    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px;line-height:1.5">These units get a text for every call event — posted, unit assigned, ALS / BLS / PD, dispatcher notes. A chief who is also assigned to the call gets the normal unit text instead.</div>' +
-    dsUnitChips(E.adminNotifyUnits, "adminNotifyUnits") +
-    '<div class="admin-label" style="margin:22px 0 4px">Service ticket permissions</div>' +
-    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px;line-height:1.5">Who is notified of new service requests and may accept, comment on and resolve them. ' +
-      'Leave this empty to use everyone with the <b>Logistics</b> role (the default). Add units here to use this list <i>instead</i>. Admins can always manage tickets.</div>' +
-    dsUnitChips(E.ticketManagers, "ticketManagers") +
-    '<div class="admin-label" style="margin:22px 0 4px">IT / app tickets</div>' +
-    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:6px;line-height:1.5">Who receives IT / App Issue tickets — the developer(s). These never go to the service-ticket group above.</div>' +
-    dsUnitChips(E.itTicketUnits, "itTicketUnits") +
-    '<div class="admin-label" style="margin:26px 0 4px">Who receives what</div>' +
-    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:8px;line-height:1.5">Worked out from the lists above and the current member roster. Updates as you edit; save to make it live.</div>' +
+    '<div class="admin-label" style="margin-bottom:4px">Who receives what</div>' +
+    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:8px;line-height:1.5">Edit the units on each line. Ticket lines follow the <b>Service ticket group</b> until you change them; ↺ Default puts a line back on the group. ' +
+      'A unit shown in red is not on the member roster and would receive nothing.</div>' +
     '<div id="ds-notify-matrix" style="font-size:0.8rem;color:var(--gray)">Loading roster…</div>' +
     '<div style="font-size:0.72rem;color:var(--gray);margin-top:14px">Saved with the rest of the dispatch settings. Live on desktop immediately; phones pick it up at next sign-in.</div>';
   dsRenderNotifyMatrix();
@@ -12665,7 +12657,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.56b";
+var DESKTOP_VERSION = "9.57a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
