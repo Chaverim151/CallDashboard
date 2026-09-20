@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.66');
+  window.location.replace('/CallDashboard/mobile.html?v=2.67');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1273,7 +1273,6 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 <!-- TICKET DETAIL -->
 <div class="page" id="pg-service-detail">
   <div class="inner-topbar"><button class="back-btn" onclick="goTo('service')">← Service Requests</button><div class="page-title" id="detail-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">Service Request</div></div>
-  <div id="detail-heading" style="padding:12px 18px 8px;font-family:'Oswald',sans-serif;font-size:1.15rem;font-weight:700;color:var(--white);border-bottom:1px solid var(--card-border)"></div>
   <div class="inner-scroll"><div class="inner-content" style="max-width:700px" id="detail-content"></div></div>
 </div>
 
@@ -1286,7 +1285,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.60b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.61a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -4714,7 +4713,6 @@ function renderTicketDetail(id, t) {
   var isServiceUnit = (typeof canManageTickets === "function") ? canManageTickets() : (isAdmin || (currentUserRoles || []).includes("logistics"));
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
   document.getElementById("detail-title").textContent = mTicketNo(t, id);
-  var _dh = document.getElementById("detail-heading"); if (_dh) _dh.textContent = t.title || "Service Request";
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
@@ -4757,6 +4755,7 @@ function renderTicketDetail(id, t) {
     }
     document.getElementById("detail-content").innerHTML =
       '<div class="detail-section"><h4>Service Request Info</h4>' +
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:1.1rem;font-weight:700;color:var(--white);line-height:1.3;margin-bottom:10px">' + escapeHtml(t.title || "Service Request") + '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.85rem">' +
           '<div><span style="color:var(--gray)">Category:</span> ' + (CAT_ICONS[t.category] || "") + " " + (t.category || "—") + '</div>' +
           '<div><span style="color:var(--gray)">Priority:</span> ' + (t.priority || "—") + '</div>' +
@@ -4776,11 +4775,13 @@ function renderTicketDetail(id, t) {
       '<div class="detail-section"><h4>Activity Log</h4><div style="padding:0 4px">' + TicketHistoryHtml(t) + '</div></div>' +
       '<div class="detail-section"><h4>Comments</h4><div id="comments-list">' + commentsHtml + '</div>' +
         '<div style="margin-top:14px"><div id="reply-banner" style="display:none;font-size:0.72rem;color:var(--gold);margin-bottom:6px;align-items:center;justify-content:space-between"><span id="reply-banner-label"></span><button onclick="cancelReply()" style="background:none;border:none;color:var(--gray);cursor:pointer">✕</button></div>' +
-        '<textarea class="comment-inp" id="new-comment" rows="3" placeholder="Add a comment… type @MC-17 to tag a unit"></textarea>' +
+        '<div style="position:relative"><textarea class="comment-inp" id="new-comment" rows="3" placeholder="Add a comment… type @MC-17 to tag a unit"></textarea>' +
+        '<div id="new-comment-mention-box" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:-6px;background:#122040;border:1px solid rgba(201,168,76,0.4);border-radius:8px;z-index:50;max-height:220px;overflow-y:auto;box-shadow:0 10px 28px rgba(0,0,0,0.5)"></div></div>' +
         '<button class="submit-btn" style="margin-top:8px;padding:9px 18px;font-size:0.82rem" onclick="addComment(\'' + id + '\')">Post Comment</button></div>' +
       '</div>' +
       (isAdmin ? '<div style="margin-bottom:24px"><button class="del-btn" onclick="deleteTicket(\'' + id + '\')" style="padding:8px 16px;font-size:0.8rem">🗑 Delete</button></div>' : "");
     showPage("service-detail");
+    if (typeof mAttachMentions === "function") mAttachMentions("new-comment", "new-comment-mention-box");   // @unit suggestions
   }).catch(function(e) { showToast("Error: " + e.message, true); });
 }
 function acceptTicket(id) {
@@ -12721,7 +12722,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.60b";
+var DESKTOP_VERSION = "9.61a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -14392,7 +14393,6 @@ function mRenderTicketDetail(id, t) {
   var isServiceUnit = isAdmin || (mCurrentUserRoles||[]).includes("logistics");
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
   document.getElementById("m-tk-detail-title").textContent = mTicketNo(t, id);
-  var _h = document.getElementById("m-tk-detail-heading"); if (_h) _h.textContent = t.title || "Service Request";
   db.collection("tickets").doc(id).collection("comments").orderBy("createdAt").get().then(function(csnap) {
     var commentsHtml = '<div style="color:var(--gray);font-size:0.82rem">No comments yet.</div>';
     if (!csnap.empty) {
@@ -14439,6 +14439,7 @@ function mRenderTicketDetail(id, t) {
     }
     document.getElementById("m-tk-detail-content").innerHTML =
       '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:12px">' +
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);line-height:1.3;margin-bottom:8px">' + mEscHtml(t.title || "Service Request") + '</div>' +
         '<div style="font-size:0.85rem;color:var(--white);margin-bottom:4px"><span style="color:var(--gray)">Priority:</span> ' + (t.priority||"—") + '</div>' +
         '<div style="font-size:0.85rem;color:var(--white);margin-bottom:4px"><span style="color:var(--gray)">Unit:</span> ' + (t.unit||"—") + '</div>' +
         '<div style="font-size:0.85rem;color:var(--white);margin-bottom:4px"><span style="color:var(--gray)">Submitted:</span> ' + date + '</div>' +
