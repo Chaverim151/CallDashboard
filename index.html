@@ -1284,7 +1284,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.56a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.56b</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7556,8 +7556,18 @@ function dsUnitChips(list, key) {
       '<button type="button" class="edit-mode-btn" onclick="dsAddUnit(\'' + key + '\')">+ Add unit</button>' +
     '</div>';
 }
+var DS_EFFECTIVE = {};                         // event → the units a default row currently shows
 function dsListRef(key) {                      // "adminNotifyUnits" or "rules.newTicket"
-  if (key.indexOf("rules.") === 0) { var ev = key.slice(6); DS_EDIT.notifyRules = DS_EDIT.notifyRules || {}; DS_EDIT.notifyRules[ev] = DS_EDIT.notifyRules[ev] || []; return DS_EDIT.notifyRules[ev]; }
+  if (key.indexOf("rules.") === 0) {
+    var ev = key.slice(6);
+    DS_EDIT.notifyRules = DS_EDIT.notifyRules || {};
+    if (!DS_EDIT.notifyRules[ev] || !DS_EDIT.notifyRules[ev].length) {
+      // First edit of a default row: start from the units it shows now, so a remove or an add
+      // changes that list rather than replacing the whole group with one unit
+      DS_EDIT.notifyRules[ev] = (DS_EFFECTIVE[ev] || []).slice();
+    }
+    return DS_EDIT.notifyRules[ev];
+  }
   return DS_EDIT[key];
 }
 function dsAddUnit(key) {
@@ -7603,7 +7613,7 @@ function dsRenderNotifyMatrix() {
     var R = DS_EDIT.notifyRules || {};
     var fixed = function(x) { return '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-size:0.72rem;color:var(--gray);border:1px dashed var(--card-border)">' + escapeHtml(x) + '</span>'; };
     // Each ticket event can carry its own unit list. Empty = the service group above (the default).
-    var rule = function(ev, dflt) { return (R[ev] && R[ev].length) ? { units: R[ev], custom: true } : { units: dflt, custom: false }; };
+    var rule = function(ev, dflt) { var custom = !!(R[ev] && R[ev].length); DS_EFFECTIVE[ev] = custom ? R[ev] : dflt; return { units: DS_EFFECTIVE[ev], custom: custom }; };
     var rows = [
       { title: "📟 Admin call notification", note: "every call event — posted, unit assigned, ALS / BLS / PD, dispatcher notes", units: DS_EDIT.adminNotifyUnits, editKey: "adminNotifyUnits", always: [] },
       { title: "🟡 New service ticket", note: "push; SMS too if High / Urgent", r: rule("newTicket", ticketGroup), editKey: "rules.newTicket", always: [] },
@@ -7620,13 +7630,12 @@ function dsRenderNotifyMatrix() {
       var editor = "";
       if (r.editKey) {
         var key = r.editKey;
-        var chips = (isRule && !custom) ? label(units) + '<span style="font-size:0.66rem;color:var(--gray);margin-left:4px">(service group — add a unit to customise)</span>' :
-          '<span>' + units.map(function(u, i) {
+        var chips = '<span>' + units.map(function(u, i) {
             var known = byUnit[u];
             return '<span title="' + escapeHtml(known ? known.name : "not on the roster") + '" style="display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-family:\'Oswald\',sans-serif;font-size:0.74rem;font-weight:700;' +
               (known ? 'background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff' : 'background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.45);color:#ff9090') + '">' + escapeHtml(u) + (known ? '' : ' ?') +
               '<button type="button" onclick="dsRemoveUnit(\'' + key + '\',' + i + ')" title="Remove" style="background:none;border:none;color:#ff9090;cursor:pointer;font-size:0.85rem;line-height:1;padding:0">✕</button></span>';
-          }).join("") + '</span>';
+          }).join("") + '</span>' + ((isRule && !custom) ? '<span style="font-size:0.66rem;color:var(--gray);margin:0 4px">(service group)</span>' : '');
         editor = chips +
           '<span style="display:inline-flex;gap:6px;align-items:center;margin-left:6px;vertical-align:middle">' +
             '<input id="ds-add-' + key + '" placeholder="MC-##" onkeydown="if(event.key===\'Enter\'){event.preventDefault();dsAddUnit(\'' + key + '\');}" style="width:84px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:0.78rem">' +
@@ -12656,7 +12665,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.56a";
+var DESKTOP_VERSION = "9.56b";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
