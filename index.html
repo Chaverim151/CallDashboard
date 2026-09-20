@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.68');
+  window.location.replace('/CallDashboard/mobile.html?v=2.72');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1285,7 +1285,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.62a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.65a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -12730,7 +12730,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.62a";
+var DESKTOP_VERSION = "9.65a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -13610,6 +13610,220 @@ function mSubmitRSVP(eventId, status) {
 var mQRScanner = null;
 var mScanEventId = null;
 var mScanFromHome = false;
+function doStartScanner() {
+  var readerEl = document.getElementById("m-qr-reader");
+  var statusEl = document.getElementById("m-qr-status");
+  if (!readerEl) return;
+
+  // Stop any existing scanner first
+  if (mQRScanner) {
+    try { mQRScanner.stop().catch(function(){}); } catch(e) {}
+    mQRScanner = null;
+  }
+  readerEl.innerHTML = "";
+  if (statusEl) statusEl.textContent = "Starting camera...";
+
+  // Small delay to ensure the page is fully visible before starting camera
+  setTimeout(function() {
+    try {
+      mQRScanner = new Html5Qrcode("m-qr-reader", { verbose: false });
+
+      var config = {
+        fps: 10,
+        qrbox: function(w, h) {
+          var min = Math.min(w, h);
+          return { width: Math.floor(min * 0.75), height: Math.floor(min * 0.75) };
+        },
+        aspectRatio: 1.0
+      };
+
+      mQRScanner.start(
+        { facingMode: "environment" },
+        config,
+        function(decodedText) {
+          mQRScanner.stop().catch(function(){});
+          mHandleQRScan(decodedText);
+        },
+        function() {} // per-frame failure — silent
+      ).then(function() {
+        if (statusEl) statusEl.textContent = "📷 Camera ready — point at QR code";
+      }).catch(function(err) {
+        var msg = (err && err.toString) ? err.toString() : "Unknown error";
+        if (msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("denied")) {
+          if (statusEl) statusEl.innerHTML = '⚠️ Camera permission denied.<br><span style="font-size:0.72rem">Go to Settings → Safari → Camera and allow access.</span>';
+        } else if (msg.toLowerCase().includes("https") || msg.toLowerCase().includes("secure")) {
+          if (statusEl) statusEl.textContent = "⚠️ Camera requires HTTPS — check your connection.";
+        } else {
+          if (statusEl) statusEl.textContent = "Camera error: " + msg;
+        }
+        console.error("QR scanner error:", err);
+      });
+    } catch(e) {
+      if (statusEl) statusEl.textContent = "Scanner failed to start: " + e.message;
+    }
+  }, 300);
+}
+function mHandleQRScan(qrText) {
+  var statusEl = document.getElementById("m-qr-status");
+  var resultEl = document.getElementById("m-qr-result");
+  if (statusEl) statusEl.textContent = "Processing...";
+
+  var payload;
+  try { payload = JSON.parse(qrText); } catch(e) {
+    if (statusEl) statusEl.textContent = "Invalid QR code.";
+    var sb = document.getElementById("m-scan-again-btn"); if (sb) sb.style.display = "block";
+    return;
+  }
+
+  // Support both new short format {h,e,a,r} and old format {type,eventId,lat,lng,radius}
+  var isNewFormat = payload.h === "1" && payload.e;
+  var isOldFormat = payload.type === "hatzolah_edu" && payload.eventId;
+
+  if (!isNewFormat && !isOldFormat) {
+    if (statusEl) statusEl.textContent = "Not a Hatzolah Education QR code.";
+    var sb2 = document.getElementById("m-scan-again-btn"); if (sb2) sb2.style.display = "block";
+    return;
+  }
+
+  var eventId = isNewFormat ? payload.e : payload.eventId;
+  var evLat = null, evLng = null;
+  if (isNewFormat && payload.a) {
+    var parts = payload.a.split(",");
+    evLat = parseFloat(parts[0]); evLng = parseFloat(parts[1]);
+  } else {
+    evLat = payload.lat; evLng = payload.lng;
+  }
+  var radius = payload.r || payload.radius || 100;
+
+  // Check event time — must be within 2 hours of event start
+  db.collection("education").doc(eventId).get().then(function(snap) {
+    if (!snap.exists) { if(statusEl) statusEl.textContent="Event not found."; return; }
+    var ev = snap.data();
+    var now = new Date();
+    var evTime = ev.dateTime ? new Date(ev.dateTime) : null;
+
+    if (evTime) {
+      var diffMin = (now - evTime) / 60000; // minutes since event start
+      if (diffMin < -60 || diffMin > 180) {
+        if (resultEl) resultEl.innerHTML = '<div style="background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:10px;padding:14px;text-align:center"><div style="color:#ff9090;font-family:\'Oswald\',sans-serif;font-weight:700;margin-bottom:4px">⏰ Wrong Time</div><div style="font-size:0.78rem;color:var(--gray)">Check-in is only available within 1 hour before to 3 hours after the event starts.</div></div>';
+        if (statusEl) statusEl.textContent = "";
+        return;
+      }
+    }
+
+    // Geo-lock check
+    if (evLat && evLng && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function(pos) {
+        var dist = getDistanceMeters(pos.coords.latitude, pos.coords.longitude, evLat, evLng);
+        if (dist > radius) {
+          if (resultEl) resultEl.innerHTML = '<div style="background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.4);border-radius:10px;padding:14px;text-align:center"><div style="color:#ff9090;font-family:\'Oswald\',sans-serif;font-weight:700;margin-bottom:4px">📍 Not at Location</div><div style="font-size:0.78rem;color:var(--gray)">You are ' + Math.round(dist) + 'm away. Must be within ' + radius + 'm of the class location to check in.</div></div>';
+          if (statusEl) statusEl.textContent = "";
+        } else {
+          mRecordAttendance(eventId, ev, pos.coords.latitude, pos.coords.longitude, dist, statusEl, resultEl);
+        }
+      }, function() {
+        // Geolocation failed — still allow check-in but log without coords
+        mRecordAttendance(eventId, ev, null, null, null, statusEl, resultEl);
+      }, { enableHighAccuracy: true, timeout: 10000 });
+    } else {
+      // No geo-lock on this event
+      mRecordAttendance(eventId, ev, null, null, null, statusEl, resultEl);
+    }
+  }).catch(function(e) {
+    if (statusEl) statusEl.textContent = "Error: " + e.message;
+  });
+}
+function getDistanceMeters(lat1, lng1, lat2, lng2) {
+  var R = 6371000;
+  var dLat = (lat2-lat1) * Math.PI/180;
+  var dLng = (lng2-lng1) * Math.PI/180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+          Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function mRecordAttendance(eventId, ev, lat, lng, dist, statusEl, resultEl) {
+  // Check if already checked in
+  db.collection("education").doc(eventId).collection("attendance").doc(mCurrentUser.uid).get().then(function(snap) {
+    if (snap.exists) {
+      if (resultEl) resultEl.innerHTML = '<div style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:10px;padding:14px;text-align:center"><div style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;margin-bottom:4px">✓ Already Checked In</div><div style="font-size:0.78rem;color:var(--gray)">You were already marked present for this event.</div></div>';
+      var sb = document.getElementById("m-scan-again-btn"); if (sb) sb.style.display = "block";
+      if (statusEl) statusEl.textContent = "";
+      return;
+    }
+
+    var attendanceData = {
+      uid: mCurrentUser.uid,
+      unit: mCurrentUserUnit || "",
+      name: "",
+      timestamp: new Date().toISOString(),
+      lat: lat || null,
+      lng: lng || null,
+      distanceMeters: dist ? Math.round(dist) : null
+    };
+
+    // Get member name
+    db.collection("users").doc(mCurrentUser.uid).get().then(function(usnap) {
+      if (usnap.exists) {
+        var d = usnap.data();
+        attendanceData.name = ((d.firstName||"")+" "+(d.lastName||"")).trim();
+      }
+
+      // Write attendance with pending CE hours status
+      attendanceData.ceHours = ev.ceHours || 0;
+      attendanceData.ceApproved = false; // pending admin approval
+
+      db.collection("education").doc(eventId).collection("attendance").doc(mCurrentUser.uid).set(attendanceData).then(function() {
+        // Update attendance count on event doc
+        db.collection("education").doc(eventId).collection("attendance").get().then(function(asnap) {
+          db.collection("education").doc(eventId).set({ attendanceCount: asnap.size }, { merge: true });
+        });
+
+        // CE hours are NOT auto-added — pending admin approval
+
+        if (resultEl) resultEl.innerHTML =
+          '<div style="background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.4);border-radius:10px;padding:16px;text-align:center">' +
+            '<div style="font-size:2rem;margin-bottom:8px">✅</div>' +
+            '<div style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">Checked In!</div>' +
+            '<div style="font-size:0.82rem;color:var(--white);margin-bottom:6px">' + mEscHtml(ev.title||"Event") + '</div>' +
+            (ev.ceHours ? '<div style="font-size:0.75rem;color:#ffc84a;background:rgba(255,200,74,0.1);border:1px solid rgba(255,200,74,0.3);border-radius:6px;padding:6px 10px;margin-top:4px">⏳ ' + ev.ceHours + ' CE hours pending admin approval</div>' : '') +
+            (dist ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:8px">' + Math.round(dist) + 'm from class location</div>' : '') +
+          '</div>';
+        var scanAgainBtn = document.getElementById("m-scan-again-btn");
+        if (scanAgainBtn) scanAgainBtn.style.display = "block";
+        if (statusEl) statusEl.textContent = "";
+        mPlayTone();
+      }).catch(function(e) {
+        if (statusEl) statusEl.textContent = "Error saving attendance: " + e.message;
+      });
+    });
+  });
+}
+function mPlayTone(isTest) {
+  try {
+    if (!mToneCtx) mToneCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (mToneCtx.state === "suspended") mToneCtx.resume();
+    var tones, vol, wave;
+    if (isTest) {
+      // three short rising blips — obviously not the dispatch tone
+      tones = [{freq:660,s:0,e:.12},{freq:880,s:.18,e:.30},{freq:1100,s:.36,e:.56}];
+      vol = 0.32; wave = "triangle";
+    } else {
+      tones = [{freq:1050,s:0,e:.4},{freq:770,s:.4,e:.8},{freq:1050,s:.8,e:1.2},{freq:770,s:1.2,e:1.6},{freq:1050,s:1.6,e:2},{freq:770,s:2,e:2.4}];
+      vol = 0.7; wave = "sine";
+    }
+    var now = mToneCtx.currentTime;
+    tones.forEach(function(t) {
+      var o = mToneCtx.createOscillator(), g = mToneCtx.createGain();
+      o.type = wave; o.frequency.setValueAtTime(t.freq, now+t.s);
+      g.gain.setValueAtTime(0, now+t.s);
+      g.gain.linearRampToValueAtTime(vol, now+t.s+.02);
+      g.gain.setValueAtTime(vol, now+t.e-.02);
+      g.gain.linearRampToValueAtTime(0, now+t.e);
+      o.connect(g); g.connect(mToneCtx.destination);
+      o.start(now+t.s); o.stop(now+t.e);
+    });
+  } catch(e) {}
+}
 function mStartScanner(eventId) {
   mScanEventId = eventId;
   mScanFromHome = !eventId;
@@ -14877,7 +15091,8 @@ function mNcBindDraft() {
 }
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null;
+  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
+  var _ac = document.getElementById("m-nc-accesscode"); if (_ac) _ac.dataset.userEdited = "";
   mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
   document.getElementById("m-nc-address").value = "";
@@ -14912,43 +15127,6 @@ function mOpenNewCallForm() {
   var _draft = mNcDraftLoad();
   if (_draft) setTimeout(function(){ mNcDraftRestore(_draft); if (natSel.onchange) natSel.onchange(); }, 80);
   mNcBindDraft();
-}
-function mSetNcZone(z, isAuto) {
-  mNcZone = z;
-  mShowNcZoneBanner(z); // always shown now — zone is fully automatic, no manual toggle to update
-}
-function mShowNcZoneBanner(zone) {
-  var banner = document.getElementById("m-nc-zone-banner");
-  if (!banner) return;
-  var icon, label, sub, bg, border, color, extra;
-  extra = "";
-  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area"; bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
-  else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area"; bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
-  else {
-    icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
-    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area.' + (M_OUTSIDE_CONTACTS.length ? ' <b>Call a coordinator, in this order:</b>' : '') + '</div>' +
-      (M_OUTSIDE_CONTACTS.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + M_OUTSIDE_CONTACTS.map(function(ct, i) { var digits = String(ct.phone||"").replace(/\D/g,""); return '<a href="tel:' + digits + '" style="display:flex;align-items:center;gap:8px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:9px 12px;color:#ff9090;text-decoration:none;font-size:0.8rem"><span style="font-family:\'Oswald\',sans-serif;font-weight:700">' + (i+1) + '.</span> ' + mEscHtml(ct.name) + (ct.phone ? ' <span style="margin-left:auto">📞 ' + mEscHtml(ct.phone) + '</span>' : '') + '</a>'; }).join("") + '</div>' : '');
-  }
-  banner.style.display = "block";
-  banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
-  banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:1.4rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:' + color + '">' + label + '</div><div style="font-size:0.7rem;color:' + color + ';opacity:0.85">' + sub + '</div></div></div>' + extra;
-}
-// Required fields on a new call: address, nature, patient age. Red until answered.
-function mNcValidateMarks() {
-  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form) return;
-  var addr = document.getElementById("m-nc-address");
-  var nat  = document.getElementById("m-nc-nature");
-  var ageGroup = document.getElementById("m-nc-age-toggle");
-  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim());
-  if (nat) {
-    var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
-    nat.classList.toggle("m-nc-need", !natVal);
-  }
-  if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
-  // patient sex is required as well — its row gets the same outline
-  var sexBtn = form.querySelector("[data-sex]");
-  var sexRow = sexBtn ? sexBtn.parentElement : null;
-  if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
 }
 // Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
 function mBindNcValidation() {
@@ -16564,42 +16742,6 @@ function mShowMapInfo(lm) {
     '</div>';
   el.style.display = "block";
 }
-/* — map + address autocomplete for the ported new-call form — */
-// ── NEW CALL FORM ──
-function mOpenNewCallForm() {
-  mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
-  var _ac = document.getElementById("m-nc-accesscode"); if (_ac) _ac.dataset.userEdited = "";
-  mBindNcValidation();
-  [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
-  document.getElementById("m-nc-address").value = "";
-  document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
-  document.getElementById("m-nc-age-num").value = "";
-  document.getElementById("m-nc-callback").value = "";
-  document.getElementById("m-nc-accesscode").value = "";
-  document.getElementById("m-nc-apt").value = "";
-  document.getElementById("m-nc-notes").value = "";
-  document.getElementById("m-nc-code-suggestion").style.display = "none";
-  document.getElementById("m-nc-zone-banner").style.display = "none";
-  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge(""); mSetNcSex("");
-  var natSel = document.getElementById("m-nc-nature");
-  if (!natSel.options.length) {
-    natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
-    natSel.onchange = function() {
-      var found = M_CALL_NATURES.find(function(n){ return n.value === natSel.value; });
-      document.getElementById("m-nc-als-hint").style.display = (found && found.als) ? "block" : "none";
-      document.getElementById("m-nc-als-hint-spacer").style.display = (found && found.als) ? "none" : "block";
-      document.getElementById("m-nc-nature-custom-wrap").style.display = natSel.value === "__custom__" ? "block" : "none";
-    };
-  }
-  natSel.value = "";
-  document.getElementById("m-nc-nature-custom").value = "";
-  document.getElementById("m-nc-nature-custom-wrap").style.display = "none";
-  document.getElementById("m-nc-als-hint").style.display = "none";
-  document.getElementById("m-nc-als-hint-spacer").style.display = "block";
-  mLoadLiveCodes();
-  mInitNcAddressAutocomplete();
-}
 var mNcZoneArea = "";
 function mSetNcZone(z, isAuto, areaName) {
   mNcZone = z;
@@ -16642,24 +16784,6 @@ function mNcValidateMarks() {
   var sexRow = sexBtn ? sexBtn.parentElement : null;
   if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
 }
-// Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
-function mBindNcValidation() {
-  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.valBound) return;
-  form.dataset.valBound = "1";
-  ["input", "change", "click", "blur"].forEach(function(ev) {
-    form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
-  });
-}
-function mSetNcAge(a) {
-  mNcAge = a;
-  setTimeout(mNcValidateMarks, 0);
-  document.querySelectorAll("#m-nc-age-toggle button").forEach(function(b) {
-    var isThis = b.getAttribute("data-age") === a;
-    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
-  });
-}
 function mSetNcSex(s) {
   mNcSex = (s === "" ? "" : (mNcSex === s ? "" : s));
   mPaintNcSex();
@@ -16672,15 +16796,6 @@ function mPaintNcSex() {
     b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
     b.style.color = isThis ? "#e8a0ff" : "var(--white)";
   });
-}
-var mNcAutocomplete = null;
-function mInitNcAddressAutocomplete() {
-  if (window.google && window.google.maps && window.google.maps.places) { mBindNcAutocomplete(); return; }
-  if (document.getElementById("m-maps-script")) return;
-  var s = document.createElement("script");
-  s.id = "m-maps-script";
-  s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=mBindNcAutocomplete";
-  document.head.appendChild(s);
 }
 // A genuine place name — not the street line Google echoes back for ordinary addresses
 function mRealPoiName(place) {
@@ -16692,123 +16807,6 @@ function mRealPoiName(place) {
   if (/^\d/.test(name)) return "";                                             // starts with a house number → a street, not a place
   return name;
 }
-// ── NEW CALL FORM ──
-function mOpenNewCallForm() {
-  mGoTo("dispatch-newcall");
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = "";
-  mBindNcValidation();
-  [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
-  document.getElementById("m-nc-address").value = "";
-  document.getElementById("m-nc-lat").value = ""; document.getElementById("m-nc-lng").value = ""; document.getElementById("m-nc-mapslink").value = "";
-  document.getElementById("m-nc-age-num").value = "";
-  document.getElementById("m-nc-callback").value = "";
-  document.getElementById("m-nc-accesscode").value = "";
-  document.getElementById("m-nc-apt").value = "";
-  document.getElementById("m-nc-notes").value = "";
-  document.getElementById("m-nc-code-suggestion").style.display = "none";
-  document.getElementById("m-nc-zone-banner").style.display = "none";
-  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge(""); mSetNcSex("");
-  var natSel = document.getElementById("m-nc-nature");
-  if (!natSel.options.length) {
-    natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
-    natSel.onchange = function() {
-      var found = M_CALL_NATURES.find(function(n){ return n.value === natSel.value; });
-      document.getElementById("m-nc-als-hint").style.display = (found && found.als) ? "block" : "none";
-      document.getElementById("m-nc-als-hint-spacer").style.display = (found && found.als) ? "none" : "block";
-      document.getElementById("m-nc-nature-custom-wrap").style.display = natSel.value === "__custom__" ? "block" : "none";
-    };
-  }
-  natSel.value = "";
-  document.getElementById("m-nc-nature-custom").value = "";
-  document.getElementById("m-nc-nature-custom-wrap").style.display = "none";
-  document.getElementById("m-nc-als-hint").style.display = "none";
-  document.getElementById("m-nc-als-hint-spacer").style.display = "block";
-  mLoadLiveCodes();
-  mInitNcAddressAutocomplete();
-}
-var mNcZoneArea = "";
-function mSetNcZone(z, isAuto, areaName) {
-  mNcZone = z;
-  if (areaName !== undefined) mNcZoneArea = areaName || "";
-  mShowNcZoneBanner(z); // always shown now — zone is fully automatic, no manual toggle to update
-}
-function mShowNcZoneBanner(zone) {
-  var banner = document.getElementById("m-nc-zone-banner");
-  if (!banner) return;
-  var icon, label, sub, bg, border, color, extra;
-  extra = "";
-  var areaLabel = mZoneAreaLabel(mNcZoneArea);
-  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
-  else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
-  else {
-    icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
-    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area.' + (M_OUTSIDE_CONTACTS.length ? ' <b>Call a coordinator, in this order:</b>' : '') + '</div>' +
-      (M_OUTSIDE_CONTACTS.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + M_OUTSIDE_CONTACTS.map(function(ct, i) { var digits = String(ct.phone||"").replace(/\D/g,""); return '<a href="tel:' + digits + '" style="display:flex;align-items:center;gap:8px;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.45);border-radius:7px;padding:9px 12px;color:#ff9090;text-decoration:none;font-size:0.8rem"><span style="font-family:\'Oswald\',sans-serif;font-weight:700">' + (i+1) + '.</span> ' + mEscHtml(ct.name) + (ct.phone ? ' <span style="margin-left:auto">📞 ' + mEscHtml(ct.phone) + '</span>' : '') + '</a>'; }).join("") + '</div>' : '');
-  }
-  banner.style.display = "block";
-  banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
-  banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:1.4rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:' + color + '">' + label + '</div><div style="font-size:0.7rem;color:' + color + ';opacity:0.85">' + sub + '</div></div></div>' + extra;
-}
-// Required fields on a new call: address, nature, patient age. Red until answered.
-function mNcValidateMarks() {
-  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form) return;
-  var addr = document.getElementById("m-nc-address");
-  var nat  = document.getElementById("m-nc-nature");
-  var ageGroup = document.getElementById("m-nc-age-toggle");
-  // An address with no coordinates can't be zoned, so it counts as incomplete even when typed
-  var hasCoords = !!(parseFloat((document.getElementById("m-nc-lat")||{}).value) && parseFloat((document.getElementById("m-nc-lng")||{}).value));
-  if (addr) addr.classList.toggle("m-nc-need", !addr.value.trim() || !hasCoords);
-  if (nat) {
-    var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
-    nat.classList.toggle("m-nc-need", !natVal);
-  }
-  if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
-  // patient sex is required as well — its row gets the same outline
-  var sexBtn = form.querySelector("[data-sex]");
-  var sexRow = sexBtn ? sexBtn.parentElement : null;
-  if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
-}
-// Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
-function mBindNcValidation() {
-  var form = document.getElementById("m-pg-dispatch-newcall"); if (!form || form.dataset.valBound) return;
-  form.dataset.valBound = "1";
-  ["input", "change", "click", "blur"].forEach(function(ev) {
-    form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
-  });
-}
-function mSetNcAge(a) {
-  mNcAge = a;
-  setTimeout(mNcValidateMarks, 0);
-  document.querySelectorAll("#m-nc-age-toggle button").forEach(function(b) {
-    var isThis = b.getAttribute("data-age") === a;
-    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
-  });
-}
-function mSetNcSex(s) {
-  mNcSex = (s === "" ? "" : (mNcSex === s ? "" : s));
-  mPaintNcSex();
-  setTimeout(mNcValidateMarks, 0);
-}
-function mPaintNcSex() {
-  document.querySelectorAll("#m-pg-dispatch-newcall [data-sex]").forEach(function(b) {
-    var isThis = b.getAttribute("data-sex") === mNcSex;
-    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
-  });
-}
-var mNcAutocomplete = null;
-function mInitNcAddressAutocomplete() {
-  if (window.google && window.google.maps && window.google.maps.places) { mBindNcAutocomplete(); return; }
-  if (document.getElementById("m-maps-script")) return;
-  var s = document.createElement("script");
-  s.id = "m-maps-script";
-  s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=mBindNcAutocomplete";
-  document.head.appendChild(s);
-}// The street address for a place, with a house number wherever one exists.
-// Places like Walmart come back as "New Jersey 27, Edison, NJ" — a road, no number — so we ask the
 function mBestStreetAddress(place, lat, lng) {
   var formatted = String((place && place.formatted_address) || "").trim();
   if (/^\d/.test(formatted)) return Promise.resolve(formatted);
@@ -17219,19 +17217,6 @@ function mSelectSearchedHospital(display) {
   list.style.display = "none"; list.innerHTML = ""; inp.value = "";
   if (chosen) { chosen.textContent = "✓ " + display; chosen.style.display = "block"; }
   mUpdateTransportPrompts();
-}
-function mSetNcSex(s) {
-  mNcSex = (s === "" ? "" : (mNcSex === s ? "" : s));
-  mPaintNcSex();
-  setTimeout(mNcValidateMarks, 0);
-}
-function mPaintNcSex() {
-  document.querySelectorAll("#m-pg-dispatch-newcall [data-sex]").forEach(function(b) {
-    var isThis = b.getAttribute("data-sex") === mNcSex;
-    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
-  });
 }
 function mConfirmAssignCustom() {
   var v = document.getElementById("m-assign-custom").value.trim();
