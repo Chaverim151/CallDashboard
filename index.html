@@ -1284,7 +1284,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.55b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.56a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7532,6 +7532,7 @@ function dsEnsureEdit() {
     adminNotifyUnits: (Array.isArray(ds.adminNotifyUnits) ? ds.adminNotifyUnits : (typeof M_ADMIN_NOTIFY_UNITS !== "undefined" ? M_ADMIN_NOTIFY_UNITS : ["MC-01","MC-10","MC-20"])).slice(),
     ticketManagers: (Array.isArray(ds.ticketManagers) ? ds.ticketManagers : []).slice(),
     itTicketUnits: (Array.isArray(ds.itTicketUnits) && ds.itTicketUnits.length ? ds.itTicketUnits : ["MC-16"]).slice(),
+    notifyRules: (function(r){ var o = {}; ["newTicket","accepted","unassigned","comment","resolved"].forEach(function(k){ o[k] = Array.isArray(r[k]) ? r[k].slice() : []; }); return o; })(ds.notifyRules || {}),
     outsideContacts: (Array.isArray(ds.outsideContacts) ? ds.outsideContacts : []).map(function(c){ return { name: c.name||"", phone: c.phone||"", note: c.note||"" }; }),
     natures: (Array.isArray(ds.natures) && ds.natures.length ? ds.natures.map(function(nn){ return { value: nn.value, label: nn.label, als: !!nn.als }; }) : (CALL_NATURES_DEFAULT||CALL_NATURES).map(function(nn){ return { value: nn.value, label: nn.label, als: !!nn.als }; })),
     zones: (Array.isArray(ds.zones) && ds.zones.length ? ds.zones : (COVERAGE_ZONES_DEFAULT||COVERAGE_ZONES).map(function(z, k){ return { name: (z.name.replace(/^(MC Primary Response Area|Secondary Response Area)( — )?/, "").replace(/[()]/g, "").trim() || (/primary/i.test(z.name) ? "Primary coverage" : "Secondary coverage" + (k > 1 ? " " + k : ""))), type: /primary/i.test(z.name) ? "primary" : "secondary", points: z.points }; })).map(function(z){ return { name: z.name||"", type: z.type === "primary" ? "primary" : "secondary", points: (z.points||[]).map(function(p){ return { lat:+p.lat, lng:+p.lng }; }) }; })
@@ -7555,17 +7556,23 @@ function dsUnitChips(list, key) {
       '<button type="button" class="edit-mode-btn" onclick="dsAddUnit(\'' + key + '\')">+ Add unit</button>' +
     '</div>';
 }
+function dsListRef(key) {                      // "adminNotifyUnits" or "rules.newTicket"
+  if (key.indexOf("rules.") === 0) { var ev = key.slice(6); DS_EDIT.notifyRules = DS_EDIT.notifyRules || {}; DS_EDIT.notifyRules[ev] = DS_EDIT.notifyRules[ev] || []; return DS_EDIT.notifyRules[ev]; }
+  return DS_EDIT[key];
+}
 function dsAddUnit(key) {
   dsEnsureEdit();
   var inp = document.getElementById("ds-add-" + key); if (!inp) return;
   var u = dsNormUnit(inp.value);
   if (!u) { showToast("Enter a unit number like MC-16", true); return; }
-  if (DS_EDIT[key].indexOf(u) === -1) DS_EDIT[key].push(u);
-  DS_EDIT[key].sort(function(a, b){ return a.localeCompare(b, undefined, { numeric: true }); });
+  var list = dsListRef(key);
+  if (list.indexOf(u) === -1) list.push(u);
+  list.sort(function(a, b){ return a.localeCompare(b, undefined, { numeric: true }); });
   inp.value = ""; renderDispatchSettings();
   setTimeout(function(){ var i2 = document.getElementById("ds-add-" + key); if (i2) i2.focus(); }, 0);
 }
-function dsRemoveUnit(key, i) { dsEnsureEdit(); DS_EDIT[key].splice(i, 1); renderDispatchSettings(); }
+function dsRemoveUnit(key, i) { dsEnsureEdit(); dsListRef(key).splice(i, 1); renderDispatchSettings(); }
+function dsResetRule(ev) { dsEnsureEdit(); DS_EDIT.notifyRules[ev] = []; renderDispatchSettings(); }
 var DS_ROSTER = null;   // [{unit, name, roles}] for the recipient matrix
 function dsLoadRoster() {
   if (DS_ROSTER) return Promise.resolve(DS_ROSTER);
@@ -7593,22 +7600,45 @@ function dsRenderNotifyMatrix() {
     var logistics = roster.filter(function(u){ return u.roles.indexOf("logistics") !== -1; }).map(function(u){ return u.unit; });
     var ticketGroup = DS_EDIT.ticketManagers.length ? DS_EDIT.ticketManagers.slice() : logistics;
     var groupSource = DS_EDIT.ticketManagers.length ? "the units listed" : "everyone with the Logistics role";
+    var R = DS_EDIT.notifyRules || {};
+    var fixed = function(x) { return '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-size:0.72rem;color:var(--gray);border:1px dashed var(--card-border)">' + escapeHtml(x) + '</span>'; };
+    // Each ticket event can carry its own unit list. Empty = the service group above (the default).
+    var rule = function(ev, dflt) { return (R[ev] && R[ev].length) ? { units: R[ev], custom: true } : { units: dflt, custom: false }; };
     var rows = [
-      ["📟 Admin call notification", "every call event — posted, unit assigned, ALS / BLS / PD, dispatcher notes", DS_EDIT.adminNotifyUnits],
-      ["🟡 New service ticket", "push; SMS too if High / Urgent (" + groupSource + ")", ticketGroup],
-      ["✋ Ticket accepted", "the submitter, plus the rest of the group", ticketGroup.concat(["(submitter)"])],
-      ["↩️ Ticket unassigned", "back to the group", ticketGroup],
-      ["💬 Comment", "whoever accepted it (or the group if nobody has), the submitter, and anyone @mentioned", ticketGroup.concat(["(submitter)", "(assignee)"])],
-      ["✅ Ticket resolved", "the submitter only", ["(submitter)"]],
-      ["💻 IT / app ticket", "never the service group", DS_EDIT.itTicketUnits],
-      ["🔧 May accept / resolve tickets", "the group, plus admins", ticketGroup.concat(admins)]
+      { title: "📟 Admin call notification", note: "every call event — posted, unit assigned, ALS / BLS / PD, dispatcher notes", units: DS_EDIT.adminNotifyUnits, editKey: "adminNotifyUnits", always: [] },
+      { title: "🟡 New service ticket", note: "push; SMS too if High / Urgent", r: rule("newTicket", ticketGroup), editKey: "rules.newTicket", always: [] },
+      { title: "✋ Ticket accepted", note: "plus the submitter", r: rule("accepted", ticketGroup), editKey: "rules.accepted", always: ["submitter"] },
+      { title: "↩️ Ticket unassigned", note: "", r: rule("unassigned", ticketGroup), editKey: "rules.unassigned", always: [] },
+      { title: "💬 Comment", note: "plus the submitter, whoever accepted it, and anyone @mentioned", r: rule("comment", ticketGroup), editKey: "rules.comment", always: ["submitter", "assignee"] },
+      { title: "✅ Ticket resolved", note: "plus the submitter", r: rule("resolved", []), editKey: "rules.resolved", always: ["submitter"] },
+      { title: "💻 IT / app ticket", note: "never the service group", units: DS_EDIT.itTicketUnits, editKey: "itTicketUnits", always: [] },
+      { title: "🔧 May accept / resolve tickets", note: "the service group, plus admins", units: ticketGroup.concat(admins), always: [] }
     ];
     host.innerHTML = '<table style="width:100%;border-collapse:collapse">' + rows.map(function(r) {
+      var units = r.r ? r.r.units : r.units;
+      var isRule = !!r.r, custom = isRule && r.r.custom;
+      var editor = "";
+      if (r.editKey) {
+        var key = r.editKey;
+        var chips = (isRule && !custom) ? label(units) + '<span style="font-size:0.66rem;color:var(--gray);margin-left:4px">(service group — add a unit to customise)</span>' :
+          '<span>' + units.map(function(u, i) {
+            var known = byUnit[u];
+            return '<span title="' + escapeHtml(known ? known.name : "not on the roster") + '" style="display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-family:\'Oswald\',sans-serif;font-size:0.74rem;font-weight:700;' +
+              (known ? 'background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff' : 'background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.45);color:#ff9090') + '">' + escapeHtml(u) + (known ? '' : ' ?') +
+              '<button type="button" onclick="dsRemoveUnit(\'' + key + '\',' + i + ')" title="Remove" style="background:none;border:none;color:#ff9090;cursor:pointer;font-size:0.85rem;line-height:1;padding:0">✕</button></span>';
+          }).join("") + '</span>';
+        editor = chips +
+          '<span style="display:inline-flex;gap:6px;align-items:center;margin-left:6px;vertical-align:middle">' +
+            '<input id="ds-add-' + key + '" placeholder="MC-##" onkeydown="if(event.key===\'Enter\'){event.preventDefault();dsAddUnit(\'' + key + '\');}" style="width:84px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:4px 8px;color:var(--white);font-size:0.78rem">' +
+            '<button type="button" class="edit-mode-btn" style="padding:4px 9px;font-size:0.66rem" onclick="dsAddUnit(\'' + key + '\')">+ Add</button>' +
+            (custom ? '<button type="button" class="edit-mode-btn" style="padding:4px 9px;font-size:0.66rem" onclick="dsResetRule(\'' + key.slice(6) + '\')" title="Back to the service group">↺ Default</button>' : '') +
+          '</span>';
+      } else {
+        editor = label(units);
+      }
       return '<tr style="border-top:1px solid var(--card-border)">' +
-        '<td style="padding:8px 8px 8px 0;vertical-align:top;white-space:nowrap;color:var(--white);font-size:0.8rem;width:210px">' + r[0] + '<div style="font-size:0.66rem;color:var(--gray);white-space:normal;margin-top:2px">' + escapeHtml(r[1]) + '</div></td>' +
-        '<td style="padding:8px 0;vertical-align:top">' + label(r[2].filter(function(x){ return x.charAt(0) !== "("; })) +
-          r[2].filter(function(x){ return x.charAt(0) === "("; }).map(function(x){ return '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:5px;font-size:0.72rem;color:var(--gray);border:1px dashed var(--card-border)">' + escapeHtml(x.slice(1, -1)) + '</span>'; }).join("") +
-        '</td></tr>';
+        '<td style="padding:8px 8px 8px 0;vertical-align:top;white-space:nowrap;color:var(--white);font-size:0.8rem;width:210px">' + r.title + (custom ? ' <span style="font-size:0.6rem;color:#ffc84a;letter-spacing:0.06em">CUSTOM</span>' : '') + '<div style="font-size:0.66rem;color:var(--gray);white-space:normal;margin-top:2px">' + escapeHtml(r.note) + '</div></td>' +
+        '<td style="padding:8px 0;vertical-align:top">' + editor + r.always.map(fixed).join("") + '</td></tr>';
     }).join("") + '</table>' +
     (DS_EDIT.ticketManagers.length ? '' : '<div style="font-size:0.72rem;color:var(--gray);margin-top:8px">Logistics role right now: ' + (logistics.length ? logistics.join(", ") : "nobody") + '</div>');
   });
@@ -7805,6 +7835,7 @@ function saveDispatchSettings() {
     adminNotifyUnits: (DS_EDIT.adminNotifyUnits || []).map(dsNormUnit).filter(Boolean),
     ticketManagers: (DS_EDIT.ticketManagers || []).map(dsNormUnit).filter(Boolean),
     itTicketUnits: (DS_EDIT.itTicketUnits || []).map(dsNormUnit).filter(Boolean),
+    notifyRules: (function(){ var o = {}; Object.keys(DS_EDIT.notifyRules || {}).forEach(function(k){ o[k] = (DS_EDIT.notifyRules[k] || []).map(dsNormUnit).filter(Boolean); }); return o; })(),
     updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || (currentUser ? currentUser.email : "")
   };
   db.collection("appdata").doc("dispatchSettings").set(data).then(function() {
@@ -12625,7 +12656,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.55b";
+var DESKTOP_VERSION = "9.56a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
