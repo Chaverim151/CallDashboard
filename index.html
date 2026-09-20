@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.62');
+  window.location.replace('/CallDashboard/mobile.html?v=2.63');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1220,8 +1220,9 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
   <div style="display:flex;gap:8px;padding:12px 20px;border-bottom:1px solid var(--card-border);flex-wrap:wrap;flex-shrink:0">
     <button class="ticket-tab active" onclick="setTicketTab('all',this)">All</button>
     <button class="ticket-tab" onclick="setTicketTab('open',this)">🔴 Open</button>
+    <button class="ticket-tab" onclick="setTicketTab('accepted',this)">🟠 Accepted</button>
     <button class="ticket-tab" onclick="setTicketTab('in-progress',this)">🟡 In Progress</button>
-    <button class="ticket-tab" onclick="setTicketTab('resolved',this)">🟢 Resolved</button>
+    <button class="ticket-tab" onclick="setTicketTab('resolved',this)">🟢 Completed</button>
   </div>
   <div class="inner-scroll"><div class="inner-content" style="max-width:860px">
     <div id="tickets-list"><div class="tickets-loading">Loading service requests…</div></div>
@@ -1284,7 +1285,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.58a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.59a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2527,7 +2528,7 @@ function doTokenAccept(tid, tok, title, unit, submittedByUid) {
   }
   firebase.firestore().collection("tickets").doc(tid).set({
     assignedTo: assignedTo, assignedAt: new Date().toISOString(),
-    assignedByUid: "email-accept", status: "in-progress",
+    assignedByUid: "email-accept", status: "accepted",
     acceptedViaEmail: true, acceptToken: tok
   }, { merge: true }).then(function() {
     setContent("✅", "Ticket Accepted!", "<strong style='color:var(--gold)'>" + assignedTo + "</strong> accepted:<br><br><strong style='color:var(--white)'>" + title + "</strong>", "#7dedb5");
@@ -4692,7 +4693,7 @@ function renderTicketDetail(id, t) {
       commentsHtml = (byParent["__root__"] || []).map(function(x) { return renderC(x, 0); }).join("");
     }
     var statusControl = isAdmin
-      ? '<select class="status-select" onchange="updateTicketStatus(\'' + id + '\',this.value)"><option value="open"' + (t.status === "open" ? " selected" : "") + '>🔴 Open</option><option value="in-progress"' + (t.status === "in-progress" ? " selected" : "") + '>🟡 In Progress</option><option value="resolved"' + (t.status === "resolved" ? " selected" : "") + '>🟢 Resolved</option></select>'
+      ? '<select class="status-select" onchange="updateTicketStatus(\'' + id + '\',this.value)">' + M_TICKET_STAGES.map(function(s){ return '<option value="' + s.key + '"' + ((t.status||"open") === s.key ? " selected" : "") + '>' + s.icon + ' ' + s.label + '</option>'; }).join("") + '</select>'
       : '<span class="ticket-badge badge-' + (t.status || "open").replace(" ", "-") + '">' + (t.status || "open") + '</span>';
     var assignmentHtml = "";
     if (t.assignedTo) {
@@ -4701,8 +4702,9 @@ function renderTicketDetail(id, t) {
       if (t.assignedByUid === currentUser.uid || isAdmin) assignmentHtml += '<button class="del-btn" style="padding:5px 12px;font-size:0.72rem" onclick="unassignTicket(\'' + id + '\')">Unassign</button>';
       if (isServiceUnit) assignmentHtml += '<button class="edit-mode-btn" style="font-size:0.72rem;padding:6px 12px" onclick="acceptTicket(\'' + id + '\')">Reassign to Me</button>';
     var canResolve = isServiceUnit || (t.assignedByUid && currentUser && t.assignedByUid === currentUser.uid);
-    if (canResolve && t.status !== "resolved") assignmentHtml += ' <button class="card-save-btn" style="padding:8px 16px;background:rgba(125,237,181,0.18);border:1px solid rgba(125,237,181,0.5);color:#7dedb5" onclick="if(confirm(\'Mark this service request as resolved?\')) updateTicketStatus(\'' + id + '\',\'resolved\')">✓ Mark Resolved</button>';
-    if (canResolve && t.status === "resolved") assignmentHtml += ' <button class="edit-mode-btn" style="font-size:0.72rem;padding:6px 12px" onclick="if(confirm(\'Reopen this service request?\')) updateTicketStatus(\'' + id + '\',\'' + (t.assignedTo ? "in-progress" : "open") + '\')">↩ Reopen</button>';
+    if (canResolve && t.assignedTo && (t.status === "accepted" || t.status === "open")) assignmentHtml += ' <button class="card-save-btn" style="padding:8px 16px;background:rgba(255,200,74,0.18);border:1px solid rgba(255,200,74,0.5);color:#ffc84a" onclick="updateTicketStatus(\'' + id + '\',\'in-progress\')">▶ Start Work</button>';
+    if (canResolve && t.status !== "resolved") assignmentHtml += ' <button class="card-save-btn" style="padding:8px 16px;background:rgba(125,237,181,0.18);border:1px solid rgba(125,237,181,0.5);color:#7dedb5" onclick="if(confirm(\'Mark this service request as completed?\')) updateTicketStatus(\'' + id + '\',\'resolved\')">✓ Mark Completed</button>';
+    if (canResolve && t.status === "resolved") assignmentHtml += ' <button class="edit-mode-btn" style="font-size:0.72rem;padding:6px 12px" onclick="if(confirm(\'Reopen this service request?\')) updateTicketStatus(\'' + id + '\',\'' + (t.assignedTo ? "accepted" : "open") + '\')">↩ Reopen</button>';
     } else if (isServiceUnit) {
       assignmentHtml = '<span style="color:var(--gray);font-size:0.84rem">Unassigned</span> <button class="card-save-btn" style="padding:8px 18px" onclick="acceptTicket(\'' + id + '\')">✋ Accept</button>';
     } else {
@@ -4742,7 +4744,7 @@ function acceptTicket(id) {
   db.collection("users").doc(currentUser.uid).get().then(function(snap) {
     var d = snap.data();
     var assignedTo = ((d.unit || "") + " " + (d.firstName || "") + " " + (d.lastName || "")).trim();
-    var update = { assignedTo: assignedTo, assignedByUid: currentUser.uid, assignedAt: new Date().toISOString(), status: "in-progress" };
+    var update = { assignedTo: assignedTo, assignedByUid: currentUser.uid, assignedAt: new Date().toISOString(), status: "accepted" };
     return db.collection("tickets").doc(id).set(update, { merge: true }).then(function() {
       if (t) Object.assign(t, update); // onTicketUpdated Cloud Function notifies submitter + logistics team
     });
@@ -4754,7 +4756,7 @@ function TicketHistoryHtml(t) {
   var h = (t.history || []).slice().sort(function(a,b){ return (a.at||"").localeCompare(b.at||""); });
   if (!h.length) return '<div style="color:var(--gray);font-size:0.8rem">No activity yet.</div>';
   var icons = { created:"🆕", accepted:"✋", unassigned:"↩️", status:"🔁", resolved:"✅", comment:"💬" };
-  var labels = { created:"Submitted", accepted:"Accepted", unassigned:"Unassigned", status:"Status changed", resolved:"Resolved", comment:"Comment" };
+  var labels = { created:"Submitted", accepted:"Accepted", unassigned:"Unassigned", status:"Status changed", resolved:"Completed", comment:"Comment" };
   return h.map(function(e) {
     var d = e.at ? new Date(e.at) : null;
     var when = d ? d.toLocaleDateString([], {month:"short",day:"numeric"}) + " " + d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "";
@@ -12674,7 +12676,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.58a";
+var DESKTOP_VERSION = "9.59a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -14237,7 +14239,7 @@ function mRenderTickets() {
   var list = mTicketStatusFilter === "all" ? mAllTickets : mAllTickets.filter(function(t) { return t.status === mTicketStatusFilter; });
   var el = document.getElementById("m-tickets-list");
   if (!list.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">No service requests.</div>'; return; }
-  var statusColor = { open: "#ff9090", "in-progress": "#ffc84a", resolved: "#7dedb5" };
+  var statusColor = { open: "#ff9090", accepted: "#ffb26b", "in-progress": "#ffc84a", resolved: "#7dedb5" };
   el.innerHTML = list.map(function(t) {
     var date = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—";
     var snippet = (t.details || "").substring(0, 90) + ((t.details || "").length > 90 ? "…" : "");
@@ -14321,7 +14323,7 @@ function mTicketHistoryHtml(t) {
   var h = (t.history || []).slice().sort(function(a,b){ return (a.at||"").localeCompare(b.at||""); });
   if (!h.length) return '<div style="color:var(--gray);font-size:0.8rem">No activity yet.</div>';
   var icons = { created:"🆕", accepted:"✋", unassigned:"↩️", status:"🔁", resolved:"✅", comment:"💬" };
-  var labels = { created:"Submitted", accepted:"Accepted", unassigned:"Unassigned", status:"Status changed", resolved:"Resolved", comment:"Comment" };
+  var labels = { created:"Submitted", accepted:"Accepted", unassigned:"Unassigned", status:"Status changed", resolved:"Completed", comment:"Comment" };
   return h.map(function(e) {
     var d = e.at ? new Date(e.at) : null;
     var when = d ? d.toLocaleDateString([], {month:"short",day:"numeric"}) + " " + d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "";
@@ -14367,8 +14369,8 @@ function mRenderTicketDetail(id, t) {
       commentsHtml = (byParent["__root__"] || []).map(function(d) { return renderComment(d, 0); }).join("");
     }
     var statusControl = isAdmin
-      ? '<select class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.75rem" onchange="mUpdateTicketStatus(\'' + id + '\',this.value)"><option value="open"' + (t.status==="open"?" selected":"") + '>🔴 Open</option><option value="in-progress"' + (t.status==="in-progress"?" selected":"") + '>🟡 In Progress</option><option value="resolved"' + (t.status==="resolved"?" selected":"") + '>🟢 Resolved</option></select>'
-      : '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--white);border:1px solid var(--card-border)">' + (t.status||"open") + '</span>';
+      ? '<select class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.75rem" onchange="mUpdateTicketStatus(\'' + id + '\',this.value)">' + M_TICKET_STAGES.map(function(s){ return '<option value="' + s.key + '"' + ((t.status||"open")===s.key?" selected":"") + '>' + s.icon + ' ' + s.label + '</option>'; }).join("") + '</select>'
+      : '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:' + mTicketStage(t.status).color + ';border:1px solid var(--card-border)">' + mTicketStage(t.status).icon + ' ' + mTicketStage(t.status).label + '</span>';
     var assignmentHtml = "";
     if (t.assignedTo) {
       assignmentHtml = '<div style="font-size:0.85rem;color:var(--white)">✋ ' + mEscHtml(t.assignedTo) + '</div><div style="font-size:0.68rem;color:var(--gray)">Accepted ' + (t.assignedAt ? new Date(t.assignedAt).toLocaleString() : "") + '</div>';
@@ -14376,9 +14378,12 @@ function mRenderTicketDetail(id, t) {
     var canResolve = isServiceUnit || (t.assignedByUid && mCurrentUser && t.assignedByUid === mCurrentUser.uid);
     var resolveHtml = "";
     if (canResolve && t.status !== "resolved") {
-      resolveHtml = '<button onclick="mResolveTicket(\'' + id + '\')" style="width:100%;margin-top:12px;background:rgba(125,237,181,0.14);border:1px solid rgba(125,237,181,0.5);border-radius:9px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:13px;cursor:pointer">✓ Mark Resolved</button>';
+      resolveHtml = (t.assignedTo && (t.status === "accepted" || t.status === "open")
+          ? '<button onclick="mStartTicket(\'' + id + '\')" style="width:100%;margin-top:12px;background:rgba(255,200,74,0.14);border:1px solid rgba(255,200,74,0.5);border-radius:9px;color:#ffc84a;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:13px;cursor:pointer">▶ Start Work</button>'
+          : '') +
+        '<button onclick="mResolveTicket(\'' + id + '\')" style="width:100%;margin-top:12px;background:rgba(125,237,181,0.14);border:1px solid rgba(125,237,181,0.5);border-radius:9px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:13px;cursor:pointer">✓ Mark Completed</button>';
     } else if (canResolve && t.status === "resolved") {
-      resolveHtml = '<div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(125,237,181,0.08);border:1px solid rgba(125,237,181,0.3);border-radius:9px;padding:10px 12px"><span style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-weight:700;font-size:0.8rem">✓ Resolved</span><button onclick="mReopenTicket(\'' + id + '\')" style="background:none;border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px 10px;cursor:pointer">↩ Reopen</button></div>';
+      resolveHtml = '<div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(125,237,181,0.08);border:1px solid rgba(125,237,181,0.3);border-radius:9px;padding:10px 12px"><span style="color:#7dedb5;font-family:\'Oswald\',sans-serif;font-weight:700;font-size:0.8rem">✓ Completed</span><button onclick="mReopenTicket(\'' + id + '\')" style="background:none;border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px 10px;cursor:pointer">↩ Reopen</button></div>';
     }
     } else if (isServiceUnit) {
       assignmentHtml = '<span style="color:var(--gray);font-size:0.84rem">Unassigned</span><button class="m-disp-btn" style="margin-top:8px;border-color:rgba(201,168,76,0.4);color:var(--gold)" onclick="mAcceptTicket(\'' + id + '\')">✋ Accept</button>';
@@ -14451,7 +14456,7 @@ function mAcceptTicket(id) {
   db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
     var d = snap.data();
     var assignedTo = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
-    var update = { assignedTo: assignedTo, assignedByUid: mCurrentUser.uid, assignedAt: new Date().toISOString(), status: "in-progress" };
+    var update = { assignedTo: assignedTo, assignedByUid: mCurrentUser.uid, assignedAt: new Date().toISOString(), status: "accepted" };
     return db.collection("tickets").doc(id).set(update, { merge: true }).then(function() {
       if (t) Object.assign(t, update); // onTicketUpdated Cloud Function notifies submitter + logistics team
     });
@@ -14469,10 +14474,11 @@ function mResolveTicket(id) {
   if (!confirm("Mark this service request as resolved?")) return;
   mUpdateTicketStatus(id, "resolved");
 }
+function mStartTicket(id) { mUpdateTicketStatus(id, "in-progress"); }
 function mReopenTicket(id) {
   if (!confirm("Reopen this service request?")) return;
   var t = mAllTickets.find(function(x){ return x.id === id; });
-  mUpdateTicketStatus(id, (t && t.assignedTo) ? "in-progress" : "open");
+  mUpdateTicketStatus(id, (t && t.assignedTo) ? "accepted" : "open");
 }
 function mUpdateTicketStatus(id, status) {
   db.collection("tickets").doc(id).set({ status: status, statusByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true }).then(function() {
