@@ -4948,6 +4948,7 @@ window.mBindNcAutocomplete = function() {
     // still has no number, ask the geocoder for the street address at these coordinates.
     mBestStreetAddress(place, lat, lng).then(function(street) {
       input.value = placeName ? (placeName + " — " + street) : street;
+      mNcResolvedAddress = input.value.trim();
       mCheckAccessCode(street, placeName, lat, lng);
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
     });
@@ -4968,12 +4969,51 @@ function mNcClearField(id) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.focus();
 }
+// A geocode is only good enough to dispatch on if it identifies a specific building or place.
+// Google will otherwise "helpfully" resolve a nonsense street to the middle of the town, which
+// would give a zone and let a call go out to an address that doesn't exist.
+function mIsPreciseGeocode(r) {
+  if (!r || !r.geometry) return false;
+  if (r.partial_match === true) return false;
+  var t = r.types || [];
+  var precise = ["street_address","premise","subpremise","establishment","point_of_interest","airport","transit_station"];
+  if (!precise.some(function(x){ return t.indexOf(x) !== -1; })) return false;
+  var loc = r.geometry.location_type;                       // ROOFTOP / RANGE_INTERPOLATED are on-street
+  if (loc && ["ROOFTOP","RANGE_INTERPOLATED","GEOMETRIC_CENTER"].indexOf(loc) === -1) return false;
+  return true;
+}
+// Typing after an address resolved means the old coordinates no longer describe what is written.
+function mNcAddressEdited() {
+  var inp = document.getElementById("m-nc-address");
+  var latEl = document.getElementById("m-nc-lat");
+  if (inp && latEl && latEl.value && inp.value.trim() !== (mNcResolvedAddress || "")) {
+    latEl.value = ""; document.getElementById("m-nc-lng").value = "";
+    mNcZone = ""; mNcZoneArea = "";
+    var banner = document.getElementById("m-nc-zone-banner"); if (banner) banner.style.display = "none";
+  }
+  if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+}
+var mNcResolvedAddress = "";
+function mAddressRejected(why) {
+  var inp = document.getElementById("m-nc-address");
+  ["m-nc-lat","m-nc-lng","m-nc-mapslink"].forEach(function(id){ var el = document.getElementById(id); if (el) el.value = ""; });
+  mNcZone = ""; mNcZoneArea = "";
+  var banner = document.getElementById("m-nc-zone-banner"); if (banner) banner.style.display = "none";
+  if (inp) { inp.classList.add("m-nc-need"); }
+  if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+  mToast(why || "That address couldn't be found — pick one from the suggestions", true);
+}
 function mResolveTypedAddress(address) {
   if (!window.google || !google.maps || !google.maps.Geocoder) return Promise.reject(new Error("maps not loaded"));
   return new Promise(function(resolve, reject) {
     new google.maps.Geocoder().geocode({ address: address, region: "us" }, function(results, status) {
-      if (status !== "OK" || !results || !results[0] || !results[0].geometry) return reject(new Error(status || "no result"));
+      if (status !== "OK" || !results || !results[0] || !results[0].geometry) { mAddressRejected(); return reject(new Error(status || "no result")); }
+      if (!mIsPreciseGeocode(results[0])) {
+        mAddressRejected("Not a specific address — pick one from the suggestions so the crew has a building to go to");
+        return reject(new Error("imprecise"));
+      }
       var loc = results[0].geometry.location, lat = loc.lat(), lng = loc.lng();
+      mNcResolvedAddress = document.getElementById("m-nc-address").value.trim();
       document.getElementById("m-nc-lat").value = lat;
       document.getElementById("m-nc-lng").value = lng;
       document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
@@ -5056,6 +5096,11 @@ function mPostNewCallNow() {
   // a crew the wrong way — so stop and say so instead.
   var _lat0 = parseFloat(document.getElementById("m-nc-lat").value) || null;
   var _lng0 = parseFloat(document.getElementById("m-nc-lng").value) || null;
+  if (!_lat0 || !_lng0) {
+    var _b1 = document.getElementById("m-nc-post-btn"); if (_b1) { _b1.disabled = false; _b1.textContent = "Post Call"; }
+    mAddressRejected("Pick the address from the suggestions — the crew needs a located address");
+    return;
+  }
   if (!mNcZone) {
     if (_lat0 && _lng0 && typeof mDetectZoneInfo === "function") { var zi = mDetectZoneInfo(_lat0, _lng0); if (zi) mSetNcZone(zi.type, false, zi.area); }
     if (!mNcZone) {
@@ -7004,7 +7049,7 @@ function mCloseAllSheets() {
       <button type="button" onclick="mNcDiscardDraft()" style="background:none;border:1px solid rgba(255,144,144,0.5);border-radius:6px;color:#ff9090;font-size:0.7rem;font-weight:700;padding:5px 10px;cursor:pointer;white-space:nowrap">Start over</button>
     </div>
     <div class="m-disp-label">Location</div>
-    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcValidateMarks()" class="m-disp-input" style="padding-right:38px;" oninput="mNcAddressTouched=true"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcAddressEdited()" class="m-disp-input" style="padding-right:38px;" oninput="mNcAddressTouched=true"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
     <div class="m-disp-label">Apt / Suite / Unit</div>
     <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-apt" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-apt')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
