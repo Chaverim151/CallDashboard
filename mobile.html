@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.76"; window.M_BUILD = BUILD;
+  var BUILD = "2.90"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -377,7 +377,7 @@ body.m-tile-dragging{overscroll-behavior:none}
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.76</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.90</div>
     </div>
   </div>
 </div>
@@ -408,7 +408,7 @@ body.m-tile-dragging{overscroll-behavior:none}
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.76</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.90</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -4339,11 +4339,12 @@ function mGetFirstPhone(phone) {
 // text with {variables}; a line whose variables are all empty is dropped, so optional fields
 // (cross streets, access code…) never leave a blank line behind.
 var M_SMS_TEMPLATE_DEFAULTS = {
-  assignment: "🚑 YOU HAVE BEEN ASSIGNED\n{zoneLine}\n{poi}\n{address}\n{patient} | {nature}\nAccess code: {accessCode}\nNotes: {notes}\n{mapsLink}\n{time}",
-  admin:      "📟 ADMIN CALL NOTIFICATION\n{zoneLine}\n{poi}\n{address}\n{patient} | {nature}\nAccess code: {accessCode}\nNotes: {notes}\n{mapsLink}\n{time}",
+  assignment: "{zoneLine}\n{poi}\n{address}\nCALL TYPE: {natureUpper}\nCB: {callback}\nBLS: {units}\nDRIVER: {driver}\nAGE: {ageLine}\nACCESS CODE: {accessCode}\nNOTES: {notes}\n{mapsLink}\n\n{wazeLink}\n\n{org}\nDate: {dateTime}",
+  admin:      "📟 ADMIN CALL NOTIFICATION\n{zoneLine}\n{poi}\n{address}\nCALL TYPE: {natureUpper}\nCB: {callback}\nBLS: {units}\nDRIVER: {driver}\nAGE: {ageLine}\nACCESS CODE: {accessCode}\nNOTES: {notes}\n{mapsLink}\n\n{wazeLink}\n\n{org}\nDate: {dateTime}",
   resource:   "{header}\n{address}\n{detail}\n{time}",
   note:       "📝 CALL UPDATE\n{address}\n{note}\n{time}",
-  callback:   "📞 CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}"
+  callback:   "📞 CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
+  rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}"
 };
 var M_SMS_TEMPLATES = {};
 function mLoadSmsTemplates() {
@@ -4352,13 +4353,24 @@ function mLoadSmsTemplates() {
     M_SMS_TEMPLATES = (snap && snap.exists) ? (snap.data() || {}) : {};
   }).catch(function(){ M_SMS_TEMPLATES = {}; });
 }
+// A template saved before the format change can carry both {time} and the newer {dateTime} line.
+// Drop the older one so only a single timestamp is ever rendered.
+function mStripInvisible(s) { return String(s == null ? "" : s).replace(/[\u200B-\u200D\u2060\uFEFF]/g, ""); }
+function mCleanTemplate(t) {
+  if (typeof t !== "string") return t;
+  t = mStripInvisible(t);
+  if (t.indexOf("{dateTime}") === -1) return t;
+  return t.split("\n").filter(function(line){ return line.trim() !== "{time}"; }).join("\n");
+}
 function mTemplateFor(key) {
-  var t = M_SMS_TEMPLATES && M_SMS_TEMPLATES[key];
+  var t = mCleanTemplate(M_SMS_TEMPLATES && M_SMS_TEMPLATES[key]);
   return (typeof t === "string" && t.trim()) ? t : M_SMS_TEMPLATE_DEFAULTS[key];
 }
 // Fill {variables}; drop any line left with nothing but punctuation and labels.
 function mRenderTemplate(tpl, vars) {
-  return String(tpl || "").split("\n").map(function(line) {
+  return mStripInvisible(tpl).split("\n").map(function(line) {
+    line = mStripInvisible(line);
+    if (!line.trim()) return "";                     // a deliberate blank line in the template
     var used = [], filled = line.replace(/\{(\w+)\}/g, function(_, k) {
       var v = vars[k] == null ? "" : String(vars[k]);
       used.push(v);
@@ -4367,7 +4379,19 @@ function mRenderTemplate(tpl, vars) {
     if (used.length && used.every(function(v){ return !v.trim(); })) return null;   // all its variables were empty
     filled = filled.replace(/\s*\|\s*\|\s*/g, " | ").replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, "");   // tidy dividers left by empty values
     return filled.trim() ? filled : null;
-  }).filter(function(l){ return l !== null; }).join("\n");
+  }).filter(function(l){ return l !== null; })
+   .filter(function(l, i, arr) {
+     if (l === "") return i > 0 && arr[i-1] !== "" && i < arr.length - 1;   // no leading, double or trailing blanks
+     // A saved template may still carry the old {time} line alongside the newer "Date: …" line —
+     // only one timestamp is ever wanted, so drop the extra.
+     if (l === "") return true;
+     var isStamp = /^\s*(Date:\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}/.test(l) || /^\s*\d{1,2}:\d{2}(\s|$)/.test(l);
+     if (!isStamp) return true;
+     return !arr.slice(0, i).some(function(prev) {
+       return /^\s*(Date:\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}/.test(prev) || /^\s*\d{1,2}:\d{2}(\s|$)/.test(prev);
+     });
+   })
+   .join("\n");
 }
 function mCallVars(call) {
   var rawA = mCleanAddress(call.address || "");
@@ -4378,8 +4402,47 @@ function mCallVars(call) {
   var patient = call.patientAgeNum ? (call.patientAgeNum + " YO" + sex)
               : (call.patientAge === "pediatric" ? ("Pediatric " + sex).trim()
               : call.patientAge === "adult" ? ("Adult " + sex).trim() : sex);
+  // Units on the call, and whoever is driving the rig
+  var unitList = [], driver = "";
+  (call.crews || []).forEach(function(crew, ci) {
+    if (!crew) return;
+    Object.keys(crew).forEach(function(role) {
+      if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
+      if (unitList.indexOf(crew[role]) === -1) unitList.push(crew[role]);
+      if (!driver && typeof mIsDriverRole === "function" && mIsDriverRole(call, ci, role)) driver = crew[role];
+    });
+    if (crew.rig && unitList.indexOf(crew.rig) === -1) unitList.push(crew.rig);
+  });
+  var lat = call.lat, lng = call.lng;
   var now = new Date();
+  var pad = function(x){ return (x < 10 ? "0" : "") + x; };
   return {
+    units: unitList.join(", "),
+    driver: driver,
+    rig: (call.crews && call.crews[0] && call.crews[0].rig) || "",
+    ageLine: (function(){
+      var base = call.patientAgeNum ? (call.patientAgeNum + (call.patientAgeUnit ? " " + call.patientAgeUnit : ""))
+               : call.patientAge === "pediatric" ? "Pediatric"
+               : call.patientAge === "adult" ? "Adult" : "";
+      var s = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
+      return (base + (s ? " " + s : "")).trim();
+    })(),
+    wazeLink: (lat && lng) ? ("https://waze.com/ul?ll=" + lat + "," + lng + "&navigate=yes") : "",
+    baseName: (typeof M_BASE !== "undefined" && M_BASE.name) ? M_BASE.name : "",
+    baseAddress: (typeof M_BASE !== "undefined" && M_BASE.address) ? M_BASE.address : "",
+    baseMapsLink: (typeof M_BASE === "undefined") ? "" : (M_BASE.lat && M_BASE.lng
+        ? ("https://www.google.com/maps/dir/?api=1&destination=" + M_BASE.lat + "," + M_BASE.lng + "&travelmode=driving")
+        : (M_BASE.address ? ("http://maps.google.com/maps?daddr=" + encodeURIComponent(M_BASE.address)) : "")),
+    baseWazeLink: (typeof M_BASE !== "undefined") ? (M_BASE.lat && M_BASE.lng
+        ? ("https://waze.com/ul?ll=" + M_BASE.lat + "," + M_BASE.lng + "&navigate=yes")
+        : (M_BASE.address ? ("https://waze.com/ul?q=" + encodeURIComponent(M_BASE.address) + "&navigate=yes") : "")) : "",
+    org: ((typeof M_ORG_FOOTER !== "undefined" && M_ORG_FOOTER) ? M_ORG_FOOTER : "MC Hatzolah") +
+         (function(){
+           var who = call.createdBy ? String(call.createdBy).trim().split(/\s+/)[0]
+                   : (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) ? mCurrentUserUnit : "";
+           return who ? " " + who : "";
+         })(),   // the dispatcher who posted the call
+    dateTime: pad(now.getMonth() + 1) + "/" + pad(now.getDate()) + "/" + now.getFullYear() + "  Time: " + pad(now.getHours()) + ":" + pad(now.getMinutes()),
     zoneLine: call.zone === "secondary" ? "LOAD A RIG" : call.zone === "outside" ? "OUTSIDE ZONE" : "",
     poi: poi,
     address: street + (call.apt ? " | Apt: " + call.apt : ""),
@@ -4389,11 +4452,13 @@ function mCallVars(call) {
     age: call.patientAgeNum || "",
     sex: sex,
     nature: (call.callNature || "").replace(/^\d+\s*-\s*/, ""),
+    natureUpper: (call.callNature || "").replace(/^\d+\s*-\s*/, "").toUpperCase(),
     accessCode: call.accessCode || "",
     callback: call.callbackNumber || "",
     notes: call.dispatchNotes || "",
     als: (call.alsActivated && call.alsProvider) ? (call.alsProvider + (call.alsEta ? " (ETA " + call.alsEta + " min)" : "")) : "",
-    mapsLink: call.mapsLink || "",
+    mapsLink: (lat && lng) ? ("https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving")
+            : (call.mapsLink || ""),
     time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" })
   };
 }
@@ -4425,6 +4490,30 @@ function mPhonesForUnits(units) {
   }).catch(function(){ return []; });
 }
 // Units that are notified of every call, assigned or not
+var M_ORG_FOOTER = "MC Hatzolah";   // footer line on outgoing messages; Admin ▸ Protocols can override
+// Where a unit goes to collect the rig. Admin ▸ Protocols can override (appdata/dispatchSettings.base).
+var M_BASE = { name: "MC Garage", address: "1587 NJ-27, Edison, NJ 08817", lat: null, lng: null };
+// The base's coordinates are looked up from its address (and cached), so the links point at the
+// building rather than at coordinates typed in by hand. Admin ▸ Protocols can set them explicitly.
+function mEnsureBaseCoords() {
+  if (!M_BASE.address || (M_BASE.lat && M_BASE.lng)) return Promise.resolve(M_BASE);
+  try {
+    var cached = JSON.parse(localStorage.getItem("mBaseCoords") || "null");
+    if (cached && cached.address === M_BASE.address && cached.lat && cached.lng) {
+      M_BASE.lat = cached.lat; M_BASE.lng = cached.lng; return Promise.resolve(M_BASE);
+    }
+  } catch (e) {}
+  if (!(window.google && google.maps && google.maps.Geocoder)) return Promise.resolve(M_BASE);
+  return new Promise(function(resolve) {
+    new google.maps.Geocoder().geocode({ address: M_BASE.address, region: "us" }, function(res, st) {
+      if (st === "OK" && res && res[0] && res[0].geometry) {
+        M_BASE.lat = res[0].geometry.location.lat(); M_BASE.lng = res[0].geometry.location.lng();
+        try { localStorage.setItem("mBaseCoords", JSON.stringify({ address: M_BASE.address, lat: M_BASE.lat, lng: M_BASE.lng })); } catch (e) {}
+      }
+      resolve(M_BASE);
+    });
+  });
+}
 var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];   // default; Admin ▸ Protocols ▸ Notifications overrides
 var M_TICKET_MANAGERS = [];                                  // empty = everyone with the Logistics role
 var M_IT_TICKET_UNITS = ["MC-16"];                           // IT / app tickets go here; Admin ▸ Protocols ▸ Notifications overrides
@@ -4535,9 +4624,27 @@ function mSmsStamp() {
 }
 function mStampMessage(msg) {
   msg = String(msg || "");
-  return /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(msg) ? msg : msg.replace(/\s+$/, "") + "\n" + mSmsStamp();
+  // Only add a timestamp when the message doesn't already carry one — templates now end with their
+  // own "Date: 09/29/2026  Time: 23:52" line, which this used not to recognise (and so doubled).
+  var tail = msg.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/\s+$/, "").split("\n").slice(-3).join("\n");
+  var hasStamp = /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(tail)      // 23:52 9/29/26
+              || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(tail)                             // 09/29/2026, with or without "Date:"
+              || /\bTime:\s*\d{1,2}:\d{2}/.test(tail);
+  return hasStamp ? msg : msg.replace(/\s+$/, "") + "\n" + mSmsStamp();
+}
+// Nothing leaves the system with two timestamps on it, whichever path built the message.
+function mOneTimestamp(body) {
+  var seen = false;
+  return String(body || "").split("\n").filter(function(l) {
+    var t = l.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").trim();
+    var isStamp = /^(Date:\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}(\s|$)/.test(t) || /^\d{1,2}:\d{2}(\s|$)/.test(t);
+    if (!isStamp) return true;
+    if (seen) return false;
+    seen = true; return true;
+  }).join("\n");
 }
 function mSendClickSendSMS(toNumbers, message) {
+  message = mOneTimestamp(message);
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
   if (!toNumbers.length || !message) return Promise.resolve();
   message = mStampMessage(message);
@@ -5453,6 +5560,9 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   }
 
   var sl = M_STATUS_LOG[status];
+  // Direct response: once someone is on scene, the other units' "En Route to Scene" line is stale —
+  // they aren't being tracked individually any more. The rig keeps its own status line.
+  if (sl && mIsDirectResponse(call) && !isDriver && status === "enroute_scene" && mSceneMarkedBy(call)) sl = null;
   if (sl) {
     var withRig = isDriver && crew.rig && ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1;
     var riding = !isDriver && crew.rig && M_RIDER_STATUSES.indexOf(status) !== -1;   // scene-direct unit riding in the rig
@@ -6004,6 +6114,16 @@ function mRemoveCrew(crewIdx) {
     return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assignedUnits, updatedAt: new Date().toISOString() });
   }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
+// A unit sent to collect the rig gets the base address and directions to it.
+function mTextRigDirections(unitId, call) {
+  mSmsEnqueue(function() {
+    return mEnsureBaseCoords().then(function() {
+      var body = mRenderTemplate(mTemplateFor("rigResponse"), mCallVars(call || {}));
+      if (!body.trim()) return;
+      return mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); });
+    });
+  });
+}
 function mSetUnitResponse(crewIdx, role, response) {
   var callId = mDispSelectedCallId;
   var initialStatus = response === "scene" ? "enroute_scene" : "picking_up_ambo";
@@ -6015,7 +6135,10 @@ function mSetUnitResponse(crewIdx, role, response) {
   update.callEvents = mEvtUnion(mEvt(unitR + (response === "rig" ? " — Responding to Rig" : " — En Route to Scene"), response === "rig" ? "🏠" : "🏃", response === "rig" ? "#ffc84a" : "#7ab8f5", "status"));
   update[key + ".statusAt"] = mNowHHMM();
   update.updatedAt = new Date().toISOString();
-  db.collection("activeCalls").doc(callId).update(update).catch(function(e){ mToast("Error: "+e.message, true); });
+  db.collection("activeCalls").doc(callId).update(update).then(function() {
+    // Responding to the rig → text that unit where the rig is
+    if (response === "rig" && unitR && unitR !== role) mTextRigDirections(unitR, mDispCallCache[callId] || {});
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mSetUnitStatus(crewIdx, role, status) {
   var callId = mDispSelectedCallId;
@@ -6099,6 +6222,12 @@ function mLoadDispatchSettings() {
     if (Array.isArray(ds.mutualAid) && ds.mutualAid.length) M_MUTUAL_AID_911 = ds.mutualAid.map(function(r){ return { match: (r.match||[]).map(function(x){ return String(x).toLowerCase(); }), borough: r.borough||"", bls: r.bls||"", als: r.als||"", pd: r.pd||"" }; });
     if (Array.isArray(ds.hospitals) && ds.hospitals.length) { M_HOSPITALS = ds.hospitals.slice(); if (M_HOSPITALS.indexOf("Other") === -1) M_HOSPITALS.push("Other"); }
     if (Array.isArray(ds.adminNotifyUnits)) M_ADMIN_NOTIFY_UNITS = ds.adminNotifyUnits.slice();
+    if (ds.orgFooter) M_ORG_FOOTER = ds.orgFooter;
+    if (ds.base && ds.base.address) {
+      if (ds.base.address !== M_BASE.address) { M_BASE.lat = null; M_BASE.lng = null; }   // new address → look it up again
+      M_BASE = Object.assign({}, M_BASE, ds.base);
+    }
+    if (typeof mEnsureBaseCoords === "function") mEnsureBaseCoords();
     M_TICKET_MANAGERS = Array.isArray(ds.ticketManagers) ? ds.ticketManagers.slice() : [];
     if (Array.isArray(ds.itTicketUnits) && ds.itTicketUnits.length) M_IT_TICKET_UNITS = ds.itTicketUnits.slice();
     if (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length) M_ALS_NATURE_CODES = ds.alsNatureCodes.slice();
@@ -6849,7 +6978,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.76</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.90</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

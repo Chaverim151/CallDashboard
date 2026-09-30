@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.76');
+  window.location.replace('/CallDashboard/mobile.html?v=2.90');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1025,6 +1025,12 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 #tpl-modal .m-disp-label{color:#e8eef8;font-size:0.64rem;opacity:1}
 
 #pg-console .m-call-street,#tpl-modal .m-call-street{font-size:0.82rem;color:#c9d4e6;margin-top:-2px;margin-bottom:4px}
+
+#pg-admin [data-admin-tab="traffic"] input[type="text"],
+#pg-admin [data-admin-tab="traffic"] input[type="datetime-local"]{width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 11px;color:var(--white);font-size:0.88rem}
+#pg-admin [data-admin-tab="traffic"] label{display:block;font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:#e8eef8;margin-bottom:4px}
+#pg-admin [data-admin-tab="traffic"] .form-row{display:flex;gap:12px;margin-bottom:12px}
+#pg-admin [data-admin-tab="traffic"] .form-row > div{flex:1;min-width:0}
 </style>
 </head>
 <body>
@@ -1285,7 +1291,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.66c</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.75b</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1591,6 +1597,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     <button class="admin-tab" data-tab="protocols" onclick="setAdminTab('protocols')">📋 Protocols &amp; Dispatch</button>
     <button class="admin-tab" data-tab="codes" onclick="setAdminTab('codes')">🔑 Codes &amp; Locations</button>
     <button class="admin-tab" data-tab="fleet" onclick="setAdminTab('fleet')">🚑 Fleet</button>
+    <button class="admin-tab" data-tab="traffic" onclick="setAdminTab('traffic')">🚧 Traffic &amp; Closures</button>
     <button class="admin-tab" data-tab="templates" onclick="setAdminTab('templates')">✉️ Message Templates</button>
         <button class="admin-tab" data-tab="notifications" onclick="setAdminTab('notifications')">🔔 Notification Log</button>
         <button class="admin-tab" data-tab="testing" onclick="setAdminTab('testing')">🧪 Testing</button>
@@ -1675,6 +1682,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
           <option value="resource">🚨 ALS / BLS / PD dispatched</option>
           <option value="note">📝 Dispatcher note</option>
           <option value="callback">📞 Callback number</option>
+          <option value="rigResponse">🏠 Unit responding to the rig</option>
         </select>
         <button class="edit-mode-btn" onclick="saveTemplate()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;font-weight:700">Save Template</button>
         <button class="edit-mode-btn" onclick="sendTemplateTest()" id="tpl-test-btn">📱 Send Test to Me</button>
@@ -1827,7 +1835,25 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       </div>
     </div>
 
-    <div class="admin-section" data-admin-tab="fleet">
+    <div class="admin-section" data-admin-tab="traffic">
+  <div class="admin-label" style="margin-bottom:4px">Road closures</div>
+  <div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px;line-height:1.5">
+    Closures are entered here and sorted automatically into the coverage area they fall in. Notifying sends the closure to every unit; the test button sends it only to you.
+  </div>
+  <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:16px">
+    <div class="form-row"><div><label>Road / location</label>
+      <input type="text" id="tc-address" placeholder="e.g. Raritan Ave between 2nd and 4th" autocomplete="off"></div>
+      <div><label>Closed until (optional)</label><input type="datetime-local" id="tc-until"></div></div>
+    <div class="form-row single"><div><label>Detail</label>
+      <input type="text" id="tc-detail" placeholder="e.g. Water main work — use Woodbridge Ave"></div></div>
+    <div id="tc-zone-note" style="font-size:0.78rem;color:var(--gray);margin:2px 0 10px"></div>
+    <button class="card-save-btn" onclick="tcAddClosure()">+ Add closure</button>
+    <button class="edit-mode-btn" onclick="tcTestClosure()" style="margin-left:8px">🧪 Test to me</button>
+    <span id="tc-status" style="font-size:0.78rem;color:var(--gray);margin-left:10px"></span>
+  </div>
+  <div id="tc-list"><div style="color:var(--gray);font-size:0.82rem">Loading closures…</div></div>
+</div>
+<div class="admin-section" data-admin-tab="fleet">
       <div class="admin-section-title">🔧 Service Status</div>
       <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">Take a rig out of service and it stops being offered to dispatchers on both apps — it's skipped by "Add Additional Rig" and flagged in the rig picker. Set an optional return time and it comes back automatically.</p>
       <div id="veh-status-list"></div>
@@ -1874,6 +1900,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         <button class="ticket-tab" data-ds="hospitals" onclick="setDsTab('hospitals')">🏥 Transport Hospitals</button>
         <button class="ticket-tab" data-ds="outside" onclick="setDsTab('outside')">📞 Outside-Coverage Contacts</button>
         <button class="ticket-tab" data-ds="notify" onclick="setDsTab('notify')">🔔 Notifications &amp; Permissions</button>
+        <button class="ticket-tab" data-ds="traffic" onclick="setDsTab('traffic')">🚧 Road Closures</button>
       </div>
       <div id="ds-content"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
@@ -2417,6 +2444,147 @@ function showPage(name) {
   window.scrollTo(0, 0);
 }
 // ── ADMIN PANEL TABS ──
+// ── TRAFFIC & CLOSURES ──
+// Closures are stored in Firestore and sorted by the coverage area their coordinates fall in, using
+// the same polygons the dispatch console uses. Google geocoding resolves the road the admin types.
+var TC_CACHE = [], tcGeo = { lat: null, lng: null, resolved: "" };
+function tcZoneOf(lat, lng) {
+  if (!lat || !lng || typeof mDetectZoneInfo !== "function") return { type: "unknown", area: "" };
+  return mDetectZoneInfo(lat, lng) || { type: "unknown", area: "" };
+}
+function tcBindAddress() {
+  var el = document.getElementById("tc-address"); if (!el || el.dataset.bound) return;
+  el.dataset.bound = "1";
+  var note = document.getElementById("tc-zone-note");
+  var resolve = function() {
+    var q = el.value.trim();
+    if (!q || !(window.google && google.maps && google.maps.Geocoder)) { note.textContent = ""; return; }
+    new google.maps.Geocoder().geocode({ address: q, region: "us" }, function(res, st) {
+      if (st !== "OK" || !res || !res[0]) { tcGeo = { lat: null, lng: null, resolved: "" }; note.innerHTML = '<span style="color:#ff9090">Couldn\'t place that road — it will be filed as Outside / unknown</span>'; return; }
+      var loc = res[0].geometry.location;
+      tcGeo = { lat: loc.lat(), lng: loc.lng(), resolved: res[0].formatted_address };
+      var z = tcZoneOf(tcGeo.lat, tcGeo.lng);
+      var label = z.type === "primary" ? "Primary" : z.type === "secondary" ? "Secondary" : "Outside the coverage area";
+      var colour = z.type === "primary" ? "#7dedb5" : z.type === "secondary" ? "#ffc84a" : "#ff9090";
+      note.innerHTML = '📍 ' + escapeHtml(tcGeo.resolved) + ' — <b style="color:' + colour + '">' + label + '</b>' + (z.area ? ' · ' + escapeHtml(mZoneAreaLabel(z.area)) : '');
+    });
+  };
+  el.addEventListener("blur", resolve);
+  el.addEventListener("keydown", function(e){ if (e.key === "Enter") { e.preventDefault(); resolve(); } });
+  if (window.google && google.maps && google.maps.places) {
+    try { var ac = new google.maps.places.Autocomplete(el, { componentRestrictions: { country: "us" } });
+      ac.addListener("place_changed", function(){ var p = ac.getPlace(); if (p && p.geometry) { tcGeo = { lat: p.geometry.location.lat(), lng: p.geometry.location.lng(), resolved: p.formatted_address || el.value }; resolve(); } }); } catch (e) {}
+  }
+}
+function tcClosureBody(c) {
+  var until = c.until ? new Date(c.until) : null;
+  return "🚧 ROAD CLOSURE\n" + (c.resolved || c.road) +
+    (c.detail ? "\n" + c.detail : "") +
+    (until ? "\nUntil: " + until.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "") +
+    (c.lat && c.lng ? "\n\nhttps://www.google.com/maps/dir/?api=1&destination=" + c.lat + "," + c.lng + "&travelmode=driving" : "") +
+    "\n" + ((typeof M_ORG_FOOTER !== "undefined" ? M_ORG_FOOTER : "MC Hatzolah") + (currentUserUnit ? " " + currentUserUnit : ""));
+}
+function tcAddClosure() {
+  var road = (document.getElementById("tc-address").value || "").trim();
+  var st = document.getElementById("tc-status");
+  if (!road) { st.textContent = "Enter the road first"; return; }
+  var z = tcZoneOf(tcGeo.lat, tcGeo.lng);
+  var entry = { road: road, resolved: tcGeo.resolved || road, detail: (document.getElementById("tc-detail").value || "").trim(),
+                until: document.getElementById("tc-until").value || "", lat: tcGeo.lat, lng: tcGeo.lng,
+                zone: z.type, zoneArea: z.area || "", active: true,
+                createdAt: new Date().toISOString(), createdBy: currentUserUnit || "" };
+  st.textContent = "Saving…";
+  db.collection("trafficClosures").add(entry).then(function() {
+    document.getElementById("tc-address").value = ""; document.getElementById("tc-detail").value = "";
+    document.getElementById("tc-until").value = ""; document.getElementById("tc-zone-note").textContent = "";
+    tcGeo = { lat: null, lng: null, resolved: "" };
+    st.textContent = "Added — not yet sent to anyone";
+    tcLoad();
+  }).catch(function(e){ st.textContent = "Error: " + e.message; });
+}
+function tcTestClosure() {
+  var road = (document.getElementById("tc-address").value || "").trim();
+  var st = document.getElementById("tc-status");
+  if (!road) { st.textContent = "Enter the road first"; return; }
+  var z = tcZoneOf(tcGeo.lat, tcGeo.lng);
+  var body = tcClosureBody({ road: road, resolved: tcGeo.resolved || road, detail: (document.getElementById("tc-detail").value || "").trim(),
+                             until: document.getElementById("tc-until").value || "", lat: tcGeo.lat, lng: tcGeo.lng });
+  var zLabel = z.type === "primary" ? "Primary" : z.type === "secondary" ? "Secondary" : "Outside";
+  st.textContent = "Sending test…";
+  db.collection("users").doc(currentUser.uid).get().then(function(snap) {
+    var phone = snap.exists ? snap.data().phone : "";
+    if (!phone) { st.textContent = "No phone number on your account"; return; }
+    var p = mGetFirstPhone(phone);
+    if (!p) { st.textContent = "Your number isn't in a format we can text"; return; }
+    return mSendClickSendSMS([p], "[TEST — would go to " + zLabel + "] " + body).then(function() {
+      st.textContent = "Test sent to you only · this closure sorts into " + zLabel;
+    });
+  }).catch(function(e){ st.textContent = "Error: " + e.message; });
+}
+// Every unit that may receive texts — the same eligibility rule call notifications use.
+function tcAllPhones() {
+  return db.collection("users").get().then(function(snap) {
+    var phones = [];
+    snap.forEach(function(doc) {
+      var u = doc.data();
+      if (!u.unit || !mSmsEligible(u)) return;
+      var p = mGetFirstPhone(u.phone);
+      if (p) { mPhoneUnitMap[p] = u.unit; phones.push(p); }
+    });
+    return phones;
+  }).catch(function(){ return []; });
+}
+function tcNotify(id) {
+  var c = TC_CACHE.filter(function(x){ return x.id === id; })[0]; if (!c) return;
+  var zLabel = c.zone === "primary" ? "Primary" : c.zone === "secondary" ? "Secondary" : "Outside";
+  if (!confirm("Send this closure to every unit?\n\nArea: " + zLabel)) return;
+  var st = document.getElementById("tc-status"); st.textContent = "Sending…";
+  tcAllPhones().then(function(phones) {
+    if (!phones.length) { document.getElementById("tc-status").textContent = "No units with a usable number"; return; }
+    return mSendClickSendSMS(phones, tcClosureBody(c));
+  }).then(function() {
+    return db.collection("trafficClosures").doc(id).set({ notifiedAt: new Date().toISOString(), notifiedBy: currentUserUnit || "" }, { merge: true });
+  }).then(function(){ st.textContent = "Sent"; tcLoad(); })
+    .catch(function(e){ st.textContent = "Error: " + e.message; });
+}
+function tcToggle(id, active) {
+  db.collection("trafficClosures").doc(id).set({ active: !!active }, { merge: true }).then(tcLoad);
+}
+function tcDelete(id) {
+  if (!confirm("Delete this closure?")) return;
+  db.collection("trafficClosures").doc(id).delete().then(tcLoad);
+}
+function tcLoad() {
+  var host = document.getElementById("tc-list"); if (!host) return;
+  db.collection("trafficClosures").get().then(function(snap) {
+    TC_CACHE = []; snap.forEach(function(d){ TC_CACHE.push(Object.assign({ id: d.id }, d.data())); });
+    TC_CACHE.sort(function(a, b){ return (b.createdAt || "").localeCompare(a.createdAt || ""); });
+    var groups = [["primary", "Primary coverage area", "#7dedb5"], ["secondary", "Secondary coverage area", "#ffc84a"], ["outside", "Outside the coverage area", "#ff9090"], ["unknown", "Not placed on the map", "var(--gray)"]];
+    var html = "";
+    groups.forEach(function(g) {
+      var rows = TC_CACHE.filter(function(c){ return (c.zone || "unknown") === g[0]; });
+      if (!rows.length) return;
+      html += '<div class="admin-label" style="margin:16px 0 6px;color:' + g[2] + '">' + g[1] + ' · ' + rows.length + '</div>';
+      rows.forEach(function(c) {
+        var expired = c.until && new Date(c.until) < new Date();
+        html += '<div style="background:var(--card-bg);border:1px solid ' + (c.active && !expired ? "var(--card-border)" : "rgba(255,255,255,0.08)") + ';border-radius:9px;padding:10px 12px;margin-bottom:8px;' + (c.active && !expired ? "" : "opacity:0.55") + '">' +
+          '<div style="font-family:\'Oswald\',sans-serif;font-size:0.92rem;font-weight:700;color:var(--white)">🚧 ' + escapeHtml(c.resolved || c.road) + (expired ? ' <span style="font-size:0.66rem;color:var(--gray)">EXPIRED</span>' : '') + '</div>' +
+          (c.detail ? '<div style="font-size:0.8rem;color:var(--gray);margin-top:2px">' + escapeHtml(c.detail) + '</div>' : '') +
+          '<div style="font-size:0.72rem;color:var(--gray);margin-top:4px">' +
+            (c.until ? 'Until ' + new Date(c.until).toLocaleString() + ' · ' : '') +
+            (c.zoneArea ? escapeHtml(mZoneAreaLabel(c.zoneArea)) + ' · ' : '') +
+            (c.notifiedAt ? 'sent ' + new Date(c.notifiedAt).toLocaleString() + (c.notifiedBy ? ' by ' + escapeHtml(c.notifiedBy) : '') : '<span style="color:#ffc84a">not sent yet</span>') +
+          '</div>' +
+          '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
+            '<button class="edit-mode-btn" style="padding:5px 11px;font-size:0.7rem" onclick="tcNotify(\'' + c.id + '\')">📢 Notify units</button>' +
+            '<button class="edit-mode-btn" style="padding:5px 11px;font-size:0.7rem" onclick="tcToggle(\'' + c.id + '\',' + (c.active ? "false" : "true") + ')">' + (c.active ? "⏸ Mark reopened" : "▶ Mark closed again") + '</button>' +
+            '<button class="del-btn" style="padding:5px 11px;font-size:0.7rem" onclick="tcDelete(\'' + c.id + '\')">🗑 Delete</button>' +
+          '</div></div>';
+      });
+    });
+    host.innerHTML = html || '<div style="color:var(--gray);font-size:0.82rem">No closures recorded.</div>';
+  }).catch(function(e){ host.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Couldn\'t load closures: ' + e.message + '</div>'; });
+}
 function setAdminTab(tab) {
   document.querySelectorAll("#admin-tabbar .admin-tab").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
   document.querySelectorAll(".admin-section[data-admin-tab]").forEach(function(s) { s.classList.toggle("tab-visible", s.getAttribute("data-admin-tab") === tab); });
@@ -2431,6 +2599,8 @@ function setAdminTab(tab) {
   else if (typeof tplReleaseCallForm === "function") tplReleaseCallForm();
   if (tab === "fleet" && typeof loadVehiclesList === "function") loadVehiclesList();
   if (tab === "fleet" && typeof initVehBaseMap === "function") initVehBaseMap();
+  if (tab === "traffic") { tcBindAddress(); tcLoad(); }
+
 }
 
 // ── TOKEN ACCEPT ──
@@ -6309,6 +6479,18 @@ var TPL_VARS = [
   ["als",          "ALS provider and ETA"],
   ["mapsLink",     "Google Maps directions link"],
   ["time",         "Time and date the message was sent"],
+  ["natureUpper",  "Call nature in capitals, e.g. TRAUMA"],
+  ["units",        "Units on the call, comma separated"],
+  ["driver",       "Driver's unit"],
+  ["rig",          "Rig on the call"],
+  ["ageLine",      "Age as entered, e.g. 8 m"],
+  ["wazeLink",     "Waze navigation link"],
+  ["org",          "Organisation footer line"],
+  ["dateTime",     "Date and time, e.g. 09/29/2026  Time: 21:16"],
+  ["baseName",     "Base / garage name, e.g. MC Garage"],
+  ["baseAddress",  "Base / garage street address"],
+  ["baseMapsLink", "Google Maps directions to the base"],
+  ["baseWazeLink", "Waze directions to the base"],
   ["header",       "Message header (ALS/BLS/PD messages)"],
   ["detail",       "Detail line (ALS/BLS/PD messages)"],
   ["note",         "The dispatcher's note text"]
@@ -6340,6 +6522,7 @@ function tplSampleCall() {
     patientAge: (typeof mNcAge !== "undefined" && mNcAge) ? mNcAge : "adult",
     patientSex: (typeof mNcSex !== "undefined" && mNcSex) ? mNcSex : "",
     accessCode: v("m-nc-accesscode"), callbackNumber: v("m-nc-callback"), dispatchNotes: v("m-nc-notes"),
+    lat: parseFloat(v("m-nc-lat")) || null, lng: parseFloat(v("m-nc-lng")) || null,   // the Waze link needs these
     alsActivated: true, alsProvider: "JFK ALS", alsEta: "8",
     mapsLink: v("m-nc-mapslink") || "https://www.google.com/maps/dir/?api=1&destination=40.44,-74.42&travelmode=driving"
   };
@@ -6349,6 +6532,7 @@ function tplSampleCall() {
     call.zone = "secondary"; call.callNature = "02 - Cardiac";
     call.patientAgeNum = "72"; call.patientSex = "male"; call.accessCode = "[5+4] then 3 then 1";
     call.callbackNumber = "732-555-1234"; call.dispatchNotes = "Dog on premises, use the side entrance";
+    call.lat = 40.44; call.lng = -74.42;
   }
   return call;
 }
@@ -6371,7 +6555,14 @@ function tplMountRealForm() {
     host.appendChild(form);
     if (!host.dataset.primed) {
       host.dataset.primed = "1";
-      try { if (typeof mOpenNewCallForm === "function") mOpenNewCallForm(); } catch (e) {}
+      // mOpenNewCallForm() starts by navigating to the console — which would take the admin panel
+      // off screen and leave it blank once the modal closes. Prime the form without navigating.
+      var realGoTo = window.mGoTo;
+      try {
+        window.mGoTo = function(){};
+        if (typeof mOpenNewCallForm === "function") mOpenNewCallForm();
+      } catch (e) {}
+      window.mGoTo = realGoTo;
       if (form.parentElement !== host) host.appendChild(form);
     }
   }
@@ -6392,7 +6583,9 @@ function tplMountRealForm() {
 // Hand the form back to the console whenever we leave this tab
 // Hand the call form back to the console whenever we leave this tab
 function closeTplSampleModal() {
-  var modal = document.getElementById("tpl-modal"); if (modal) modal.classList.remove("show");
+  // Done must hand the borrowed call form back to the console — otherwise it stays parented to the
+  // modal and the console opens with no form at all.
+  tplReleaseCallForm();
   renderTemplateSummary(); renderTemplatePreview();
 }
 function tplReleaseCallForm() {
@@ -6514,7 +6707,8 @@ var TPL_SAMPLE_UNUSED = {
 };
 function tplExtraVars() {
   var g = function(id, dflt) { var el = document.getElementById("tpls-" + id); return el ? el.value : dflt; };
-  return { header: g("__header", "🚨 ALS DISPATCHED"), detail: g("__detail", "ALS: JFK ALS (A7) ETA 8 min"), note: g("__note", "Patient is in the lobby by the front desk") };
+  return { header: g("__header", "🚨 ALS DISPATCHED"), detail: g("__detail", "ALS: JFK ALS (A7) ETA 8 min"), note: g("__note", "Patient is in the lobby by the front desk"),
+           org: ((typeof M_ORG_FOOTER !== "undefined" && M_ORG_FOOTER) ? M_ORG_FOOTER : "MC Hatzolah") + (currentUserUnit ? " " + currentUserUnit : "") };
 }
 function loadTemplateEditor() {
   var which = (document.getElementById("tpl-which")||{}).value || "assignment";
@@ -6644,7 +6838,7 @@ function renderTemplatePreview() {
   var box = document.getElementById("tpl-body"), out = document.getElementById("tpl-preview");
   if (!box || !out) return;
   var vars = Object.assign(mCallVars(tplSampleCall()), tplExtraVars());
-  var text = mRenderTemplate(box.value, vars);
+  var text = mRenderTemplate(mCleanTemplate(box.value), vars);
   out.textContent = text || "(this template renders nothing)";
 }
 function saveTemplate() {
@@ -6668,7 +6862,7 @@ function sendTemplateTest() {
   var btn = document.getElementById("tpl-test-btn");
   if (!currentUser) { showToast("Sign in first", true); return; }
   var vars = Object.assign(mCallVars(tplSampleCall()), tplExtraVars());
-  var body = mRenderTemplate(box.value, vars);
+  var body = mRenderTemplate(mCleanTemplate(box.value), vars);
   if (!body.trim()) { showToast("This template renders nothing — add some text first", true); return; }
   if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
   db.collection("users").doc(currentUser.uid).get().then(function(snap) {
@@ -6678,7 +6872,7 @@ function sendTemplateTest() {
       if (st) { st.textContent = "No phone on your profile"; st.style.color = "#ff9090"; }
       return;
     }
-    return mSendClickSendSMS([phone], "[TEMPLATE TEST] " + body).then(function() {
+    return mSendClickSendSMS([phone], "[TEMPLATE TEST v" + DESKTOP_VERSION + "] " + body).then(function() {
       showToast("📱 Test sent to " + phone);
       if (st) { st.textContent = "Test sent to " + phone; st.style.color = "#7dedb5"; }
     });
@@ -7724,6 +7918,143 @@ function dsRenderNotifyMatrix(focusKey) {
     if (focusKey) { var f = document.getElementById("ds-add-" + focusKey); if (f) f.focus(); }
   });
 }
+// ── ROAD CLOSURES ──────────────────────────────────────────────────────────────────────────────
+// Closures are grouped by the coverage area they fall in, so a dispatcher can see at a glance what
+// affects a standard response versus a load-a-rig run. The area is worked out from the closure's
+// own coordinates using the same polygons as call zoning.
+var RC_LIST = [], RC_LOADED = false;
+function rcZoneOf(c) {
+  if (c.lat && c.lng && typeof mDetectZoneInfo === "function") {
+    var z = mDetectZoneInfo(c.lat, c.lng);
+    if (z) return z;
+  }
+  return { type: c.zone || "outside", area: "" };
+}
+function rcLoad() {
+  return db.collection("roadClosures").get().then(function(snap) {
+    RC_LIST = []; snap.forEach(function(doc){ RC_LIST.push(Object.assign({ id: doc.id }, doc.data())); });
+    RC_LIST.sort(function(a, b){ return String(b.createdAt || "").localeCompare(String(a.createdAt || "")); });
+    RC_LOADED = true;
+  }).catch(function(){ RC_LOADED = true; });
+}
+function rcActive(c) {
+  if (c.cleared) return false;
+  if (c.until && new Date(c.until) < new Date()) return false;
+  return true;
+}
+function rcMessage(c) {
+  var z = rcZoneOf(c);
+  var area = z.type === "primary" ? "Primary area" : z.type === "secondary" ? "Secondary area" : "Outside the coverage area";
+  return "🚧 ROAD CLOSURE — " + area +
+         "\n" + (c.road || "") +
+         (c.detail ? "\n" + c.detail : "") +
+         (c.until ? "\nExpected until: " + new Date(c.until).toLocaleString([], { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "") +
+         (c.lat && c.lng ? "\n\nhttps://www.google.com/maps/dir/?api=1&destination=" + c.lat + "," + c.lng + "&travelmode=driving" : "");
+}
+function renderDsTraffic(el) {
+  el.innerHTML =
+    '<div class="admin-label" style="margin-bottom:4px">Add a road closure</div>' +
+    '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:8px;line-height:1.5">Give the road and, where you can, an address so the closure can be placed in a coverage area. ' +
+      'Closures are listed below grouped by area. Nothing is sent until you press Notify.</div>' +
+    '<div class="form-row"><div><label>Road / location</label><input type="text" id="rc-road" placeholder="e.g. Raritan Ave at 2nd Ave"></div>' +
+      '<div><label>Address for the map (optional)</label><input type="text" id="rc-addr" placeholder="e.g. 415 Raritan Ave, Highland Park"></div></div>' +
+    '<div class="form-row"><div><label>Detail</label><input type="text" id="rc-detail" placeholder="e.g. Closed both directions, water main"></div>' +
+      '<div><label>Expected until (optional)</label><input type="datetime-local" id="rc-until"></div></div>' +
+    '<div class="form-row single"><div><label>Coverage area (used if there is no address)</label>' +
+      '<select id="rc-zone"><option value="primary">Primary</option><option value="secondary">Secondary</option><option value="outside">Outside</option></select></div></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 20px">' +
+      '<button class="edit-mode-btn" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy)" onclick="rcAdd(false)">＋ Save closure</button>' +
+      '<button class="edit-mode-btn" onclick="rcAdd(true)">📱 Test on me only</button>' +
+      '<span id="rc-status" style="font-size:0.78rem;color:var(--gray);align-self:center"></span>' +
+    '</div>' +
+    '<div class="admin-label" style="margin-bottom:6px">Current closures by coverage area</div>' +
+    '<div id="rc-list" style="font-size:0.85rem;color:var(--gray)">Loading…</div>';
+  (RC_LOADED ? Promise.resolve() : rcLoad()).then(rcRenderList);
+}
+function rcRenderList() {
+  var host = document.getElementById("rc-list"); if (!host) return;
+  var groups = { primary: [], secondary: [], outside: [] };
+  RC_LIST.filter(rcActive).forEach(function(c){ var z = rcZoneOf(c); (groups[z.type] || groups.outside).push({ c: c, area: z.area }); });
+  var block = function(key, label, color) {
+    var rows = groups[key];
+    return '<div style="margin-bottom:16px">' +
+      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:' + color + ';margin-bottom:6px">' + label + ' · ' + rows.length + '</div>' +
+      (rows.length ? rows.map(function(r) {
+        var c = r.c;
+        return '<div style="border:1px solid var(--card-border);border-left:3px solid ' + color + ';border-radius:8px;padding:8px 10px;margin-bottom:6px">' +
+          '<div style="color:var(--white);font-weight:600">' + escapeHtml(c.road || "(no road given)") + (r.area ? ' <span style="font-size:0.7rem;color:var(--gray)">· ' + escapeHtml(mZoneAreaLabel(r.area) || r.area) + '</span>' : '') + '</div>' +
+          (c.detail ? '<div style="font-size:0.78rem;margin-top:2px">' + escapeHtml(c.detail) + '</div>' : '') +
+          (c.until ? '<div style="font-size:0.72rem;color:var(--gray);margin-top:2px">Until ' + escapeHtml(new Date(c.until).toLocaleString()) + '</div>' : '') +
+          '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">' +
+            '<button class="edit-mode-btn" style="padding:4px 10px;font-size:0.68rem" onclick="rcNotify(\'' + c.id + '\',false)">📣 Notify</button>' +
+            '<button class="edit-mode-btn" style="padding:4px 10px;font-size:0.68rem" onclick="rcNotify(\'' + c.id + '\',true)">📱 Test</button>' +
+            '<button class="del-btn" style="padding:4px 10px;font-size:0.68rem" onclick="rcClear(\'' + c.id + '\')">✓ Clear</button>' +
+          '</div></div>';
+      }).join("") : '<div style="font-size:0.78rem;color:var(--gray)">None</div>') +
+    '</div>';
+  };
+  host.innerHTML = block("primary", "🟢 Primary response area", "#7dedb5") +
+                   block("secondary", "🟡 Secondary response area", "#ffc84a") +
+                   block("outside", "🔴 Outside the coverage area", "#ff9090");
+}
+function rcAdd(testOnly) {
+  var road = (document.getElementById("rc-road").value || "").trim();
+  var st = document.getElementById("rc-status");
+  if (!road) { st.textContent = "Enter the road or location first."; st.style.color = "#ff9090"; return; }
+  var addr = (document.getElementById("rc-addr").value || "").trim();
+  var rec = { road: road, detail: (document.getElementById("rc-detail").value || "").trim(),
+              until: document.getElementById("rc-until").value || "", address: addr,
+              zone: document.getElementById("rc-zone").value, lat: null, lng: null, cleared: false,
+              createdAt: new Date().toISOString(), createdBy: currentUserUnit || "" };
+  st.style.color = "var(--gray)"; st.textContent = addr ? "Locating…" : "Saving…";
+  var located = addr && window.google && google.maps && google.maps.Geocoder
+    ? new Promise(function(resolve) {
+        new google.maps.Geocoder().geocode({ address: addr, region: "us" }, function(res, s) {
+          if (s === "OK" && res && res[0] && res[0].geometry) { rec.lat = res[0].geometry.location.lat(); rec.lng = res[0].geometry.location.lng(); }
+          resolve();
+        });
+      })
+    : Promise.resolve();
+  located.then(function() {
+    if (testOnly) { st.textContent = "Sending test…"; return rcSend(rec, true).then(function(){ st.textContent = "Test sent to you only."; }); }
+    return db.collection("roadClosures").add(rec).then(function(ref) {
+      RC_LIST.unshift(Object.assign({ id: ref.id }, rec));
+      ["rc-road","rc-addr","rc-detail","rc-until"].forEach(function(id){ document.getElementById(id).value = ""; });
+      st.textContent = "Saved — press Notify on it when you want it sent.";
+      rcRenderList();
+    });
+  }).catch(function(e){ st.style.color = "#ff9090"; st.textContent = "Error: " + e.message; });
+}
+function rcSend(rec, testOnly) {
+  var body = rcMessage(rec);
+  if (testOnly) return mSendTestToSelf(body);
+  return db.collection("users").get().then(function(snap) {
+    var phones = [];
+    snap.forEach(function(d){ var u = d.data(); if (mSmsEligible(u)) { var p = mGetFirstPhone(u.phone); if (p) phones.push(p); } });
+    return phones.length ? mSendClickSendSMS(phones, body) : null;
+  });
+}
+function mSendTestToSelf(body) {
+  return db.collection("users").doc(currentUser.uid).get().then(function(s) {
+    var p = s.exists ? mGetFirstPhone(s.data().phone) : null;
+    return p ? mSendClickSendSMS([p], "[TEST] " + body) : null;
+  });
+}
+function rcNotify(id, testOnly) {
+  var c = RC_LIST.filter(function(x){ return x.id === id; })[0]; if (!c) return;
+  var st = document.getElementById("rc-status"); if (st) { st.style.color = "var(--gray)"; st.textContent = testOnly ? "Sending test…" : "Notifying…"; }
+  (testOnly ? mSendTestToSelf(rcMessage(c)) : rcSend(c, false)).then(function() {
+    if (!testOnly) db.collection("roadClosures").doc(id).set({ notifiedAt: new Date().toISOString() }, { merge: true });
+    if (st) st.textContent = testOnly ? "Test sent to you only." : "Sent to all members.";
+  }).catch(function(e){ if (st) { st.style.color = "#ff9090"; st.textContent = "Error: " + e.message; } });
+}
+function rcClear(id) {
+  if (!confirm("Clear this closure? It stops showing and is no longer sent.")) return;
+  db.collection("roadClosures").doc(id).set({ cleared: true, clearedAt: new Date().toISOString() }, { merge: true }).then(function() {
+    RC_LIST = RC_LIST.map(function(c){ return c.id === id ? Object.assign({}, c, { cleared: true }) : c; });
+    rcRenderList();
+  });
+}
 function renderDsNotify(el) {
   el.innerHTML =
     '<div class="admin-label" style="margin-bottom:4px">Who receives what</div>' +
@@ -7737,6 +8068,7 @@ function renderDispatchSettings() {
   var el = document.getElementById("ds-content"); if (!el) return;
   dsEnsureEdit(); var E = DS_EDIT;
   if (dsTab === "notify") { renderDsNotify(el); return; }
+  if (dsTab === "traffic") { renderDsTraffic(el); return; }
   var inp = function(v, ph, oninput, extra) { return '<input value="' + String(v||"").replace(/"/g,"&quot;") + '" placeholder="' + ph + '" oninput="' + oninput + '" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.85rem;' + (extra||"") + '">'; };
   if (dsTab === "natures") {
     el.innerHTML = '<div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px">The call-nature list dispatchers pick from, in this order. <strong>Code</strong> is the 2-digit protocol number; <strong>ALS</strong> marks natures that flash "ALS Recommended by Protocol". Existing calls keep whatever nature they were posted with.</div>' +
@@ -7889,6 +8221,7 @@ function resetDispatchSettingsTab() {
   if (dsTab === "mutualAid") DS_EDIT.mutualAid = (MUTUAL_AID_911_DEFAULT||[]).map(function(r){ return { match: r.match.slice(), borough: r.borough, pd: r.pd, bls: r.bls, als: r.als }; });
   if (dsTab === "hospitals") DS_EDIT.hospitals = DISPATCH_HOSPITALS_DEFAULT.filter(function(h){ return h !== "Other"; });
   if (dsTab === "als") DS_EDIT.alsNatureCodes = ALS_NATURE_CODES_DEFAULT.slice();
+  if (dsTab === "traffic") { showToast("Road closures aren't part of the built-in defaults", true); return; }
   if (dsTab === "outside") DS_EDIT.outsideContacts = [];
   if (dsTab === "notify") { DS_EDIT.adminNotifyUnits = ["MC-01","MC-10","MC-20"]; DS_EDIT.ticketManagers = []; DS_EDIT.itTicketUnits = ["MC-16"]; DS_EDIT.notifyRules = { newTicket: [], accepted: [], unassigned: [], comment: [], resolved: [] }; }
   if (dsTab === "natures") DS_EDIT.natures = (CALL_NATURES_DEFAULT||[]).map(function(nn){ return { value: nn.value, label: nn.label, als: !!nn.als }; });
@@ -12734,7 +13067,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.66c";
+var DESKTOP_VERSION = "9.75b";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -13888,6 +14221,12 @@ function mLoadDispatchSettings() {
     if (Array.isArray(ds.mutualAid) && ds.mutualAid.length) M_MUTUAL_AID_911 = ds.mutualAid.map(function(r){ return { match: (r.match||[]).map(function(x){ return String(x).toLowerCase(); }), borough: r.borough||"", bls: r.bls||"", als: r.als||"", pd: r.pd||"" }; });
     if (Array.isArray(ds.hospitals) && ds.hospitals.length) { M_HOSPITALS = ds.hospitals.slice(); if (M_HOSPITALS.indexOf("Other") === -1) M_HOSPITALS.push("Other"); }
     if (Array.isArray(ds.adminNotifyUnits)) M_ADMIN_NOTIFY_UNITS = ds.adminNotifyUnits.slice();
+    if (ds.orgFooter) M_ORG_FOOTER = ds.orgFooter;
+    if (ds.base && ds.base.address) {
+      if (ds.base.address !== M_BASE.address) { M_BASE.lat = null; M_BASE.lng = null; }   // new address → look it up again
+      M_BASE = Object.assign({}, M_BASE, ds.base);
+    }
+    if (typeof mEnsureBaseCoords === "function") mEnsureBaseCoords();
     M_TICKET_MANAGERS = Array.isArray(ds.ticketManagers) ? ds.ticketManagers.slice() : [];
     if (Array.isArray(ds.itTicketUnits) && ds.itTicketUnits.length) M_IT_TICKET_UNITS = ds.itTicketUnits.slice();
     if (Array.isArray(ds.alsNatureCodes) && ds.alsNatureCodes.length) M_ALS_NATURE_CODES = ds.alsNatureCodes.slice();
@@ -14792,11 +15131,12 @@ function mGetFirstPhone(phone) {
 // text with {variables}; a line whose variables are all empty is dropped, so optional fields
 // (cross streets, access code…) never leave a blank line behind.
 var M_SMS_TEMPLATE_DEFAULTS = {
-  assignment: "🚑 YOU HAVE BEEN ASSIGNED\n{zoneLine}\n{poi}\n{address}\n{patient} | {nature}\nAccess code: {accessCode}\nNotes: {notes}\n{mapsLink}\n{time}",
-  admin:      "📟 ADMIN CALL NOTIFICATION\n{zoneLine}\n{poi}\n{address}\n{patient} | {nature}\nAccess code: {accessCode}\nNotes: {notes}\n{mapsLink}\n{time}",
+  assignment: "{zoneLine}\n{poi}\n{address}\nCALL TYPE: {natureUpper}\nCB: {callback}\nBLS: {units}\nDRIVER: {driver}\nAGE: {ageLine}\nACCESS CODE: {accessCode}\nNOTES: {notes}\n{mapsLink}\n\n{wazeLink}\n\n{org}\nDate: {dateTime}",
+  admin:      "📟 ADMIN CALL NOTIFICATION\n{zoneLine}\n{poi}\n{address}\nCALL TYPE: {natureUpper}\nCB: {callback}\nBLS: {units}\nDRIVER: {driver}\nAGE: {ageLine}\nACCESS CODE: {accessCode}\nNOTES: {notes}\n{mapsLink}\n\n{wazeLink}\n\n{org}\nDate: {dateTime}",
   resource:   "{header}\n{address}\n{detail}\n{time}",
   note:       "📝 CALL UPDATE\n{address}\n{note}\n{time}",
-  callback:   "📞 CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}"
+  callback:   "📞 CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
+  rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}"
 };
 var M_SMS_TEMPLATES = {};
 function mLoadSmsTemplates() {
@@ -14805,13 +15145,24 @@ function mLoadSmsTemplates() {
     M_SMS_TEMPLATES = (snap && snap.exists) ? (snap.data() || {}) : {};
   }).catch(function(){ M_SMS_TEMPLATES = {}; });
 }
+// A template saved before the format change can carry both {time} and the newer {dateTime} line.
+// Drop the older one so only a single timestamp is ever rendered.
+function mStripInvisible(s) { return String(s == null ? "" : s).replace(/[\u200B-\u200D\u2060\uFEFF]/g, ""); }
+function mCleanTemplate(t) {
+  if (typeof t !== "string") return t;
+  t = mStripInvisible(t);
+  if (t.indexOf("{dateTime}") === -1) return t;
+  return t.split("\n").filter(function(line){ return line.trim() !== "{time}"; }).join("\n");
+}
 function mTemplateFor(key) {
-  var t = M_SMS_TEMPLATES && M_SMS_TEMPLATES[key];
+  var t = mCleanTemplate(M_SMS_TEMPLATES && M_SMS_TEMPLATES[key]);
   return (typeof t === "string" && t.trim()) ? t : M_SMS_TEMPLATE_DEFAULTS[key];
 }
 // Fill {variables}; drop any line left with nothing but punctuation and labels.
 function mRenderTemplate(tpl, vars) {
-  return String(tpl || "").split("\n").map(function(line) {
+  return mStripInvisible(tpl).split("\n").map(function(line) {
+    line = mStripInvisible(line);
+    if (!line.trim()) return "";                     // a deliberate blank line in the template
     var used = [], filled = line.replace(/\{(\w+)\}/g, function(_, k) {
       var v = vars[k] == null ? "" : String(vars[k]);
       used.push(v);
@@ -14820,7 +15171,19 @@ function mRenderTemplate(tpl, vars) {
     if (used.length && used.every(function(v){ return !v.trim(); })) return null;   // all its variables were empty
     filled = filled.replace(/\s*\|\s*\|\s*/g, " | ").replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, "");   // tidy dividers left by empty values
     return filled.trim() ? filled : null;
-  }).filter(function(l){ return l !== null; }).join("\n");
+  }).filter(function(l){ return l !== null; })
+   .filter(function(l, i, arr) {
+     if (l === "") return i > 0 && arr[i-1] !== "" && i < arr.length - 1;   // no leading, double or trailing blanks
+     // A saved template may still carry the old {time} line alongside the newer "Date: …" line —
+     // only one timestamp is ever wanted, so drop the extra.
+     if (l === "") return true;
+     var isStamp = /^\s*(Date:\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}/.test(l) || /^\s*\d{1,2}:\d{2}(\s|$)/.test(l);
+     if (!isStamp) return true;
+     return !arr.slice(0, i).some(function(prev) {
+       return /^\s*(Date:\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}/.test(prev) || /^\s*\d{1,2}:\d{2}(\s|$)/.test(prev);
+     });
+   })
+   .join("\n");
 }
 function mCallVars(call) {
   var rawA = mCleanAddress(call.address || "");
@@ -14831,8 +15194,47 @@ function mCallVars(call) {
   var patient = call.patientAgeNum ? (call.patientAgeNum + " YO" + sex)
               : (call.patientAge === "pediatric" ? ("Pediatric " + sex).trim()
               : call.patientAge === "adult" ? ("Adult " + sex).trim() : sex);
+  // Units on the call, and whoever is driving the rig
+  var unitList = [], driver = "";
+  (call.crews || []).forEach(function(crew, ci) {
+    if (!crew) return;
+    Object.keys(crew).forEach(function(role) {
+      if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
+      if (unitList.indexOf(crew[role]) === -1) unitList.push(crew[role]);
+      if (!driver && typeof mIsDriverRole === "function" && mIsDriverRole(call, ci, role)) driver = crew[role];
+    });
+    if (crew.rig && unitList.indexOf(crew.rig) === -1) unitList.push(crew.rig);
+  });
+  var lat = call.lat, lng = call.lng;
   var now = new Date();
+  var pad = function(x){ return (x < 10 ? "0" : "") + x; };
   return {
+    units: unitList.join(", "),
+    driver: driver,
+    rig: (call.crews && call.crews[0] && call.crews[0].rig) || "",
+    ageLine: (function(){
+      var base = call.patientAgeNum ? (call.patientAgeNum + (call.patientAgeUnit ? " " + call.patientAgeUnit : ""))
+               : call.patientAge === "pediatric" ? "Pediatric"
+               : call.patientAge === "adult" ? "Adult" : "";
+      var s = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
+      return (base + (s ? " " + s : "")).trim();
+    })(),
+    wazeLink: (lat && lng) ? ("https://waze.com/ul?ll=" + lat + "," + lng + "&navigate=yes") : "",
+    baseName: (typeof M_BASE !== "undefined" && M_BASE.name) ? M_BASE.name : "",
+    baseAddress: (typeof M_BASE !== "undefined" && M_BASE.address) ? M_BASE.address : "",
+    baseMapsLink: (typeof M_BASE === "undefined") ? "" : (M_BASE.lat && M_BASE.lng
+        ? ("https://www.google.com/maps/dir/?api=1&destination=" + M_BASE.lat + "," + M_BASE.lng + "&travelmode=driving")
+        : (M_BASE.address ? ("http://maps.google.com/maps?daddr=" + encodeURIComponent(M_BASE.address)) : "")),
+    baseWazeLink: (typeof M_BASE !== "undefined") ? (M_BASE.lat && M_BASE.lng
+        ? ("https://waze.com/ul?ll=" + M_BASE.lat + "," + M_BASE.lng + "&navigate=yes")
+        : (M_BASE.address ? ("https://waze.com/ul?q=" + encodeURIComponent(M_BASE.address) + "&navigate=yes") : "")) : "",
+    org: ((typeof M_ORG_FOOTER !== "undefined" && M_ORG_FOOTER) ? M_ORG_FOOTER : "MC Hatzolah") +
+         (function(){
+           var who = call.createdBy ? String(call.createdBy).trim().split(/\s+/)[0]
+                   : (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) ? mCurrentUserUnit : "";
+           return who ? " " + who : "";
+         })(),   // the dispatcher who posted the call
+    dateTime: pad(now.getMonth() + 1) + "/" + pad(now.getDate()) + "/" + now.getFullYear() + "  Time: " + pad(now.getHours()) + ":" + pad(now.getMinutes()),
     zoneLine: call.zone === "secondary" ? "LOAD A RIG" : call.zone === "outside" ? "OUTSIDE ZONE" : "",
     poi: poi,
     address: street + (call.apt ? " | Apt: " + call.apt : ""),
@@ -14842,11 +15244,13 @@ function mCallVars(call) {
     age: call.patientAgeNum || "",
     sex: sex,
     nature: (call.callNature || "").replace(/^\d+\s*-\s*/, ""),
+    natureUpper: (call.callNature || "").replace(/^\d+\s*-\s*/, "").toUpperCase(),
     accessCode: call.accessCode || "",
     callback: call.callbackNumber || "",
     notes: call.dispatchNotes || "",
     als: (call.alsActivated && call.alsProvider) ? (call.alsProvider + (call.alsEta ? " (ETA " + call.alsEta + " min)" : "")) : "",
-    mapsLink: call.mapsLink || "",
+    mapsLink: (lat && lng) ? ("https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving")
+            : (call.mapsLink || ""),
     time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" })
   };
 }
@@ -14878,6 +15282,30 @@ function mPhonesForUnits(units) {
   }).catch(function(){ return []; });
 }
 // Units that are notified of every call, assigned or not
+var M_ORG_FOOTER = "MC Hatzolah";   // footer line on outgoing messages; Admin ▸ Protocols can override
+// Where a unit goes to collect the rig. Admin ▸ Protocols can override (appdata/dispatchSettings.base).
+var M_BASE = { name: "MC Garage", address: "1587 NJ-27, Edison, NJ 08817", lat: null, lng: null };
+// The base's coordinates are looked up from its address (and cached), so the links point at the
+// building rather than at coordinates typed in by hand. Admin ▸ Protocols can set them explicitly.
+function mEnsureBaseCoords() {
+  if (!M_BASE.address || (M_BASE.lat && M_BASE.lng)) return Promise.resolve(M_BASE);
+  try {
+    var cached = JSON.parse(localStorage.getItem("mBaseCoords") || "null");
+    if (cached && cached.address === M_BASE.address && cached.lat && cached.lng) {
+      M_BASE.lat = cached.lat; M_BASE.lng = cached.lng; return Promise.resolve(M_BASE);
+    }
+  } catch (e) {}
+  if (!(window.google && google.maps && google.maps.Geocoder)) return Promise.resolve(M_BASE);
+  return new Promise(function(resolve) {
+    new google.maps.Geocoder().geocode({ address: M_BASE.address, region: "us" }, function(res, st) {
+      if (st === "OK" && res && res[0] && res[0].geometry) {
+        M_BASE.lat = res[0].geometry.location.lat(); M_BASE.lng = res[0].geometry.location.lng();
+        try { localStorage.setItem("mBaseCoords", JSON.stringify({ address: M_BASE.address, lat: M_BASE.lat, lng: M_BASE.lng })); } catch (e) {}
+      }
+      resolve(M_BASE);
+    });
+  });
+}
 var M_ADMIN_NOTIFY_UNITS = ["MC-01", "MC-10", "MC-20"];   // default; Admin ▸ Protocols ▸ Notifications overrides
 var M_TICKET_MANAGERS = [];                                  // empty = everyone with the Logistics role
 var M_IT_TICKET_UNITS = ["MC-16"];                           // IT / app tickets go here; Admin ▸ Protocols ▸ Notifications overrides
@@ -14987,9 +15415,27 @@ function mSmsStamp() {
 }
 function mStampMessage(msg) {
   msg = String(msg || "");
-  return /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(msg) ? msg : msg.replace(/\s+$/, "") + "\n" + mSmsStamp();
+  // Only add a timestamp when the message doesn't already carry one — templates now end with their
+  // own "Date: 09/29/2026  Time: 23:52" line, which this used not to recognise (and so doubled).
+  var tail = msg.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/\s+$/, "").split("\n").slice(-3).join("\n");
+  var hasStamp = /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(tail)      // 23:52 9/29/26
+              || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(tail)                             // 09/29/2026, with or without "Date:"
+              || /\bTime:\s*\d{1,2}:\d{2}/.test(tail);
+  return hasStamp ? msg : msg.replace(/\s+$/, "") + "\n" + mSmsStamp();
+}
+// Nothing leaves the system with two timestamps on it, whichever path built the message.
+function mOneTimestamp(body) {
+  var seen = false;
+  return String(body || "").split("\n").filter(function(l) {
+    var t = l.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").trim();
+    var isStamp = /^(Date:\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}(\s|$)/.test(t) || /^\d{1,2}:\d{2}(\s|$)/.test(t);
+    if (!isStamp) return true;
+    if (seen) return false;
+    seen = true; return true;
+  }).join("\n");
 }
 function mSendClickSendSMS(toNumbers, message) {
+  message = mOneTimestamp(message);
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
   if (!toNumbers.length || !message) return Promise.resolve();
   message = mStampMessage(message);
@@ -15740,6 +16186,9 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   }
 
   var sl = M_STATUS_LOG[status];
+  // Direct response: once someone is on scene, the other units' "En Route to Scene" line is stale —
+  // they aren't being tracked individually any more. The rig keeps its own status line.
+  if (sl && mIsDirectResponse(call) && !isDriver && status === "enroute_scene" && mSceneMarkedBy(call)) sl = null;
   if (sl) {
     var withRig = isDriver && crew.rig && ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1;
     var riding = !isDriver && crew.rig && M_RIDER_STATUSES.indexOf(status) !== -1;   // scene-direct unit riding in the rig
@@ -16245,6 +16694,16 @@ function mRemoveCrew(crewIdx) {
     return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assignedUnits, updatedAt: new Date().toISOString() });
   }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
+// A unit sent to collect the rig gets the base address and directions to it.
+function mTextRigDirections(unitId, call) {
+  mSmsEnqueue(function() {
+    return mEnsureBaseCoords().then(function() {
+      var body = mRenderTemplate(mTemplateFor("rigResponse"), mCallVars(call || {}));
+      if (!body.trim()) return;
+      return mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); });
+    });
+  });
+}
 function mSetUnitResponse(crewIdx, role, response) {
   var callId = mDispSelectedCallId;
   var initialStatus = response === "scene" ? "enroute_scene" : "picking_up_ambo";
@@ -16256,7 +16715,9 @@ function mSetUnitResponse(crewIdx, role, response) {
   update.callEvents = mEvtUnion(mEvt(unitR + (response === "rig" ? " — Responding to Rig" : " — En Route to Scene"), response === "rig" ? "🏠" : "🏃", response === "rig" ? "#ffc84a" : "#7ab8f5", "status"));
   update[key + ".statusAt"] = mNowHHMM();
   update.updatedAt = new Date().toISOString();
-  db.collection("activeCalls").doc(callId).update(update).catch(function(e){ mToast("Error: "+e.message, true); });
+  db.collection("activeCalls").doc(callId).update(update).then(function() {
+    if (response === "rig" && unitR && unitR !== role) mTextRigDirections(unitR, mDispCallCache[callId] || {});
+  }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mSetUnitStatus(crewIdx, role, status) {
   var callId = mDispSelectedCallId;
