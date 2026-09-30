@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.73"; window.M_BUILD = BUILD;
+  var BUILD = "2.76"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -377,7 +377,7 @@ body.m-tile-dragging{overscroll-behavior:none}
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.73</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.76</div>
     </div>
   </div>
 </div>
@@ -408,7 +408,7 @@ body.m-tile-dragging{overscroll-behavior:none}
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.73</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.76</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -5091,7 +5091,12 @@ function mRenderDispatchDetail(call) {
     ["cleared",        "Cleared",    "Unit left the facility"],
     ["home",           "Home",       "Rig back at base"]
   ];
-  var tmHtml = '<div class="m-times" style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:12px">';
+  // Direct response reports dispatch → on scene → transport → back at base; the facility steps
+  // aren't part of that protocol, so they aren't shown as missing.
+  if (mIsDirectResponse(call) && !tms.at_hospital && !tms.cleared) {
+    M_TIMES = M_TIMES.filter(function(t){ return t[0] !== "at_hospital" && t[0] !== "cleared"; });
+  }
+  var tmHtml = '<div class="m-times" style="display:grid;grid-template-columns:repeat(' + M_TIMES.length + ',1fr);gap:4px;margin-bottom:12px">';
   M_TIMES.forEach(function(t, i) {
     var v = tms[t[0]] || "";
     tmHtml += '<div class="m-time-cell" title="' + mEscHtml(t[2]) + ' — tap to edit" onclick="mEditCallTime(\'' + t[0] + '\',\'' + mEscHtml(t[1]) + '\')" ' +
@@ -5286,9 +5291,16 @@ function mBuildCrewRigPanel(call, crewIdx) {
   } else if (every("on_scene_ambo")) {
     body = '<div style="font-size:0.7rem;color:var(--gray)">On scene — set the call disposition below (RMA or Transport).</div>';
   } else if (every("rma_scene")) {
-    body = btn("Mark " + rig + " Heading Back to Base", "returning_base", "#7ab8f5", "blue");
+    // Direct response: RMA → the rig goes straight back to base, no intermediate steps
+    body = mIsDirectResponse(call)
+      ? btn("Mark " + rig + " Back at Base", "back_at_base", "#7ab8f5", "blue")
+      : btn("Mark " + rig + " Heading Back to Base", "returning_base", "#7ab8f5", "blue");
   } else if (every("transporting")) {
-    body = btn("Mark " + rig + " At " + hosp, "at_facility", "#ff9090", "gold");
+    // Direct response: transport → back at base is the next and last update
+    body = mIsDirectResponse(call)
+      ? btn("Mark " + rig + " Back at Base", "back_at_base", "#7ab8f5", "blue") +
+        '<div style="font-size:0.64rem;color:var(--gray);margin-top:6px">Transporting to ' + mEscHtml(hosp) + ' — the next update is the rig back at base</div>'
+      : btn("Mark " + rig + " At " + hosp, "at_facility", "#ff9090", "gold");
   } else if (every("at_facility")) {
     var riders = rigUnits.filter(function(u){ return u.rider; }).map(function(u){ return u.unit; });
     body = btn("Mark " + rig + " Cleared " + hosp + " ER → Base", "clearing_facility", "#7dedb5", "green") +
@@ -5490,6 +5502,25 @@ function mDivertResponse(crewIdx, role, unit) {
   }).then(function(){ mToast(unit + " diverted"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 
+// ── DIRECT RESPONSE (standard call) protocol ──
+// Units respond straight to the scene, so the call is tracked at call level, not unit by unit:
+//   1. the FIRST unit to arrive marks on scene — nobody else marks it
+//   2. the next update is the transport (destination only) or, on an RMA, the rig back at base
+//   3. transport records where they are going, not who is aboard or who is clearing
+//   4. after transport the only remaining update is the rig back at base
+function mIsDirectResponse(call) { return !!call && call.zone !== "secondary"; }
+function mSceneMarkedBy(call) {
+  var ud = call.unitDetails || {}, found = "";
+  (call.crews || []).forEach(function(crew, ci) {
+    if (found || !crew) return;
+    Object.keys(crew).forEach(function(role) {
+      if (found || role === "rig" || !crew[role] || crew[role] === "__added__") return;
+      var d = ud[ci + "_" + role] || {};
+      if (M_ONSCENE_STATUSES.indexOf(d.status) !== -1) found = crew[role];
+    });
+  });
+  return found;
+}
 function mNextStepButton(call, crewIdx, role, unit) {
   var det = mUdOf(call, crewIdx, role);
   var status = det.status || "";
@@ -5499,6 +5530,17 @@ function mNextStepButton(call, crewIdx, role, unit) {
     return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetUnitStatus(' + crewIdx + ',\'' + role + '\',\'' + next + '\')">' + label + '</button>';
   }
   if (!isDriver) {
+    if (mIsDirectResponse(call)) {
+      var onScene = mSceneMarkedBy(call);
+      // Only the first unit to arrive marks on scene
+      if (status === "enroute_scene") {
+        if (!onScene) return btn("Mark " + unit + " On Scene", "on_scene_direct", "#7dedb5", "green");
+        return '<div style="font-size:0.66rem;color:var(--gray);margin-top:4px;line-height:1.35">📍 On scene marked by <b style="color:#7dedb5">' + mEscHtml(onScene) + '</b> — the next update is the transport or the rig back at base</div>';
+      }
+      // On scene: the call moves on at call level (disposition), not unit by unit
+      if (status === "on_scene_direct") return '<div style="font-size:0.66rem;color:var(--gray);margin-top:4px;line-height:1.35">Next: set the disposition below — <b style="color:#7dedb5">Transport</b> or <b style="color:#7dedb5">RMA</b></div>';
+      return "";
+    }
     if (status === "enroute_scene") return btn("Mark " + unit + " On Scene", "on_scene_direct", "#7dedb5", "green");
     if (status === "on_scene_direct") return btn("Mark " + unit + " Clearing the Scene", "cleared_scene", "#7dedb5", null);
     return "";
@@ -6415,6 +6457,21 @@ function mOpenTransportSheet() {
   var hr = document.getElementById("m-tr-hosp-results"); if (hr) { hr.style.display = "none"; hr.innerHTML = ""; }
   var hc = document.getElementById("m-tr-hosp-chosen"); if (hc) hc.style.display = "none";
   var checks = document.getElementById("m-tr-unit-checks");
+  // Direct response: record where they are going, not who is aboard or who is clearing
+  var directOnly = mIsDirectResponse(call);
+  var unitsWrap = document.getElementById("m-tr-units-wrap") || checks.parentElement;
+  if (unitsWrap) unitsWrap.style.display = directOnly ? "none" : "";
+  var nonWrap = document.getElementById("m-tr-non-section"); if (nonWrap && directOnly) nonWrap.style.display = "none";
+  if (directOnly) {
+    document.getElementById("m-tr-single-dest").style.display = "block";
+    var mn = document.getElementById("m-tr-multi-note"); if (mn) mn.style.display = "none";
+    mTrMulti = false;
+    checks.innerHTML = "";
+    mTmUnitsTouched = false;
+    mOpenSheet("m-sheet-transport");          // still has to open the sheet
+    mUpdateTransportPrompts();
+    return;
+  }
   var rows = [];
   (call.crews||[]).forEach(function(crew, ci) {
     Object.keys(crew).forEach(function(k) {
@@ -6509,10 +6566,35 @@ function mTmSetNon(id, status) {
 }
 window.mTmSetNon = mTmSetNon;
 
+// Direct response: the transport update is the destination. Everyone still on the call is recorded
+// as transporting — no one is asked who is aboard or who is clearing.
+function mConfirmTransportDirect(hospital) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(), now = new Date(), nowT = mNowHHMM();
+    var ud = call.unitDetails || {}, times = call.times || {};
+    (call.crews || []).forEach(function(crew, ci) {
+      if (!crew) return;
+      Object.keys(crew).forEach(function(role) {
+        if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
+        var id = ci + "_" + role;
+        ud[id] = Object.assign({}, ud[id] || {}, { status: "transporting", statusAt: nowT });
+      });
+    });
+    var update = { callEvents: mEvtUnion(mEvt("Transport → " + hospital, "🏥", "#ff9090", "disp")), unitDetails: ud,
+                   disposition: { type: "transport", hospital: hospital, rmaBy: "", rmaCustom: "" }, updatedAt: now.toISOString() };
+    if (!times.enroute) update["times.enroute"] = nowT;
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).then(function() { mCloseAllSheets(); mToast("🚑 Transport confirmed → " + hospital); })
+    .catch(function(e){ mToast("Error: " + e.message, true); });
+}
 function mConfirmTransport() {
   if (mTrMulti) return mConfirmTransportMulti();
   var hospital = document.getElementById("m-tr-hospital").value;
   if (!hospital) { mUpdateTransportPrompts(); return; }
+  var _call0 = mDispCallCache[mDispSelectedCallId];
+  if (mIsDirectResponse(_call0)) return mConfirmTransportDirect(hospital);
   var checkedBoxes = Array.prototype.slice.call(document.querySelectorAll("#m-tr-unit-checks input:checked"));
   var uncheckedBoxes = Array.prototype.slice.call(document.querySelectorAll("#m-tr-unit-checks input:not(:checked)"));
   // Every unchecked unit must have a status chosen (Other requires text)
@@ -6767,7 +6849,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.73</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.76</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
@@ -6957,8 +7039,10 @@ function mCloseAllSheets() {
   </div>
   </div>
   <div id="m-tr-multi-note" style="display:none;font-size:0.76rem;color:var(--gray);margin-bottom:10px">More than one rig is on this call — set a destination for each. They can go to different facilities.</div>
+  <div id="m-tr-units-wrap">
   <div class="m-disp-label" id="m-tr-units-flash">Units Transporting to the Hospital</div>
   <div id="m-tr-unit-checks" style="margin-bottom:10px"></div>
+  </div>
   <div id="m-tr-non-section" style="display:none;margin-bottom:14px">
     <div class="m-disp-label">Non-Transporting Units — Set Status</div>
     <div id="m-tr-non-list"></div>
