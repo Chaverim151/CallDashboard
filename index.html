@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.91');
+  window.location.replace('/CallDashboard/mobile.html?v=2.92');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -12860,6 +12860,8 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
     <div class="m-disp-label">Callback Number</div>
     <div style="position:relative;margin-bottom:12px"><input type="tel" id="m-nc-callback" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-callback')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <button type="button" id="m-nc-loc-btn" onclick="mRequestCallerLocation()" class="m-disp-btn" style="width:100%;margin-bottom:10px;background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff;font-size:0.76rem">📍 Text the caller for their location</button>
+    <div id="m-nc-loc-status" style="display:none;font-size:0.74rem;line-height:1.45;margin:-4px 0 12px;padding:8px 10px;border-radius:8px"></div>
 
     <div id="m-nc-code-suggestion" style="display:none;align-items:center;gap:8px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.4);border-radius:8px;padding:8px 10px;margin-bottom:10px">
       <span style="font-size:1rem">🔑</span>
@@ -15539,8 +15541,82 @@ function mNcBindDraft() {
   document.addEventListener("visibilitychange", function(){ if (document.hidden) { clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} } });
   window.addEventListener("pagehide", function(){ clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} });
 }
+// ── CALLER LOCATION ────────────────────────────────────────────────────────────────────────────
+// Texts the caller a one-time link. They tap "Share my location" and their phone reports a position
+// with an accuracy in metres, which is shown here — a 15m fix is an address, a 500m fix is a
+// neighbourhood, and the dispatcher needs to know which they have before dispatching on it.
+var mLocReqToken = null, mLocReqUnsub = null;
+function mLocStatus(html, color) {
+  var el = document.getElementById("m-nc-loc-status"); if (!el) return;
+  el.style.display = "block";
+  el.style.background = "rgba(255,255,255,0.05)";
+  el.style.border = "1px solid " + (color || "var(--card-border)");
+  el.style.color = color || "var(--gray)";
+  el.innerHTML = html;
+}
+function mRequestCallerLocation() {
+  var cb = (document.getElementById("m-nc-callback").value || "").trim();
+  if (!cb) { mToast("Enter the caller's number first", true); document.getElementById("m-nc-callback").focus(); return; }
+  var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  var expires = new Date(Date.now() + 30 * 60000).toISOString();
+  db.collection("locationRequests").doc(token).set({ createdAt: new Date().toISOString(), expiresAt: expires, by: mCurrentUserUnit || "", callback: cb })
+    .then(function() {
+      var link = "https://chaverim151.github.io/CallDashboard/loc.html?t=" + token;
+      return mSendClickSendSMS([mE164(cb)].filter(Boolean),
+        "MC Hatzolah — tap to send us your location so the ambulance can find you:\n" + link);
+    })
+    .then(function() {
+      mLocStatus("📤 Link sent to " + mEscHtml(cb) + " — waiting for them to tap it…", "#ffc84a");
+      mWatchCallerLocation(token);
+    })
+    .catch(function(e){ mLocStatus("Couldn't send the link: " + mEscHtml(e.message), "#ff9090"); });
+}
+function mWatchCallerLocation(token) {
+  if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; }
+  mLocReqToken = token;
+  mLocReqUnsub = db.collection("locationRequests").doc(token).onSnapshot(function(snap) {
+    if (!snap.exists) return;
+    var d = snap.data(); if (!d.lat || !d.lng) return;
+    var acc = d.accuracy || 0;
+    var color = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
+    var warn = acc > 150 ? "<br><b>Too rough to dispatch on alone — confirm the address with the caller.</b>" : "";
+    mLocStatus("📍 Caller's location received — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn +
+      '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
+      ' · <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Use this location</button>', color);
+  });
+}
+// The dispatcher decides — the pin is never applied on its own.
+function mUseCallerLocation(lat, lng, acc) {
+  document.getElementById("m-nc-lat").value = lat;
+  document.getElementById("m-nc-lng").value = lng;
+  document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
+  if (typeof mDetectZoneInfo === "function") { var z = mDetectZoneInfo(lat, lng); if (z) mSetNcZone(z.type, false, z.area); }
+  if (window.google && google.maps && google.maps.Geocoder) {
+    new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
+      var inp = document.getElementById("m-nc-address");
+      if (st === "OK" && res && res[0]) {
+        inp.value = mCleanAddress(res[0].formatted_address.replace(/, USA$/, ""));
+        mNcResolvedAddress = inp.value.trim();
+      } else {
+        inp.value = lat.toFixed(6) + ", " + lng.toFixed(6);
+        mNcResolvedAddress = inp.value.trim();
+      }
+      inp.classList.remove("m-nc-need");
+      if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+      mLocStatus("✅ Using the caller's location (within " + acc + " m). Check the address before posting.", "#7dedb5");
+    });
+  }
+}
+function mE164(p) {
+  var raw = String(p || "").split(/[\/|]/)[0].replace(/\D/g, "");
+  if (raw.length === 10) return "+1" + raw;
+  if (raw.length === 11 && raw[0] === "1") return "+" + raw;
+  return null;
+}
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
+  if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
+  var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
   var _ac = document.getElementById("m-nc-accesscode"); if (_ac) _ac.dataset.userEdited = "";
   mBindNcValidation();

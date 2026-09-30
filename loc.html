@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Share your location — MC Hatzolah</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; min-height:100dvh; background:#0a1628; color:#e8eef8; font-family:'Inter',system-ui,sans-serif;
+         display:flex; align-items:center; justify-content:center; padding:24px calc(20px + env(safe-area-inset-left,0px)); }
+  .card { width:100%; max-width:420px; background:#101f38; border:1px solid rgba(255,255,255,0.09); border-radius:16px; padding:26px 22px; text-align:center; }
+  h1 { font-family:'Oswald',sans-serif; font-size:1.25rem; letter-spacing:0.04em; text-transform:uppercase; margin:0 0 6px; color:#fff; }
+  p  { font-size:0.95rem; line-height:1.55; color:#9fb0c9; margin:0 0 18px; }
+  button { width:100%; border:none; border-radius:11px; padding:17px; font-family:'Oswald',sans-serif; font-size:1rem; font-weight:700;
+           letter-spacing:0.06em; text-transform:uppercase; background:linear-gradient(135deg,#c9a84c,#e8960a); color:#0a1628; cursor:pointer; }
+  button[disabled] { opacity:0.55; cursor:default; }
+  .note { font-size:0.8rem; color:#7f8ea6; margin-top:16px; line-height:1.5; }
+  .ok   { color:#7dedb5; } .warn { color:#ffc84a; } .err { color:#ff9090; }
+  .big  { font-family:'Oswald',sans-serif; font-size:1.05rem; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="head">Share your location</h1>
+    <p id="msg">Tap the button and choose <b>Allow</b>. This sends your position to the dispatcher so the ambulance can find you.</p>
+    <button id="go">📍 Share my location</button>
+    <div class="note" id="note">Your location is used for this call only.</div>
+  </div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script>
+var firebaseConfig = { apiKey:"AIzaSyDFWxlw9aLIn9HB2L_B6vbhvY5-nlXhpHM", authDomain:"hvac-ops.firebaseapp.com",
+  projectId:"hvac-ops", storageBucket:"hvac-ops.firebasestorage.app", messagingSenderId:"636260762798", appId:"1:636260762798:web:2ae24d5c15f3aeb315993f" };
+firebase.initializeApp(firebaseConfig);
+var db = firebase.firestore();
+
+var token = new URLSearchParams(location.search).get("t") || "";
+var head = document.getElementById("head"), msg = document.getElementById("msg"),
+    btn = document.getElementById("go"), note = document.getElementById("note");
+
+if (!token) { head.textContent = "Link not valid"; msg.textContent = "Ask the dispatcher to send the link again."; btn.style.display = "none"; }
+
+// Accuracy is reported in metres by the device. Anything worse than ~150m is a neighbourhood, not an
+// address, so the page keeps trying for a better fix and tells the dispatcher how good it is.
+function grade(acc) {
+  if (acc <= 25)  return { label: "Precise", cls: "ok" };
+  if (acc <= 75)  return { label: "Good", cls: "ok" };
+  if (acc <= 150) return { label: "Approximate", cls: "warn" };
+  return { label: "Rough — area only", cls: "err" };
+}
+
+var best = null, watchId = null, sentAny = false;
+
+function send(pos, done) {
+  var g = grade(pos.coords.accuracy);
+  return db.collection("locationRequests").doc(token).set({
+    lat: pos.coords.latitude, lng: pos.coords.longitude,
+    accuracy: Math.round(pos.coords.accuracy), accuracyLabel: g.label,
+    at: new Date().toISOString(), final: !!done
+  }, { merge: true });
+}
+
+btn.addEventListener("click", function() {
+  if (!navigator.geolocation) {
+    head.textContent = "Not supported";
+    msg.innerHTML = 'This phone can\'t share its location. Please tell the dispatcher your address.';
+    btn.style.display = "none"; return;
+  }
+  btn.disabled = true; btn.textContent = "Locating…";
+  msg.textContent = "Hold still for a few seconds — the location gets more accurate as it settles.";
+
+  watchId = navigator.geolocation.watchPosition(function(pos) {
+    if (best && pos.coords.accuracy >= best.coords.accuracy) return;   // keep only improvements
+    best = pos;
+    var g = grade(pos.coords.accuracy);
+    send(pos, false).then(function() {
+      sentAny = true;
+      head.textContent = "Location sent";
+      msg.innerHTML = 'The dispatcher can see where you are.<br><span class="big ' + g.cls + '">' + g.label + ' — within ' + Math.round(pos.coords.accuracy) + ' m</span>';
+      btn.textContent = "✓ Sent — keep this page open";
+      note.textContent = "Leaving this page open lets the location sharpen. You can close it once help arrives.";
+    }).catch(function() {
+      head.textContent = "Couldn't send";
+      msg.textContent = "Please tell the dispatcher your address.";
+    });
+  }, function(err) {
+    if (sentAny) return;
+    head.textContent = err.code === 1 ? "Permission needed" : "Couldn't get a location";
+    msg.innerHTML = err.code === 1
+      ? 'Location is blocked for this browser. Please tell the dispatcher your address.'
+      : 'Please tell the dispatcher your address.';
+    btn.disabled = false; btn.textContent = "📍 Try again";
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+
+  // stop watching after two minutes; the best fix has already been sent
+  setTimeout(function() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (best) send(best, true);
+  }, 120000);
+});
+</script>
+</body>
+</html>
