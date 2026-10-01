@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.11"; window.M_BUILD = BUILD;
+  var BUILD = "3.13"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -517,6 +517,13 @@ body.m-tile-dragging{overscroll-behavior:none}
           <span class="m-tile-sub">Manage active calls</span>
         </div>
       </button>
+      <a class="m-tile" id="m-protocolai-tile" href="protocols.html" style="display:none">
+        <div class="m-tile-inner">
+          <span class="m-tile-icon">📘</span>
+          <span class="m-tile-label">Protocol Search <span style="font-size:0.55rem;background:#f0a500;color:#0a1628;border-radius:3px;padding:1px 4px;vertical-align:2px">BETA</span></span>
+          <span class="m-tile-sub">Reference only</span>
+        </div>
+      </a>
       <button class="m-tile" id="m-edu-tile" onclick="mGoTo('education')" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🎓</span>
@@ -994,6 +1001,15 @@ setInterval(tickMClock, 1000);
 // The pressed tile lifts and follows the finger; the others slide out of its way. Order is saved
 // per device, and tiles hidden by role keep their place in the list.
 var mTD = { armed: false, dragging: false, el: null, ghost: null, timer: null, sx: 0, sy: 0, dx: 0, dy: 0 };
+// Home tile for the Protocol Assistant beta: shown only to the people it is turned on for.
+function paiShowEntry(elId, isAdminUser, rolesLower) {
+  db.collection("appdata").doc("protocolAI").get().then(function(s) {
+    var a = (s.exists && s.data().access) || "admins", r = rolesLower || [];
+    var ok = isAdminUser || (a === "leaders" && (r.indexOf("captain") !== -1 || r.indexOf("chief") !== -1)) ||
+             (a === "all" && ["responder", "observer", "captain", "chief"].some(function(x) { return r.indexOf(x) !== -1; }));
+    var el = document.getElementById(elId); if (el) el.style.display = ok ? "" : "none";
+  }).catch(function() {});
+}
 function mTileKey(el) {
   return el.id || el.getAttribute("href") || (el.getAttribute("onclick") || "").replace(/\W+/g, "") || (el.textContent || "").trim().slice(0, 20);
 }
@@ -1313,6 +1329,7 @@ function mEnterHome() {
   // Show education tile for field members
   var roles = (mCurrentUserRoles||[]).map(function(r){ return r.toLowerCase(); });
   var canEdu = mCurrentRole==="admin"||roles.includes("captain")||roles.includes("chief")||roles.includes("responder")||roles.includes("observer");
+  paiShowEntry("m-protocolai-tile", mCurrentRole === "admin", roles);
   var eduTile = document.getElementById("m-edu-tile");
   if (eduTile) eduTile.style.display = canEdu ? "" : "none";
 

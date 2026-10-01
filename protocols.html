@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a1628">
+<title data-org-title="Protocol Search (beta) — {short}">Protocol Search (beta)</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+:root{--navy:#0a1628;--navy-mid:#122040;--navy-light:#1c3260;--gold:#c9a84c;--gold-light:#e8c96a;--gold-rgb:201,168,76;--white:#f4f6fa;--gray:#8a9ab5;--card-border:rgba(var(--gold-rgb),0.2)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--navy);color:var(--white);font-family:'Source Sans 3',sans-serif;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--card-border);background:var(--navy-mid)}
+header img{width:34px;height:34px;object-fit:contain}
+.h-title{font-family:'Oswald',sans-serif;font-size:1.05rem;font-weight:700;letter-spacing:0.05em}
+.beta{font-family:'Oswald',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.12em;background:#f0a500;color:#0a1628;border-radius:4px;padding:2px 7px}
+.h-doc{font-size:0.72rem;color:var(--gray);margin-left:auto;text-align:right}
+.h-back{color:var(--gray);font-size:0.8rem;text-decoration:none;border:1px solid var(--card-border);border-radius:7px;padding:5px 10px}
+#warn{background:rgba(240,165,0,0.12);border-bottom:1px solid rgba(240,165,0,0.45);color:#ffd27a;font-size:0.8rem;padding:8px 16px;line-height:1.45}
+#warn b{color:#ffc84a}
+main{flex:1;display:flex;min-height:0}
+#chatcol{flex:1;display:flex;flex-direction:column;min-width:0}
+#chat{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.q{align-self:flex-end;max-width:80%;background:rgba(var(--gold-rgb),0.16);border:1px solid rgba(var(--gold-rgb),0.4);border-radius:12px 12px 3px 12px;padding:9px 13px;font-size:0.95rem}
+.a{align-self:flex-start;max-width:92%;background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:12px 12px 12px 3px;padding:12px 14px;font-size:0.95rem;line-height:1.55}
+.a p{margin:0 0 8px}.a ul{margin:0 0 8px 18px}.a li{margin:2px 0}
+.cite{display:inline-flex;align-items:center;gap:3px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:600;letter-spacing:0.04em;background:rgba(122,184,245,0.16);border:1px solid rgba(122,184,245,0.5);color:#bfe0ff;border-radius:5px;padding:1px 7px;margin:0 2px;cursor:pointer;vertical-align:1px}
+.cite:hover{background:rgba(122,184,245,0.3)}
+.a-foot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);font-size:0.72rem;color:var(--gray)}
+.a-foot button{background:none;border:none;color:var(--gray);font:inherit;cursor:pointer;text-decoration:underline}
+.thinking{color:var(--gray);font-size:0.88rem;font-style:italic}
+.err{color:#ff9090}
+#starters{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0}
+#starters button{background:rgba(255,255,255,0.05);border:1px solid var(--card-border);color:#d6deea;border-radius:16px;padding:7px 13px;font:inherit;font-size:0.84rem;cursor:pointer}
+#starters button:hover{border-color:var(--gold)}
+#ask{display:flex;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--card-border);background:var(--navy-mid)}
+#q{flex:1;resize:none;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:10px;color:var(--white);font:inherit;font-size:1rem;padding:10px 12px;min-height:46px;max-height:140px}
+#send{background:var(--gold);color:var(--navy);border:none;border-radius:10px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:0 18px;cursor:pointer}
+#send:disabled{opacity:0.5}
+#viewer{display:none;width:min(560px,46vw);border-left:1px solid var(--card-border);background:#0d1a30;flex-direction:column;min-height:0}
+#viewer.open{display:flex}
+.v-bar{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--card-border)}
+.v-bar button{background:rgba(255,255,255,0.06);border:1px solid var(--card-border);color:var(--white);border-radius:7px;padding:5px 10px;cursor:pointer;font:inherit;font-size:0.8rem}
+.v-page{font-family:'Oswald',sans-serif;font-size:0.9rem;letter-spacing:0.05em}
+#v-scroll{flex:1;overflow:auto;padding:12px}
+#v-wrap{position:relative;background:#fff;border-radius:4px;box-shadow:0 6px 20px rgba(0,0,0,0.4)}
+#v-wrap img{display:block;width:100%;height:auto;border-radius:4px}
+.hl{position:absolute;background:rgba(255,213,0,0.42);mix-blend-mode:multiply;border-radius:2px;outline:1px solid rgba(230,170,0,0.6)}
+#v-quote{font-size:0.8rem;color:#c9d4e6;background:rgba(255,255,255,0.04);border-left:3px solid #ffd500;padding:8px 10px;margin:0 12px 12px;border-radius:4px;line-height:1.45}
+#gate,#ackbox{max-width:520px;margin:60px auto;padding:22px;border:1px solid var(--card-border);border-radius:12px;background:rgba(255,255,255,0.03);line-height:1.6}
+#ackbox h2,#gate h2{font-family:'Oswald',sans-serif;letter-spacing:0.05em;margin-bottom:10px}
+#ackbox label{display:flex;gap:10px;align-items:flex-start;margin:14px 0;font-size:0.92rem}
+#ackbox button{background:var(--gold);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:11px 18px;cursor:pointer}
+#ackbox button:disabled{opacity:0.4}
+@media (max-width:900px){
+  #viewer{position:fixed;inset:0;width:auto;z-index:50;padding-top:env(safe-area-inset-top,0px)}
+  .h-doc{display:none}
+}
+.grp{margin-bottom:14px}.grp:last-of-type{margin-bottom:4px}
+.grp-t{font-family:'Oswald',sans-serif;font-size:0.86rem;font-weight:600;letter-spacing:0.04em;color:var(--gold-light);margin-bottom:6px}
+.hit{padding:6px 0 6px 10px;border-left:2px solid rgba(255,255,255,0.12);margin-bottom:5px;font-size:0.92rem;line-height:1.5}
+.hit mark{background:rgba(255,213,0,0.28);color:inherit;border-radius:2px;padding:0 1px}
+.lv{display:inline-block;font-size:0.6rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;border-radius:4px;padding:1px 6px;margin-right:6px;vertical-align:1px}
+.lv-EMT{background:rgba(76,175,128,0.18);color:#7dedb5;border:1px solid rgba(76,175,128,0.45)}
+.lv-ALS{background:rgba(122,184,245,0.16);color:#bfe0ff;border:1px solid rgba(122,184,245,0.45)}
+.lv-CF{background:rgba(224,85,85,0.15);color:#ff9f9f;border:1px solid rgba(224,85,85,0.45)}
+.lvl{background:rgba(255,255,255,0.05);border:1px solid var(--card-border);color:#d6deea;border-radius:14px;padding:5px 11px;font:inherit;font-size:0.8rem;cursor:pointer}
+.lvl.on{background:var(--gold);color:var(--navy);border-color:var(--gold);font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <img data-org-logo src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="">
+  <div class="h-title">Protocol Search</div><span class="beta">BETA</span>
+  <div class="h-doc" id="h-doc"></div>
+  <a class="h-back" href="./" id="h-back">← App</a>
+</header>
+<div id="warn"><b>⚠ Beta — reference only.</b> Shows the protocol steps that match your words; it can miss what you need. Don't rely on it for patient care — read the full protocol page and follow medical command.</div>
+<main>
+  <div id="chatcol">
+    <div id="chat"><div class="thinking">Loading…</div></div>
+    <div id="ask" style="display:none">
+      <textarea id="q" rows="1" placeholder="Search the protocol — e.g. epinephrine anaphylaxis"></textarea>
+      <button id="send">Search</button>
+    </div>
+  </div>
+  <aside id="viewer">
+    <div class="v-bar">
+      <button id="v-prev">‹</button><span class="v-page" id="v-label">Page</span><button id="v-next">›</button>
+      <span style="flex:1"></span><button id="v-close">✕ Close</button>
+    </div>
+    <div id="v-quote" style="display:none"></div>
+    <div id="v-scroll"><div id="v-wrap"></div></div>
+  </aside>
+</main>
+<script>
+var firebaseConfig = { apiKey:"AIzaSyDFWxlw9aLIn9HB2L_B6vbhvY5-nlXhpHM", authDomain:"hvac-ops.firebaseapp.com",
+  projectId:"hvac-ops", storageBucket:"hvac-ops.firebasestorage.app", messagingSenderId:"636260762798", appId:"1:636260762798:web:2ae24d5c15f3aeb315993f" };
+firebase.initializeApp(firebaseConfig);
+var db = firebase.firestore();
+// ── ORGANIZATION SETTINGS (Admin ▸ Organization) ─────────────────────────────────────────────────
+// Name, logo, colors, unit prefix and home area come from appdata/org. These defaults are MC
+// Hatzolah's own values, so an organization that hasn't changed anything looks exactly as before.
+// The last saved settings are cached on the device so the page doesn't flash the defaults on load.
+var ORG_DEFAULTS = {
+  fullName: "Hatzolah Middlesex County", shortName: "Hatzolah MC", textName: "MC Hatzolah", textSignoff: "",
+  logo: "https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png",
+  accent: "#c9a84c", base: "#0a1628", unitPrefix: "MC-",
+  homeLabel: "Edison, NJ", homeLat: 40.505, homeLng: -74.41
+};
+var ORG = (function() {
+  var o = Object.assign({}, ORG_DEFAULTS);
+  try { var c = JSON.parse(localStorage.getItem("orgCfg") || "null"); if (c) Object.keys(c).forEach(function(k) { if (c[k] !== "" && c[k] !== null && c[k] !== undefined) o[k] = c[k]; }); } catch (e) {}
+  return o;
+})();
+function orgEsc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+// "Hatzolah MC" → Hatzolah <span>MC</span> (the second tone); "Hatzolah Middlesex County" → Hatzolah <span>Middlesex County</span>
+function orgTwoTone(text, mode) {
+  var w = String(text || "").trim().split(/\s+/);
+  if (w.length < 2) return orgEsc(text);
+  return mode === "last" ? orgEsc(w.slice(0, -1).join(" ")) + " <span>" + orgEsc(w[w.length - 1]) + "</span>"
+                         : orgEsc(w[0]) + " <span>" + orgEsc(w.slice(1).join(" ")) + "</span>";
+}
+function orgHexRgb(h) { var m = /^#?([0-9a-f]{6})$/i.exec(String(h || "").trim()); if (!m) return null; var n = parseInt(m[1], 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function orgMix(h, toward, amt) {
+  var a = orgHexRgb(h), b = orgHexRgb(toward); if (!a || !b) return h;
+  return "#" + a.map(function(v, i) { var x = Math.round(v + (b[i] - v) * amt); return ("0" + x.toString(16)).slice(-2); }).join("");
+}
+function orgApply() {
+  var root = document.documentElement.style, a = orgHexRgb(ORG.accent), b = orgHexRgb(ORG.base);
+  if (a) { root.setProperty("--gold", ORG.accent); root.setProperty("--gold-light", orgMix(ORG.accent, "#ffffff", 0.3)); root.setProperty("--gold-rgb", a.join(",")); }
+  if (b) { root.setProperty("--navy", ORG.base); root.setProperty("--navy-mid", orgMix(ORG.base, "#ffffff", 0.05)); root.setProperty("--navy-light", orgMix(ORG.base, "#ffffff", 0.12)); }
+  document.querySelectorAll("[data-org]").forEach(function(el) {
+    var k = el.getAttribute("data-org");
+    if (k === "short2") el.innerHTML = orgTwoTone(ORG.shortName, "last");
+    else if (k === "full2") el.innerHTML = orgTwoTone(ORG.fullName, "first");
+    else if (k === "short") el.textContent = ORG.shortName;
+    else if (k === "full") el.textContent = ORG.fullName;
+    else if (k === "text") el.textContent = ORG.textName;
+    else if (k === "prefix") { el.textContent = ORG.unitPrefix; el.style.display = ORG.unitPrefix ? "" : "none"; }
+  });
+  document.querySelectorAll("input[placeholder], textarea[placeholder]").forEach(function(el) {
+    var orig = el.getAttribute("data-ph-orig") || el.getAttribute("placeholder");
+    if (orig.indexOf("MC-") === -1 || el.id === "org-prefix") return;
+    el.setAttribute("data-ph-orig", orig); el.setAttribute("placeholder", orgPh(orig));
+  });
+  document.querySelectorAll("img[data-org-logo]").forEach(function(img) { if (img.getAttribute("src") !== ORG.logo) img.src = ORG.logo; img.alt = ORG.fullName; });
+  var t = document.querySelector("title[data-org-title]");
+  if (t) document.title = t.getAttribute("data-org-title").replace("{short}", ORG.shortName).replace("{text}", ORG.textName).replace("{full}", ORG.fullName);
+  var m = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if (m) m.setAttribute("content", ORG.shortName);
+  document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach(function(l) { if (l.getAttribute("href") !== ORG.logo) l.setAttribute("href", ORG.logo); });
+  if (typeof M_ORG_FOOTER !== "undefined") M_ORG_FOOTER = orgSignoff();
+}
+// The line that ends outgoing texts: the sign-off set in Admin ▸ Organization, else an older
+// dispatch-settings value, else the organization's text name.
+var ORG_DS_FOOTER = "";
+function orgSignoff() { return ORG.textSignoff || ORG_DS_FOOTER || ORG.textName; }
+function orgLoad() {
+  if (typeof db === "undefined" || !db) return;
+  db.collection("appdata").doc("org").get().then(function(s) {
+    var d = s.exists ? (s.data() || {}) : {};
+    ORG = Object.assign({}, ORG_DEFAULTS);
+    Object.keys(d).forEach(function(k) { if (d[k] !== "" && d[k] !== null && d[k] !== undefined) ORG[k] = d[k]; });
+    try { localStorage.setItem("orgCfg", JSON.stringify(d)); } catch (e) {}
+    orgApply();
+  }).catch(function() {});
+}
+// Unit numbers: "16" ↔ "MC-16" with whatever prefix the organization uses ("" = plain numbers).
+function orgUnit(num) { return (ORG.unitPrefix || "") + String(num == null ? "" : num).trim(); }
+function orgStripUnit(u) {
+  var s = String(u == null ? "" : u).trim(), p = (ORG.unitPrefix || "").toUpperCase(), up = s.toUpperCase();
+  if (p && up.indexOf(p) === 0) return s.slice(p.length);
+  var bare = p.replace(/-$/, "");
+  if (bare && up.indexOf(bare) === 0) return s.slice(bare.length).replace(/^-/, "");
+  return s;
+}
+function orgMentionRe() {
+  var bare = (ORG.unitPrefix || "").replace(/-$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("@(" + (bare ? bare + "-?" : "") + "\\d{1,4})\\b", "gi");
+}
+function orgNormMention(u) { return orgUnit(orgStripUnit(String(u).toUpperCase())); }
+// Example unit numbers in hints follow the prefix: "e.g. MC-30" → "e.g. CH-30", or "e.g. 30" with none.
+function orgPh(t) { return String(t).replace(/MC-/g, ORG.unitPrefix || ""); }
+// Too short, or built on the organization's own name (the old shared default was).
+function orgWeakPassword(p) {
+  var low = String(p || "").toLowerCase(), word = String(ORG.fullName || "").split(/\s+/)[0].toLowerCase();
+  return low.length < 8 || (word.length >= 4 && low.indexOf(word) !== -1);
+}
+function orgCenter() { return { lat: Number(ORG.homeLat) || ORG_DEFAULTS.homeLat, lng: Number(ORG.homeLng) || ORG_DEFAULTS.homeLng }; }
+orgApply();
+orgLoad();
+// Parts of the page further down aren't built yet when this first runs — apply again once they are.
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", orgApply);
+
+// ── Protocol index: page text → protocols, sections (by level of care) and steps ──
+// Used by the page itself (to rebuild when the PDF changes) and to pre-build protocols-index.json.
+function protoLinesFromText(tc) {
+  // Group pdf.js text pieces into lines by their vertical position.
+  var rows = [];
+  tc.items.forEach(function(it) {
+    if (typeof it.str !== "string" || !it.str.trim()) return;
+    var y = Math.round(it.transform[5]), x = it.transform[4];
+    var row = rows.filter(function(r) { return Math.abs(r.y - y) <= 2; })[0];
+    if (!row) { row = { y: y, parts: [] }; rows.push(row); }
+    row.parts.push({ x: x, s: it.str });
+  });
+  rows.sort(function(a, b) { return b.y - a.y; });
+  return rows.map(function(r) {
+    r.parts.sort(function(a, b) { return a.x - b.x; });
+    return r.parts.map(function(p) { return p.s; }).join(" ").replace(/\s+/g, " ").trim();
+  }).filter(Boolean);
+}
+// Level-of-care headings, as written in the NJ protocol. Every variant found in the document:
+// "EMT", "PARAMEDIC & MICN", "PARAMEDIC", "COMMUNICATION FAILURE – ALS ONLY", "COMMUNICATION FAILURE", "PEARLS".
+var PROTO_SECTION_RE = [
+  [/^EMT\b(?!.*\bPARAMEDIC\b)/i, "EMT"],
+  [/^(PARAMEDIC|MICN)\b/i, "ALS"],
+  [/^COMMUNICATION FAILURE\b/i, "CF"],
+  [/^PEARLS\b/i, "ALL"]
+];
+function protoBuildIndex(pageLines, source) {
+  var pages = [], passages = [], title = "", sectionNo = "";
+  pageLines.forEach(function(lines, i) {
+    var n = i + 1;
+    lines = lines.filter(function(l) { return !/^NJ EMS Clinical Practice Protocols/i.test(l) && !/^Page \d+ of\s*\d*$/i.test(l) && !/^\d{1,3}$/.test(l); });
+    // Protocol heading like "2.2 ANAPHYLAXIS – ADULT" near the top; continuation pages keep the last one.
+    for (var k = 0; k < Math.min(lines.length, 4); k++) {
+      var m = /^(\d{1,2}\.\d{1,2}[A-Z]?)\s+([A-Z][A-Z0-9 ,'’&\/()\-–—.]{3,})$/.exec(lines[k]);
+      if (m && !/TABLE OF CONTENTS/i.test(m[2])) { sectionNo = m[1]; title = m[2].replace(/\s+/g, " ").trim(); lines.splice(k, 1); break; }
+    }
+    var heading = title ? (sectionNo + " " + title) : "Introduction & definitions";
+    pages.push({ n: n, title: heading, text: lines.join("\n") });
+    // A protocol that continues from the previous page keeps that page's level of care, so paramedic
+    // steps spilling onto the next page are never shown as if they were for everyone.
+    var level = (pages.length > 1 && pages[pages.length - 2].title === heading) ? (pages[pages.length - 2]._endLevel || "ALL") : "ALL", cur = null;
+    function flush() { if (cur && cur.text.replace(/\s/g, "").length > 12) passages.push(cur); cur = null; }
+    lines.forEach(function(l) {
+      var sec = null;
+      PROTO_SECTION_RE.forEach(function(r) { if (!sec && r[0].test(l) && l.length < 60) sec = r[1]; });
+      if (sec) { flush(); level = sec; return; }
+      var startsStep = /^\d{1,2}\.\s+\S/.test(l) || /^[A-Z][A-Z \/&\-–]{6,}$/.test(l);
+      if (!cur || startsStep || cur.text.length > 650) { flush(); cur = { p: n, t: heading, lv: level, text: l }; }
+      else cur.text += " " + l;
+    });
+    flush();
+    pages[pages.length - 1]._endLevel = level;
+  });
+  pages.forEach(function(pg) { delete pg._endLevel; });
+  // A protocol with paramedic sections and no EMT section anywhere is paramedic-only from start to
+  // finish — including any part after its PEARLS box — so none of it is shown to EMTs as general text.
+  var byProto = {};
+  passages.forEach(function(ps) { var g = byProto[ps.t] || (byProto[ps.t] = { emt: false, als: false }); if (ps.lv === "EMT") g.emt = true; if (ps.lv === "ALS" || ps.lv === "CF") g.als = true; });
+  passages.forEach(function(ps) { var g = byProto[ps.t]; if (g.als && !g.emt && ps.lv === "ALL") ps.lv = "ALS"; });
+  return { v: 1, source: source || {}, builtAt: new Date().toISOString(), pages: pages, passages: passages };
+}
+
+// ── Search: BM25 over protocol steps, with protocol titles counting extra and common EMS
+//    abbreviations expanded. Level of care: EMT hides paramedic/MICN-only steps unless asked. ──
+var PS_STOP = {}; ("a an the of and or to in on for with by is are be as at if it its this that these those from not no do does did should shall when what which who whom how why per may can could will would must than then there their they them you your i me my patient patients pt pts give given use used using about into over under any all also only such each other more most i'm im").split(" ").forEach(function(w) { PS_STOP[w] = 1; });
+var PS_SYN = {
+  epi: "epinephrine adrenaline", epipen: "epinephrine auto injector", ntg: "nitroglycerin", nitro: "nitroglycerin", asa: "aspirin",
+  sob: "shortness breath dyspnea", dyspnea: "respiratory distress", cpap: "continuous positive airway pressure", cpr: "cardiopulmonary resuscitation compressions",
+  aed: "defibrillator defibrillation", ams: "altered mental status", loc: "consciousness unresponsive", mi: "myocardial infarction stemi chest pain",
+  stemi: "myocardial infarction chest pain", cva: "stroke", tia: "stroke", bgl: "glucose blood", sugar: "glucose", narcan: "naloxone", naloxone: "opioid",
+  od: "overdose poisoning", peds: "pediatric", kid: "pediatric", child: "pediatric", baby: "newborn infant", ob: "obstetrical childbirth delivery pregnancy labor",
+  pregnant: "pregnancy obstetrical", micn: "mobile intensive care nurse", bls: "basic life support emt", als: "advanced life support paramedic",
+  bvm: "bag valve mask ventilation", o2: "oxygen", spinal: "spine motion restriction", spine: "spinal motion restriction", tourniquet: "hemorrhage bleeding",
+  bleeding: "hemorrhage", seizing: "seizure", seizure: "status epilepticus", allergy: "allergic reaction anaphylaxis", allergic: "anaphylaxis",
+  refusal: "refuse refusing", rma: "refusal", dnr: "resuscitate polst", polst: "dnr", mci: "mass casualty triage", triage: "mass casualty",
+  hypoglycemia: "glucose", hypotension: "shock", shock: "hypotension", dose: "dosage mg", dosing: "dose mg", asthma: "bronchospasm albuterol",
+  copd: "bronchospasm albuterol", heat: "hyperthermia", cold: "hypothermia", choking: "airway obstruction", burn: "burns", fall: "trauma",
+  sepsis: "infection", suicide: "behavioral", psych: "behavioral", combative: "behavioral agitation", gsw: "gunshot penetrating trauma"
+};
+function psTok(text) {
+  return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter(function(w) { return w && !PS_STOP[w]; })
+    .map(function(w) { return (w.length > 4 && /s$/.test(w) && !/ss$/.test(w)) ? w.slice(0, -1) : w; });
+}
+function psPrepare(index) {
+  var df = {}, total = 0;
+  index.passages.forEach(function(ps, i) {
+    var tf = {}, toks = psTok(ps.text), tt = psTok(ps.t);
+    toks.forEach(function(t) { tf[t] = (tf[t] || 0) + 1; });
+    tt.forEach(function(t) { tf[t] = (tf[t] || 0) + 1.5; });          // the protocol's title counts extra
+    Object.keys(tf).forEach(function(t) { df[t] = (df[t] || 0) + 1; });
+    ps._tf = tf; ps._len = toks.length + tt.length; ps._i = i; total += ps._len;
+  });
+  index._df = df; index._avg = total / Math.max(1, index.passages.length); index._ready = true;
+}
+// level: "EMT" (EMT steps + shared text), "ALS" (everything), "ALL" (everything, no preference)
+function psSearch(index, question, level, limit) {
+  if (!index._ready) psPrepare(index);
+  var w = {};
+  psTok(question).forEach(function(t) {
+    w[t] = 1;
+    if (PS_SYN[t]) psTok(PS_SYN[t]).forEach(function(s) { if (!w[s]) w[s] = 0.6; });
+  });
+  var terms = Object.keys(w); if (!terms.length) return [];
+  var N = index.passages.length, k1 = 1.3, b = 0.7, out = [];
+  index.passages.forEach(function(ps) {
+    if (level === "EMT" && (ps.lv === "ALS" || ps.lv === "CF")) return;
+    var s = 0, hit = 0;
+    terms.forEach(function(t) {
+      var f = ps._tf[t]; if (!f) return; hit += w[t];
+      var n = index._df[t] || 0, idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
+      s += w[t] * idf * (f * (k1 + 1)) / (f + k1 * (1 - b + b * ps._len / index._avg));
+    });
+    if (!s) return;
+    if (level === "ALS" && ps.lv === "ALS") s *= 1.1;
+    if (level === "EMT" && ps.lv === "EMT") s *= 1.1;
+    out.push({ ps: ps, score: s * (0.6 + 0.4 * hit / terms.length) });   // reward steps matching more of the question
+  });
+  out.sort(function(a, b) { return b.score - a.score; });
+  return out.slice(0, limit || 12);
+}
+
+var auth = firebase.auth();
+var PS = { user: null, settings: null, index: null, level: localStorage.getItem("psLevel") || "EMT", pdf: null, viewPage: null, viewHL: "" };
+var PDF_URL = "protocols.pdf", INDEX_URL = "protocols-index.json", PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+function $(id) { return document.getElementById(id); }
+function esc(t) { return orgEsc(t); }
+(function() { var mob = /iPhone|iPad|Android/i.test(navigator.userAgent); $("h-back").href = mob ? "mobile.html" : "./"; })();
+function gate(title, text) { $("chat").innerHTML = '<div id="gate"><h2>' + esc(title) + '</h2><p>' + text + '</p></div>'; $("ask").style.display = "none"; }
+function allowed(user, email, access) {
+  var roles = (user.roles || []).map(function(r) { return String(r).toLowerCase(); });
+  if (user.role === "admin" || email === "shmueleidelman.work@gmail.com") return true;
+  if (access === "leaders") return roles.indexOf("captain") !== -1 || roles.indexOf("chief") !== -1;
+  if (access === "all") return ["responder", "observer", "captain", "chief"].some(function(r) { return roles.indexOf(r) !== -1; });
+  return false;
+}
+auth.onAuthStateChanged(function(u) {
+  if (!u) { gate("Sign in first", 'Open the <a href="' + $("h-back").href + '" style="color:#bfe0ff">' + esc(ORG.shortName) + ' app</a>, sign in, then come back.'); return; }
+  Promise.all([db.collection("users").doc(u.uid).get(), db.collection("appdata").doc("protocolAI").get()]).then(function(r) {
+    PS.user = r[0].exists ? r[0].data() : {}; PS.settings = r[1].exists ? r[1].data() : {};
+    if (!allowed(PS.user, u.email, PS.settings.access || "admins")) { gate("Not available yet", "Protocol Search is a beta that isn't turned on for your account yet."); return; }
+    if (localStorage.getItem("psAck_v1") !== "yes") showAck(); else loadIndex();
+  }).catch(function(e) { gate("Couldn't load", esc(e.message)); });
+});
+function showAck() {
+  $("chat").innerHTML = '<div id="ackbox"><h2>Before you start <span class="beta">BETA</span></h2>' +
+    '<p>Protocol Search finds the passages in the NJ EMS protocol that match your question and shows you each one on its page. It is a <b>beta test</b>:</p>' +
+    '<ul style="margin:8px 0 0 20px"><li>It can <b>miss</b> the passage you need, or show one that doesn\'t apply.</li><li>It is <b>not</b> medical direction and doesn\'t replace the official protocol, your training, or medical command.</li><li>Always read the passage on its page yourself, including the surrounding steps.</li></ul>' +
+    '<label><input type="checkbox" id="ack-c" style="margin-top:4px"> I understand this is a beta and I won\'t rely on it for patient care.</label>' +
+    '<button id="ack-b" disabled>Continue</button></div>';
+  $("ack-c").onchange = function() { $("ack-b").disabled = !this.checked; };
+  $("ack-b").onclick = function() { localStorage.setItem("psAck_v1", "yes"); loadIndex(); };
+}
+// ── The search index: the pre-built file, unless the PDF has been replaced since — then this device
+//    rebuilds it from the new PDF once and keeps it. ──
+function idbGet(k) { return new Promise(function(res) { try { var o = indexedDB.open("protocolSearch", 1); o.onupgradeneeded = function() { o.result.createObjectStore("kv"); }; o.onsuccess = function() { var g = o.result.transaction("kv").objectStore("kv").get(k); g.onsuccess = function() { res(g.result || null); }; g.onerror = function() { res(null); }; }; o.onerror = function() { res(null); }; } catch (e) { res(null); } }); }
+function idbSet(k, v) { try { var o = indexedDB.open("protocolSearch", 1); o.onupgradeneeded = function() { o.result.createObjectStore("kv"); }; o.onsuccess = function() { o.result.transaction("kv", "readwrite").objectStore("kv").put(v, k); }; } catch (e) {} }
+function pdfSize() {
+  return fetch(PDF_URL, { method: "HEAD", cache: "no-cache" }).then(function(r) { if (!r.ok) throw new Error("The protocol PDF (" + PDF_URL + ") isn't on the site."); return Number(r.headers.get("content-length")) || 0; });
+}
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return new Promise(function(res, rej) { var s = document.createElement("script"); s.src = PDFJS; s.onload = function() { pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS.replace("pdf.min.js", "pdf.worker.min.js"); res(pdfjsLib); }; s.onerror = function() { rej(new Error("Couldn't load the PDF reader")); }; document.head.appendChild(s); });
+}
+function getPdf() { if (PS.pdf) return Promise.resolve(PS.pdf); return loadPdfJs().then(function(lib) { return lib.getDocument({ url: PDF_URL }).promise; }).then(function(p) { PS.pdf = p; return p; }); }
+function loadIndex() {
+  $("chat").innerHTML = '<div class="thinking">Loading the protocol…</div>';
+  Promise.all([pdfSize().catch(function(e) { return { err: e }; }), fetch(INDEX_URL, { cache: "no-cache" }).then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })]).then(function(r) {
+    var size = r[0], built = r[1];
+    if (size && size.err) throw size.err;
+    if (built && (!size || built.source.bytes === size)) return built;
+    return idbGet("index").then(function(cached) {
+      if (cached && cached.source && cached.source.bytes === size) return cached;
+      return rebuild(size);
+    });
+  }).then(function(index) { PS.index = index; start(); })
+    .catch(function(e) { gate("Couldn't load the protocol", esc(e.message)); });
+}
+function rebuild(size) {
+  $("chat").innerHTML = '<div class="thinking" id="rb">The protocol was updated — preparing it for search on this device (one time only)…</div>';
+  return getPdf().then(function(pdf) {
+    var all = [], n = 0;
+    function next() {
+      n++; if (n > pdf.numPages) return Promise.resolve();
+      $("rb").textContent = "The protocol was updated — preparing it for search on this device (one time only)… page " + n + " of " + pdf.numPages;
+      return pdf.getPage(n).then(function(pg) { return pg.getTextContent().then(function(tc) { all.push(protoLinesFromText(tc)); pg.cleanup(); }); }).then(next);
+    }
+    return next().then(function() { var idx = protoBuildIndex(all, { bytes: size, pages: pdf.numPages, name: PDF_URL }); idbSet("index", idx); return idx; });
+  });
+}
+var STARTERS = ["Epinephrine for anaphylaxis", "When can I use CPAP?", "Naloxone for opioid overdose", "Oral glucose for hypoglycemia", "Tourniquet", "Stroke alert criteria"];
+function levelBar() {
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:0.82rem;color:var(--gray)">Show steps for:' +
+    [["EMT", "EMT (BLS)"], ["ALS", "Paramedic & MICN"]].map(function(l) {
+      return '<button class="lvl' + (PS.level === l[0] ? ' on' : '') + '" data-l="' + l[0] + '">' + l[1] + '</button>';
+    }).join("") + '</div>';
+}
+function bindLevel(scope) {
+  (scope || document).querySelectorAll(".lvl").forEach(function(b) { b.onclick = function() { PS.level = b.dataset.l; localStorage.setItem("psLevel", PS.level); document.querySelectorAll(".lvl").forEach(function(x) { x.classList.toggle("on", x.dataset.l === PS.level); }); }; });
+}
+function start() {
+  $("h-doc").textContent = (PS.index.pages.length) + " pages · NJ EMS Clinical Practice Protocols";
+  $("chat").innerHTML = '<div class="a">Search the <b>NJ EMS Clinical Practice Protocols</b>. You\'ll get the matching steps, grouped by protocol — tap a page tag to read it in place with the passage highlighted.' +
+    '<div style="margin-top:10px">' + levelBar() + '</div>' +
+    '<div id="starters" style="margin-top:10px">' + STARTERS.map(function(s) { return '<button>' + esc(s) + '</button>'; }).join("") + '</div></div>';
+  bindLevel($("chat"));
+  document.querySelectorAll("#starters button").forEach(function(b) { b.onclick = function() { $("q").value = b.textContent; ask(); }; });
+  $("ask").style.display = "flex"; $("q").focus();
+}
+var LV_LABEL = { EMT: "EMT", ALS: "Paramedic & MICN", CF: "Communication failure — ALS only", ALL: "" };
+function mark(text, question) {
+  var words = psTok(question).concat([].concat.apply([], psTok(question).map(function(t) { return PS_SYN[t] ? psTok(PS_SYN[t]) : []; }))).filter(function(w) { return w.length > 2; });
+  var h = esc(text);
+  words.forEach(function(w) { h = h.replace(new RegExp("\\b(" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[a-z]*)", "gi"), "<mark>$1</mark>"); });
+  return h;
+}
+function ask() {
+  var q = $("q").value.trim(); if (!q || !PS.index) return;
+  var st = $("starters"); if (st) st.remove();
+  $("q").value = "";
+  var qe = document.createElement("div"); qe.className = "q"; qe.textContent = q; $("chat").appendChild(qe);
+  var hits = psSearch(PS.index, q, PS.level, 40);
+  // Group the matching steps by protocol, best protocol first, up to 3 steps each.
+  var groups = [], byT = {};
+  hits.forEach(function(h) {
+    var g = byT[h.ps.t]; if (!g) { g = byT[h.ps.t] = { t: h.ps.t, best: h.score, items: [] }; groups.push(g); }
+    if (g.items.length < 3) g.items.push(h);
+  });
+  groups = groups.slice(0, 4);
+  var el = document.createElement("div"); el.className = "a";
+  if (!groups.length) el.innerHTML = "Nothing in the protocol matched. Try other words — the medication, the condition, or the procedure name." + (PS.level === "EMT" ? ' Paramedic & MICN steps are hidden — switch level to include them.' : '');
+  else el.innerHTML = groups.map(function(g) {
+    return '<div class="grp"><div class="grp-t">' + esc(g.t) + '</div>' + g.items.sort(function(a, b) { return a.ps.p - b.ps.p || a.ps._i - b.ps._i; }).map(function(h) {
+      var lv = LV_LABEL[h.ps.lv];
+      return '<div class="hit">' + (lv ? '<span class="lv lv-' + h.ps.lv + '">' + esc(lv) + '</span>' : '') +
+        '<span class="hit-t">' + mark(h.ps.text, q) + '</span> <span class="cite" data-p="' + h.ps.p + '" data-i="' + h.ps._i + '">p. ' + h.ps.p + '</span></div>';
+    }).join("") + '</div>';
+  }).join("") + '<div class="a-foot">Matching steps from the protocol, not a written answer — always read the full protocol page.' + (PS.level === "EMT" ? ' Paramedic & MICN steps are hidden.' : '') + '</div>';
+  $("chat").appendChild(el);
+  el.querySelectorAll(".cite").forEach(function(c) { c.onclick = function() { openPage(Number(c.dataset.p), PS.index.passages[Number(c.dataset.i)].text); }; });
+  $("chat").scrollTop = $("chat").scrollHeight;
+}
+// ── Page viewer: the real PDF page, with the step highlighted ──
+function norm(t) { return String(t || "").replace(/\s+/g, " ").trim().toLowerCase(); }
+function openPage(n, passage) {
+  PS.viewPage = n; PS.viewHL = passage || "";
+  $("viewer").classList.add("open");
+  $("v-label").textContent = "Page " + n + " of " + PS.index.pages.length;
+  $("v-quote").style.display = "none";
+  $("v-wrap").innerHTML = '<div style="padding:30px;color:#555;text-align:center">Loading page…</div>';
+  getPdf().then(function(pdf) { return pdf.getPage(n); }).then(function(page) {
+    if (PS.viewPage !== n) return;
+    var base = page.getViewport({ scale: 1 }), cssW = Math.min($("v-scroll").clientWidth - 24, 900), scale = cssW / base.width, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var vp = page.getViewport({ scale: scale * dpr }), canvas = document.createElement("canvas");
+    canvas.width = vp.width; canvas.height = vp.height; canvas.style.width = "100%";
+    return page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise.then(function() { return page.getTextContent(); }).then(function(tc) {
+      $("v-wrap").innerHTML = ""; $("v-wrap").appendChild(canvas);
+      var first = highlight(tc, vp, passage);
+      $("v-scroll").scrollTop = first === null ? 0 : Math.max(0, first * canvas.clientHeight - 80);
+    });
+  }).catch(function(e) { $("v-wrap").innerHTML = '<div style="padding:30px;color:#a00">' + esc(e.message) + '</div>'; });
+}
+// Find the step's words among the page's text pieces and box the pieces that make it up.
+function highlight(tc, vp, passage) {
+  if (!passage) return null;
+  var items = tc.items.filter(function(it) { return typeof it.str === "string" && it.str.trim(); });
+  var flat = "", spans = [];
+  items.forEach(function(it, i) { var s = flat.length; flat += norm(it.str) + " "; spans.push([s, flat.length - 1, i]); });
+  var target = norm(passage), at = flat.indexOf(target), len = target.length;
+  if (at === -1) { var head = target.slice(0, 50); at = flat.indexOf(head); len = Math.min(target.length, flat.length - at); }
+  if (at === -1) return null;
+  var end = at + len, first = null, W = vp.width, H = vp.height;
+  spans.forEach(function(sp) {
+    if (sp[1] <= at || sp[0] >= end) return;
+    var it = items[sp[2]], tx = pdfjsLib.Util.transform(vp.transform, it.transform), fh = Math.hypot(tx[2], tx[3]);
+    var d = document.createElement("div"); d.className = "hl";
+    d.style.left = (tx[4] / W * 100) + "%"; d.style.top = ((tx[5] - fh) / H * 100) + "%";
+    d.style.width = (it.width * vp.scale / W * 100) + "%"; d.style.height = (fh * 1.2 / H * 100) + "%";
+    $("v-wrap").appendChild(d);
+    if (first === null) first = (tx[5] - fh) / H;
+  });
+  return first;
+}
+$("v-close").onclick = function() { $("viewer").classList.remove("open"); };
+$("v-prev").onclick = function() { if (PS.viewPage > 1) openPage(PS.viewPage - 1, ""); };
+$("v-next").onclick = function() { if (PS.viewPage < PS.index.pages.length) openPage(PS.viewPage + 1, ""); };
+$("send").onclick = ask;
+$("q").addEventListener("keydown", function(ev) { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); ask(); } });
+</script>
+</body>
+</html>
