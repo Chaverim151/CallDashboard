@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.98');
+  window.location.replace('/CallDashboard/mobile.html?v=2.99');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -15620,7 +15620,8 @@ function mWatchCallerLocation(token) {
     mLocStatus("📍 Caller's location — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn + addrLine +
       '<br><span id="m-nc-loc-age" style="color:var(--gray);font-size:0.72rem"></span>' +
       '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
-      ' · <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Use this location</button>', color);
+      ' · <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Use this location</button>' +
+      ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ',true)" title="Highway, park, or anywhere without a street address" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Coordinates only</button>', color);
   });
 }
 // The dispatcher decides — the pin is never applied on its own.
@@ -15649,7 +15650,22 @@ function mLocPendingNote() {
     ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#ffc84a");
 }
 var mLocAppliedAcc = 0, mLocAppliedLat = null, mLocAppliedLng = null;
-function mUseCallerLocation(lat, lng, acc) {
+function mUseCallerLocation(lat, lng, acc, coordsOnly) {
+  if (coordsOnly) {
+    mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
+    var i2 = document.getElementById("m-nc-address");
+    i2.value = lat.toFixed(6) + ", " + lng.toFixed(6);
+    mNcResolvedAddress = i2.value.trim();
+    document.getElementById("m-nc-lat").value = lat;
+    document.getElementById("m-nc-lng").value = lng;
+    document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
+    if (typeof mDetectZoneInfo === "function") { var z2 = mDetectZoneInfo(lat, lng); if (z2) mSetNcZone(z2.type, false, z2.area); }
+    i2.classList.remove("m-nc-need");
+    if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+    mNcShowCoords();
+    mLocStatus("✅ Using coordinates only (within " + acc + " m) — no street address.", "#7dedb5");
+    return;
+  }
   mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
   document.getElementById("m-nc-lat").value = lat;
   document.getElementById("m-nc-lng").value = lng;
@@ -15658,13 +15674,26 @@ function mUseCallerLocation(lat, lng, acc) {
   if (window.google && google.maps && google.maps.Geocoder) {
     new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
       var inp = document.getElementById("m-nc-address");
-      if (st === "OK" && res && res[0]) {
-        inp.value = mCleanAddress(res[0].formatted_address.replace(/, USA$/, ""));
-        mNcResolvedAddress = inp.value.trim();
+      var coords = lat.toFixed(6) + ", " + lng.toFixed(6);
+      var r = (st === "OK" && res && res[0]) ? res[0] : null;
+      // On a highway shoulder the nearest address is a house on some other road — using it would
+      // send the crew to the wrong place. Anything that isn't a precise building keeps the
+      // coordinates as the address, with the road name only as context.
+      var comp = (r && r.address_components) || [];
+      var has = function(t){ return comp.some(function(x){ return x.types.indexOf(t) !== -1; }); };
+      var types = (r && r.types) || [];
+      var precise = has("street_number") && types.indexOf("street_address") !== -1 && r.geometry &&
+                    r.geometry.location_type === "ROOFTOP";   // interpolated = a guess along a road, not a building
+      var roadName = "";
+      comp.forEach(function(x){ if (!roadName && x.types.indexOf("route") !== -1) roadName = x.long_name; });
+      if (r && precise) {
+        inp.value = mCleanAddress(r.formatted_address.replace(/, USA$/, ""));
+      } else if (roadName) {
+        inp.value = roadName + " — " + coords;        // e.g. Garden State Pkwy — 40.512345, -74.398765
       } else {
-        inp.value = lat.toFixed(6) + ", " + lng.toFixed(6);
-        mNcResolvedAddress = inp.value.trim();
+        inp.value = coords;
       }
+      mNcResolvedAddress = inp.value.trim();
       inp.classList.remove("m-nc-need");
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
       mNcShowCoords();

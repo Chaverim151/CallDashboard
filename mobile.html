@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.98"; window.M_BUILD = BUILD;
+  var BUILD = "2.99"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -377,7 +377,7 @@ body.m-tile-dragging{overscroll-behavior:none}
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.98</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.99</div>
     </div>
   </div>
 </div>
@@ -408,7 +408,7 @@ body.m-tile-dragging{overscroll-behavior:none}
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.98</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.99</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -4828,7 +4828,8 @@ function mWatchCallerLocation(token) {
     mLocStatus("📍 Caller's location — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn + addrLine +
       '<br><span id="m-nc-loc-age" style="color:var(--gray);font-size:0.72rem"></span>' +
       '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
-      ' · <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Use this location</button>', color);
+      ' · <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Use this location</button>' +
+      ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ',true)" title="Highway, park, or anywhere without a street address" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Coordinates only</button>', color);
   });
 }
 // The dispatcher decides — the pin is never applied on its own.
@@ -4857,7 +4858,22 @@ function mLocPendingNote() {
     ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#ffc84a");
 }
 var mLocAppliedAcc = 0, mLocAppliedLat = null, mLocAppliedLng = null;
-function mUseCallerLocation(lat, lng, acc) {
+function mUseCallerLocation(lat, lng, acc, coordsOnly) {
+  if (coordsOnly) {
+    mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
+    var i2 = document.getElementById("m-nc-address");
+    i2.value = lat.toFixed(6) + ", " + lng.toFixed(6);
+    mNcResolvedAddress = i2.value.trim();
+    document.getElementById("m-nc-lat").value = lat;
+    document.getElementById("m-nc-lng").value = lng;
+    document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
+    if (typeof mDetectZoneInfo === "function") { var z2 = mDetectZoneInfo(lat, lng); if (z2) mSetNcZone(z2.type, false, z2.area); }
+    i2.classList.remove("m-nc-need");
+    if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+    mNcShowCoords();
+    mLocStatus("✅ Using coordinates only (within " + acc + " m) — no street address.", "#7dedb5");
+    return;
+  }
   mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
   document.getElementById("m-nc-lat").value = lat;
   document.getElementById("m-nc-lng").value = lng;
@@ -4866,13 +4882,26 @@ function mUseCallerLocation(lat, lng, acc) {
   if (window.google && google.maps && google.maps.Geocoder) {
     new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
       var inp = document.getElementById("m-nc-address");
-      if (st === "OK" && res && res[0]) {
-        inp.value = mCleanAddress(res[0].formatted_address.replace(/, USA$/, ""));
-        mNcResolvedAddress = inp.value.trim();
+      var coords = lat.toFixed(6) + ", " + lng.toFixed(6);
+      var r = (st === "OK" && res && res[0]) ? res[0] : null;
+      // On a highway shoulder the nearest address is a house on some other road — using it would
+      // send the crew to the wrong place. Anything that isn't a precise building keeps the
+      // coordinates as the address, with the road name only as context.
+      var comp = (r && r.address_components) || [];
+      var has = function(t){ return comp.some(function(x){ return x.types.indexOf(t) !== -1; }); };
+      var types = (r && r.types) || [];
+      var precise = has("street_number") && types.indexOf("street_address") !== -1 && r.geometry &&
+                    r.geometry.location_type === "ROOFTOP";   // interpolated = a guess along a road, not a building
+      var roadName = "";
+      comp.forEach(function(x){ if (!roadName && x.types.indexOf("route") !== -1) roadName = x.long_name; });
+      if (r && precise) {
+        inp.value = mCleanAddress(r.formatted_address.replace(/, USA$/, ""));
+      } else if (roadName) {
+        inp.value = roadName + " — " + coords;        // e.g. Garden State Pkwy — 40.512345, -74.398765
       } else {
-        inp.value = lat.toFixed(6) + ", " + lng.toFixed(6);
-        mNcResolvedAddress = inp.value.trim();
+        inp.value = coords;
       }
+      mNcResolvedAddress = inp.value.trim();
       inp.classList.remove("m-nc-need");
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
       mNcShowCoords();
@@ -7167,7 +7196,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.98</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.99</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
