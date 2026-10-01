@@ -132,7 +132,15 @@ mark{background:rgba(255,213,0,0.3);color:inherit;border-radius:2px;padding:0 1p
 var firebaseConfig = { apiKey:"AIzaSyDFWxlw9aLIn9HB2L_B6vbhvY5-nlXhpHM", authDomain:"hvac-ops.firebaseapp.com",
   projectId:"hvac-ops", storageBucket:"hvac-ops.firebasestorage.app", messagingSenderId:"636260762798", appId:"1:636260762798:web:2ae24d5c15f3aeb315993f" };
 firebase.initializeApp(firebaseConfig);
-var db = firebase.firestore();
+// The desktop app deliberately doesn't keep anyone signed in across tabs (shared dispatch computers),
+// so a Protocols tab opened from it has no sign-in of its own. Borrow the sign-in of the desktop tab
+// that opened this one (same site), instead of sending the person round in a login loop.
+var HOST = null;
+try {
+  var w = window.opener && !window.opener.closed ? window.opener : (window.parent !== window ? window.parent : null);
+  if (w && w.location.origin === location.origin && w.firebase && w.firebase.auth && w.firebase.auth().currentUser) HOST = w;
+} catch (e) { HOST = null; }
+var db = HOST ? HOST.firebase.firestore() : firebase.firestore();
 // ── ORGANIZATION SETTINGS (Admin ▸ Organization) ─────────────────────────────────────────────────
 // Name, logo, colors, unit prefix and home area come from appdata/org. These defaults are MC
 // Hatzolah's own values, so an organization that hasn't changed anything looks exactly as before.
@@ -381,12 +389,16 @@ function psSearchProtocols(index, question, level, limit) {
   return out.slice(0, limit || 8);
 }
 
-var auth = firebase.auth();
+var auth = HOST ? HOST.firebase.auth() : firebase.auth();
 var PS = { index: null, level: localStorage.getItem("psLevel") || "EMT", pdf: null };
 var PDF_URL = "protocols.pdf", INDEX_URL = "protocols-index.json", PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 function $(id) { return document.getElementById(id); }
 function esc(t) { return orgEsc(t); }
-(function() { var mob = /iPhone|iPad|Android/i.test(navigator.userAgent); $("h-back").href = mob ? "mobile.html" : "./"; })();
+(function() {
+  var mob = /iPhone|iPad|Android/i.test(navigator.userAgent);
+  $("h-back").href = mob ? "mobile.html" : "./";
+  if (!mob && HOST) { $("h-back").textContent = "✕ Close"; $("h-back").onclick = function(e) { e.preventDefault(); try { HOST.focus(); } catch (x) {} window.close(); }; }
+})();
 function show(html) { $("view").innerHTML = html; window.scrollTo(0, 0); bindLevels(); }
 function gate(title, text) { $("tools").style.display = "none"; show('<div id="gate"><h2>' + esc(title) + '</h2><p>' + text + '</p></div>'); }
 function allowed(user, email, access) {
@@ -397,7 +409,13 @@ function allowed(user, email, access) {
   return false;
 }
 auth.onAuthStateChanged(function(u) {
-  if (!u) { gate("Sign in first", 'Open the <a href="' + $("h-back").href + '" style="color:#bfe0ff">' + esc(ORG.shortName) + ' app</a>, sign in, then come back.'); return; }
+  if (!u) {
+    var mob = /iPhone|iPad|Android/i.test(navigator.userAgent);
+    gate("Open Protocols from the app", mob
+      ? 'Open the <a href="mobile.html" style="color:#bfe0ff">' + esc(ORG.shortName) + ' app</a>, sign in, then tap the Protocols tile.'
+      : 'On a computer, open Protocols from the <b>Protocols</b> button on the ' + esc(ORG.shortName) + ' home screen while you\'re signed in. For security, the desktop app doesn\'t stay signed in across tabs, so this page can\'t be opened on its own. You can close this tab.');
+    return;
+  }
   Promise.all([db.collection("users").doc(u.uid).get(), db.collection("appdata").doc("protocolAI").get()]).then(function(r) {
     var user = r[0].exists ? r[0].data() : {}, settings = r[1].exists ? r[1].data() : {};
     if (!allowed(user, u.email, settings.access || "admins")) { gate("Not available yet", "Protocols is a beta that isn't turned on for your account yet."); return; }
