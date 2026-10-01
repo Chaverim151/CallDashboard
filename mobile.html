@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.19"; window.M_BUILD = BUILD;
+  var BUILD = "3.20"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -5010,8 +5010,8 @@ function mWatchCallerLocation(token) {
     mLocStatus("📍 Caller's location — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn + addrLine +
       '<br><span id="m-nc-loc-age" style="color:var(--gray);font-size:0.72rem"></span>' +
       '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
-      ' · <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Use this location</button>' +
-      ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ',true)" title="Highway, park, or anywhere without a street address" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Coordinates only</button>', color);
+      ' · <button type="button" onclick="mUseClosestAddress(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">📮 Use closest address</button>' +
+      ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ',true)" title="Highway, park, or anywhere without a street address" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">📍 Use precise location (coordinates)</button>', color);
   });
 }
 // The dispatcher decides — the pin is never applied on its own.
@@ -5040,8 +5040,13 @@ function mLocPendingNote() {
   if (moved < threshold) return;                       // same place — leave the panel alone
   var ago = mLocLastAt ? Math.round((Date.now() - mLocLastAt) / 1000) : 0;
   mLocStatus("✅ Using the caller's location (within " + mLocAppliedAcc + " m)." +
-    '<br><span style="color:#ffc84a">' + (mLocCoordsOnly ? "Coordinates changed by about " : "The caller has moved about ") + (moved < 1000 ? Math.round(moved) + " m" : (moved/1000).toFixed(1) + " km") + ' — newer fix within ' + acc + ' m, ' + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + ' ago.</span>' +
-    ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#ffc84a");
+    '<br><span style="color:#ffc84a">' + (mLocCoordsOnly ? "The precise location changed by about " : "The caller has moved about ") + (moved < 1000 ? Math.round(moved) + " m" : (moved/1000).toFixed(1) + " km") + ' — newer fix within ' + acc + ' m, ' + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + ' ago.</span>' +
+    ' <button type="button" onclick="' + (mLocCoordsOnly ? 'mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ',true)' : 'mUseClosestAddress(' + d.lat + ',' + d.lng + ',' + acc + ')') + '" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#ffc84a");
+  // keep the switch between the two choices available too, for the point already in use
+  var st = document.querySelector("[id*=loc-status]");
+  if (st && mLocAppliedLat !== null) st.insertAdjacentHTML("beforeend", " " + (mLocCoordsOnly
+    ? mLocSwitchBtn("📮 Use closest address", "mUseClosestAddress(" + mLocAppliedLat + "," + mLocAppliedLng + "," + mLocAppliedAcc + ")")
+    : mLocSwitchBtn("📍 Use precise location (coordinates)", "mUseCallerLocation(" + mLocAppliedLat + "," + mLocAppliedLng + "," + mLocAppliedAcc + ",true)")));
 }
 var mLocAppliedAcc = 0, mLocAppliedLat = null, mLocAppliedLng = null, mLocCoordsOnly = false;
 function mUseCallerLocation(lat, lng, acc, coordsOnly) {
@@ -5058,7 +5063,7 @@ function mUseCallerLocation(lat, lng, acc, coordsOnly) {
     i2.classList.remove("m-nc-need");
     if (typeof mNcValidateMarks === "function") mNcValidateMarks();
     mNcShowCoords();
-    mLocStatus("✅ Using coordinates only (within " + acc + " m) — no street address." +
+    mLocStatus("✅ Using the precise location (coordinates, within " + acc + " m) — no street address." +
       '<br>' + mLocSwitchBtn("📮 Use closest address", "mUseClosestAddress(" + lat + "," + lng + "," + acc + ")"), "#7dedb5");
     return;
   }
@@ -5095,7 +5100,7 @@ function mUseCallerLocation(lat, lng, acc, coordsOnly) {
       mNcShowCoords();
       mLocStatus("✅ Using the caller's location (within " + acc + " m). Check the address before posting." +
         '<br>' + (r && !precise ? mLocSwitchBtn("📮 Use closest address", "mUseClosestAddress(" + lat + "," + lng + "," + acc + ")") + ' ' : '') +
-        mLocSwitchBtn("📍 Use coordinates only", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)") +
+        mLocSwitchBtn("📍 Use precise location (coordinates)", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)") +
         '<br><span style="color:var(--gray);font-size:0.72rem">No further action needed — if the caller moves you can take a newer fix.</span>', "#7dedb5");
     });
   }
@@ -5108,9 +5113,10 @@ function mLocSwitchBtn(label, onclick) {
 function mUseClosestAddress(lat, lng, acc) {
   var inp = document.getElementById("m-nc-address");
   var done = function(addr) {
-    if (!addr) { mLocStatus("Couldn't find a nearby street address — keeping the coordinates." + '<br>' + mLocSwitchBtn("📍 Use coordinates only", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)"), "#ffc84a"); return; }
+    if (!addr) { mLocStatus("Couldn't find a nearby street address — use the precise location (coordinates) instead." + '<br>' + mLocSwitchBtn("📍 Use precise location (coordinates)", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)"), "#ffc84a"); return; }
     mLocCoordsOnly = false; mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
     inp.value = addr; mNcResolvedAddress = addr;
+    if (typeof mDetectZoneInfo === "function") { var z = mDetectZoneInfo(lat, lng); if (z) mSetNcZone(z.type, false, z.area); }
     document.getElementById("m-nc-lat").value = lat;          // the pin stays on the caller, not on the address
     document.getElementById("m-nc-lng").value = lng;
     document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
@@ -5119,7 +5125,7 @@ function mUseClosestAddress(lat, lng, acc) {
     mNcShowCoords();
     mLocStatus("✅ Using the closest address: <b>" + mEscHtml(addr) + "</b>" +
       '<br><span style="color:#ffc84a;font-size:0.76rem">Nearest address only — the caller may not be exactly there. The map pin stays on their exact spot (within ' + acc + ' m).</span>' +
-      '<br>' + mLocSwitchBtn("📍 Use coordinates only", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)"), "#7dedb5");
+      '<br>' + mLocSwitchBtn("📍 Use precise location (coordinates)", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)"), "#7dedb5");
   };
   if (!(window.google && google.maps && google.maps.Geocoder)) { done(mLocLastData && mLocLastData.approxAddress ? mCleanAddress(String(mLocLastData.approxAddress).replace(/, USA$/, "")) : ""); return; }
   mLocStatus("Looking up the closest address…", "var(--gray)");
