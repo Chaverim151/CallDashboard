@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "2.92"; window.M_BUILD = BUILD;
+  var BUILD = "2.93"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -377,7 +377,7 @@ body.m-tile-dragging{overscroll-behavior:none}
       <div style="text-align:center;margin-top:16px">
         <button onclick="mForgotPw()" style="background:none;border:none;color:var(--gray);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Forgot password?</button>
       </div>
-      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.92</div>
+      <div style="text-align:center;margin-top:18px;font-family:'Oswald',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.1em;color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:6px;padding:6px 12px;display:inline-block;width:auto;position:relative;left:50%;transform:translateX(-50%)">BUILD v2.93</div>
     </div>
   </div>
 </div>
@@ -408,7 +408,7 @@ body.m-tile-dragging{overscroll-behavior:none}
   <div class="m-topbar">
     <div class="m-topbar-left">
       <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="Logo">
-      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.92</span></div>
+      <div class="m-topbar-title">Hatzolah <span>MC</span><span style="font-size:0.5rem;color:var(--gray);letter-spacing:0.04em;margin-left:6px;font-weight:400">v2.93</span></div>
     </div>
     <div class="m-topbar-center">
       <div id="m-clock"></div>
@@ -4754,7 +4754,16 @@ function mNcBindDraft() {
 // Texts the caller a one-time link. They tap "Share my location" and their phone reports a position
 // with an accuracy in metres, which is shown here — a 15m fix is an address, a 500m fix is a
 // neighbourhood, and the dispatcher needs to know which they have before dispatching on it.
-var mLocReqToken = null, mLocReqUnsub = null;
+var mLocReqToken = null, mLocReqUnsub = null, mLocLastAt = null, mLocLastData = null;
+// The caller's page streams while their tab is open, so show how fresh the last fix is — a position
+// from four minutes ago may be nowhere near where they are now.
+setInterval(function() {
+  var el = document.getElementById("m-nc-loc-age"); if (!el || !mLocLastAt) return;
+  var s = Math.round((Date.now() - mLocLastAt) / 1000);
+  var txt = s < 10 ? "updating live" : s < 60 ? "last update " + s + "s ago" : "last update " + Math.round(s / 60) + " min ago";
+  el.textContent = "⏱ " + txt + (s > 120 ? " — the caller may have closed the page" : "");
+  el.style.color = s > 120 ? "#ffc84a" : "var(--gray)";
+}, 5000);
 function mLocStatus(html, color) {
   var el = document.getElementById("m-nc-loc-status"); if (!el) return;
   el.style.display = "block";
@@ -4789,7 +4798,11 @@ function mWatchCallerLocation(token) {
     var acc = d.accuracy || 0;
     var color = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
     var warn = acc > 150 ? "<br><b>Too rough to dispatch on alone — confirm the address with the caller.</b>" : "";
-    mLocStatus("📍 Caller's location received — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn +
+    mLocLastAt = d.at ? new Date(d.at).getTime() : Date.now();
+    mLocLastData = d;
+    var addrLine = d.approxAddress ? "<br>📮 " + mEscHtml(d.approxAddress) : "";
+    mLocStatus("📍 Caller's location — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn + addrLine +
+      '<br><span id="m-nc-loc-age" style="color:var(--gray);font-size:0.72rem"></span>' +
       '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
       ' · <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Use this location</button>', color);
   });
@@ -7096,7 +7109,7 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.92</span></span>
+      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400">v2.93</span></span>
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,#c9a84c,#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>

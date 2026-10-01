@@ -26,6 +26,13 @@
     <h1 id="head">Share your location</h1>
     <p id="msg">Tap the button and choose <b>Allow</b>. This sends your position to the dispatcher so the ambulance can find you.</p>
     <button id="go">📍 Share my location</button>
+    <div id="where" style="display:none;margin-top:18px;padding:14px;border:1px solid rgba(255,255,255,0.1);border-radius:11px;text-align:left">
+      <div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:#7f8ea6;margin-bottom:4px">Closest address</div>
+      <div id="addr" class="big" style="color:#fff;line-height:1.35">Looking it up…</div>
+      <div id="coords" style="font-size:0.82rem;color:#9fb0c9;margin-top:6px;font-variant-numeric:tabular-nums"></div>
+      <div id="acc" style="font-size:0.82rem;margin-top:6px"></div>
+      <div id="updated" style="font-size:0.76rem;color:#7f8ea6;margin-top:8px"></div>
+    </div>
     <div class="note" id="note">Your location is used for this call only.</div>
   </div>
 
@@ -52,15 +59,47 @@ function grade(acc) {
   return { label: "Rough — area only", cls: "err" };
 }
 
-var best = null, watchId = null, sentAny = false;
+var best = null, watchId = null, sentAny = false, lastSentAt = null, lastAddr = "", lastAddrAt = 0;
+
+function fmtAgo(ms) {
+  var s = Math.round(ms / 1000);
+  if (s < 5) return "just now";
+  if (s < 60) return s + " seconds ago";
+  var m = Math.round(s / 60);
+  return m === 1 ? "a minute ago" : m + " minutes ago";
+}
+// The "last updated" line ticks on its own, so a stale fix never looks fresh.
+setInterval(function() {
+  if (!lastSentAt) return;
+  document.getElementById("updated").textContent = "Last updated " + fmtAgo(Date.now() - lastSentAt);
+}, 5000);
+
+// Reverse geocode through Google's free-form endpoint used by the Maps JS API would need a key, so
+// the page asks the dispatch system's own Firestore-free fallback: OpenStreetMap's Nominatim, which
+// allows light use from a browser. It is only ever shown to the caller as a sanity check.
+function showAddress(lat, lng) {
+  if (Date.now() - lastAddrAt < 15000) return;      // don't re-look-up on every small improvement
+  lastAddrAt = Date.now();
+  fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + lat + "&lon=" + lng + "&zoom=18&addressdetails=1", { headers: { "Accept": "application/json" } })
+    .then(function(r){ return r.json(); })
+    .then(function(j) {
+      var a = j && j.address ? j.address : null;
+      if (!a) return;
+      var line = [ (a.house_number ? a.house_number + " " : "") + (a.road || ""), a.city || a.town || a.village || a.hamlet || "", a.state || "" ]
+                 .map(function(x){ return String(x).trim(); }).filter(Boolean).join(", ");
+      if (line) { lastAddr = line; document.getElementById("addr").textContent = line; }
+    })
+    .catch(function(){ /* the coordinates are what matter; the address is a courtesy */ });
+}
 
 function send(pos, done) {
   var g = grade(pos.coords.accuracy);
   return db.collection("locationRequests").doc(token).set({
     lat: pos.coords.latitude, lng: pos.coords.longitude,
     accuracy: Math.round(pos.coords.accuracy), accuracyLabel: g.label,
+    approxAddress: lastAddr || null,
     at: new Date().toISOString(), final: !!done
-  }, { merge: true });
+  }, { merge: true }).then(function() { lastSentAt = Date.now(); });
 }
 
 btn.addEventListener("click", function() {
@@ -72,16 +111,22 @@ btn.addEventListener("click", function() {
   btn.disabled = true; btn.textContent = "Locating…";
   msg.textContent = "Hold still for a few seconds — the location gets more accurate as it settles.";
 
+  // Keep streaming for as long as the page is open — a caller who is walking, or in a moving car,
+  // stays current rather than frozen at the first fix.
   watchId = navigator.geolocation.watchPosition(function(pos) {
-    if (best && pos.coords.accuracy >= best.coords.accuracy) return;   // keep only improvements
     best = pos;
     var g = grade(pos.coords.accuracy);
+    showAddress(pos.coords.latitude, pos.coords.longitude);
+    document.getElementById("where").style.display = "block";
+    document.getElementById("coords").textContent = pos.coords.latitude.toFixed(6) + ", " + pos.coords.longitude.toFixed(6);
+    document.getElementById("acc").innerHTML = '<span class="' + g.cls + '">' + g.label + ' — within ' + Math.round(pos.coords.accuracy) + ' m</span>';
     send(pos, false).then(function() {
       sentAny = true;
-      head.textContent = "Location sent";
-      msg.innerHTML = 'The dispatcher can see where you are.<br><span class="big ' + g.cls + '">' + g.label + ' — within ' + Math.round(pos.coords.accuracy) + ' m</span>';
-      btn.textContent = "✓ Sent — keep this page open";
-      note.textContent = "Leaving this page open lets the location sharpen. You can close it once help arrives.";
+      document.getElementById("updated").textContent = "Last updated just now";
+      head.textContent = "Sharing your location";
+      msg.innerHTML = 'The dispatcher can see where you are. <b>Keep this page open</b> until help arrives.';
+      btn.textContent = "✓ Sharing — keep this page open";
+      note.textContent = "Your location keeps updating while this page is open.";
     }).catch(function() {
       head.textContent = "Couldn't send";
       msg.textContent = "Please tell the dispatcher your address.";
@@ -95,11 +140,11 @@ btn.addEventListener("click", function() {
     btn.disabled = false; btn.textContent = "📍 Try again";
   }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
 
-  // stop watching after two minutes; the best fix has already been sent
-  setTimeout(function() {
+  // Streaming continues until the page is closed.
+  window.addEventListener("pagehide", function() {
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
     if (best) send(best, true);
-  }, 120000);
+  });
 });
 </script>
 </body>

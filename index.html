@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.92');
+  window.location.replace('/CallDashboard/mobile.html?v=2.93');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -15545,7 +15545,16 @@ function mNcBindDraft() {
 // Texts the caller a one-time link. They tap "Share my location" and their phone reports a position
 // with an accuracy in metres, which is shown here — a 15m fix is an address, a 500m fix is a
 // neighbourhood, and the dispatcher needs to know which they have before dispatching on it.
-var mLocReqToken = null, mLocReqUnsub = null;
+var mLocReqToken = null, mLocReqUnsub = null, mLocLastAt = null, mLocLastData = null;
+// The caller's page streams while their tab is open, so show how fresh the last fix is — a position
+// from four minutes ago may be nowhere near where they are now.
+setInterval(function() {
+  var el = document.getElementById("m-nc-loc-age"); if (!el || !mLocLastAt) return;
+  var s = Math.round((Date.now() - mLocLastAt) / 1000);
+  var txt = s < 10 ? "updating live" : s < 60 ? "last update " + s + "s ago" : "last update " + Math.round(s / 60) + " min ago";
+  el.textContent = "⏱ " + txt + (s > 120 ? " — the caller may have closed the page" : "");
+  el.style.color = s > 120 ? "#ffc84a" : "var(--gray)";
+}, 5000);
 function mLocStatus(html, color) {
   var el = document.getElementById("m-nc-loc-status"); if (!el) return;
   el.style.display = "block";
@@ -15580,7 +15589,11 @@ function mWatchCallerLocation(token) {
     var acc = d.accuracy || 0;
     var color = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
     var warn = acc > 150 ? "<br><b>Too rough to dispatch on alone — confirm the address with the caller.</b>" : "";
-    mLocStatus("📍 Caller's location received — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn +
+    mLocLastAt = d.at ? new Date(d.at).getTime() : Date.now();
+    mLocLastData = d;
+    var addrLine = d.approxAddress ? "<br>📮 " + mEscHtml(d.approxAddress) : "";
+    mLocStatus("📍 Caller's location — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn + addrLine +
+      '<br><span id="m-nc-loc-age" style="color:var(--gray);font-size:0.72rem"></span>' +
       '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
       ' · <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">Use this location</button>', color);
   });
