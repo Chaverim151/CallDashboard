@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.07');
+  window.location.replace('/CallDashboard/mobile.html?v=3.08');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1047,6 +1047,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 #pg-console .m-call-street,#tpl-modal .m-call-street{font-size:0.82rem;color:#c9d4e6;margin-top:-2px;margin-bottom:4px}
 
 #pg-admin #tc-section input[type="text"],
+#pg-admin #tc-section select,
 #pg-admin #tc-section input[type="datetime-local"]{width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 11px;color:var(--white);font-size:0.88rem}
 #pg-admin #tc-section label{display:block;font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:#e8eef8;margin-bottom:4px}
 #pg-admin #tc-section .form-row{display:flex;gap:12px;margin-bottom:12px}
@@ -1311,7 +1312,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.95</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.96</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1618,7 +1619,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     <button class="admin-tab" data-tab="protocols" onclick="setAdminTab('protocols')">📋 Protocols &amp; Dispatch</button>
     <button class="admin-tab" data-tab="codes" onclick="setAdminTab('codes')">🔑 Codes &amp; Locations</button>
     <button class="admin-tab" data-tab="fleet" onclick="setAdminTab('fleet')">🚑 Fleet</button>
-    <button class="admin-tab" data-tab="traffic" onclick="setAdminTab('traffic')">🚧 Traffic &amp; Closures</button>
+    <button class="admin-tab" data-tab="traffic" onclick="setAdminTab('traffic')">🚧 Closure Notifications</button>
     <button class="admin-tab" data-tab="templates" onclick="setAdminTab('templates')">✉️ Message Templates</button>
     <button class="admin-tab" data-tab="notifications" onclick="setAdminTab('notifications')">🔔 Notification Log</button>
     <button class="admin-tab" data-tab="locations" onclick="setAdminTab('locations')">📍 Location Requests</button>
@@ -1880,10 +1881,12 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     </div>
 
     <div class="admin-section" data-admin-tab="traffic" id="tc-section">
-  <div class="admin-label" style="margin-bottom:4px">Road closures</div>
-  <div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px;line-height:1.5">
-    Closures are entered here and sorted automatically into the coverage area they fall in. Notifying sends the closure to every unit; the test button sends it only to you.
-  </div>
+  <div class="admin-section-title">🚧 Closure Notifications</div>
+  <p style="color:var(--gray);font-size:0.82rem;margin-bottom:16px;line-height:1.6">Road closures and hospital diverts. Saving records one; nothing is sent until you press <b>Notify units</b>, which texts every unit. In Test Mode, texts go only to you and nothing is marked as sent.</p>
+
+  <div class="admin-label" style="margin-bottom:4px;font-size:0.8rem;color:var(--gold)">🚧 Road closures</div>
+  <div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px;line-height:1.5">Closures are placed on the map and sorted into the coverage area they fall in.</div>
+  <div id="tc-migrate"></div>
   <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:16px">
     <div class="form-row"><div><label>Road / location</label>
       <input type="text" id="tc-address" placeholder="e.g. Raritan Ave between 2nd and 4th" autocomplete="off"></div>
@@ -1896,6 +1899,27 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     <span id="tc-status" style="font-size:0.78rem;color:var(--gray);margin-left:10px"></span>
   </div>
   <div id="tc-list"><div style="color:var(--gray);font-size:0.82rem">Loading closures…</div></div>
+
+  <div id="hd-block" style="margin-top:30px;padding-top:18px;border-top:1px solid var(--card-border)">
+  <div class="admin-label" style="margin-bottom:4px;font-size:0.8rem;color:var(--gold)">🏥 Hospital diverts</div>
+  <div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px;line-height:1.5">Record a hospital that's on divert and tell the units. Check the official status on <a href="https://njdivert.juvare.com" target="_blank" style="color:#bfe0ff">NJ Divert</a>.</div>
+  <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:16px">
+    <div class="form-row"><div><label>Hospital</label>
+      <select id="hd-hospital" onchange="document.getElementById('hd-other-wrap').style.display=this.value==='__other__'?'block':'none'"><option value="">Loading…</option></select>
+      <div id="hd-other-wrap" style="display:none;margin-top:6px"><input type="text" id="hd-other" placeholder="Hospital name"></div></div>
+      <div><label>Type of divert</label>
+      <select id="hd-type">
+        <option>Full divert</option><option>ED saturation</option><option>Trauma divert</option><option>Stroke divert</option>
+        <option>STEMI / cardiac divert</option><option>Pediatric divert</option><option>OB / L&amp;D divert</option><option>Psych divert</option>
+        <option>CT down</option><option>Other</option></select></div></div>
+    <div class="form-row"><div><label>Detail (optional)</label><input type="text" id="hd-detail" placeholder="e.g. Use RWJ Somerset for stroke"></div>
+      <div><label>Expected until (optional)</label><input type="datetime-local" id="hd-until"></div></div>
+    <button class="card-save-btn" onclick="hdAdd()">+ Add divert</button>
+    <button class="edit-mode-btn" onclick="hdTest()" style="margin-left:8px">🧪 Test to me</button>
+    <span id="hd-status" style="font-size:0.78rem;color:var(--gray);margin-left:10px"></span>
+  </div>
+  <div id="hd-list"><div style="color:var(--gray);font-size:0.82rem">Loading diverts…</div></div>
+  </div>
 </div>
 
     <div class="admin-section" data-admin-tab="fleet" id="adm-service-status">
@@ -1945,7 +1969,6 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         <button class="ticket-tab" data-ds="hospitals" onclick="setDsTab('hospitals')">🏥 Transport Hospitals</button>
         <button class="ticket-tab" data-ds="outside" onclick="setDsTab('outside')">📞 Outside-Coverage Contacts</button>
         <button class="ticket-tab" data-ds="notify" onclick="setDsTab('notify')">🔔 Notifications &amp; Permissions</button>
-        <button class="ticket-tab" data-ds="traffic" onclick="setDsTab('traffic')">🚧 Road Closures</button>
       </div>
       <div id="ds-content"></div>
       <div id="ds-save-row" style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
@@ -2492,79 +2515,116 @@ function showPage(name) {
 // ── TRAFFIC & CLOSURES ──
 // Closures are stored in Firestore and sorted by the coverage area their coordinates fall in, using
 // the same polygons the dispatch console uses. Google geocoding resolves the road the admin types.
-var TC_CACHE = [], tcGeo = { lat: null, lng: null, resolved: "" };
+var TC_CACHE = [], tcGeo = { q: "", lat: null, lng: null, resolved: "" };
 function tcZoneOf(lat, lng) {
   if (!lat || !lng || typeof mDetectZoneInfo !== "function") return { type: "unknown", area: "" };
   return mDetectZoneInfo(lat, lng) || { type: "unknown", area: "" };
 }
+// ── CLOSURE NOTIFICATIONS: road closures + hospital diverts ──────────────────────────────────────
+// Test Mode sends only to the tester, so a test must never be recorded as "sent to every unit".
+function tcTesting() {
+  return !!((typeof MSysTestingMode !== "undefined" && MSysTestingMode) || (typeof SYS_TESTING_MODE !== "undefined" && SYS_TESTING_MODE) || (typeof SMS_TESTING_MODE !== "undefined" && SMS_TESTING_MODE));
+}
+function tcStatus(id, text, color) { var st = document.getElementById(id); if (st) { st.textContent = text; st.style.color = color || "var(--gray)"; } }
+// A result that's only a town, county or ZIP means Google didn't find the road — it put the pin in
+// the middle of the town, which can land in the wrong coverage area.
+function tcIsVague(r) {
+  var t = (r && r.types) || [];
+  var specific = ["route", "intersection", "street_address", "premise", "point_of_interest", "establishment", "subpremise", "natural_feature", "park", "airport", "transit_station"];
+  return !t.some(function(x) { return specific.indexOf(x) !== -1; });
+}
+function tcShowGeo(geo) {
+  var note = document.getElementById("tc-zone-note"); if (!note) return;
+  if (!geo || !geo.lat) { note.innerHTML = geo && geo.q ? '<span style="color:#ff9090">Couldn\'t place that on the map — it would be saved as "Not placed on the map"</span>' : ''; return; }
+  var z = tcZoneOf(geo.lat, geo.lng);
+  var label = z.type === "primary" ? "Primary" : z.type === "secondary" ? "Secondary" : "Outside the coverage area";
+  var colour = z.type === "primary" ? "#7dedb5" : z.type === "secondary" ? "#ffc84a" : "#ff9090";
+  note.innerHTML = '📍 ' + escapeHtml(geo.resolved) + ' — <b style="color:' + colour + '">' + label + '</b>' + (z.area ? ' · ' + escapeHtml(mZoneAreaLabel(z.area)) : '') +
+    (geo.vague ? '<br><span style="color:#ffc84a">⚠ Only found the general area, not the road itself — the area above may be wrong. Add the town or a cross street.</span>' : '');
+}
+// Look up exactly what's in the box now. Reuses the last result only if it was for this same text, so
+// a save can never pick up the position of something typed earlier.
+function tcResolve(q) {
+  if (!q) return Promise.resolve({ q: q, lat: null, lng: null, resolved: "" });
+  if (tcGeo.q === q && (tcGeo.lat || tcGeo.failed)) return Promise.resolve(tcGeo);
+  if (!(window.google && google.maps && google.maps.Geocoder)) return Promise.resolve({ q: q, lat: null, lng: null, resolved: "", failed: true });
+  return new Promise(function(resolve) {
+    new google.maps.Geocoder().geocode({ address: q, region: "us" }, function(res, st) {
+      if (st !== "OK" || !res || !res[0]) { tcGeo = { q: q, lat: null, lng: null, resolved: "", failed: true }; }
+      else { var loc = res[0].geometry.location; tcGeo = { q: q, lat: loc.lat(), lng: loc.lng(), resolved: res[0].formatted_address, vague: tcIsVague(res[0]) }; }
+      if ((document.getElementById("tc-address").value || "").trim() === q) tcShowGeo(tcGeo);
+      resolve(tcGeo);
+    });
+  });
+}
 function tcBindAddress() {
   var el = document.getElementById("tc-address"); if (!el || el.dataset.bound) return;
   el.dataset.bound = "1";
-  var note = document.getElementById("tc-zone-note");
-  var resolve = function() {
-    var q = el.value.trim();
-    if (!q || !(window.google && google.maps && google.maps.Geocoder)) { note.textContent = ""; return; }
-    new google.maps.Geocoder().geocode({ address: q, region: "us" }, function(res, st) {
-      if (st !== "OK" || !res || !res[0]) { tcGeo = { lat: null, lng: null, resolved: "" }; note.innerHTML = '<span style="color:#ff9090">Couldn\'t place that road — it will be filed as Outside / unknown</span>'; return; }
-      var loc = res[0].geometry.location;
-      tcGeo = { lat: loc.lat(), lng: loc.lng(), resolved: res[0].formatted_address };
-      var z = tcZoneOf(tcGeo.lat, tcGeo.lng);
-      var label = z.type === "primary" ? "Primary" : z.type === "secondary" ? "Secondary" : "Outside the coverage area";
-      var colour = z.type === "primary" ? "#7dedb5" : z.type === "secondary" ? "#ffc84a" : "#ff9090";
-      note.innerHTML = '📍 ' + escapeHtml(tcGeo.resolved) + ' — <b style="color:' + colour + '">' + label + '</b>' + (z.area ? ' · ' + escapeHtml(mZoneAreaLabel(z.area)) : '');
-    });
-  };
-  el.addEventListener("blur", resolve);
-  el.addEventListener("keydown", function(e){ if (e.key === "Enter") { e.preventDefault(); resolve(); } });
+  el.addEventListener("blur", function() { tcResolve(el.value.trim()); });
+  el.addEventListener("input", function() { var n = document.getElementById("tc-zone-note"); if (n) n.textContent = ""; });
+  el.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); tcResolve(el.value.trim()); } });
   if (window.google && google.maps && google.maps.places) {
-    try { var ac = new google.maps.places.Autocomplete(el, { componentRestrictions: { country: "us" } });
-      ac.addListener("place_changed", function(){ var p = ac.getPlace(); if (p && p.geometry) { tcGeo = { lat: p.geometry.location.lat(), lng: p.geometry.location.lng(), resolved: p.formatted_address || el.value }; resolve(); } }); } catch (e) {}
+    try {
+      var ac = new google.maps.places.Autocomplete(el, { componentRestrictions: { country: "us" } });
+      ac.addListener("place_changed", function() {
+        var p = ac.getPlace();
+        setTimeout(function() {
+          if (p && p.geometry) {
+            tcGeo = { q: el.value.trim(), lat: p.geometry.location.lat(), lng: p.geometry.location.lng(), resolved: p.formatted_address || el.value, vague: tcIsVague(p) };
+            tcShowGeo(tcGeo);
+          } else tcResolve(el.value.trim());
+        }, 0);
+      });
+    } catch (e) {}
   }
 }
+// The link shows the closure on a map — it doesn't route the crew to it.
+function tcMapLink(lat, lng) { return "https://www.google.com/maps/search/?api=1&query=" + lat + "," + lng; }
+function tcFooter() { return (typeof M_ORG_FOOTER !== "undefined" ? M_ORG_FOOTER : "MC Hatzolah") + (currentUserUnit ? " " + currentUserUnit : ""); }
 function tcClosureBody(c) {
   var until = c.until ? new Date(c.until) : null;
   return "🚧 ROAD CLOSURE\n" + (c.resolved || c.road) +
     (c.detail ? "\n" + c.detail : "") +
     (until ? "\nUntil: " + until.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "") +
-    (c.lat && c.lng ? "\n\nhttps://www.google.com/maps/dir/?api=1&destination=" + c.lat + "," + c.lng + "&travelmode=driving" : "") +
-    "\n" + ((typeof M_ORG_FOOTER !== "undefined" ? M_ORG_FOOTER : "MC Hatzolah") + (currentUserUnit ? " " + currentUserUnit : ""));
+    (c.lat && c.lng ? "\n\nMap: " + tcMapLink(c.lat, c.lng) : "") +
+    "\n" + tcFooter();
 }
+function tcReopenBody(c) { return "✅ ROAD REOPENED\n" + (c.resolved || c.road) + "\n" + tcFooter(); }
 function tcAddClosure() {
   var road = (document.getElementById("tc-address").value || "").trim();
-  var st = document.getElementById("tc-status");
-  if (!road) { st.textContent = "Enter the road first"; return; }
-  var z = tcZoneOf(tcGeo.lat, tcGeo.lng);
-  var entry = { road: road, resolved: tcGeo.resolved || road, detail: (document.getElementById("tc-detail").value || "").trim(),
-                until: document.getElementById("tc-until").value || "", lat: tcGeo.lat, lng: tcGeo.lng,
-                zone: z.type, zoneArea: z.area || "", active: true,
-                createdAt: new Date().toISOString(), createdBy: currentUserUnit || "" };
-  st.textContent = "Saving…";
-  db.collection("trafficClosures").add(entry).then(function() {
-    document.getElementById("tc-address").value = ""; document.getElementById("tc-detail").value = "";
-    document.getElementById("tc-until").value = ""; document.getElementById("tc-zone-note").textContent = "";
-    tcGeo = { lat: null, lng: null, resolved: "" };
-    st.textContent = "Added — not yet sent to anyone";
-    tcLoad();
-  }).catch(function(e){ st.textContent = "Error: " + e.message; });
+  if (!road) { tcStatus("tc-status", "Enter the road first", "#ff9090"); return; }
+  tcStatus("tc-status", "Placing it on the map…");
+  tcResolve(road).then(function(geo) {
+    if (!geo.lat && !confirm("Couldn't place \"" + road + "\" on the map. Save it anyway as \"Not placed on the map\"?")) { tcStatus("tc-status", ""); return; }
+    if (geo.lat && geo.vague && !confirm("Google only found the general area (" + geo.resolved + "), not the road itself, so the coverage area may be wrong. Save anyway?")) { tcStatus("tc-status", ""); return; }
+    var z = tcZoneOf(geo.lat, geo.lng);
+    var entry = { road: road, resolved: geo.resolved || road, detail: (document.getElementById("tc-detail").value || "").trim(),
+                  until: document.getElementById("tc-until").value || "", lat: geo.lat, lng: geo.lng,
+                  zone: geo.lat ? z.type : "unknown", zoneArea: z.area || "", active: true,
+                  createdAt: new Date().toISOString(), createdBy: currentUserUnit || "" };
+    tcStatus("tc-status", "Saving…");
+    return db.collection("trafficClosures").add(entry).then(function() {
+      ["tc-address", "tc-detail", "tc-until"].forEach(function(id) { document.getElementById(id).value = ""; });
+      document.getElementById("tc-zone-note").textContent = "";
+      tcGeo = { lat: null, lng: null, resolved: "" };
+      tcStatus("tc-status", "Added — not yet sent to anyone. Press Notify units on it to send.");
+      tcLoad();
+    });
+  }).catch(function(e) { tcStatus("tc-status", "Error: " + e.message, "#ff9090"); });
 }
 function tcTestClosure() {
   var road = (document.getElementById("tc-address").value || "").trim();
-  var st = document.getElementById("tc-status");
-  if (!road) { st.textContent = "Enter the road first"; return; }
-  var z = tcZoneOf(tcGeo.lat, tcGeo.lng);
-  var body = tcClosureBody({ road: road, resolved: tcGeo.resolved || road, detail: (document.getElementById("tc-detail").value || "").trim(),
-                             until: document.getElementById("tc-until").value || "", lat: tcGeo.lat, lng: tcGeo.lng });
-  var zLabel = z.type === "primary" ? "Primary" : z.type === "secondary" ? "Secondary" : "Outside";
-  st.textContent = "Sending test…";
-  db.collection("users").doc(currentUser.uid).get().then(function(snap) {
-    var phone = snap.exists ? snap.data().phone : "";
-    if (!phone) { st.textContent = "No phone number on your account"; return; }
-    var p = mGetFirstPhone(phone);
-    if (!p) { st.textContent = "Your number isn't in a format we can text"; return; }
-    return mSendClickSendSMS([p], "[TEST — would go to " + zLabel + "] " + body).then(function() {
-      st.textContent = "Test sent to you only · this closure sorts into " + zLabel;
+  if (!road) { tcStatus("tc-status", "Enter the road first", "#ff9090"); return; }
+  tcStatus("tc-status", "Sending test…");
+  tcResolve(road).then(function(geo) {
+    var z = tcZoneOf(geo.lat, geo.lng);
+    var body = tcClosureBody({ road: road, resolved: geo.resolved || road, detail: (document.getElementById("tc-detail").value || "").trim(),
+                               until: document.getElementById("tc-until").value || "", lat: geo.lat, lng: geo.lng });
+    var zLabel = !geo.lat ? "not placed" : z.type === "primary" ? "Primary" : z.type === "secondary" ? "Secondary" : "Outside";
+    return mSendTestToSelf(body).then(function(r) {
+      tcStatus("tc-status", r === null ? "No textable phone number on your profile" : "Test sent to you only · this closure sorts into " + zLabel, r === null ? "#ff9090" : "");
     });
-  }).catch(function(e){ st.textContent = "Error: " + e.message; });
+  }).catch(function(e) { tcStatus("tc-status", "Error: " + e.message, "#ff9090"); });
 }
 // Every unit that may receive texts — the same eligibility rule call notifications use.
 function tcAllPhones() {
@@ -2577,28 +2637,170 @@ function tcAllPhones() {
       if (p) { mPhoneUnitMap[p] = u.unit; phones.push(p); }
     });
     return phones;
-  }).catch(function(){ return []; });
+  });
+}
+// Send one message to every unit. Resolves with "test" when Test Mode kept it to the tester.
+function tcSendAll(body) {
+  var testing = tcTesting();
+  return tcAllPhones().then(function(phones) {
+    if (!phones.length) throw new Error("No units with a usable phone number");
+    return mSendClickSendSMS(phones, body).then(function() { return testing ? "test" : "sent"; });
+  });
 }
 function tcNotify(id) {
-  var c = TC_CACHE.filter(function(x){ return x.id === id; })[0]; if (!c) return;
-  var zLabel = c.zone === "primary" ? "Primary" : c.zone === "secondary" ? "Secondary" : "Outside";
-  if (!confirm("Send this closure to every unit?\n\nArea: " + zLabel)) return;
-  var st = document.getElementById("tc-status"); st.textContent = "Sending…";
-  tcAllPhones().then(function(phones) {
-    if (!phones.length) { document.getElementById("tc-status").textContent = "No units with a usable number"; return; }
-    return mSendClickSendSMS(phones, tcClosureBody(c));
-  }).then(function() {
-    return db.collection("trafficClosures").doc(id).set({ notifiedAt: new Date().toISOString(), notifiedBy: currentUserUnit || "" }, { merge: true });
-  }).then(function(){ st.textContent = "Sent"; tcLoad(); })
-    .catch(function(e){ st.textContent = "Error: " + e.message; });
+  var c = TC_CACHE.filter(function(x) { return x.id === id; })[0]; if (!c) return;
+  var testing = tcTesting();
+  if (!confirm((testing ? "TEST MODE — this goes only to you.\n\n" : "") + "Send this closure to every unit?\n\n" + (c.resolved || c.road) + (c.notifiedAt ? "\n\n(It was already sent " + new Date(c.notifiedAt).toLocaleString() + ")" : ""))) return;
+  tcStatus("tc-status", "Sending…");
+  tcSendAll(tcClosureBody(c)).then(function(how) {
+    if (how === "test") { tcStatus("tc-status", "Test Mode — sent to you only. Not marked as sent.", "#ffc84a"); return; }
+    return db.collection("trafficClosures").doc(id).set({ notifiedAt: new Date().toISOString(), notifiedBy: currentUserUnit || "" }, { merge: true })
+      .then(function() { tcStatus("tc-status", "Sent to every unit"); tcLoad(); });
+  }).catch(function(e) { tcStatus("tc-status", "Error: " + e.message, "#ff9090"); });
 }
 function tcToggle(id, active) {
-  db.collection("trafficClosures").doc(id).set({ active: !!active }, { merge: true }).then(tcLoad);
+  var c = TC_CACHE.filter(function(x) { return x.id === id; })[0]; if (!c) return;
+  var update = { active: !!active };
+  var tell = !active && c.notifiedAt && confirm("Mark as reopened.\n\nAlso text every unit that " + (c.resolved || c.road) + " has reopened?");
+  (tell ? tcSendAll(tcReopenBody(c)) : Promise.resolve(null)).then(function(how) {
+    if (how === "sent") { update.reopenNotifiedAt = new Date().toISOString(); update.reopenNotifiedBy = currentUserUnit || ""; }
+    if (how === "test") tcStatus("tc-status", "Test Mode — reopened text sent to you only.", "#ffc84a");
+    return db.collection("trafficClosures").doc(id).set(update, { merge: true });
+  }).then(tcLoad).catch(function(e) { tcStatus("tc-status", "Error: " + e.message, "#ff9090"); });
 }
 function tcDelete(id) {
   if (!confirm("Delete this closure?")) return;
   db.collection("trafficClosures").doc(id).delete().then(tcLoad);
 }
+// ── The old Protocols ▸ Road Closures list (roadClosures) was retired. Anything still active in it
+//    can be moved here in one click; the old record is marked as moved, not deleted. ──
+var TC_OLD = [];
+function tcCheckOldList() {
+  var host = document.getElementById("tc-migrate"); if (!host) return;
+  db.collection("roadClosures").get().then(function(snap) {
+    TC_OLD = [];
+    snap.forEach(function(d) { var c = d.data(); if (!c.cleared && !c.movedTo && !(c.until && new Date(c.until) < new Date())) TC_OLD.push(Object.assign({ id: d.id }, c)); });
+    host.innerHTML = TC_OLD.length
+      ? '<div style="background:rgba(240,165,0,0.1);border:1px solid rgba(240,165,0,0.45);border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:0.8rem;color:#ffc84a">' +
+          TC_OLD.length + ' active closure' + (TC_OLD.length === 1 ? ' is' : 's are') + ' still in the old Protocols list: ' + TC_OLD.map(function(c) { return escapeHtml(c.road || "(no road)"); }).join(", ") +
+          ' <button class="edit-mode-btn" style="padding:4px 10px;font-size:0.7rem;margin-left:6px" onclick="tcMoveOld()">Move them here</button></div>'
+      : '';
+  }).catch(function() { host.innerHTML = ''; });
+}
+function tcMoveOld() {
+  if (!TC_OLD.length) return;
+  var moves = TC_OLD.map(function(c) {
+    var placed = c.lat && c.lng, z = placed ? tcZoneOf(c.lat, c.lng) : { type: c.zone || "unknown", area: "" };
+    var entry = { road: c.road || "", resolved: c.address || c.road || "", detail: c.detail || "", until: c.until || "",
+                  lat: placed ? c.lat : null, lng: placed ? c.lng : null, zone: z.type, zoneArea: z.area || "", active: true,
+                  createdAt: c.createdAt || new Date().toISOString(), createdBy: c.createdBy || "", movedFrom: "roadClosures/" + c.id };
+    if (c.notifiedAt) entry.notifiedAt = c.notifiedAt;
+    return db.collection("trafficClosures").add(entry).then(function(ref) {
+      return db.collection("roadClosures").doc(c.id).set({ movedTo: ref.id, movedAt: new Date().toISOString() }, { merge: true });
+    });
+  });
+  Promise.all(moves).then(function() { showToast("Moved " + moves.length + " closure" + (moves.length === 1 ? "" : "s")); tcCheckOldList(); tcLoad(); })
+    .catch(function(e) { showToast("Couldn't move them: " + e.message, true); });
+}
+// ── HOSPITAL DIVERTS (hospitalDiverts) ──
+var HD_CACHE = [];
+function hdFillHospitals() {
+  var sel = document.getElementById("hd-hospital"); if (!sel || sel.dataset.filled) return;
+  db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
+    var list = (s.exists && Array.isArray(s.data().hospitals) && s.data().hospitals.length) ? s.data().hospitals
+             : (typeof DISPATCH_HOSPITALS_DEFAULT !== "undefined" ? DISPATCH_HOSPITALS_DEFAULT : []);
+    list = list.filter(function(h) { return h && h !== "Other"; });
+    sel.innerHTML = '<option value="">Choose a hospital…</option>' + list.map(function(h) { return '<option>' + escapeHtml(h) + '</option>'; }).join("") + '<option value="__other__">Other…</option>';
+    sel.dataset.filled = "1";
+  }).catch(function() { sel.innerHTML = '<option value="">Choose a hospital…</option><option value="__other__">Other…</option>'; });
+}
+function hdActive(d) { return d.active !== false && !(d.until && new Date(d.until) < new Date()); }
+function hdBody(d) {
+  return "🏥 HOSPITAL DIVERT\n" + d.hospital + " — " + d.type +
+    (d.detail ? "\n" + d.detail : "") +
+    (d.until ? "\nExpected until: " + new Date(d.until).toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "") +
+    "\n" + tcFooter();
+}
+function hdOffBody(d) { return "✅ OFF DIVERT\n" + d.hospital + " is no longer on " + String(d.type || "divert").toLowerCase() + ".\n" + tcFooter(); }
+function hdForm() {
+  var sel = document.getElementById("hd-hospital").value;
+  var hospital = sel === "__other__" ? (document.getElementById("hd-other").value || "").trim() : sel;
+  return { hospital: hospital, type: document.getElementById("hd-type").value, detail: (document.getElementById("hd-detail").value || "").trim(), until: document.getElementById("hd-until").value || "" };
+}
+function hdAdd() {
+  var d = hdForm();
+  if (!d.hospital) { tcStatus("hd-status", "Choose the hospital first", "#ff9090"); return; }
+  var dup = HD_CACHE.filter(function(x) { return hdActive(x) && x.hospital === d.hospital && x.type === d.type; })[0];
+  if (dup && !confirm(d.hospital + " is already listed on " + d.type + ". Add it again?")) return;
+  d.active = true; d.createdAt = new Date().toISOString(); d.createdBy = currentUserUnit || "";
+  tcStatus("hd-status", "Saving…");
+  db.collection("hospitalDiverts").add(d).then(function() {
+    ["hd-detail", "hd-until", "hd-other"].forEach(function(id) { document.getElementById(id).value = ""; });
+    document.getElementById("hd-hospital").value = ""; document.getElementById("hd-other-wrap").style.display = "none";
+    tcStatus("hd-status", "Added — not yet sent to anyone. Press Notify units on it to send.");
+    hdLoad();
+  }).catch(function(e) { tcStatus("hd-status", "Error: " + e.message, "#ff9090"); });
+}
+function hdTest() {
+  var d = hdForm();
+  if (!d.hospital) { tcStatus("hd-status", "Choose the hospital first", "#ff9090"); return; }
+  tcStatus("hd-status", "Sending test…");
+  mSendTestToSelf(hdBody(d)).then(function(r) { tcStatus("hd-status", r === null ? "No textable phone number on your profile" : "Test sent to you only", r === null ? "#ff9090" : ""); })
+    .catch(function(e) { tcStatus("hd-status", "Error: " + e.message, "#ff9090"); });
+}
+function hdNotify(id) {
+  var d = HD_CACHE.filter(function(x) { return x.id === id; })[0]; if (!d) return;
+  var testing = tcTesting();
+  if (!confirm((testing ? "TEST MODE — this goes only to you.\n\n" : "") + "Text every unit that " + d.hospital + " is on " + d.type + "?" + (d.notifiedAt ? "\n\n(It was already sent " + new Date(d.notifiedAt).toLocaleString() + ")" : ""))) return;
+  tcStatus("hd-status", "Sending…");
+  tcSendAll(hdBody(d)).then(function(how) {
+    if (how === "test") { tcStatus("hd-status", "Test Mode — sent to you only. Not marked as sent.", "#ffc84a"); return; }
+    return db.collection("hospitalDiverts").doc(id).set({ notifiedAt: new Date().toISOString(), notifiedBy: currentUserUnit || "" }, { merge: true })
+      .then(function() { tcStatus("hd-status", "Sent to every unit"); hdLoad(); });
+  }).catch(function(e) { tcStatus("hd-status", "Error: " + e.message, "#ff9090"); });
+}
+function hdOff(id) {
+  var d = HD_CACHE.filter(function(x) { return x.id === id; })[0]; if (!d) return;
+  var tell = d.notifiedAt && confirm("Mark " + d.hospital + " as off divert.\n\nAlso text every unit that it's off divert?");
+  if (!tell && !d.notifiedAt && !confirm("Mark " + d.hospital + " as off divert?")) return;
+  var update = { active: false, endedAt: new Date().toISOString(), endedBy: currentUserUnit || "" };
+  (tell ? tcSendAll(hdOffBody(d)) : Promise.resolve(null)).then(function(how) {
+    if (how === "sent") update.offNotifiedAt = new Date().toISOString();
+    if (how === "test") tcStatus("hd-status", "Test Mode — off-divert text sent to you only.", "#ffc84a");
+    return db.collection("hospitalDiverts").doc(id).set(update, { merge: true });
+  }).then(hdLoad).catch(function(e) { tcStatus("hd-status", "Error: " + e.message, "#ff9090"); });
+}
+function hdDelete(id) {
+  if (!confirm("Delete this divert record?")) return;
+  db.collection("hospitalDiverts").doc(id).delete().then(hdLoad);
+}
+function hdLoad() {
+  hdFillHospitals();
+  var host = document.getElementById("hd-list"); if (!host) return;
+  db.collection("hospitalDiverts").get().then(function(snap) {
+    HD_CACHE = []; snap.forEach(function(d) { HD_CACHE.push(Object.assign({ id: d.id }, d.data())); });
+    HD_CACHE.sort(function(a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); });
+    var weekAgo = Date.now() - 7 * 86400000;
+    var active = HD_CACHE.filter(hdActive), ended = HD_CACHE.filter(function(d) { return !hdActive(d) && new Date(d.endedAt || d.until || d.createdAt || 0).getTime() > weekAgo; });
+    var card = function(d, on) {
+      return '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-left:3px solid ' + (on ? '#e05555' : 'rgba(255,255,255,0.15)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px;' + (on ? '' : 'opacity:0.55') + '">' +
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:0.92rem;font-weight:700;color:var(--white)">🏥 ' + escapeHtml(d.hospital) + ' <span style="color:' + (on ? '#ff9090' : 'var(--gray)') + ';font-size:0.8rem">— ' + escapeHtml(d.type || "Divert") + (on ? '' : ' · ended') + '</span></div>' +
+        (d.detail ? '<div style="font-size:0.8rem;color:var(--gray);margin-top:2px">' + escapeHtml(d.detail) + '</div>' : '') +
+        '<div style="font-size:0.72rem;color:var(--gray);margin-top:4px">Added ' + new Date(d.createdAt).toLocaleString() + (d.createdBy ? ' by ' + escapeHtml(d.createdBy) : '') +
+          (d.until ? ' · until ' + new Date(d.until).toLocaleString() : '') + ' · ' +
+          (d.notifiedAt ? 'sent ' + new Date(d.notifiedAt).toLocaleString() + (d.notifiedBy ? ' by ' + escapeHtml(d.notifiedBy) : '') : '<span style="color:#ffc84a">not sent yet</span>') + '</div>' +
+        (on ? '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
+          '<button class="edit-mode-btn" style="padding:5px 11px;font-size:0.7rem" onclick="hdNotify(\'' + d.id + '\')">📢 Notify units</button>' +
+          '<button class="edit-mode-btn" style="padding:5px 11px;font-size:0.7rem" onclick="hdOff(\'' + d.id + '\')">✅ Off divert</button>' +
+          '<button class="del-btn" style="padding:5px 11px;font-size:0.7rem" onclick="hdDelete(\'' + d.id + '\')">🗑 Delete</button></div>' : '') +
+      '</div>';
+    };
+    host.innerHTML = (active.length ? active.map(function(d) { return card(d, true); }).join("") : '<div style="color:var(--gray);font-size:0.82rem;margin-bottom:8px">No hospitals on divert.</div>') +
+      (ended.length ? '<div class="admin-label" style="margin:14px 0 6px;color:var(--gray)">Ended in the last 7 days</div>' + ended.map(function(d) { return card(d, false); }).join("") : '');
+  }).catch(function(e) { host.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Couldn\'t load diverts: ' + escapeHtml(e.message) + '<br><span style="color:var(--gray)">If this mentions permissions, the updated Firestore rules haven\'t been published yet.</span></div>'; });
+}
+window.tcAddClosure = tcAddClosure; window.tcTestClosure = tcTestClosure; window.tcNotify = tcNotify; window.tcToggle = tcToggle; window.tcDelete = tcDelete; window.tcMoveOld = tcMoveOld;
+window.hdAdd = hdAdd; window.hdTest = hdTest; window.hdNotify = hdNotify; window.hdOff = hdOff; window.hdDelete = hdDelete;
 function tcLoad() {
   var host = document.getElementById("tc-list"); if (!host) return;
   db.collection("trafficClosures").get().then(function(snap) {
@@ -2671,7 +2873,7 @@ function setAdminTab(tab) {
   else if (typeof tplReleaseCallForm === "function") tplReleaseCallForm();
   if (tab === "fleet" && typeof loadVehiclesList === "function") loadVehiclesList();
   if (tab === "fleet" && typeof initVehBaseMap === "function") initVehBaseMap();
-  if (tab === "traffic") { tcBindAddress(); tcLoad(); }
+  if (tab === "traffic") { tcBindAddress(); tcLoad(); tcCheckOldList(); hdLoad(); }
 }
 // ── Admin search: find a setting by name and jump to it, whichever tab it lives on ──
 var ADM_SEARCH = [
@@ -2688,8 +2890,8 @@ var ADM_SEARCH = [
   { label: "Access codes & locations (buildings, shuls, hospital, storage)", where: "Codes & Locations", tab: "codes", el: "adm-codes", k: "codes access code door buildings shuls hospital storage locations" },
   { label: "Vehicle service status", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "service status out of service vehicle rig ambulance oos" },
   { label: "Vehicles & equipment", where: "Fleet", tab: "fleet", el: "adm-vehicles", k: "vehicles equipment rigs ambulances home base map" },
-  { label: "Road closures", where: "Traffic & Closures", tab: "traffic", el: "tc-section", k: "road closures traffic closed street detour" },
-  { label: "Road closures (Protocols list)", where: "Protocols & Dispatch", tab: "protocols", ds: "traffic", k: "road closures traffic closed street" },
+  { label: "Road closures", where: "Closure Notifications", tab: "traffic", el: "tc-section", k: "road closures traffic closed street detour notify" },
+  { label: "Hospital diverts", where: "Closure Notifications", tab: "traffic", el: "hd-block", exact: true, k: "hospital divert diversion ed saturation trauma stroke stemi closed hospital notify" },
   { label: "Message templates (SMS wording)", where: "Message Templates", tab: "templates", el: "adm-templates", k: "message templates sms text wording assignment format callback" },
   { label: "Notification log", where: "Notification Log", tab: "notifications", el: "adm-notif-log", k: "notification log sent texts sms history messages" },
   { label: "Location requests", where: "Location Requests", tab: "locations", el: "adm-locations", k: "location requests caller location gps share link map text" },
@@ -2768,7 +2970,7 @@ function admJump(e) {
   if (e.ds) setDsTab(e.ds);
   var target = document.getElementById(e.ds ? "dispatch-settings-section" : e.el);
   if (!target) return;
-  if (target.tagName !== "DIV" || !target.classList.contains("admin-section")) target = target.closest(".admin-section") || target;
+  if (!e.exact && (target.tagName !== "DIV" || !target.classList.contains("admin-section"))) target = target.closest(".admin-section") || target;
   var det = target.querySelector("details"); if (det) det.open = true;
   setTimeout(function() {
     // Bring the setting to just below the menu bar, which stays pinned at the top of the screen, so
@@ -13510,7 +13712,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.95";
+var DESKTOP_VERSION = "9.96";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -15814,7 +16016,9 @@ function mLogKind(message) {
   var m = String(message || "").replace(/^\[TEST\]\s*/, "").replace(/^\[TEMPLATE TEST[^\]]*\]\s*/, "");
   var head = m.split("\n")[0].replace(/^[^A-Za-z0-9]+\s*/, "").trim();
   if (/ADMIN CALL NOTIFICATION/i.test(m)) return "Admin call notification";
-  if (/ROAD CLOSURE/i.test(m)) return "Road closure";
+  if (/ROAD CLOSURE|ROAD REOPENED/i.test(m)) return "Road closure";
+  if (/HOSPITAL DIVERT|OFF DIVERT/i.test(m)) return "Hospital divert";
+  if (/UPDATED LOCATION/i.test(m)) return "Location update";
   if (/tap to send us your location/i.test(m)) return "Caller location request";
   if (/CALLBACK NUMBER/i.test(m)) return "Callback number";
   if (/CALL UPDATE/i.test(m)) return "Dispatcher note";
