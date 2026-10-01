@@ -50,6 +50,19 @@ var token = new URLSearchParams(location.search).get("t") || "";
 var head = document.getElementById("head"), msg = document.getElementById("msg"),
     btn = document.getElementById("go"), note = document.getElementById("note");
 
+function beat(status) {
+  if (!token) return Promise.resolve();
+  return db.collection("locationRequests").doc(token).set({
+    status: status, seenAt: new Date().toISOString(),
+    device: (navigator.userAgent || "").slice(0, 120)
+  }, { merge: true }).catch(function(){});
+}
+if (token) {
+  beat("opened");                                   // the link was tapped
+  setInterval(function(){ beat(sentAny ? "sharing" : "opened"); }, 20000);
+  window.addEventListener("pagehide", function(){ beat("closed"); });
+  document.addEventListener("visibilitychange", function(){ beat(document.hidden ? "background" : (sentAny ? "sharing" : "opened")); });
+}
 if (!token) { head.textContent = "Link not valid"; msg.textContent = "Ask the dispatcher to send the link again."; btn.style.display = "none"; }
 
 // Accuracy is reported in metres by the device. Anything worse than ~150m is a neighbourhood, not an

@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.00');
+  window.location.replace('/CallDashboard/mobile.html?v=3.01');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1291,7 +1291,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.81b</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.82a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13070,7 +13070,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.81b";
+var DESKTOP_VERSION = "9.82a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -15620,7 +15620,20 @@ function mWatchCallerLocation(token) {
   mLocReqToken = token;
   mLocReqUnsub = db.collection("locationRequests").doc(token).onSnapshot(function(snap) {
     if (!snap.exists) return;
-    var d = snap.data(); if (!d.lat || !d.lng) return;
+    var d = snap.data();
+    if (!d.lat || !d.lng) {
+      // Presence, before any fix arrives — did they even open the link?
+      if (d.status) {
+        var seen = d.seenAt ? Math.round((Date.now() - new Date(d.seenAt).getTime()) / 1000) : 0;
+        var dev = /iPhone|iPad/i.test(d.device || "") ? "iPhone" : /Android/i.test(d.device || "") ? "Android" : "phone";
+        var label = d.status === "closed" ? "✖ Caller closed the page — no location shared"
+                  : d.status === "background" ? "🌙 Page open but in the background on their " + dev
+                  : "👀 Caller opened the link on their " + dev + " — waiting for them to tap Allow";
+        mLocStatus(label + ' <span style="color:var(--gray);font-size:0.72rem">(seen ' + (seen < 60 ? seen + "s" : Math.round(seen/60) + " min") + ' ago)</span>',
+                   d.status === "closed" ? "#ff9090" : "#ffc84a");
+      }
+      return;
+    }
     var acc = d.accuracy || 0;
     var color = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
     var warn = acc > 150 ? "<br><b>Too rough to dispatch on alone — confirm the address with the caller.</b>" : "";
