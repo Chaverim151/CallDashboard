@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.21');
+  window.location.replace('/CallDashboard/mobile.html?v=3.22');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.17</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.18</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -14111,7 +14111,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       <button type="button" onclick="mNcDiscardDraft()" style="background:none;border:1px solid rgba(255,144,144,0.5);border-radius:6px;color:#ff9090;font-size:0.7rem;font-weight:700;padding:5px 10px;cursor:pointer;white-space:nowrap">Start over</button>
     </div>
     <div class="m-disp-label">Location</div>
-    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcAddressEdited()" class="m-disp-input" style="padding-right:38px;" oninput="mNcAddressTouched=true"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcAddressEdited()" class="m-disp-input" style="padding-right:38px;" autocomplete="off"><div id="m-nc-hw-list" role="listbox" aria-label="Highway locations" style="display:none"></div><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
     <div class="m-disp-label">Apt / Suite / Unit</div>
     <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-apt" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-apt')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
@@ -14347,7 +14347,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.17";
+var DESKTOP_VERSION = "10.18";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -17223,7 +17223,176 @@ function mSetNcAge(a) {
     b.style.color = isThis ? "#e8a0ff" : "var(--white)";
   });
 }
+// ── Highway exits & mile markers in the new-call address box ─────────────────────────────────────
+// Data: highway-exits.csv and highway-mile-markers.csv on the site (replace the files to update).
+// Typing e.g. "gsp 129", "exit 11 n", "mm 128.5 s", "parkway 115 express" offers exact points;
+// picking one fills the address and puts the pin exactly on that exit or mile marker.
+var M_HW = { loaded: false, loading: null, exits: [], markers: [] };
+var M_HW_NAMES = { GSP: "Garden State Pkwy", GSPC: "Garden State Pkwy", NJTP: "NJ Turnpike" };
+var M_HW_ALIASES = [
+  { re: /\b(gsp|g\.s\.p\.?|garden state(?: pkwy| parkway)?|gs pkwy|parkway|pkwy)\b/, codes: ["GSP", "GSPC"] },
+  { re: /\b(nj turnpike|turnpike|njtp|tpk|tpke)\b/, codes: ["NJTP"] }
+];
+function mHwParseCsv(text, kind) {
+  var out = [];
+  String(text || "").split(/\r?\n/).slice(1).forEach(function(line) {
+    var m = /^"?POINT \((-?[\d.]+) (-?[\d.]+)\)"?,(.*)$/.exec(line.trim()); if (!m) return;
+    var lng = parseFloat(m[1]), lat = parseFloat(m[2]), f = m[3].split(",");
+    if (kind === "exit") {
+      var mm = /MM\s*([\d.]+)/i.exec(f[4] || "");
+      out.push({ hw: (f[0] || "").trim(), d: (f[1] || "").trim().toUpperCase(), type: (f[2] || "").trim().toUpperCase(), x: (f[3] || "").trim(), mm: mm ? parseFloat(mm[1]) : null, lat: lat, lng: lng });
+    } else {
+      var lm = /^(\S+)\s+([NSEW])\s+MM\s+([\d.]+)\s*(LOCAL|EXPRESS|EXIT)?/i.exec((f[0] || "").trim()); if (!lm) return;
+      out.push({ hw: lm[1], d: lm[2].toUpperCase(), mm: parseFloat(lm[3]), lane: (lm[4] || "").toUpperCase(), lat: lat, lng: lng });
+    }
+  });
+  return out;
+}
+function mHwLoad() {
+  if (M_HW.loaded) return Promise.resolve(M_HW);
+  if (M_HW.loading) return M_HW.loading;
+  var get = function(u) { return fetch(u + "?v=" + (window.M_BUILD || Date.now())).then(function(r) { return r.ok ? r.text() : ""; }).catch(function() { return ""; }); };
+  M_HW.loading = Promise.all([get("highway-exits.csv"), get("highway-mile-markers.csv")]).then(function(t) {
+    M_HW.exits = mHwParseCsv(t[0], "exit"); M_HW.markers = mHwParseCsv(t[1], "mm"); M_HW.loaded = true; return M_HW;
+  });
+  return M_HW.loading;
+}
+function mHwName(code) { return M_HW_NAMES[code] || code; }
+// Interpolate a decimal mile between the two nearest markers of the same direction and lane.
+function mHwAtMile(hwCodes, d, lane, v) {
+  var pts = M_HW.markers.filter(function(p) { return hwCodes.indexOf(p.hw) !== -1 && p.d === d && p.lane === lane; }).sort(function(a, b) { return a.mm - b.mm; });
+  if (!pts.length || v < pts[0].mm - 0.01 || v > pts[pts.length - 1].mm + 0.01) return null;
+  var lo = null, hi = null;
+  pts.forEach(function(p) { if (p.mm <= v) lo = p; if (p.mm >= v && !hi) hi = p; });
+  if (!lo) lo = hi; if (!hi) hi = lo;
+  if (Math.abs(lo.mm - v) < 0.01) return { lat: lo.lat, lng: lo.lng, hw: lo.hw };
+  if (hi.mm - lo.mm > 3) return null;                         // too far between markers to place it honestly
+  var t = (v - lo.mm) / (hi.mm - lo.mm);
+  return { lat: lo.lat + (hi.lat - lo.lat) * t, lng: lo.lng + (hi.lng - lo.lng) * t, hw: lo.hw };
+}
+function mHwSuggest(query) {
+  var q = " " + String(query || "").toLowerCase().replace(/[,]/g, " ").replace(/\s+/g, " ").trim() + " ";
+  if (!M_HW.loaded || q.trim().length < 2) return [];
+  var codes = null, rest = q;
+  M_HW_ALIASES.forEach(function(a) { if (!codes && a.re.test(q)) { codes = a.codes; rest = q.replace(a.re, " "); } });
+  var hasExitWord = /\b(exit|ext|ex)\b/.test(rest), hasMileWord = /\b(mm|mile marker|mile|marker|mp)\b/.test(rest);
+  if (!codes) {                                                  // no highway named: only clear exit / mile-marker searches
+    var known = {}; M_HW.exits.concat(M_HW.markers).forEach(function(p) { known[p.hw] = 1; });
+    if (!(hasExitWord || hasMileWord) || /\d+\s+[a-z]+ (st|ave|rd|blvd|ln|dr|ct|pl)\b/.test(rest)) return [];
+    codes = Object.keys(known);
+  }
+  var dir = /\b(n|nb|north|northbound)\b/.test(rest) ? "N" : /\b(s|sb|south|southbound)\b/.test(rest) ? "S" : "";
+  var lane = /\bexpress\b/.test(rest) ? "EXPRESS" : /\blocal\b/.test(rest) ? "LOCAL" : "";
+  var dirs = dir ? [dir] : ["N", "S"];
+  var exitM = /\b(?:exit|ext|ex)\s*([0-9]{1,3}[a-z]?(?:-[a-z])?)\b/.exec(rest);
+  var mileM = /\b(?:mm|mile marker|mile|marker|mp)\s*([0-9]{1,3}(?:\.[0-9]+)?)\b/.exec(rest);
+  var bare = !exitM && !mileM ? /\b([0-9]{1,3}(?:\.[0-9]+)?[a-z]?)\b/.exec(rest.replace(/\b(n|nb|s|sb)\b/g, " ")) : null;
+  var exitWanted = exitM ? exitM[1] : (bare && !/\./.test(bare[1]) ? bare[1] : null);
+  var mileWanted = mileM ? parseFloat(mileM[1]) : (bare && /^[0-9.]+$/.test(bare[1]) ? parseFloat(bare[1]) : null);
+  var nameWanted = hasExitWord && !exitM ? rest.replace(/\b(exit|ext|ex|n|nb|s|sb|north|south|northbound|southbound)\b/g, " ").trim() : "";
+  var out = [], exact = [], partial = [];
+  M_HW.exits.forEach(function(e) {
+    if (codes.indexOf(e.hw) === -1 || dirs.indexOf(e.d) === -1) return;
+    var x = e.x.toLowerCase();
+    if (exitWanted) {
+      if (x === exitWanted || x.replace(/[^0-9a-z]/g, "") === exitWanted.replace(/[^0-9a-z]/g, "")) exact.push(e);
+      else if (/^\d+$/.test(exitWanted) && x.indexOf(exitWanted) === 0 && e.type !== "SPLIT") partial.push(e);
+    } else if (nameWanted.length >= 3 && x.indexOf(nameWanted) !== -1) exact.push(e);
+    else if (!exitWanted && !mileWanted && !nameWanted && /\b(split|express|local)\b/.test(rest) && e.type === "SPLIT") exact.push(e);
+  });
+  var exitItem = function(e) {
+    var what = e.type === "SPLIT" ? (/END/i.test(e.x) ? "Express/Local lanes end" : "Express/Local lanes split") : "Exit " + e.x.toUpperCase();
+    var label = mHwName(e.hw) + " " + e.d + " — " + what + (e.mm !== null ? " (MM " + e.mm + ")" : "");
+    return { kind: "exit", label: label, address: label, lat: e.lat, lng: e.lng };
+  };
+  exact.forEach(function(e) { out.push(exitItem(e)); });
+  if (mileWanted !== null && !(exitM && !mileM)) {
+    dirs.forEach(function(d) {
+      var lanes = {}; M_HW.markers.forEach(function(p) { if (codes.indexOf(p.hw) !== -1 && p.d === d && Math.abs(p.mm - mileWanted) <= 1 && p.lane !== "EXIT") lanes[p.lane] = 1; });
+      var useLanes = Object.keys(lanes).filter(function(l) { return !lane || l === lane; });
+      if (lanes.LOCAL || lanes.EXPRESS) useLanes = useLanes.filter(function(l) { return l; });   // split section: say which roadway
+      useLanes.forEach(function(l) {
+        var pt = mHwAtMile(codes, d, l, mileWanted); if (!pt) return;
+        var label = mHwName(pt.hw) + " " + d + " — MM " + mileWanted + (l ? " " + l.charAt(0) + l.slice(1).toLowerCase() : "");
+        out.push({ kind: "mm", label: label, address: label, lat: pt.lat, lng: pt.lng });
+      });
+    });
+  }
+  partial.sort(function(a, b) { return a.x.length - b.x.length || a.x.localeCompare(b.x); }).forEach(function(e) { out.push(exitItem(e)); });
+  var seen = {};
+  return out.filter(function(i) { if (seen[i.label]) return false; seen[i.label] = 1; return true; }).slice(0, 8);
+}
+// Suggestion list under the address box. While it's showing, Google's own list is hidden; mouse,
+// touch and keyboard (↑ ↓ Enter Esc) all work, and picking keeps focus in the box.
+var mHwItems = [], mHwSel = -1, mHwBound = false;
+function mHwStyle() {
+  if (document.getElementById("hw-style")) return;
+  var st = document.createElement("style"); st.id = "hw-style";
+  st.textContent =
+    "#m-nc-hw-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:10050;background:#122040;border:1px solid rgba(var(--gold-rgb),0.35);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,0.5);overflow:hidden;max-height:340px;overflow-y:auto}" +
+    "#m-nc-hw-list .hw-head{font-size:0.66rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);padding:8px 12px 4px}" +
+    "#m-nc-hw-list .hw-item{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid rgba(255,255,255,0.06);color:var(--white);font:inherit;font-size:0.88rem;padding:10px 12px;cursor:pointer;min-height:42px}" +
+    "#m-nc-hw-list .hw-item small{display:block;color:var(--gray);font-size:0.72rem;margin-top:1px}" +
+    "#m-nc-hw-list .hw-item.on,#m-nc-hw-list .hw-item:hover{background:rgba(var(--gold-rgb),0.14)}" +
+    "body.hw-open .pac-container{display:none !important}";
+  document.head.appendChild(st);
+}
+function mHwBind() {
+  var inp = document.getElementById("m-nc-address"); if (!inp) return;
+  mHwLoad();                                                     // fetch the files once, in the background
+  if (mHwBound) return; mHwBound = true;
+  inp.addEventListener("input", function() {
+    var q = inp.value;
+    mHwLoad().then(function() { if (inp.value !== q) return; mHwItems = mHwSuggest(q); mHwRenderList(); });
+  });
+  // capture phase: runs before Google's own key handling, so Enter picks OUR highlighted item
+  inp.addEventListener("keydown", function(e) {
+    if (!mHwItems.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { mHwSel = (mHwSel + (e.key === "ArrowDown" ? 1 : -1) + mHwItems.length) % mHwItems.length; mHwHighlight(); }
+    else if (e.key === "Enter") { mHwPick(mHwSel < 0 ? 0 : mHwSel); }
+    else if (e.key === "Escape") { mHwClose(); }
+    else return;
+    e.preventDefault(); e.stopImmediatePropagation();
+  }, true);
+  inp.addEventListener("blur", function() { setTimeout(mHwClose, 150); });
+}
+function mHwRenderList() {
+  var box = document.getElementById("m-nc-hw-list"); if (!box) return;
+  if (!mHwItems.length) { mHwClose(); return; }
+  mHwStyle(); mHwSel = 0;
+  box.innerHTML = '<div class="hw-head">🛣 Highway locations</div>' + mHwItems.map(function(it, i) {
+    var sub = it.kind === "mm" ? "Mile marker — exact point on the highway" : "Exit — exact point on the ramp";
+    return '<button type="button" role="option" class="hw-item" data-i="' + i + '" onmousedown="event.preventDefault()" onclick="mHwPick(' + i + ')">' +
+      mEscHtml(it.label) + '<small>' + sub + '</small></button>';
+  }).join("");
+  box.style.display = "block"; document.body.classList.add("hw-open"); mHwHighlight();
+}
+function mHwHighlight() {
+  document.querySelectorAll("#m-nc-hw-list .hw-item").forEach(function(b, i) {
+    b.classList.toggle("on", i === mHwSel); b.setAttribute("aria-selected", i === mHwSel ? "true" : "false");
+    if (i === mHwSel && b.scrollIntoView) b.scrollIntoView({ block: "nearest" });
+  });
+}
+function mHwClose() {
+  var box = document.getElementById("m-nc-hw-list"); if (box) { box.style.display = "none"; box.innerHTML = ""; }
+  document.body.classList.remove("hw-open"); mHwItems = []; mHwSel = -1;
+}
+function mHwPick(i) {
+  var it = mHwItems[i]; if (!it) return;
+  mHwClose();
+  var inp = document.getElementById("m-nc-address");
+  inp.value = it.address; mNcResolvedAddress = inp.value.trim(); mNcLastPlace = null;
+  document.getElementById("m-nc-lat").value = it.lat;
+  document.getElementById("m-nc-lng").value = it.lng;
+  document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + it.lat + "," + it.lng + "&travelmode=driving";
+  if (typeof mDetectZoneInfo === "function") { var z = mDetectZoneInfo(it.lat, it.lng); if (z) mSetNcZone(z.type, false, z.area); }
+  inp.classList.remove("m-nc-need");
+  if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+  mNcShowCoords();
+}
+window.mHwPick = mHwPick;
 function mInitNcAddressAutocomplete() {
+  mHwBind();
   if (window.google && window.google.maps && window.google.maps.places) { mBindNcAutocomplete(); return; }
   if (document.getElementById("m-maps-script")) return;
   var s = document.createElement("script");
