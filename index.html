@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.99');
+  window.location.replace('/CallDashboard/mobile.html?v=3.00');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -15587,9 +15587,20 @@ function mLocStatus(html, color) {
   el.style.color = color || "var(--gray)";
   el.innerHTML = html;
 }
-function mRequestCallerLocation() {
+var mLocReqCallback = "";
+function mRequestCallerLocation(force) {
   var cb = (document.getElementById("m-nc-callback").value || "").trim();
   if (!cb) { mToast("Enter the caller's number first", true); document.getElementById("m-nc-callback").focus(); return; }
+  // Already receiving from this caller — another link would cost an SMS, confuse them, and drop a
+  // stream that is working. Offer it only if they want to override.
+  var live = mLocReqToken && mLocReqCallback === cb && mLocLastAt && (Date.now() - mLocLastAt < 120000);
+  if (live && !force) {
+    var ago = Math.round((Date.now() - mLocLastAt) / 1000);
+    mLocStatus("📡 Already receiving this caller's location — last update " + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + " ago. No need to send another link." +
+      ' <button type="button" onclick="mRequestCallerLocation(true)" style="background:rgba(255,255,255,0.08);border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-size:0.7rem;padding:3px 9px;cursor:pointer;margin-left:4px">Send a new link anyway</button>', "#7dedb5");
+    return;
+  }
+  mLocReqCallback = cb;
   var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   var expires = new Date(Date.now() + 30 * 60000).toISOString();
   db.collection("locationRequests").doc(token).set({ createdAt: new Date().toISOString(), expiresAt: expires, by: mCurrentUserUnit || "", callback: cb })
@@ -15711,7 +15722,7 @@ function mE164(p) {
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
-  mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
+  mLocReqCallback = ""; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
