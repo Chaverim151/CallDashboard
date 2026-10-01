@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.03');
+  window.location.replace('/CallDashboard/mobile.html?v=3.04');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1291,7 +1291,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.83a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.84</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2301,6 +2301,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places,geometry,drawing&callback=Function.prototype"></script>
 <script>
 // ── EARLY WINDOW EXPORTS — must be assigned before any other code runs ──
@@ -5183,13 +5184,18 @@ function submitTicket() {
 }
 
 // ── EMAIL ──
-var CLICKSEND_WORKER = "https://hatzolah-email.shmueleidelman-work.workers.dev/";
 var FROM_EMAIL = "apps@hatzolahmc.org", FROM_NAME = "Hatzolah MC Operations";
-// Shared secret the Worker checks before relaying to ClickSend. This value itself
-// being visible in client source is expected/unavoidable for a pure client-side app —
-// its purpose is to block casual/automated abuse of the public Worker URL, not to be
-// a true secret. Real protection comes from the Worker validating this header server-side.
-var APP_SHARED_SECRET = "hzmc-2026-9f3a7d1c";
+// Every SMS and email goes through the sendSms / sendEmail Cloud Functions, called with the
+// signed-in member's Firebase ID token. The function checks membership and test mode and is the
+// only thing that can reach the ClickSend worker. No secret lives in this page.
+function hzRelay(fnName, payload) {
+  if (!firebase.auth().currentUser) return Promise.reject(new Error("Not signed in — message not sent"));
+  return firebase.functions().httpsCallable(fnName)(payload).then(function(res) { return res.data; });
+}
+function hzSendFailed(what, e) {
+  console.warn(what + " failed:", e);
+  if (typeof showToast === "function") showToast("⚠ " + what + " failed: " + ((e && e.message) || e), true);
+}
 function buildEmailBody(opts) {
   var title = opts.title || "", details = opts.details || "", unit = opts.unit || "", priority = opts.priority || "", submittedBy = opts.submittedBy || "", acceptedBy = opts.acceptedBy || opts.accepted_by || "", acceptLink = opts.acceptLink || "", ticketId = opts.ticketId || "", commentText = opts.commentText || "", type = opts.type || "";
   var pe = { urgent: "🚨", high: "🔴", medium: "🟡", low: "🟢" }[priority] || "";
@@ -5205,11 +5211,7 @@ function buildEmailBody(opts) {
 }
 function sendClickSendEmail(opts) {
   if (!opts.toEmail) return Promise.resolve();
-  return fetch(CLICKSEND_WORKER, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-App-Secret": APP_SHARED_SECRET },
-    body: JSON.stringify({ to: [{ email: opts.toEmail, name: opts.toEmail }], subject: opts.subject, body: opts.htmlBody })
-  }).then(function(r) { return r.json(); });
+  return hzRelay("sendEmail", { to: [{ email: opts.toEmail, name: opts.toEmail }], subject: opts.subject, body: opts.htmlBody });
 }
 
 // Every SMS ends with a timestamp — added here so no message can go out without one
@@ -5233,20 +5235,13 @@ function sendClickSendSMS(toNumbers, message) {
       if (!snap.exists) return;
       var phone = getFirstPhone(snap.data().phone);
       if (!phone) return;
-      fetch(CLICKSEND_WORKER, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-App-Secret": APP_SHARED_SECRET },
-        body: JSON.stringify({ type: "sms", messages: [{ to: phone, body: "[TEST] " + message }] })
-      }).catch(function(e){ console.warn("SMS test send failed:", e); });
+      hzRelay("sendSms", { type: "sms", testMode: true, messages: [{ to: phone, body: "[TEST] " + message }] })
+        .catch(function(e){ hzSendFailed("Test SMS", e); });
     });
     return Promise.resolve();
   }
-  return fetch(CLICKSEND_WORKER, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-App-Secret": APP_SHARED_SECRET },
-    body: JSON.stringify({ type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
-  }).then(function(r) { return r.json(); })
-    .catch(function(e){ console.warn("SMS send failed:", e); });
+  return hzRelay("sendSms", { type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
+    .catch(function(e){ hzSendFailed("SMS", e); });
 }
 window.sendCallbackSMS = function(callId) {
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
@@ -5335,15 +5330,10 @@ function sendTestSMS() {
     if (!phone) throw new Error("No phone number on your account — add one in your profile");
     console.log("Sending test SMS to:", phone);
     var testBody = "[TEST] 🚨 Hatzolah MC\nTest SMS from " + (currentUserUnit||"MC-16") + " — system test\nhttps://chaverim151.github.io/CallDashboard/mobile.html";
-    return fetch(CLICKSEND_WORKER, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-App-Secret": APP_SHARED_SECRET },
-      body: JSON.stringify({ type: "sms", messages: [{ to: phone, body: testBody }] })
-    }).then(function(r) {
-      return r.json().then(function(data) {
-        console.log("ClickSend SMS response:", JSON.stringify(data));
-        return data;
-      });
+    return hzRelay("sendSms", { type: "sms", testMode: true, messages: [{ to: phone, body: testBody }] }).then(function(data) {
+      console.log("ClickSend SMS response:", JSON.stringify(data));
+      if (data && data.error) throw new Error(data.error);
+      return data;
     });
   }).then(function(result) {
     if (msg) { msg.className = "form-msg success"; msg.textContent = "✓ Test SMS sent! Check console for ClickSend response."; }
@@ -13070,7 +13060,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.83a";
+var DESKTOP_VERSION = "9.84";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -15119,8 +15109,11 @@ function mDeleteTicket(id) {
   if (!confirm("Delete this service request permanently?")) return;
   db.collection("tickets").doc(id).delete().then(function() { mToast("Deleted"); mGoTo("service"); mLoadTickets(); }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
-var M_CLICKSEND_WORKER = "https://hatzolah-email.shmueleidelman-work.workers.dev/";
-var M_APP_SHARED_SECRET = "hzmc-2026-9f3a7d1c";
+// SMS goes through the sendSms Cloud Function with the member's ID token — no secret in this page.
+function mRelay(fnName, payload) {
+  if (!firebase.auth().currentUser) return Promise.reject(new Error("Not signed in — message not sent"));
+  return firebase.functions().httpsCallable(fnName)(payload).then(function(res) { return res.data; });
+}
 function mGetFirstPhone(phone) {
   if (!phone) return "";
   var raw = phone.split(/[\/|]/)[0].trim().replace(/\D/g, "");
@@ -15462,19 +15455,12 @@ function mSendClickSendSMS(toNumbers, message) {
       var phone = mGetFirstPhone(snap.data().phone);
       if (!phone) { mToast("Test Mode: no phone on your profile — the text wasn't sent anywhere", true); mLogNotification({ kind: mLogKind(message), body: message, to: [], testMode: true, status: "not sent — no phone on profile", sentBy: mCurrentUserUnit }); return; }
       mLogNotification({ kind: mLogKind(message), body: message, to: [phone], units: [mCurrentUserUnit || "you"], intendedUnits: mUnitsForPhones(toNumbers), testMode: true, sentBy: mCurrentUserUnit });
-      return fetch(M_CLICKSEND_WORKER, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-App-Secret": M_APP_SHARED_SECRET },
-        body: JSON.stringify({ type: "sms", messages: [{ to: phone, body: "[TEST] " + message }] })
-      });
-    }).catch(function(e){ console.warn("SMS test send failed:", e); });
+      return mRelay("sendSms", { type: "sms", testMode: true, messages: [{ to: phone, body: "[TEST] " + message }] });
+    }).catch(function(e){ console.warn("SMS test send failed:", e); mToast("⚠ Test SMS failed: " + ((e && e.message) || e), true); });
   }
   mLogNotification({ kind: mLogKind(message), body: message, to: toNumbers, testMode: false, sentBy: mCurrentUserUnit });
-  return fetch(M_CLICKSEND_WORKER, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-App-Secret": M_APP_SHARED_SECRET },
-    body: JSON.stringify({ type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
-  }).then(function(r){ return r.json(); }).catch(function(e){ console.warn("SMS send failed:", e); });
+  return mRelay("sendSms", { type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
+    .catch(function(e){ console.warn("SMS send failed:", e); mToast("⚠ SMS failed: " + ((e && e.message) || e), true); });
 }
 /* ported mobile new-call broadcast removed too */
 function mPushCallbackSMS() {

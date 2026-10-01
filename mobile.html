@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.03"; window.M_BUILD = BUILD;
+  var BUILD = "3.04"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -822,6 +822,7 @@ body.m-tile-dragging{overscroll-behavior:none}
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
 <script>
 // ── FIREBASE ──
 firebase.initializeApp({
@@ -4282,12 +4283,7 @@ function mDeleteTicket(id) {
 var M_FROM_EMAIL = "apps@hatzolahmc.org", M_FROM_NAME = "Hatzolah MC Operations";
 function mSendClickSendEmail(opts) {
   if (!opts.toEmail) return Promise.resolve();
-  mLogNotification({ kind: mLogKind(message), body: message, to: toNumbers, testMode: false, sentBy: mCurrentUserUnit });
-  return fetch(M_CLICKSEND_WORKER, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-App-Secret": M_APP_SHARED_SECRET },
-    body: JSON.stringify({ to: [{ email: opts.toEmail, name: opts.toEmail }], subject: opts.subject, body: opts.htmlBody })
-  }).then(function(r) { return r.json(); });
+  return mRelay("sendEmail", { to: [{ email: opts.toEmail, name: opts.toEmail }], subject: opts.subject, body: opts.htmlBody });
 }
 function mBuildTicketEmailBody(opts) {
   var pe = { low: "🟢", medium: "🟡", high: "🔴", urgent: "🚨" }[opts.priority] || "🟡";
@@ -4323,8 +4319,12 @@ function mSendAcceptanceEmails(opts) {
 }
 
 // ── SMS (ClickSend) — mirrors desktop's sendClickSendSMS exactly ──
-var M_CLICKSEND_WORKER = "https://hatzolah-email.shmueleidelman-work.workers.dev/";
-var M_APP_SHARED_SECRET = "hzmc-2026-9f3a7d1c";
+// SMS and email go through the sendSms / sendEmail Cloud Functions with the member's ID token.
+// The function checks membership and test mode; no secret lives in this page.
+function mRelay(fnName, payload) {
+  if (!firebase.auth().currentUser) return Promise.reject(new Error("Not signed in — message not sent"));
+  return firebase.functions().httpsCallable(fnName)(payload).then(function(res) { return res.data; });
+}
 function mGetFirstPhone(phone) {
   if (!phone) return "";
   var raw = phone.split(/[\/|]/)[0].trim().replace(/\D/g, "");
@@ -4668,19 +4668,12 @@ function mSendClickSendSMS(toNumbers, message) {
       var phone = mGetFirstPhone(snap.data().phone);
       if (!phone) { mToast("Test Mode: no phone on your profile — the text wasn't sent anywhere", true); mLogNotification({ kind: mLogKind(message), body: message, to: [], testMode: true, status: "not sent — no phone on profile", sentBy: mCurrentUserUnit }); return; }
       mLogNotification({ kind: mLogKind(message), body: message, to: [phone], units: [mCurrentUserUnit || "you"], intendedUnits: mUnitsForPhones(toNumbers), testMode: true, sentBy: mCurrentUserUnit });
-      return fetch(M_CLICKSEND_WORKER, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-App-Secret": M_APP_SHARED_SECRET },
-        body: JSON.stringify({ type: "sms", messages: [{ to: phone, body: "[TEST] " + message }] })
-      });
-    }).catch(function(e){ console.warn("SMS test send failed:", e); });
+      return mRelay("sendSms", { type: "sms", testMode: true, messages: [{ to: phone, body: "[TEST] " + message }] });
+    }).catch(function(e){ console.warn("SMS test send failed:", e); mToast("⚠ Test SMS failed: " + ((e && e.message) || e), true); });
   }
   mLogNotification({ kind: mLogKind(message), body: message, to: toNumbers, testMode: false, sentBy: mCurrentUserUnit });
-  return fetch(M_CLICKSEND_WORKER, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-App-Secret": M_APP_SHARED_SECRET },
-    body: JSON.stringify({ type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
-  }).then(function(r){ return r.json(); }).catch(function(e){ console.warn("SMS send failed:", e); });
+  return mRelay("sendSms", { type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
+    .catch(function(e){ console.warn("SMS send failed:", e); mToast("⚠ SMS failed: " + ((e && e.message) || e), true); });
 }
 /* New-call broadcast SMS removed — the first text a member gets is their assignment */
 function mPushCallbackSMS() {
