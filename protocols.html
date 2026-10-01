@@ -106,6 +106,10 @@ mark{background:rgba(255,213,0,0.3);color:inherit;border-radius:2px;padding:0 1p
 .ans-list li{margin:7px 0}
 .ref{display:inline-block;font-family:'Oswald',sans-serif;font-size:0.72rem;letter-spacing:0.04em;background:rgba(122,184,245,0.16);border:1px solid rgba(122,184,245,0.55);color:#bfe0ff;border-radius:6px;padding:2px 8px;margin:2px 3px 0 0;text-decoration:none;white-space:nowrap}
 .ans-foot{font-size:0.74rem;color:var(--gray);margin-top:8px;line-height:1.45}
+.frame{background:linear-gradient(180deg,rgba(160,120,255,0.10),rgba(255,255,255,0.03));border:1px solid rgba(160,120,255,0.45);border-radius:14px;padding:14px;margin-bottom:12px}
+.frame-ref{font-size:1rem;line-height:1.5}
+.others{margin-top:16px}
+.others summary{cursor:pointer;color:var(--gray);font-size:0.86rem;padding:10px 2px;min-height:44px;display:flex;align-items:center}
 </style>
 </head>
 <body>
@@ -535,68 +539,46 @@ function aiRoute(q) {
     candidates: cands.map(function(g) { return { k: g.k, text: protoTextFor(idx.protocols[g.k], PS.level) }; })
   };
   return callFn("protocolRoute", payload).then(function(res) {
-    // Keep only quotes that really are in the protocol, word for word.
-    (res.matches || []).forEach(function(m) {
-      var full = normTxt(protoText(idx.protocols[m.k] || { lines: [] }));
-      m.quotes = (m.quotes || []).filter(function(qt) { var n = normTxt(qt); return n.length > 8 && full.indexOf(n) !== -1; });
-    });
-    res.answer = verifyAnswer(res.answer || []);
+    // The highlighted steps must really be in the chosen protocol, word for word.
+    var pr = res.primary != null ? idx.protocols[res.primary] : null;
+    if (!pr) { res.primary = null; res.focus = []; }
+    else {
+      var full = normTxt(protoText(pr).replace(/^== .* ==$/gm, ""));
+      res.focus = (res.focus || []).filter(function(qt) { var c = quoteCore(qt); return c.length > 8 && full.indexOf(c) !== -1; });
+    }
+    res.related = (res.related || []).filter(function(k) { return idx.protocols[k] && k !== res.primary; });
     PS.ai[key] = res; return res;
   });
 }
-// ── The AI's written answer is shown only where the protocol backs it up ──
-// Each statement must cite a line that is really in that protocol (word for word), and every number in
-// the statement (dose, age, time…) must appear in the lines it cites. Anything else is removed.
 function quoteCore(t) { return normTxt(t).replace(/^(\d{1,2}\.|o|-|–)\s+/, ""); }
-function findLine(pr, quote) {
-  var qc = quoteCore(quote), best = null;
-  pr.lines.forEach(function(l) {
-    if (best || l[2] === "H") return;
+function lineIndex(pr, quote) {
+  var qc = quoteCore(quote);
+  for (var i = 0; i < pr.lines.length; i++) {
+    var l = pr.lines[i]; if (l[2] === "H") continue;
     var lc = quoteCore(l[1]);
-    if (lc.length > 6 && (qc.indexOf(lc) !== -1 || lc.indexOf(qc) !== -1)) best = l;
+    if (lc.length > 6 && (qc.indexOf(lc) !== -1 || lc.indexOf(qc) !== -1)) return i;
+  }
+  return -1;
+}
+var SEC_NAME = { EMT: "EMT section", ALS: "Paramedic & MICN section", CF: "Communication Failure section", PEARLS: "Pearls", ALL: "general section" };
+// "EMT section, steps 1–2 (p. 25)" — worked out from where the highlighted lines are in the protocol.
+function frameOf(pr, quotes) {
+  var bySec = {}, order = [], pages = {};
+  quotes.forEach(function(qt) {
+    var i = lineIndex(pr, qt); if (i < 0) return;
+    var l = pr.lines[i], lv = pr.alsOnly && (l[l.length - 1] === "ALL" || l[l.length - 1] === "PEARLS") ? "ALS" : l[l.length - 1], step = null;
+    for (var j = i; j >= 0; j--) { var t = pr.lines[j]; if (t[2] === "H") break; var m = /^(\d{1,2})\.\s/.exec(t[1]); if (m) { step = Number(m[1]); break; } }
+    if (!bySec[lv]) { bySec[lv] = []; order.push(lv); }
+    if (step !== null && bySec[lv].indexOf(step) === -1) bySec[lv].push(step);
+    pages[l[0]] = 1;
   });
-  return best;
-}
-function verifyAnswer(items) {
-  var idx = PS.index, removed = 0;
-  var kept = items.map(function(it) {
-    var cites = (it.cites || []).filter(function(c) {
-      var pr = idx.protocols[c.k]; if (!pr) return false;
-      var qc = quoteCore(c.quote); if (qc.length < 8) return false;
-      var full = normTxt(protoText(pr).replace(/^== .* ==$/gm, ""));
-      if (full.indexOf(qc) === -1) return false;
-      var line = findLine(pr, c.quote);
-      c.p = line ? line[0] : pr.pages[0];
-      c.lv = pr.alsOnly ? "ALS" : (line ? line[line.length - 1] : "ALL");
-      return true;
-    });
-    if (!cites.length) { removed++; return null; }
-    var quoted = cites.map(function(c) { return normTxt(c.quote); }).join(" ");
-    var nums = String(it.text).match(/\d+(?:\.\d+)?/g) || [];
-    var ok = nums.every(function(n) { return new RegExp("(^|[^0-9.])" + n.replace(".", "\\.") + "([^0-9]|$)").test(quoted); });
-    if (!ok) { removed++; return null; }
-    return { text: String(it.text).replace(/\s*\(Paramedic (?:&|and) MICN only\)\s*\.?\s*$/i, ".").replace(/\.\.$/, "."), cites: cites,
-             als: cites.some(function(c) { return c.lv === "ALS" || c.lv === "CF"; }) && !cites.some(function(c) { return c.lv === "EMT" || c.lv === "ALL"; }) };
-  }).filter(Boolean);
-  kept.removed = removed;
-  return kept;
-}
-function answerHtml(ans, q) {
-  if (!ans || !ans.length) return "";
-  var used = {};
-  var items = ans.map(function(it) {
-    var chips = it.cites.map(function(c) {
-      var pr = PS.index.protocols[c.k]; used[c.k] = 1;
-      return '<a class="ref" href="#/p/' + c.k + '/' + encodeURIComponent(q) + '">' + esc(pr.num) + ' · p. ' + c.p + '</a>';
-    }).filter(function(v, i, arr) { return arr.indexOf(v) === i; }).join("");
-    var tag = it.als ? '<span class="tag t-ALS">Paramedic &amp; MICN only</span>' : '';
-    return '<li>' + tag + esc(it.text) + ' ' + chips + '</li>';
-  }).join("");
-  var from = Object.keys(used).map(function(k) { var pr = PS.index.protocols[k]; return esc(pr.num + " " + titleCase(pr.title)); }).join(" · ");
-  return '<div class="ans"><div class="ans-h">✨ AI answer <span class="tag t-AI">BETA</span></div>' +
-    '<div class="ans-warn">⚠ <b>AI-generated — AI can make mistakes.</b> Always double-check the protocol: tap a reference to read it.</div>' +
-    '<ul class="ans-list">' + items + '</ul>' +
-    '<div class="ans-foot">From: ' + from + (ans.removed ? ' · ' + ans.removed + ' statement' + (ans.removed === 1 ? ' was' : 's were') + ' removed because the protocol didn\'t back ' + (ans.removed === 1 ? 'it' : 'them') + ' up word-for-word.' : '') + '</div></div>';
+  var parts = order.map(function(lv) {
+    var st = bySec[lv].sort(function(a, b) { return a - b; });
+    var steps = !st.length ? "" : st.length === 1 ? ", step " + st[0] : (st[st.length - 1] - st[0] === st.length - 1 ? ", steps " + st[0] + "–" + st[st.length - 1] : ", steps " + st.join(", "));
+    return SEC_NAME[lv] + steps;
+  });
+  var pg = Object.keys(pages).map(Number).sort(function(a, b) { return a - b; });
+  return { text: parts.join("; "), pages: pg, als: order.length > 0 && order.every(function(lv) { return lv === "ALS" || lv === "CF"; }) };
 }
 function card(k, q, extra) {
   var pr = PS.index.protocols[k];
@@ -605,31 +587,38 @@ function card(k, q, extra) {
 }
 function results(q) {
   var hits = psSearchProtocols(PS.index, q, PS.level);
-  var kw = hits.map(function(g) {
-    var ps = g.best, lv = ps ? LV_NAME[ps.lv] : "";
-    var clean = ps ? ps.text.replace(/\s(?:o|•|▪|[\uE000-\uF8FF])\s/g, " • ") : "";
-    var snip = clean.length > 170 ? clean.slice(0, 170) + "…" : clean;
-    return { k: g.k, html: card(g.k, q, snip ? '<div class="c-snip">' + (lv ? '<span class="tag t-' + (ps.lv === "PEARLS" ? "CF" : ps.lv) + '">' + esc(lv) + '</span>' : '') + markHtml(snip, q) + '</div>' : '') };
-  });
-  function paint(aiHtml, aiKs) {
-    var rest = kw.filter(function(x) { return !aiKs || aiKs.indexOf(x.k) === -1; });
-    show(aiHtml + (rest.length ? '<div class="sec-h">' + (aiKs && aiKs.length ? 'Other matches' : 'Protocols matching “' + esc(q) + '”') + '</div>' + rest.map(function(x) { return x.html; }).join("") : (aiKs && aiKs.length ? '' : '<div class="msg">Nothing matched “' + esc(q) + '”. Try other words, or browse the protocols.</div><a class="card" href="#/browse">📚 Browse all protocols</a>')) +
-      '<div class="msg" style="font-size:0.78rem;padding-top:4px">Tap a protocol to read it in full.</div>');
-  }
-  paint('<div class="ai-wait">✨ Reading the protocols…</div>', null);
+  var kwCards = function(exclude) {
+    return hits.filter(function(g) { return exclude.indexOf(g.k) === -1; }).map(function(g) {
+      var ps = g.best, lv = ps ? LV_NAME[ps.lv] : "";
+      var clean = ps ? ps.text.replace(/\s(?:o|•|▪|[\uE000-\uF8FF])\s/g, " • ") : "";
+      var snip = clean.length > 150 ? clean.slice(0, 150) + "…" : clean;
+      return card(g.k, q, snip ? '<div class="c-snip">' + (lv ? '<span class="tag t-' + (ps.lv === "PEARLS" ? "CF" : ps.lv) + '">' + esc(lv) + '</span>' : '') + markHtml(snip, q) + '</div>' : '');
+    }).join("");
+  };
+  var keywordOnly = function(note) {
+    var list = kwCards([]);
+    show((note ? '<div class="ai-note">' + note + '</div>' : '') + (list ? '<div class="sec-h">Protocols matching “' + esc(q) + '”</div>' + list : '<div class="msg">Nothing matched “' + esc(q) + '”. Try other words, or browse the protocols.</div>') +
+      '<a class="browsebtn" href="#/browse">📚 Browse all protocols</a>');
+  };
+  show('<div class="ai-wait">✨ Finding the right protocol…</div>' + (hits.length ? '<div class="sec-h">Protocols matching “' + esc(q) + '”</div>' + kwCards([]) : ''));
   aiRoute(q).then(function(res) {
     if (location.hash.indexOf("#/s/") !== 0) return;                 // user moved on
-    var ms = res.matches || [], ans = answerHtml(res.answer, q);
-    var noAns = !ans ? '<div class="ai-note">✨ No AI answer' + (res.note ? ' — ' + esc(res.note) : (res.answer && res.answer.removed ? ' — its statements couldn\'t be checked against the protocol, so they aren\'t shown' : '')) + '. Read the protocols below.</div>' : '';
-    if (!ms.length) { paint(ans + noAns + (ans ? '' : '<div class="ai-note">Keyword matches below.</div>'), []); return; }
-    var html = ans + noAns + '<div class="sec-h">' + (ans ? 'Protocols used' : '✨ Best matches <span class="tag t-AI">AI-picked</span>') + '</div>' + ms.map(function(m) {
-      var qt = m.quotes[0] ? '<div class="c-snip">“' + esc(m.quotes[0].length > 180 ? m.quotes[0].slice(0, 180) + "…" : m.quotes[0]) + '”</div>' : '';
-      return card(m.k, q, (m.why ? '<div class="c-why">' + esc(m.why) + '</div>' : '') + qt);
-    }).join("") + '<div class="ai-note">AI answers only from the protocol and cites it — but it can make mistakes. Always read the protocol.</div>';
-    paint(html, ms.map(function(m) { return m.k; }));
+    if (res.primary == null) { keywordOnly('✨ AI couldn\'t identify one protocol for this' + (res.note ? ' — ' + esc(res.note) : '') + '. Here are the protocols that match your words.'); return; }
+    var k = res.primary, pr = PS.index.protocols[k], fr = frameOf(pr, res.focus);
+    var where = fr.text ? ' — ' + esc(fr.text) + (fr.pages.length ? ' (p. ' + fr.pages.join(", ") + ')' : '') : '';
+    var related = res.related.length ? '<div class="sec-h">Related protocols</div>' + res.related.map(function(rk) { return card(rk, q, ''); }).join("") : '';
+    var others = kwCards([k].concat(res.related));
+    show('<div class="frame"><div class="ans-h">✨ Protocol for your question <span class="tag t-AI">AI-PICKED · BETA</span></div>' +
+      '<div class="frame-ref">Covered in <b>' + esc(pr.num + " " + titleCase(pr.title)) + '</b>' + where + '</div>' +
+      (fr.als && PS.level === "EMT" ? '<div class="only" style="margin:8px 0 0">The highlighted steps are <b>Paramedic &amp; MICN only</b>.</div>' : '') +
+      '<div class="ans-warn" style="margin-top:10px">⚠ <b>AI can make mistakes.</b> It chose this protocol and highlighted the steps it thinks answer your question. Read the whole protocol and double-check.</div>' +
+      '<div class="pv-actions" style="margin:10px 0 0"><a class="btn" href="#/pdf/' + k + '/' + encodeURIComponent(q) + '" style="text-decoration:none">📄 Original pages</a>' +
+      (res.cached ? '' : '') + '</div></div>' +
+      protoHead(pr) + protocolBody(k, res.focus.map(quoteCore), q) + related +
+      (others ? '<details class="others"><summary>Other protocols that mention your words</summary>' + others + '</details>' : ''));
   }).catch(function(e) {
     if (location.hash.indexOf("#/s/") !== 0) return;
-    paint('<div class="ai-note">' + (/showing regular search/i.test(e.message) ? esc(e.message) : 'AI search unavailable (' + esc(e.message) + ') — showing regular search.') + '</div>', null);
+    keywordOnly(/showing regular search/i.test(e.message) ? esc(e.message) : 'AI search unavailable (' + esc(e.message) + ') — showing regular search.');
   });
 }
 // ── One protocol, laid out from its lines: level sections, numbered steps, sub-points ──
@@ -654,45 +643,50 @@ function structure(pr) {
   });
   return secs.filter(function(s) { return s.head || s.items.length; });
 }
-function protocol(k, q) {
-  var pr = PS.index.protocols[k]; if (!pr) return home();
-  var mk = function(t) { var h = q ? markHtml(t, q) : esc(t); return /^CAUTION\b/i.test(t) ? '<span class="caution">' + h + '</span>' : h; };
-  var ai = PS.ai[PS.level + "|" + q], aiQ = [];
-  // Step numbers and bullet marks are laid out separately, so compare the words only.
-  var core = function(t) { return normTxt(t).replace(/^(\d{1,2}\.|o|-|–)\s+/, ""); };
-  if (ai) {
-    (ai.matches || []).forEach(function(m) { if (m.k === k) aiQ = aiQ.concat(m.quotes.map(core)); });
-    (ai.answer || []).forEach(function(it) { it.cites.forEach(function(c) { if (c.k === k) aiQ.push(core(c.quote)); }); });
-    aiQ = aiQ.filter(function(x) { return x.length > 8; });
-  }
-  var hasAi = function(t) { var n = core(t); return aiQ.some(function(x) { return n.indexOf(x) !== -1 || (n.length > 20 && x.indexOf(n) !== -1); }); };
-  var hasHit = function(t) { return aiQ.length ? hasAi(t) : (q && /<mark>/.test(markHtml(t, q))); };
-  var body = structure(pr).map(function(sec, si) {
-    var lv = sec.lv, closed = PS.level === "EMT" && (lv === "ALS" || lv === "CF");
+// The whole protocol, laid out in its sections, with the given lines outlined.
+function protocolBody(k, hl, q) {
+  var pr = PS.index.protocols[k];
+  var mk = function(t) { var h = q && !hl.length ? markHtml(t, q) : esc(t); return /^CAUTION\b/i.test(t) ? '<span class="caution">' + h + '</span>' : h; };
+  var hit = function(t) {
+    if (hl.length) { var n = quoteCore(t); return hl.some(function(x) { return n.indexOf(x) !== -1 || (n.length > 20 && x.indexOf(n) !== -1); }); }
+    return q && /<mark>/.test(markHtml(t, q));
+  };
+  return structure(pr).map(function(sec) {
+    var lv = sec.lv, hasHit = false;
     var items = sec.items.map(function(it) {
       if (it.type === "page") return '<div class="pgsep">— page ' + it.p + ' —</div>';
       if (it.type === "step") {
+        var all = it.text + " " + it.subs.map(function(s) { return s.text; }).join(" "), h = hit(it.text) || it.subs.some(function(s) { return s.type !== "conj" && hit(s.text); });
+        if (h) hasHit = true;
         var subs = it.subs.length ? '<ul>' + it.subs.map(function(s) { return s.type === "conj" ? '<div class="conj">' + esc(s.text) + '</div>' : '<li>' + mk(s.text) + '</li>'; }).join("") + '</ul>' : "";
-        var hit = hasHit(it.text + " " + it.subs.map(function(s) { return s.text; }).join(" "));
-        return '<div class="step' + (hit ? ' hitline' : '') + '"><span class="no">' + esc(it.no) + '.</span><div>' + mk(it.text) + subs + '</div></div>';
+        return '<div class="step' + (h ? ' hitline' : '') + '"><span class="no">' + esc(it.no) + '.</span><div>' + mk(it.text) + subs + '</div></div>';
       }
-      if (it.type === "sub" || it.type === "bullet") return '<ul><li' + (hasHit(it.text) ? ' class="hitline"' : '') + '>' + mk(it.text) + '</li></ul>';
+      var hh = (it.type === "sub" || it.type === "bullet" || it.type === "para") && hit(it.text); if (hh) hasHit = true;
+      if (it.type === "sub" || it.type === "bullet") return '<ul><li' + (hh ? ' class="hitline"' : '') + '>' + mk(it.text) + '</li></ul>';
       if (it.type === "conj") return '<div class="conj">' + esc(it.text) + '</div>';
       if (it.type === "subh") return '<div class="subh">' + esc(it.text) + '</div>';
-      return '<p style="margin:6px 0"' + (hasHit(it.text) ? ' class="hitline"' : '') + '>' + mk(it.text) + '</p>';
+      return '<p style="margin:6px 0"' + (hh ? ' class="hitline"' : '') + '>' + mk(it.text) + '</p>';
     }).join("");
-    var label = sec.head ? esc(sec.head) : (si === 0 ? "" : "");
-    return '<div class="sec lv-' + lv + (closed ? ' closed' : '') + '">' + (label ? '<div class="sec-bar">' + label +
-      (closed ? '<button class="sec-toggle" onclick="this.closest(\'.sec\').classList.toggle(\'closed\');this.textContent=this.closest(\'.sec\').classList.contains(\'closed\')?\'Show\':\'Hide\'">Show</button>' : '') + '</div>' : '') +
+    // Paramedic sections fold for EMTs — unless the answer is in them.
+    var closed = PS.level === "EMT" && (lv === "ALS" || lv === "CF") && !hasHit;
+    return '<div class="sec lv-' + lv + (closed ? ' closed' : '') + '">' + (sec.head ? '<div class="sec-bar">' + esc(sec.head) +
+      (closed ? '<button class="sec-toggle" onclick="var s=this.closest(\'.sec\');s.classList.toggle(\'closed\');this.textContent=s.classList.contains(\'closed\')?\'Show\':\'Hide\';var n=s.querySelector(\'.sec-note\');if(n)n.style.display=s.classList.contains(\'closed\')?\'\':\'none\'">Show</button>' : '') + '</div>' : '') +
       (closed ? '<div style="padding:8px 12px;font-size:0.8rem;color:var(--gray)" class="sec-note">Not in EMT scope — tap Show to read.</div>' : '') +
       '<div class="sec-body">' + items + '</div></div>';
   }).join("");
-  show('<div class="pv-head"><div class="pv-num">' + esc(pr.num || "") + '</div><div class="pv-title">' + esc(titleCase(pr.title)) + '</div><div class="pv-meta">' + pageRange(pr) + ' of the NJ EMS Clinical Practice Protocols</div></div>' +
-    (pr.alsOnly ? '<div class="only"><b>Paramedic &amp; MICN only.</b> This protocol is outside EMT scope.</div>' : '') +
+}
+function protoHead(pr) {
+  return '<div class="pv-head"><div class="pv-num">' + esc(pr.num || "") + '</div><div class="pv-title">' + esc(titleCase(pr.title)) + '</div><div class="pv-meta">' + pageRange(pr) + ' of the NJ EMS Clinical Practice Protocols</div></div>' +
+    (pr.alsOnly ? '<div class="only"><b>Paramedic &amp; MICN only.</b> This protocol is outside EMT scope.</div>' : '');
+}
+function protocol(k, q) {
+  var pr = PS.index.protocols[k]; if (!pr) return home();
+  var ai = PS.ai[PS.level + "|" + q], hl = (ai && ai.primary === k) ? ai.focus.map(quoteCore) : [];
+  show(protoHead(pr) +
     '<div class="pv-actions"><a class="btn" href="#/pdf/' + k + (q ? '/' + encodeURIComponent(q) : '') + '" style="text-decoration:none">📄 Original pages</a>' +
-    (q ? '<a class="btn" href="#/s/' + encodeURIComponent(q) + '" style="text-decoration:none">← Results</a>' : '<a class="btn" href="#/" style="text-decoration:none">← All protocols</a>') + '</div>' + body +
+    (q ? '<a class="btn" href="#/s/' + encodeURIComponent(q) + '" style="text-decoration:none">← Back</a>' : '<a class="btn" href="#/browse" style="text-decoration:none">← All protocols</a>') + '</div>' +
+    protocolBody(k, hl, q) +
     '<div class="msg" style="font-size:0.78rem">Laid out from the official PDF — check <a href="#/pdf/' + k + '" style="color:#bfe0ff">Original pages</a> for tables, charts and exact formatting.</div>');
-  document.querySelectorAll(".sec-note").forEach(function(n) { var b = n.parentNode.querySelector(".sec-toggle"); if (b) b.addEventListener("click", function() { n.style.display = n.parentNode.classList.contains("closed") ? "" : "none"; }); });
   var first = document.querySelector(".sec:not(.closed) .hitline");
   if (first) setTimeout(function() { first.scrollIntoView({ block: "center" }); }, 50);
 }
