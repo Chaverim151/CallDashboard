@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.24');
+  window.location.replace('/CallDashboard/mobile.html?v=3.25');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.20</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.21</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -14348,7 +14348,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.20";
+var DESKTOP_VERSION = "10.21";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -16813,6 +16813,9 @@ var mNcDraftTimer = null;
 function mNcDraftSnapshot() {
   var d = { fields: {}, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", sex: mNcSex || "", savedAt: new Date().toISOString() };
   M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d.fields[id] = el.value; });
+  // the caller-location request too, so a phone that reloads the app (common after a phone call) reconnects
+  if (typeof mLocReqToken !== "undefined" && mLocReqToken) d.loc = { token: mLocReqToken, tokensAll: (mLocReqTokensAll || []).slice(), callback: mLocReqCallback || "",
+    applied: !!mLocApplied, coordsOnly: !!mLocCoordsOnly, lat: mLocAppliedLat, lng: mLocAppliedLng, acc: mLocAppliedAcc || 0 };
   return d;
 }
 function mNcDraftHasContent(d) {
@@ -16837,6 +16840,7 @@ function mNcDraftRestore(d) {
   if (d.age) mSetNcAge(d.age);
   if (d.sex) { mNcSex = ""; mSetNcSex(d.sex); }
   if (d.zone) mSetNcZone(d.zone, false, d.zoneArea || "");
+  if (d.loc && d.loc.token) mLocResume(d.loc);
   var an = document.getElementById("m-nc-age-num"); if (an && an.value && an.nextElementSibling) an.nextElementSibling.style.display = "block";
   if (typeof mNcValidateMarks === "function") setTimeout(mNcValidateMarks, 50);
   var b = document.getElementById("m-nc-draft-bar");
@@ -16913,6 +16917,7 @@ function mRequestCallerLocation(force) {
     return;
   }
   mLocReqCallback = cb;
+  mLocStatus("📤 Sending the location link to " + mEscHtml(cb) + "…", "#ffc84a");
   var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   mLocReqTokensAll.push(token);
   var expires = new Date(Date.now() + 30 * 60000).toISOString();
@@ -16925,6 +16930,7 @@ function mRequestCallerLocation(force) {
       mLocStatus("📤 Link sent to " + mEscHtml(cb) + " — waiting for them to tap it…", "#ffc84a");
       mLocSetBtn(true);
       mWatchCallerLocation(token);
+      if (typeof mNcDraftSave === "function") mNcDraftSave();
     })
     .catch(function(e){ mLocStatus("Couldn't send the link: " + mEscHtml(e.message), "#ff9090"); });
 }
@@ -16992,6 +16998,7 @@ function mLocRender() {
   };
   if (key === mLocCardKey && el.querySelector(".lc")) { fill(); return; }   // same layout — numbers only
   mLocCardKey = key;
+  if (typeof mNcDraftSave === "function") mNcDraftSave();       // remember the choice with the draft
   el.style.display = "block"; el.style.background = "transparent"; el.style.border = "0"; el.style.padding = "0"; el.style.color = "var(--white)";
   var opt = function(m, label, sub) {
     return '<button type="button" class="lc-opt' + (mode === m ? ' on' : '') + '" aria-pressed="' + (mode === m) + '"' + (mLocBusy ? ' disabled' : '') +
@@ -17029,13 +17036,34 @@ function mLocUpdateToLatest() {
   if (mLocCoordsOnly) mUseCallerLocation(d.lat, d.lng, d.accuracy || 0, true); else mUseClosestAddress(d.lat, d.lng, d.accuracy || 0);
 }
 window.mLocChoose = mLocChoose; window.mLocUpdateToLatest = mLocUpdateToLatest;
+// Pick a request back up after the app reloaded: same link, same choice, listening again.
+function mLocResume(loc) {
+  mLocReqTokensAll = (loc.tokensAll && loc.tokensAll.length) ? loc.tokensAll : [loc.token];
+  mLocReqCallback = loc.callback || "";
+  mLocApplied = !!loc.applied; mLocCoordsOnly = !!loc.coordsOnly;
+  mLocAppliedLat = loc.lat === undefined ? null : loc.lat; mLocAppliedLng = loc.lng === undefined ? null : loc.lng; mLocAppliedAcc = loc.acc || 0;
+  mLocSetBtn(true);
+  mLocStatus("📡 Reconnecting to the caller's location…", "#ffc84a");
+  mWatchCallerLocation(loc.token);
+}
+// Coming back to the app: listen afresh so the latest location shows straight away.
+var mLocVisBound = false;
+function mLocBindVisibility() {
+  if (mLocVisBound) return; mLocVisBound = true;
+  document.addEventListener("visibilitychange", function() {
+    if (document.hidden || !mLocReqToken) return;
+    mWatchCallerLocation(mLocReqToken);
+  });
+}
 function mWatchCallerLocation(token) {
+  mLocBindVisibility();
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; }
   mLocReqToken = token;
   mLocReqUnsub = db.collection("locationRequests").doc(token).onSnapshot(function(snap) {
     if (!snap.exists) return;
     var d = snap.data();
     if (!d.lat || !d.lng) {
+      if (!d.status) { mLocStatus("📤 Link sent to " + mEscHtml(d.callback || mLocReqCallback || "the caller") + " — waiting for them to tap it…", "#ffc84a"); return; }
       // Presence, before any fix arrives — did they even open the link?
       if (d.status) {
         var seen = d.seenAt ? Math.round((Date.now() - new Date(d.seenAt).getTime()) / 1000) : 0;
@@ -17051,6 +17079,7 @@ function mWatchCallerLocation(token) {
     mLocLastAt = d.at ? new Date(d.at).getTime() : Date.now();
     mLocLastData = d;
     mLocRender();
+    if (typeof mNcDraftSave === "function") mNcDraftSave();
   });
 }
 // The dispatcher decides — the pin is never applied on its own.

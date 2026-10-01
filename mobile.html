@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.24"; window.M_BUILD = BUILD;
+  var BUILD = "3.25"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -329,6 +329,15 @@ select.m-disp-input option{background-color:#122040;color:#f4f6fa}
 #m-home-grid.jiggle .m-tile,#m-home-grid.jiggle{touch-action:pan-y !important}
 body.m-tile-dragging,body.m-tile-dragging #m-home-grid,body.m-tile-dragging #m-home-grid.jiggle,body.m-tile-dragging #m-home-grid.jiggle .m-tile,body.m-tile-dragging #m-home-grid .m-tile{touch-action:none !important}
 body.m-tile-dragging{overscroll-behavior:none}
+/* Google's address suggestions, in the app's colours (the desktop has had this; the phone showed Google's white list) */
+.pac-container{background:#122040!important;border:1px solid var(--card-border)!important;border-radius:10px!important;box-shadow:0 10px 28px rgba(0,0,0,0.5)!important;font-family:inherit!important;margin-top:4px!important;z-index:10050!important}
+.pac-container:after{display:none!important}
+.pac-item{padding:11px 14px!important;font-size:0.9rem!important;line-height:1.35!important;color:var(--gray)!important;cursor:pointer!important;border-top:1px solid rgba(255,255,255,0.06)!important;background:#122040!important;white-space:normal!important}
+.pac-item:first-child{border-top:0!important}
+.pac-item:hover,.pac-item-selected{background:rgba(var(--gold-rgb),0.14)!important}
+.pac-item-query{font-size:0.95rem!important;color:var(--white)!important;padding-right:4px!important}
+.pac-matched{color:var(--gold)!important}
+.pac-icon,.hdpi .pac-icon{display:none!important}
 </style>
 </head>
 <body>
@@ -4867,6 +4876,9 @@ var mNcDraftTimer = null;
 function mNcDraftSnapshot() {
   var d = { fields: {}, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", sex: mNcSex || "", savedAt: new Date().toISOString() };
   M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d.fields[id] = el.value; });
+  // the caller-location request too, so a phone that reloads the app (common after a phone call) reconnects
+  if (typeof mLocReqToken !== "undefined" && mLocReqToken) d.loc = { token: mLocReqToken, tokensAll: (mLocReqTokensAll || []).slice(), callback: mLocReqCallback || "",
+    applied: !!mLocApplied, coordsOnly: !!mLocCoordsOnly, lat: mLocAppliedLat, lng: mLocAppliedLng, acc: mLocAppliedAcc || 0 };
   return d;
 }
 function mNcDraftHasContent(d) {
@@ -4891,6 +4903,7 @@ function mNcDraftRestore(d) {
   if (d.age) mSetNcAge(d.age);
   if (d.sex) { mNcSex = ""; mSetNcSex(d.sex); }
   if (d.zone) mSetNcZone(d.zone, false, d.zoneArea || "");
+  if (d.loc && d.loc.token) mLocResume(d.loc);
   var an = document.getElementById("m-nc-age-num"); if (an && an.value && an.nextElementSibling) an.nextElementSibling.style.display = "block";
   if (typeof mNcValidateMarks === "function") setTimeout(mNcValidateMarks, 50);
   var b = document.getElementById("m-nc-draft-bar");
@@ -4967,6 +4980,7 @@ function mRequestCallerLocation(force) {
     return;
   }
   mLocReqCallback = cb;
+  mLocStatus("📤 Sending the location link to " + mEscHtml(cb) + "…", "#ffc84a");
   var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   mLocReqTokensAll.push(token);
   var expires = new Date(Date.now() + 30 * 60000).toISOString();
@@ -4979,6 +4993,7 @@ function mRequestCallerLocation(force) {
       mLocStatus("📤 Link sent to " + mEscHtml(cb) + " — waiting for them to tap it…", "#ffc84a");
       mLocSetBtn(true);
       mWatchCallerLocation(token);
+      if (typeof mNcDraftSave === "function") mNcDraftSave();
     })
     .catch(function(e){ mLocStatus("Couldn't send the link: " + mEscHtml(e.message), "#ff9090"); });
 }
@@ -5046,6 +5061,7 @@ function mLocRender() {
   };
   if (key === mLocCardKey && el.querySelector(".lc")) { fill(); return; }   // same layout — numbers only
   mLocCardKey = key;
+  if (typeof mNcDraftSave === "function") mNcDraftSave();       // remember the choice with the draft
   el.style.display = "block"; el.style.background = "transparent"; el.style.border = "0"; el.style.padding = "0"; el.style.color = "var(--white)";
   var opt = function(m, label, sub) {
     return '<button type="button" class="lc-opt' + (mode === m ? ' on' : '') + '" aria-pressed="' + (mode === m) + '"' + (mLocBusy ? ' disabled' : '') +
@@ -5083,13 +5099,34 @@ function mLocUpdateToLatest() {
   if (mLocCoordsOnly) mUseCallerLocation(d.lat, d.lng, d.accuracy || 0, true); else mUseClosestAddress(d.lat, d.lng, d.accuracy || 0);
 }
 window.mLocChoose = mLocChoose; window.mLocUpdateToLatest = mLocUpdateToLatest;
+// Pick a request back up after the app reloaded: same link, same choice, listening again.
+function mLocResume(loc) {
+  mLocReqTokensAll = (loc.tokensAll && loc.tokensAll.length) ? loc.tokensAll : [loc.token];
+  mLocReqCallback = loc.callback || "";
+  mLocApplied = !!loc.applied; mLocCoordsOnly = !!loc.coordsOnly;
+  mLocAppliedLat = loc.lat === undefined ? null : loc.lat; mLocAppliedLng = loc.lng === undefined ? null : loc.lng; mLocAppliedAcc = loc.acc || 0;
+  mLocSetBtn(true);
+  mLocStatus("📡 Reconnecting to the caller's location…", "#ffc84a");
+  mWatchCallerLocation(loc.token);
+}
+// Coming back to the app: listen afresh so the latest location shows straight away.
+var mLocVisBound = false;
+function mLocBindVisibility() {
+  if (mLocVisBound) return; mLocVisBound = true;
+  document.addEventListener("visibilitychange", function() {
+    if (document.hidden || !mLocReqToken) return;
+    mWatchCallerLocation(mLocReqToken);
+  });
+}
 function mWatchCallerLocation(token) {
+  mLocBindVisibility();
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; }
   mLocReqToken = token;
   mLocReqUnsub = db.collection("locationRequests").doc(token).onSnapshot(function(snap) {
     if (!snap.exists) return;
     var d = snap.data();
     if (!d.lat || !d.lng) {
+      if (!d.status) { mLocStatus("📤 Link sent to " + mEscHtml(d.callback || mLocReqCallback || "the caller") + " — waiting for them to tap it…", "#ffc84a"); return; }
       // Presence, before any fix arrives — did they even open the link?
       if (d.status) {
         var seen = d.seenAt ? Math.round((Date.now() - new Date(d.seenAt).getTime()) / 1000) : 0;
@@ -5105,6 +5142,7 @@ function mWatchCallerLocation(token) {
     mLocLastAt = d.at ? new Date(d.at).getTime() : Date.now();
     mLocLastData = d;
     mLocRender();
+    if (typeof mNcDraftSave === "function") mNcDraftSave();
   });
 }
 // The dispatcher decides — the pin is never applied on its own.
