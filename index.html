@@ -230,7 +230,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 .admin-tab{background:none;border:none;border-bottom:3px solid transparent;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.82rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px 16px;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s}
 .admin-tab:hover{color:var(--white)}
 .admin-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
-.adm-menubar{overflow:visible;position:relative;z-index:20;align-items:flex-end;flex-wrap:wrap}
+.adm-menubar{overflow:visible;position:sticky;top:0;z-index:30;align-items:flex-end;flex-wrap:wrap;background:var(--navy);box-shadow:0 8px 18px rgba(0,0,0,0.3)}
 .adm-menu{position:relative}
 .adm-caret{font-size:0.65rem;opacity:0.6;margin-left:2px}
 .adm-dd{display:none;position:absolute;left:0;top:100%;min-width:290px;background:var(--navy);border:1px solid var(--card-border);border-radius:0 0 9px 9px;box-shadow:0 12px 30px rgba(0,0,0,0.45);padding:6px 0;z-index:40}
@@ -239,6 +239,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 .adm-dd button:hover{background:rgba(201,168,76,0.12);color:var(--white)}
 .adm-dd .adm-dd-all{font-size:0.72rem;color:var(--gray);border-bottom:1px solid rgba(255,255,255,0.07);margin-bottom:4px;letter-spacing:0.04em}
 .adm-hl{color:var(--gold);font-weight:700}
+#pg-admin .inner-content{padding-bottom:45vh}   /* room for the last settings to scroll up under the menu */
 .lr-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:14px;align-items:start}
 @media (max-width:1000px){.lr-grid{grid-template-columns:1fr}}
 #lr-detail{position:sticky;top:10px}
@@ -1310,7 +1311,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.89</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.90</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2651,7 +2652,29 @@ function admDsContext(tab) {
   document.querySelectorAll("#ds-tabs .ticket-tab").forEach(function(b){ b.classList.toggle("active", b.getAttribute("data-ds") === dsTab); });
   if (typeof renderDispatchSettings === "function") renderDispatchSettings();
 }
+// A new tab starts at the top.
+function admUnstickPage() {
+  var pg = document.getElementById("pg-admin"); if (pg) pg.scrollTop = 0;
+  if (window.scrollY) window.scrollTo(0, 0);
+}
+function admScrollTo(target, onlyIfOff) {
+  var menu = document.getElementById("admin-tabbar"), gap = (menu ? menu.offsetHeight : 0) + 14;
+  var sc = admScroller(target);
+  var now = sc ? target.getBoundingClientRect().top - sc.getBoundingClientRect().top : target.getBoundingClientRect().top;
+  var want = sc ? 14 : gap;
+  if (onlyIfOff && Math.abs(now - want) < 20) return;
+  if (sc) sc.scrollTop += now - want; else window.scrollTo(0, window.scrollY + now - want);
+}
+// Whatever actually scrolls around an element: an inner box with its own scrollbar, or (null) the window.
+function admScroller(el) {
+  for (var n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    var oy = getComputedStyle(n).overflowY;
+    if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight + 1) return n;
+  }
+  return null;
+}
 function setAdminTab(tab) {
+  admUnstickPage();
   tab = ADMIN_TAB_ALIASES[tab] || tab;
   if (!DS_TABS_FOR[tab] && ["members", "activity"].indexOf(tab) === -1) tab = "members";
   document.querySelectorAll("#admin-tabbar .admin-tab").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
@@ -2767,7 +2790,12 @@ function admJump(e) {
   if (target.tagName !== "DIV" || !target.classList.contains("admin-section")) target = target.closest(".admin-section") || target;
   var det = target.querySelector("details"); if (det) det.open = true;
   setTimeout(function() {
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Bring the setting to just below the menu bar, which stays pinned at the top of the screen, so
+    // the menus and search are always one glance away after a jump.
+    // Sections above it are still filling in for a moment after the tab opens, which moves it, so
+    // line it up again once they've settled.
+    admScrollTo(target);
+    [250, 700, 1400].forEach(function(ms) { setTimeout(function() { admScrollTo(target, true); }, ms); });
     target.style.transition = "box-shadow 0.3s"; target.style.boxShadow = "0 0 0 2px var(--gold)";
     setTimeout(function() { target.style.boxShadow = ""; }, 1800);
   }, 60);
@@ -7353,7 +7381,7 @@ function lrRenderDetail(quiet) {
       '</div>' +
       '<div style="font-size:0.66rem;color:var(--gray);margin-top:5px">Sent from MC Hatzolah. Starts with "MC Hatzolah:" so the caller knows who it is.</div>' +
     '</div>';
-  var nb = document.getElementById("lr-reply"); if (nb) { nb.value = draft; if (hadFocus) { nb.focus(); nb.selectionStart = nb.selectionEnd = nb.value.length; } }
+  var nb = document.getElementById("lr-reply"); if (nb) { nb.value = draft; if (hadFocus) { nb.focus({ preventScroll: true }); nb.selectionStart = nb.selectionEnd = nb.value.length; } }
   var th = document.getElementById("lr-thread"); if (th) th.scrollTop = th.scrollHeight;
 }
 function lrSendText() {
@@ -13497,7 +13525,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.89";
+var DESKTOP_VERSION = "9.90";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
