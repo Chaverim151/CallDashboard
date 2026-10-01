@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.08</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.09</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7649,20 +7649,25 @@ function tplEditorFromTemplate(text) {
     ed.appendChild(row);
   });
 }
+// Read the message box as text, line by line, whatever structure the browser built while typing.
+// (Chrome puts the first line typed into an emptied box straight into the box, and only wraps the
+// following lines in their own containers — reading just the containers lost the first line.)
 function tplEditorToTemplate() {
   var ed = document.getElementById("tpl-editor"); if (!ed) return "";
-  var lines = [];
-  var walk = function(node, buf) {
+  var lines = [], cur = null;
+  var push = function(t) { cur = (cur === null ? "" : cur) + t; };
+  var flush = function() { if (cur !== null) { lines.push(cur); cur = null; } };
+  var isBlock = function(n) { return n.nodeType === 1 && /^(DIV|P|LI|H\d)$/.test(n.tagName) && !(n.classList && n.classList.contains("tpl-token")); };
+  var walk = function(node) {
     node.childNodes.forEach(function(ch) {
-      if (ch.nodeType === 3) buf.push(ch.textContent);
-      else if (ch.classList && ch.classList.contains("tpl-token")) buf.push("{" + ch.getAttribute("data-var") + "}");
-      else if (ch.tagName === "BR") {}
-      else walk(ch, buf);
+      if (ch.nodeType === 3) push(ch.textContent.replace(/\u00a0/g, " "));
+      else if (ch.classList && ch.classList.contains("tpl-token")) push("{" + ch.getAttribute("data-var") + "}");
+      else if (ch.tagName === "BR") { if (cur === null) cur = ""; flush(); }   // a line break (or an empty line)
+      else if (isBlock(ch)) { flush(); walk(ch); flush(); }                   // a line of its own
+      else walk(ch);                                                           // inline formatting: keep its text
     });
   };
-  var rows = ed.querySelectorAll(":scope > .tpl-line, :scope > div");
-  if (!rows.length) { var b = []; walk(ed, b); return b.join(""); }
-  rows.forEach(function(row) { var b = []; walk(row, b); lines.push(b.join("")); });
+  walk(ed); flush();
   return lines.join("\n");
 }
 function tplEditorSync() {
@@ -14424,7 +14429,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.08";
+var DESKTOP_VERSION = "10.09";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
