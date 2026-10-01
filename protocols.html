@@ -83,6 +83,22 @@ mark{background:rgba(255,213,0,0.3);color:inherit;border-radius:2px;padding:0 1p
 .ai-note{color:var(--gray);font-size:0.76rem;padding:2px 2px 12px}
 .c-why{font-size:0.84rem;color:#bfe0ff;margin-top:5px}
 .t-AI{background:rgba(160,120,255,0.2);color:#d6c8ff;border:1px solid rgba(160,120,255,0.5)}
+.hero{padding:26px 4px 8px;text-align:center}
+.hero h1{font-family:'Oswald',sans-serif;font-size:1.5rem;letter-spacing:0.04em;margin-bottom:4px}
+.hero p{color:var(--gray);font-size:0.9rem;margin-bottom:16px}
+.askbox{display:flex;flex-direction:column;gap:10px;background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:14px;padding:12px}
+#hq{width:100%;min-height:84px;resize:none;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:10px;color:var(--white);font:inherit;font-size:1.05rem;padding:12px;line-height:1.4}
+#hq::placeholder,#q::placeholder{color:#9fb0c8}
+#hgo{background:var(--gold);color:var(--navy);border:none;border-radius:10px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;font-size:1rem;padding:13px;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:14px 0 4px}
+.chips button{background:rgba(255,255,255,0.05);border:1px solid var(--card-border);color:#d6deea;border-radius:16px;padding:8px 13px;font:inherit;font-size:0.86rem;cursor:pointer;min-height:40px}
+.browsebtn{display:flex;align-items:center;justify-content:center;gap:8px;margin:22px auto 6px;max-width:420px;padding:14px;border:1px solid var(--card-border);border-radius:12px;background:rgba(255,255,255,0.04);color:var(--white);text-decoration:none;font-family:'Oswald',sans-serif;letter-spacing:0.04em;font-size:1rem}
+.hero-lvl{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;font-size:0.8rem;color:var(--gray)}
+#modal{position:fixed;inset:0;z-index:100;background:rgba(5,10,20,0.82);display:flex;align-items:center;justify-content:center;padding:18px}
+#modal .box{max-width:460px;width:100%;background:var(--navy-mid);border:1px solid rgba(240,165,0,0.55);border-radius:14px;padding:20px;line-height:1.55;box-shadow:0 20px 50px rgba(0,0,0,0.6)}
+#modal h2{font-family:'Oswald',sans-serif;letter-spacing:0.04em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+#modal ul{margin:8px 0 14px 20px;font-size:0.94rem}
+#modal button{width:100%;background:var(--gold);color:var(--navy);border:none;border-radius:10px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;font-size:1rem;padding:13px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -360,7 +376,7 @@ var PDF_URL = "protocols.pdf", INDEX_URL = "protocols-index.json", PDFJS = "http
 function $(id) { return document.getElementById(id); }
 function esc(t) { return orgEsc(t); }
 (function() { var mob = /iPhone|iPad|Android/i.test(navigator.userAgent); $("h-back").href = mob ? "mobile.html" : "./"; })();
-function show(html) { $("view").innerHTML = html; window.scrollTo(0, 0); }
+function show(html) { $("view").innerHTML = html; window.scrollTo(0, 0); bindLevels(); }
 function gate(title, text) { $("tools").style.display = "none"; show('<div id="gate"><h2>' + esc(title) + '</h2><p>' + text + '</p></div>'); }
 function allowed(user, email, access) {
   var roles = (user.roles || []).map(function(r) { return String(r).toLowerCase(); });
@@ -374,17 +390,22 @@ auth.onAuthStateChanged(function(u) {
   Promise.all([db.collection("users").doc(u.uid).get(), db.collection("appdata").doc("protocolAI").get()]).then(function(r) {
     var user = r[0].exists ? r[0].data() : {}, settings = r[1].exists ? r[1].data() : {};
     if (!allowed(user, u.email, settings.access || "admins")) { gate("Not available yet", "Protocols is a beta that isn't turned on for your account yet."); return; }
-    if (localStorage.getItem("psAck_v1") !== "yes") showAck(); else loadIndex();
+    showWarning(); loadIndex();
   }).catch(function(e) { gate("Couldn't load", esc(e.message)); });
 });
-function showAck() {
-  show('<div id="ackbox"><h2>Before you start <span class="beta">BETA</span></h2>' +
-    '<p>This shows the NJ EMS Clinical Practice Protocols and lets you search them. It is a <b>beta test</b>:</p>' +
-    '<ul style="margin:8px 0 0 20px"><li>Search can <b>miss</b> what you need, and the on-screen layout is rebuilt from the PDF — check <b>Original pages</b> when it matters.</li><li>It is <b>not</b> medical direction and doesn\'t replace the official protocol, your training, or medical command.</li></ul>' +
-    '<label><input type="checkbox" id="ack-c" style="margin-top:4px"> I understand this is a beta and I won\'t rely on it for patient care.</label>' +
-    '<button id="ack-b" disabled>Continue</button></div>');
-  $("ack-c").onchange = function() { $("ack-b").disabled = !this.checked; };
-  $("ack-b").onclick = function() { localStorage.setItem("psAck_v1", "yes"); loadIndex(); };
+// The beta warning pops up every time the page opens.
+function showWarning() {
+  if (document.getElementById("modal")) return;
+  var m = document.createElement("div"); m.id = "modal";
+  m.innerHTML = '<div class="box" role="dialog" aria-modal="true" aria-labelledby="mtitle"><h2 id="mtitle">⚠ Beta — reference only <span class="beta">BETA</span></h2>' +
+    '<ul><li>AI search and the on-screen layout can be <b>wrong or incomplete</b>.</li>' +
+    '<li>This is <b>not</b> medical direction and doesn\'t replace the official NJ protocol, your training, or medical command.</li>' +
+    '<li>Always read the full protocol — check <b>Original pages</b> when it matters.</li>' +
+    '<li>Don\'t type patient names or details.</li></ul>' +
+    '<button id="mok">I understand</button></div>';
+  document.body.appendChild(m);
+  document.getElementById("mok").onclick = function() { m.remove(); var f = document.getElementById("hq"); if (f) f.focus(); };
+  document.getElementById("mok").focus();
 }
 // ── Index: the bundled file, unless protocols.pdf has been replaced — then rebuilt once on this device. ──
 function idbGet(k) { return new Promise(function(res) { try { var o = indexedDB.open("protocolSearch", 1); o.onupgradeneeded = function() { o.result.createObjectStore("kv"); }; o.onsuccess = function() { var g = o.result.transaction("kv").objectStore("kv").get(k); g.onsuccess = function() { res(g.result || null); }; g.onerror = function() { res(null); }; }; o.onerror = function() { res(null); }; } catch (e) { res(null); } }); }
@@ -422,23 +443,47 @@ window.addEventListener("hashchange", route);
 function route() {
   if (!PS.index) return;
   var h = decodeURIComponent(location.hash.replace(/^#\/?/, "")), m;
-  document.querySelectorAll(".lvl").forEach(function(b) { b.classList.toggle("on", b.dataset.l === PS.level); });
+  // The top search bar is for the inner screens; the home screen has its own big search box.
+  $("tools").style.display = (h === "" || h === "/") ? "none" : "";
   if ((m = /^s\/(.+)$/.exec(h))) { $("q").value = m[1]; return results(m[1]); }
   if ((m = /^p\/(\d+)(?:\/(.*))?$/.exec(h))) return protocol(Number(m[1]), m[2] || "");
   if ((m = /^pdf\/(\d+)(?:\/(.*))?$/.exec(h))) return originals(Number(m[1]), m[2] || "");
+  if (h === "browse") { $("q").value = ""; return browse(); }
   $("q").value = ""; home();
 }
 function go(hash) { location.hash = hash; }
 $("go").onclick = function() { var q = $("q").value.trim(); if (q) go("/s/" + encodeURIComponent(q)); };
 $("q").addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); $("go").onclick(); } });
-document.querySelectorAll(".lvl").forEach(function(b) { b.onclick = function() { PS.level = b.dataset.l; localStorage.setItem("psLevel", PS.level); route(); }; });
+bindLevels();
 var LV_NAME = { EMT: "EMT", ALS: "Paramedic & MICN", CF: "Communication failure — ALS only", PEARLS: "Pearls", ALL: "" };
 function onlyTag(pr) { return pr.alsOnly ? '<span class="tag t-ONLY">Paramedic &amp; MICN only</span>' : ''; }
 function pageRange(pr) { var a = pr.pages[0], z = pr.pages[pr.pages.length - 1]; return a === z ? "p. " + a : "pp. " + a + "–" + z; }
+var EXAMPLES = ["Pt found down, pinpoint pupils, slow breathing", "Epi dose for anaphylaxis", "When can I use CPAP?", "Woman in labor, baby crowning", "Chest pain, can I give aspirin?", "Kid having a seizure"];
 function home() {
+  show('<div class="hero"><h1>Ask the protocols</h1><p>Describe the situation in your own words — AI finds the right NJ protocol and the steps that matter.</p></div>' +
+    '<div class="askbox"><textarea id="hq" rows="3" placeholder="e.g. 70 y/o short of breath, wheezing, hx COPD"></textarea>' +
+    '<div class="hero-lvl">My level: <button class="lvl" data-l="EMT">EMT (BLS)</button><button class="lvl" data-l="ALS">Paramedic &amp; MICN</button></div>' +
+    '<button id="hgo">✨ FIND PROTOCOLS</button></div>' +
+    '<div class="chips">' + EXAMPLES.map(function(e) { return '<button>' + esc(e) + '</button>'; }).join("") + '</div>' +
+    '<a class="browsebtn" href="#/browse">📚 Browse all protocols</a>' +
+    '<div class="msg" style="text-align:center;font-size:0.76rem;padding-top:6px">AI chooses which protocols to show — it doesn\'t write answers. Always read the protocol.</div>');
+  bindLevels();
+  var ask = function() { var q = $("hq").value.trim(); if (q) go("/s/" + encodeURIComponent(q)); };
+  $("hgo").onclick = ask;
+  $("hq").addEventListener("keydown", function(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } });
+  document.querySelectorAll(".chips button").forEach(function(b) { b.onclick = function() { $("hq").value = b.textContent; ask(); }; });
+  if (!document.getElementById("modal")) $("hq").focus();
+}
+function bindLevels() {
+  document.querySelectorAll(".lvl").forEach(function(b) {
+    b.classList.toggle("on", b.dataset.l === PS.level);
+    b.onclick = function() { PS.level = b.dataset.l; localStorage.setItem("psLevel", PS.level); document.querySelectorAll(".lvl").forEach(function(x) { x.classList.toggle("on", x.dataset.l === PS.level); }); if (!/^#\/?$/.test(location.hash || "#/") && location.hash) route(); };
+  });
+}
+function browse() {
   var idx = PS.index, groups = {};
   idx.protocols.forEach(function(pr, k) { if (!k) return; var s = pr.num.split(".")[0]; (groups[s] = groups[s] || []).push(k); });
-  show('<div class="browse"><div class="sec-h">Browse all protocols</div>' + idx.sections.map(function(sec) {
+  show('<div class="pv-actions"><a class="btn" href="#/" style="text-decoration:none">← Ask the protocols</a></div><div class="browse"><div class="sec-h">All protocols</div>' + idx.sections.map(function(sec) {
     var ks = groups[sec.n] || []; if (!ks.length) return "";
     return '<details><summary>' + esc(sec.n + ". " + sec.name) + ' <span style="color:var(--gray);font-family:\'Source Sans 3\';font-size:0.8rem">(' + ks.length + ')</span></summary><div class="blist">' +
       ks.map(function(k) { var pr = idx.protocols[k]; return '<a href="#/p/' + k + '"><span class="n">' + esc(pr.num) + '</span><span style="flex:1">' + esc(titleCase(pr.title)) + (pr.alsOnly ? ' <span class="tag t-ONLY">ALS only</span>' : '') + '</span></a>'; }).join("") + '</div></details>';
@@ -457,6 +502,14 @@ PS.ai = {};
 function protoText(pr) {
   return pr.lines.map(function(l) { return l[2] === "H" ? "== " + l[1] + " ==" : l[1]; }).join("\n");
 }
+// What the AI reads for a candidate: the steps for this provider's level first, then the rest, then
+// pearls — trimmed, so the request stays small and the answer comes back faster.
+function protoTextFor(pr, level) {
+  var order = level === "ALS" ? { ALS: 0, ALL: 1, EMT: 2, CF: 3, PEARLS: 4 } : { EMT: 0, ALL: 1, ALS: 2, CF: 3, PEARLS: 4 };
+  var groups = [[], [], [], [], []];
+  pr.lines.forEach(function(l) { var lv = l[l.length - 1]; groups[order[lv] != null ? order[lv] : 1].push(l[2] === "H" ? "== " + l[1] + " ==" : l[1]); });
+  return [].concat.apply([], groups).join("\n").slice(0, 2400);
+}
 function normTxt(t) { return String(t || "").replace(/[•▪■\uE000-\uF8FF]/g, " ").replace(/\s+/g, " ").trim().toLowerCase(); }
 function callFn(name, payload) {
   var u = auth.currentUser; if (!u) return Promise.reject(new Error("Not signed in"));
@@ -468,11 +521,11 @@ function callFn(name, payload) {
 function aiRoute(q) {
   var key = PS.level + "|" + q;
   if (PS.ai[key]) return Promise.resolve(PS.ai[key]);
-  var idx = PS.index, cands = psSearchProtocols(idx, q, "ALS", 12);
+  var idx = PS.index, cands = psSearchProtocols(idx, q, "ALS", 8);
   var payload = {
-    question: q, level: PS.level,
+    question: q, level: PS.level, version: String(idx.source.bytes || "") + "-" + String(idx.builtAt || "").slice(0, 10),
     catalog: idx.protocols.map(function(pr, k) { return k ? { k: k, num: pr.num, title: pr.title, alsOnly: !!pr.alsOnly } : null; }).filter(Boolean),
-    candidates: cands.map(function(g) { return { k: g.k, text: protoText(idx.protocols[g.k]).slice(0, 3500) }; })
+    candidates: cands.map(function(g) { return { k: g.k, text: protoTextFor(idx.protocols[g.k], PS.level) }; })
   };
   return callFn("protocolRoute", payload).then(function(res) {
     // Keep only quotes that really are in the protocol, word for word.
@@ -498,7 +551,7 @@ function results(q) {
   });
   function paint(aiHtml, aiKs) {
     var rest = kw.filter(function(x) { return !aiKs || aiKs.indexOf(x.k) === -1; });
-    show(aiHtml + (rest.length ? '<div class="sec-h">' + (aiKs && aiKs.length ? 'Other matches' : 'Protocols matching “' + esc(q) + '”') + '</div>' + rest.map(function(x) { return x.html; }).join("") : (aiKs && aiKs.length ? '' : '<div class="msg">Nothing matched “' + esc(q) + '”. Try other words, or browse the protocols.</div><a class="card" href="#/">Browse all protocols</a>')) +
+    show(aiHtml + (rest.length ? '<div class="sec-h">' + (aiKs && aiKs.length ? 'Other matches' : 'Protocols matching “' + esc(q) + '”') + '</div>' + rest.map(function(x) { return x.html; }).join("") : (aiKs && aiKs.length ? '' : '<div class="msg">Nothing matched “' + esc(q) + '”. Try other words, or browse the protocols.</div><a class="card" href="#/browse">📚 Browse all protocols</a>')) +
       '<div class="msg" style="font-size:0.78rem;padding-top:4px">Tap a protocol to read it in full.</div>');
   }
   paint('<div class="ai-wait">✨ Asking AI to find the best protocols…</div>', null);
