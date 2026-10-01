@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.17');
+  window.location.replace('/CallDashboard/mobile.html?v=3.18');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1172,7 +1172,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="big-btn" data-sec="education" id="education-btn" onclick="goTo('education')" style="animation-delay:0.45s;display:none">
         <div class="btn-inner"><span class="btn-icon">🎓</span><span class="btn-label">Education</span><span class="btn-sub">CME · Classes · Drills<br>Attendance tracking</span></div>
       </button>
-      <a class="big-btn" id="protocolai-btn" href="protocols.html" target="_blank" rel="opener" style="animation-delay:0.45s;display:none;text-decoration:none">
+      <a class="big-btn" id="protocolai-btn" href="protocols.html" onclick="openProtocols(event)" style="animation-delay:0.45s;display:none;text-decoration:none">
         <div class="btn-inner"><span class="btn-icon">📘</span><span class="btn-label">Protocol Search <span style="font-size:0.6rem;background:#f0a500;color:#0a1628;border-radius:3px;padding:1px 5px;vertical-align:2px">BETA</span></span><span class="btn-sub">Search the NJ EMS protocol<br>Reference only</span></div>
       </a>
       <button class="big-btn" data-sec="storage" onclick="goTo('storage')" style="animation-delay:0.35s">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.11</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.12</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1993,7 +1993,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         <label style="display:flex;gap:8px;align-items:center;margin:6px 0;font-size:0.86rem"><input type="radio" name="pai-access" value="all"> Everyone: responders, captains and chiefs</label>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
           <button class="edit-mode-btn" onclick="paiSaveAccess()">💾 Save</button>
-          <a class="edit-mode-btn" href="protocols.html" target="_blank" rel="opener" style="text-decoration:none">Open Protocol Search ↗</a>
+          <a class="edit-mode-btn" href="protocols.html" onclick="openProtocols(event)" style="text-decoration:none">Open Protocol Search ↗</a>
           <span id="pai-access-msg" style="font-size:0.8rem;color:var(--gray)"></span>
         </div>
       </div>
@@ -7884,6 +7884,19 @@ function pwSecure() {
   }).catch(function(e) { host.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Error: ' + escapeHtml(e.message) + '</div>'; });
 }
 window.pwCheck = pwCheck; window.pwSecure = pwSecure;
+// ── Protocols (beta), full-screen inside the app ──
+function openProtocols(e) {
+  if (e) e.preventDefault();
+  var o = document.getElementById("proto-overlay"), f = document.getElementById("proto-frame");
+  f.src = "protocols.html?v=" + DESKTOP_VERSION + "&t=" + Date.now();      // always the newest page; warning each time
+  o.style.display = "block"; document.body.style.overflow = "hidden";
+}
+function closeProtocols() {
+  var o = document.getElementById("proto-overlay"), f = document.getElementById("proto-frame");
+  o.style.display = "none"; document.body.style.overflow = ""; f.src = "about:blank";
+}
+document.addEventListener("keydown", function(e) { var o = document.getElementById("proto-overlay"); if (e.key === "Escape" && o && o.style.display === "block") closeProtocols(); });
+window.openProtocols = openProtocols; window.closeProtocols = closeProtocols;
 // ── Admin ▸ Protocol Search (beta) ──
 function paiLoad() {
   db.collection("appdata").doc("protocolAI").get().then(function(s) {
@@ -14429,7 +14442,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.11";
+var DESKTOP_VERSION = "10.12";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -19690,5 +19703,10 @@ function mAlsPromptCheck() {
 }
 
 </script>
+<!-- Protocols opens full-screen inside the app, so it uses this tab's sign-in (the desktop doesn't keep
+     anyone signed in across tabs). Reloaded on every open so the beta warning shows each time. -->
+<div id="proto-overlay" style="display:none;position:fixed;inset:0;z-index:9000;background:#0a1628">
+  <iframe id="proto-frame" title="Protocols" style="width:100%;height:100%;border:0;display:block"></iframe>
+</div>
 </body>
 </html>
