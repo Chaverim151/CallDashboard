@@ -239,6 +239,16 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 .adm-dd button:hover{background:rgba(201,168,76,0.12);color:var(--white)}
 .adm-dd .adm-dd-all{font-size:0.72rem;color:var(--gray);border-bottom:1px solid rgba(255,255,255,0.07);margin-bottom:4px;letter-spacing:0.04em}
 .adm-hl{color:var(--gold);font-weight:700}
+.lr-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:14px;align-items:start}
+@media (max-width:1000px){.lr-grid{grid-template-columns:1fr}}
+#lr-detail{position:sticky;top:10px}
+.lr-row{cursor:pointer;transition:border-color 0.15s}
+.lr-row:hover{border-color:rgba(201,168,76,0.5)!important}
+.lr-row.sel{border-color:var(--gold)!important;background:rgba(201,168,76,0.06)}
+.lr-bubble{max-width:80%;padding:8px 11px;border-radius:12px;font-size:0.84rem;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;margin-bottom:3px}
+.lr-out{align-self:flex-end;background:rgba(201,168,76,0.18);border:1px solid rgba(201,168,76,0.4);color:var(--white);border-bottom-right-radius:3px}
+.lr-in{align-self:flex-start;background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.4);color:var(--white);border-bottom-left-radius:3px}
+.lr-meta{font-size:0.66rem;color:var(--gray);margin-bottom:9px}
 .admin-section[data-admin-tab]{display:none}
 .admin-section[data-admin-tab].tab-visible{display:block}
 .admin-section-title{font-family:'Oswald',sans-serif;font-size:0.72rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--gold);margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--card-border);display:flex;align-items:center;gap:10px;}
@@ -1300,7 +1310,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.88</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.89</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1865,12 +1875,17 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 
     <div class="admin-section" data-admin-tab="activity" id="adm-locations">
       <div class="admin-section-title">📍 Location Requests</div>
-      <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">Every caller-location link sent in the last 24 hours, updating live. Open requests are at the top — a link counts as open until it expires, or for as long as the caller's page is still reporting in.</p>
+      <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">Every caller-location link from the last 24 hours, live. Pins show callers who are sharing; pick one — on the map or in the list — to see the path their phone has reported and to text them directly. Their replies appear here.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
         <button class="edit-mode-btn" onclick="lrStart()">↻ Refresh</button>
+        <button class="edit-mode-btn" onclick="lrFitAll()">⌖ Show all pins</button>
         <span id="lr-count" style="font-size:0.78rem;color:var(--gray)"></span>
       </div>
-      <div id="lr-list"></div>
+      <div id="lr-map" style="height:420px;border-radius:10px;border:1px solid var(--card-border);margin-bottom:14px;background:rgba(255,255,255,0.03)"></div>
+      <div class="lr-grid">
+        <div id="lr-list"></div>
+        <div id="lr-detail"></div>
+      </div>
     </div>
 
     <div class="admin-section" data-admin-tab="activity" id="adm-test-email">
@@ -7107,30 +7122,44 @@ function renderNotificationLog() {
     '</div>';
   }).join("");
 }
-// ── LOCATION REQUESTS OVERSIGHT (Admin ▸ Location Requests) ──
-// Live view of every caller-location link from the last 24 hours. Read-only. Listing the whole
-// collection is limited to admins by the Firestore rules; a caller's page can still open its own
-// request by its token.
+// ── LOCATION REQUESTS OVERSIGHT (Admin ▸ Activity ▸ Location Requests) ──
+// Live map of every caller-location link from the last 24 hours. Picking a request shows the path
+// the caller's phone reported (locationRequests/{token}/fixes, written by loc.html) and a text thread
+// with the caller (…/messages, written only by the locReqText and smsInbound Cloud Functions).
+// Listing requests, fixes and messages is admin-only in the Firestore rules.
 var LR_ROWS = [], lrUnsub = null, lrTimer = null;
+var LR_SEL = null, LR_FIXES = [], LR_MSGS = [], lrFixUnsub = null, lrMsgUnsub = null;
+var lrMap = null, lrPins = {}, lrPath = null, lrAccCircle = null, lrRoughDots = [], lrFittedOnce = false;
+var LR_LAST_IN = {};                     // id → lastInAt already seen this session, to announce new replies once
 function lrStart() {
   lrStop();
   var el = document.getElementById("lr-list"); if (!el) return;
   el.innerHTML = '<div style="color:var(--gray);font-size:0.84rem;padding:10px">Loading…</div>';
-  var since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  lrInitMap();
+  var since = new Date(Date.now() - 24 * 3600 * 1000).toISOString(), first = true;
   lrUnsub = db.collection("locationRequests").where("createdAt", ">=", since).orderBy("createdAt", "desc").limit(100)
     .onSnapshot(function(snap) {
       LR_ROWS = [];
       snap.forEach(function(doc) { LR_ROWS.push(Object.assign({ id: doc.id }, doc.data())); });
-      lrRender();
+      LR_ROWS.forEach(function(r) {
+        // announce a reply that arrives while the screen is open — not ones already there on load
+        if (r.lastInAt && LR_LAST_IN[r.id] !== r.lastInAt && !first) showToast("💬 Reply from " + (r.callback ? formatPhone(r.callback) : "a caller"));
+        LR_LAST_IN[r.id] = r.lastInAt || "";
+      });
+      first = false;
+      lrRender(); lrDrawPins(); lrRenderDetail();
     }, function(e) {
       el.innerHTML = '<div style="color:#ff9090;font-size:0.84rem;padding:10px">Couldn\'t load location requests: ' + escapeHtml(e.message) +
         '<br><span style="color:var(--gray)">If this mentions permissions, the updated Firestore rules haven\'t been published yet.</span></div>';
     });
-  lrTimer = setInterval(lrRender, 15000);   // keeps the "x min ago" times and open/ended state current
+  lrTimer = setInterval(function() { lrRender(); lrRenderDetail(true); }, 15000);
+  if (LR_SEL) lrWatchSelected();
 }
 function lrStop() {
   if (lrUnsub) { lrUnsub(); lrUnsub = null; }
   if (lrTimer) { clearInterval(lrTimer); lrTimer = null; }
+  if (lrFixUnsub) { lrFixUnsub(); lrFixUnsub = null; }
+  if (lrMsgUnsub) { lrMsgUnsub(); lrMsgUnsub = null; }
 }
 function lrAgo(iso) {
   if (!iso) return "";
@@ -7139,6 +7168,7 @@ function lrAgo(iso) {
   var m = Math.round(s / 60); if (m < 60) return m + " min ago";
   return Math.round(m / 60) + " h ago";
 }
+function lrTime(iso) { return iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : ""; }
 function lrLastActivity(r) {
   var t = [r.seenAt, r.at].filter(Boolean).map(function(x) { return new Date(x).getTime(); });
   return t.length ? Math.max.apply(null, t) : 0;
@@ -7150,12 +7180,23 @@ function lrIsOpen(r) {
 }
 function lrState(r) {
   var dev = /iPhone|iPad/i.test(r.device || "") ? "iPhone" : /Android/i.test(r.device || "") ? "Android" : "phone";
-  if (!lrIsOpen(r)) return { text: r.lat ? "Ended — location was shared" : (r.status ? "Ended — caller opened it, never shared" : "Expired — link never opened"), color: "var(--gray)" };
-  if (r.status === "closed") return { text: "Caller closed the page", color: "#ff9090" };
-  if (r.status === "background") return { text: "Page in the background on their " + dev, color: "#ffc84a" };
-  if (r.lat) return { text: "Sharing from their " + dev, color: "#7dedb5" };
-  if (r.status) return { text: "Opened on their " + dev + " — hasn't tapped Allow", color: "#ffc84a" };
-  return { text: "Link sent — not opened yet", color: "#ffc84a" };
+  if (!lrIsOpen(r)) return { text: r.lat ? "Ended — location was shared" : (r.status ? "Ended — caller opened it, never shared" : "Expired — link never opened"), color: "var(--gray)", pin: "#8a9ab5" };
+  if (r.status === "closed") return { text: "Caller closed the page", color: "#ff9090", pin: "#e05555" };
+  if (r.status === "background") return { text: "Page in the background on their " + dev, color: "#ffc84a", pin: "#f0a500" };
+  if (r.lat) return { text: "Sharing from their " + dev, color: "#7dedb5", pin: "#4caf80" };
+  if (r.status) return { text: "Opened on their " + dev + " — hasn't tapped Allow", color: "#ffc84a", pin: "#f0a500" };
+  return { text: "Link sent — not opened yet", color: "#ffc84a", pin: "#f0a500" };
+}
+function lrUnread(r) {
+  if (!r.lastInAt) return false;
+  var seen = ""; try { seen = localStorage.getItem("lrSeen_" + r.id) || ""; } catch (e) {}
+  return r.lastInAt > seen;
+}
+function lrMetres(a, b) {
+  var R = 6371000, toRad = function(x) { return x * Math.PI / 180; };
+  var dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+  var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 function lrRender() {
   var el = document.getElementById("lr-list"); if (!el) return;
@@ -7166,36 +7207,170 @@ function lrRender() {
   function row(r) {
     var st = lrState(r), isOpen = lrIsOpen(r);
     var created = r.createdAt ? new Date(r.createdAt) : null;
-    var when = created ? created.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " · " + created.toLocaleDateString([], { month: "short", day: "numeric" }) : "";
-    var fix = "";
-    if (r.lat && r.lng) {
-      var acc = r.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
-      fix = '<div style="margin-top:7px;font-size:0.8rem;color:#c9d4e6;line-height:1.5">' +
-        '<b style="color:' + ac + '">' + escapeHtml(r.accuracyLabel || "") + ', within ' + acc + ' m</b>' +
-        (acc > 150 ? ' <span style="color:#ff9090">— too rough to dispatch on alone</span>' : '') +
-        (r.approxAddress ? '<br>📮 ' + escapeHtml(r.approxAddress) : '') +
-        '<br><span style="font-variant-numeric:tabular-nums;color:var(--gray)">' + Number(r.lat).toFixed(6) + ', ' + Number(r.lng).toFixed(6) + '</span>' +
-        ' · <a href="https://www.google.com/maps/search/?api=1&query=' + r.lat + ',' + r.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
-        (r.at ? ' · <span style="color:var(--gray)">fix ' + lrAgo(r.at) + '</span>' : '') +
-        '</div>';
-    }
+    var when = created ? lrTime(r.createdAt) + " · " + created.toLocaleDateString([], { month: "short", day: "numeric" }) : "";
+    var acc = r.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
     var last = lrLastActivity(r);
-    return '<div style="border:1px solid var(--card-border);border-left:3px solid ' + (isOpen ? st.color : "rgba(255,255,255,0.15)") + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;' + (isOpen ? '' : 'opacity:0.7') + '">' +
-      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;color:' + st.color + '">' + escapeHtml(st.text) + '</span>' +
-        '<span style="font-size:0.74rem;color:var(--white)">📞 ' + escapeHtml(r.callback ? formatPhone(r.callback) : "—") + '</span>' +
-        (r.by ? '<span style="font-size:0.72rem;color:var(--gray)">sent by ' + escapeHtml(r.by) + '</span>' : '') +
-        '<span style="margin-left:auto;font-size:0.72rem;color:var(--gray)">' + escapeHtml(when) + '</span>' +
+    return '<div class="lr-row' + (r.id === LR_SEL ? ' sel' : '') + '" onclick="lrSelect(\'' + r.id + '\')" style="border:1px solid var(--card-border);border-left:3px solid ' + (isOpen ? st.color : "rgba(255,255,255,0.15)") + ';border-radius:8px;padding:9px 11px;margin-bottom:7px;' + (isOpen ? '' : 'opacity:0.72') + '">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;color:' + st.color + '">' + escapeHtml(st.text) + '</span>' +
+        (lrUnread(r) ? '<span style="font-size:0.62rem;background:rgba(122,184,245,0.2);border:1px solid rgba(122,184,245,0.6);color:#bfe0ff;border-radius:4px;padding:1px 6px">💬 new reply</span>' : '') +
+        '<span style="margin-left:auto;font-size:0.7rem;color:var(--gray)">' + escapeHtml(when) + '</span>' +
       '</div>' +
-      (last ? '<div style="font-size:0.7rem;color:var(--gray);margin-top:3px">last heard from ' + lrAgo(new Date(last).toISOString()) + '</div>' : '') +
-      fix +
+      '<div style="font-size:0.76rem;color:var(--white);margin-top:3px">📞 ' + escapeHtml(r.callback ? formatPhone(r.callback) : "—") +
+        (r.by ? ' <span style="color:var(--gray)">· sent by ' + escapeHtml(r.by) + '</span>' : '') + '</div>' +
+      (r.lat ? '<div style="font-size:0.72rem;margin-top:3px"><b style="color:' + ac + '">' + escapeHtml(r.accuracyLabel || "") + ', ' + acc + ' m</b>' +
+        (r.approxAddress ? ' <span style="color:var(--gray)">· ' + escapeHtml(r.approxAddress) + '</span>' : '') + '</div>' : '') +
+      (last ? '<div style="font-size:0.66rem;color:var(--gray);margin-top:2px">last heard from ' + lrAgo(new Date(last).toISOString()) + '</div>' : '') +
     '</div>';
   }
   el.innerHTML =
-    (open.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin:4px 0 8px">Open</div>' + open.map(row).join("") : '<div style="color:var(--gray);font-size:0.82rem;padding:6px 0 10px">No open requests right now.</div>') +
+    (open.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin:2px 0 8px">Open</div>' + open.map(row).join("") : '<div style="color:var(--gray);font-size:0.82rem;padding:4px 0 10px">No open requests right now.</div>') +
     (ended.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin:14px 0 8px">Ended</div>' + ended.map(row).join("") : '');
 }
-window.lrStart = lrStart; window.lrStop = lrStop;
+// ── map ──
+function lrInitMap() {
+  var host = document.getElementById("lr-map"); if (!host) return;
+  if (!(window.google && google.maps && google.maps.Map)) { host.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:14px">The map couldn\'t load (Google Maps unavailable). The list below still works.</div>'; return; }
+  if (lrMap && host.contains(lrMap.getDiv())) return;
+  lrMap = new google.maps.Map(host, { center: { lat: 40.505, lng: -74.41 }, zoom: 12, mapTypeControl: false, streetViewControl: false,
+    styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }] });
+  lrPins = {}; lrPath = null; lrAccCircle = null; lrRoughDots = []; lrFittedOnce = false;
+}
+function lrPinIcon(color, big) {
+  return { path: google.maps.SymbolPath.CIRCLE, scale: big ? 10 : 7, fillColor: color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: big ? 3 : 2 };
+}
+function lrDrawPins() {
+  if (!lrMap) return;
+  var keep = {};
+  LR_ROWS.forEach(function(r) {
+    if (!r.lat || !r.lng) return;
+    if (!lrIsOpen(r) && r.id !== LR_SEL) return;          // ended requests only appear when picked
+    keep[r.id] = true;
+    var st = lrState(r), pos = { lat: Number(r.lat), lng: Number(r.lng) }, sel = r.id === LR_SEL;
+    var title = (r.callback ? formatPhone(r.callback) : "Caller") + " — " + st.text;
+    if (!lrPins[r.id]) {
+      lrPins[r.id] = new google.maps.Marker({ map: lrMap, position: pos, title: title, icon: lrPinIcon(st.pin, sel), zIndex: sel ? 10 : 1 });
+      (function(id) { lrPins[id].addListener("click", function() { lrSelect(id); }); })(r.id);
+    } else {
+      lrPins[r.id].setPosition(pos); lrPins[r.id].setTitle(title); lrPins[r.id].setIcon(lrPinIcon(st.pin, sel)); lrPins[r.id].setZIndex(sel ? 10 : 1);
+    }
+  });
+  Object.keys(lrPins).forEach(function(id) { if (!keep[id]) { lrPins[id].setMap(null); delete lrPins[id]; } });
+  if (!lrFittedOnce && Object.keys(lrPins).length) { lrFittedOnce = true; lrFitAll(); }
+  lrDrawSelected();
+}
+function lrFitAll() {
+  if (!lrMap) return;
+  var ids = Object.keys(lrPins); if (!ids.length) return;
+  if (ids.length === 1) { lrMap.setCenter(lrPins[ids[0]].getPosition()); lrMap.setZoom(16); return; }
+  var b = new google.maps.LatLngBounds(); ids.forEach(function(id) { b.extend(lrPins[id].getPosition()); }); lrMap.fitBounds(b, 60);
+}
+// Path: positions within 150 m form the line; rougher ones are faint dots — joining them would draw
+// zig-zags the caller never walked.
+function lrDrawSelected() {
+  if (!lrMap) return;
+  if (lrPath) { lrPath.setMap(null); lrPath = null; }
+  if (lrAccCircle) { lrAccCircle.setMap(null); lrAccCircle = null; }
+  lrRoughDots.forEach(function(d) { d.setMap(null); }); lrRoughDots = [];
+  var r = LR_ROWS.filter(function(x) { return x.id === LR_SEL; })[0]; if (!r) return;
+  var good = LR_FIXES.filter(function(f) { return (f.accuracy || 9999) <= 150; });
+  if (good.length > 1) {
+    lrPath = new google.maps.Polyline({ map: lrMap, path: good.map(function(f) { return { lat: f.lat, lng: f.lng }; }), strokeColor: "#7ab8f5", strokeOpacity: 0.9, strokeWeight: 4,
+      icons: [{ icon: { path: google.maps.SymbolPath.FORWARD_OPEN_ARROW, scale: 2.5, strokeColor: "#bfe0ff" }, repeat: "90px" }] });
+  }
+  LR_FIXES.filter(function(f) { return (f.accuracy || 9999) > 150; }).forEach(function(f) {
+    lrRoughDots.push(new google.maps.Marker({ map: lrMap, position: { lat: f.lat, lng: f.lng }, clickable: false,
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 3, fillColor: "#ffc84a", fillOpacity: 0.5, strokeWeight: 0 } }));
+  });
+  if (r.lat && r.lng && r.accuracy) {
+    lrAccCircle = new google.maps.Circle({ map: lrMap, center: { lat: Number(r.lat), lng: Number(r.lng) }, radius: r.accuracy, strokeColor: "#4caf80", strokeOpacity: 0.6, strokeWeight: 1, fillColor: "#4caf80", fillOpacity: 0.12, clickable: false });
+  }
+}
+// ── selection, path and conversation ──
+function lrSelect(id) {
+  if (LR_SEL === id) return;
+  LR_SEL = id; LR_FIXES = []; LR_MSGS = [];
+  lrWatchSelected();
+  lrRender(); lrDrawPins(); lrRenderDetail();
+  var r = LR_ROWS.filter(function(x) { return x.id === id; })[0];
+  if (lrMap && r && r.lat) { lrMap.panTo({ lat: Number(r.lat), lng: Number(r.lng) }); if (lrMap.getZoom() < 15) lrMap.setZoom(16); }
+}
+function lrWatchSelected() {
+  if (lrFixUnsub) { lrFixUnsub(); lrFixUnsub = null; }
+  if (lrMsgUnsub) { lrMsgUnsub(); lrMsgUnsub = null; }
+  if (!LR_SEL) return;
+  var ref = db.collection("locationRequests").doc(LR_SEL), id = LR_SEL;
+  lrFixUnsub = ref.collection("fixes").orderBy("at").limit(1000).onSnapshot(function(snap) {
+    if (id !== LR_SEL) return;
+    LR_FIXES = []; snap.forEach(function(d) { var f = d.data(); if (typeof f.lat === "number" && typeof f.lng === "number") LR_FIXES.push(f); });
+    lrDrawSelected(); lrRenderDetail(true);
+  }, function(e) { console.warn("Path unavailable:", e.message); });
+  lrMsgUnsub = ref.collection("messages").orderBy("at").limit(500).onSnapshot(function(snap) {
+    if (id !== LR_SEL) return;
+    LR_MSGS = []; snap.forEach(function(d) { LR_MSGS.push(d.data()); });
+    var lastIn = LR_MSGS.filter(function(m) { return m.dir === "in"; }).map(function(m) { return m.at; }).sort().pop();
+    if (lastIn) { try { localStorage.setItem("lrSeen_" + id, lastIn); } catch (e) {} lrRender(); }
+    lrRenderDetail();
+  }, function(e) { console.warn("Messages unavailable:", e.message); });
+}
+function lrRenderDetail(quiet) {
+  var el = document.getElementById("lr-detail"); if (!el) return;
+  var r = LR_ROWS.filter(function(x) { return x.id === LR_SEL; })[0];
+  if (!r) { el.innerHTML = '<div style="border:1px dashed var(--card-border);border-radius:10px;padding:22px;text-align:center;color:var(--gray);font-size:0.84rem">Pick a request on the map or in the list to see its path and text the caller.</div>'; return; }
+  // keep whatever the admin is typing when the panel refreshes
+  var box = document.getElementById("lr-reply"), draft = box ? box.value : "", hadFocus = box && document.activeElement === box;
+  var st = lrState(r), good = LR_FIXES.filter(function(f) { return (f.accuracy || 9999) <= 150; }), dist = 0;
+  for (var k = 1; k < good.length; k++) dist += lrMetres(good[k - 1], good[k]);
+  var acc = r.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
+  var thread = LR_MSGS.length ? LR_MSGS.map(function(m) {
+    var out = m.dir === "out";
+    return '<div class="lr-bubble ' + (out ? 'lr-out' : 'lr-in') + '">' + escapeHtml(m.body || "") + '</div>' +
+      '<div class="lr-meta" style="align-self:' + (out ? 'flex-end' : 'flex-start') + '">' + (out ? escapeHtml(m.by || "Admin") + ' · ' : 'Caller · ') + lrTime(m.at) +
+      (m.testMode ? ' · <span style="color:#ffc84a">TEST — sent to your phone</span>' : '') +
+      (out && m.ok === false ? ' · <span style="color:#ff9090">not delivered</span>' : '') + '</div>';
+  }).join("") : '<div style="color:var(--gray);font-size:0.8rem;text-align:center;padding:16px 6px">No texts yet. Anything you send goes to ' + escapeHtml(r.callback ? formatPhone(r.callback) : "the caller") + ', and their replies show up here.</div>';
+  el.innerHTML =
+    '<div style="border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;background:rgba(255,255,255,0.02)">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;font-weight:700;color:var(--white)">📞 ' + escapeHtml(r.callback ? formatPhone(r.callback) : "Unknown caller") + '</span>' +
+        '<span style="font-size:0.74rem;color:' + st.color + '">' + escapeHtml(st.text) + '</span>' +
+        '<button class="edit-mode-btn" style="margin-left:auto;padding:4px 10px;font-size:0.68rem" onclick="lrSelect(null)">✕ Close</button>' +
+      '</div>' +
+      '<div style="font-size:0.74rem;color:var(--gray);margin-top:4px">Link sent ' + lrTime(r.createdAt) + (r.by ? ' by ' + escapeHtml(r.by) : '') + '</div>' +
+      (r.lat ? '<div style="font-size:0.8rem;margin-top:8px;line-height:1.5"><b style="color:' + ac + '">' + escapeHtml(r.accuracyLabel || "") + ', within ' + acc + ' m</b>' +
+        (acc > 150 ? ' <span style="color:#ff9090">— too rough to dispatch on alone</span>' : '') +
+        (r.approxAddress ? '<br>📮 ' + escapeHtml(r.approxAddress) : '') +
+        '<br><span style="color:var(--gray);font-variant-numeric:tabular-nums">' + Number(r.lat).toFixed(6) + ', ' + Number(r.lng).toFixed(6) + '</span>' +
+        ' · <a href="https://www.google.com/maps/search/?api=1&query=' + r.lat + ',' + r.lng + '" target="_blank" style="color:#bfe0ff">Google Maps</a>' +
+        (r.at ? ' · <span style="color:var(--gray)">latest ' + lrAgo(r.at) + '</span>' : '') + '</div>' : '') +
+      '<div style="font-size:0.74rem;color:var(--gray);margin-top:6px">🧭 Path: ' + (LR_FIXES.length ? LR_FIXES.length + ' position' + (LR_FIXES.length === 1 ? '' : 's') + (good.length > 1 ? ' · moved about ' + (dist < 1000 ? Math.round(dist) + ' m' : (dist / 1000).toFixed(1) + ' km') : '') : 'none recorded yet') + '</div>' +
+      '<div style="border-top:1px solid var(--card-border);margin:12px 0 10px"></div>' +
+      '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Text the caller</div>' +
+      '<div id="lr-thread" style="display:flex;flex-direction:column;max-height:300px;overflow-y:auto;padding-right:4px">' + thread + '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">' +
+        '<textarea id="lr-reply" rows="2" placeholder="Type a message… (Enter to send, Shift-Enter for a new line)" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();lrSendText();}" style="flex:1;resize:vertical;min-height:42px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;padding:9px 11px;color:var(--white);font-size:0.84rem;font-family:inherit"></textarea>' +
+        '<button class="submit-btn" id="lr-send-btn" style="width:auto;padding:10px 18px" onclick="lrSendText()">Send</button>' +
+      '</div>' +
+      '<div style="font-size:0.66rem;color:var(--gray);margin-top:5px">Sent from MC Hatzolah. Starts with "MC Hatzolah:" so the caller knows who it is.</div>' +
+    '</div>';
+  var nb = document.getElementById("lr-reply"); if (nb) { nb.value = draft; if (hadFocus) { nb.focus(); nb.selectionStart = nb.selectionEnd = nb.value.length; } }
+  var th = document.getElementById("lr-thread"); if (th) th.scrollTop = th.scrollHeight;
+}
+function lrSendText() {
+  var box = document.getElementById("lr-reply"), btn = document.getElementById("lr-send-btn");
+  var body = box ? box.value.trim() : "";
+  if (!body || !LR_SEL) return;
+  if (body.length > 600) { showToast("Keep it under 600 characters", true); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  hzRelay("locReqText", { token: LR_SEL, body: body }).then(function() {
+    var b2 = document.getElementById("lr-reply"); if (b2) b2.value = "";
+  }).catch(function(e) {
+    showToast("⚠ Text not sent: " + ((e && e.message) || e), true);
+  }).then(function() {
+    var b3 = document.getElementById("lr-send-btn"); if (b3) { b3.disabled = false; b3.textContent = "Send"; }
+  });
+}
+window.lrStart = lrStart; window.lrStop = lrStop; window.lrSelect = lrSelect; window.lrSendText = lrSendText; window.lrFitAll = lrFitAll;
 function loadVehicleStatusPanel() {
   var el = document.getElementById("veh-status-list");
   if (!el) return;
@@ -13322,7 +13497,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.88";
+var DESKTOP_VERSION = "9.89";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {

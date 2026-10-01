@@ -107,7 +107,29 @@ function showAddress(lat, lng) {
     .catch(function(){ /* the coordinates are what matter; the address is a courtesy */ });
 }
 
+// The path: each meaningful move is also kept, so the dispatch office can see the route the caller
+// took, not just where they are now. Saved when they've moved further than the GPS wobble, or once a
+// minute while standing still — never every single reading.
+var lastFix = null;
+function metresBetween(aLat, aLng, bLat, bLng) {
+  var R = 6371000, toRad = function(x){ return x * Math.PI / 180; };
+  var dLat = toRad(bLat - aLat), dLng = toRad(bLng - aLng);
+  var h = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng/2) * Math.sin(dLng/2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+function recordFix(pos) {
+  var c = pos.coords, now = Date.now();
+  if (lastFix) {
+    var moved = metresBetween(lastFix.lat, lastFix.lng, c.latitude, c.longitude);
+    if (moved < Math.max(15, c.accuracy * 0.5) && now - lastFix.t < 60000) return;
+  }
+  lastFix = { lat: c.latitude, lng: c.longitude, t: now };
+  db.collection("locationRequests").doc(token).collection("fixes").add({
+    lat: c.latitude, lng: c.longitude, accuracy: Math.round(c.accuracy), at: new Date().toISOString()
+  }).catch(function(){ /* the live position above is what matters; a missed path point is harmless */ });
+}
 function send(pos, done) {
+  recordFix(pos);
   var g = grade(pos.coords.accuracy);
   return db.collection("locationRequests").doc(token).set({
     lat: pos.coords.latitude, lng: pos.coords.longitude,
