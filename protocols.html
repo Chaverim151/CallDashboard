@@ -79,6 +79,10 @@ mark{background:rgba(255,213,0,0.3);color:inherit;border-radius:2px;padding:0 1p
 #ackbox label{display:flex;gap:10px;align-items:flex-start;margin:14px 0}
 #ackbox button{background:var(--gold);color:var(--navy);border:none;border-radius:9px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;padding:11px 18px;cursor:pointer}
 #ackbox button:disabled{opacity:0.4}
+.ai-wait{color:var(--gray);font-size:0.86rem;padding:10px 2px;font-style:italic}
+.ai-note{color:var(--gray);font-size:0.76rem;padding:2px 2px 12px}
+.c-why{font-size:0.84rem;color:#bfe0ff;margin-top:5px}
+.t-AI{background:rgba(160,120,255,0.2);color:#d6c8ff;border:1px solid rgba(160,120,255,0.5)}
 </style>
 </head>
 <body>
@@ -315,7 +319,7 @@ function psTerms(question) {
 }
 // Protocols best matching the question. For EMT, steps outside EMT scope don't count, and
 // paramedic-only protocols sink to the bottom (they stay findable, clearly marked).
-function psSearchProtocols(index, question, level) {
+function psSearchProtocols(index, question, level, limit) {
   if (!index._ready) psPrepare(index);
   var w = psTerms(question), terms = Object.keys(w); if (!terms.length) return [];
   var N = index.passages.length, k1 = 1.3, b = 0.7, byK = {};
@@ -347,7 +351,7 @@ function psSearchProtocols(index, question, level) {
     return g;
   });
   out.sort(function(a, b) { return b.score - a.score; });
-  return out.slice(0, 8);
+  return out.slice(0, limit || 8);
 }
 
 var auth = firebase.auth();
@@ -447,17 +451,70 @@ function markHtml(text, q) {
   terms.forEach(function(w) { h = h.replace(new RegExp("\\b(" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[a-z]*)", "gi"), "<mark>$1</mark>"); });
   return h;
 }
+// ── AI search (Gemini free tier, through the server): picks protocols and the exact lines that matter.
+//    Only lines found word-for-word in the protocol are highlighted. Falls back to keyword search. ──
+PS.ai = {};
+function protoText(pr) {
+  return pr.lines.map(function(l) { return l[2] === "H" ? "== " + l[1] + " ==" : l[1]; }).join("\n");
+}
+function normTxt(t) { return String(t || "").replace(/[•▪■\uE000-\uF8FF]/g, " ").replace(/\s+/g, " ").trim().toLowerCase(); }
+function callFn(name, payload) {
+  var u = auth.currentUser; if (!u) return Promise.reject(new Error("Not signed in"));
+  var url = "https://us-central1-" + firebase.app().options.projectId + ".cloudfunctions.net/" + name;
+  return u.getIdToken().then(function(tok) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok }, body: JSON.stringify({ data: payload }) });
+  }).then(function(r) { return r.json().catch(function() { return {}; }).then(function(j) { if (j && j.error) throw new Error(j.error.message || j.error.status); if (!r.ok) throw new Error("HTTP " + r.status); return j.result; }); });
+}
+function aiRoute(q) {
+  var key = PS.level + "|" + q;
+  if (PS.ai[key]) return Promise.resolve(PS.ai[key]);
+  var idx = PS.index, cands = psSearchProtocols(idx, q, "ALS", 12);
+  var payload = {
+    question: q, level: PS.level,
+    catalog: idx.protocols.map(function(pr, k) { return k ? { k: k, num: pr.num, title: pr.title, alsOnly: !!pr.alsOnly } : null; }).filter(Boolean),
+    candidates: cands.map(function(g) { return { k: g.k, text: protoText(idx.protocols[g.k]).slice(0, 3500) }; })
+  };
+  return callFn("protocolRoute", payload).then(function(res) {
+    // Keep only quotes that really are in the protocol, word for word.
+    (res.matches || []).forEach(function(m) {
+      var full = normTxt(protoText(idx.protocols[m.k] || { lines: [] }));
+      m.quotes = (m.quotes || []).filter(function(qt) { var n = normTxt(qt); return n.length > 8 && full.indexOf(n) !== -1; });
+    });
+    PS.ai[key] = res; return res;
+  });
+}
+function card(k, q, extra) {
+  var pr = PS.index.protocols[k];
+  return '<a class="card" href="#/p/' + k + '/' + encodeURIComponent(q) + '">' +
+    '<div class="c-num">' + esc(pr.num) + ' · ' + pageRange(pr) + '</div><div class="c-title">' + esc(titleCase(pr.title)) + '</div>' + onlyTag(pr) + (extra || "") + '</a>';
+}
 function results(q) {
   var hits = psSearchProtocols(PS.index, q, PS.level);
-  if (!hits.length) { show('<div class="msg">Nothing matched “' + esc(q) + '”. Try the medication, condition or procedure name — or browse the protocols.</div><a class="card" href="#/">Browse all protocols</a>'); return; }
-  show('<div class="sec-h">Protocols matching “' + esc(q) + '”</div>' + hits.map(function(g) {
-    var pr = PS.index.protocols[g.k], ps = g.best, lv = ps ? LV_NAME[ps.lv] : "";
+  var kw = hits.map(function(g) {
+    var ps = g.best, lv = ps ? LV_NAME[ps.lv] : "";
     var clean = ps ? ps.text.replace(/\s(?:o|•|▪|[\uE000-\uF8FF])\s/g, " • ") : "";
     var snip = clean.length > 170 ? clean.slice(0, 170) + "…" : clean;
-    return '<a class="card" href="#/p/' + g.k + '/' + encodeURIComponent(q) + '">' +
-      '<div class="c-num">' + esc(pr.num) + ' · ' + pageRange(pr) + '</div><div class="c-title">' + esc(titleCase(pr.title)) + '</div>' + onlyTag(pr) +
-      (snip ? '<div class="c-snip">' + (lv ? '<span class="tag t-' + (ps.lv === "PEARLS" ? "CF" : ps.lv) + '">' + esc(lv) + '</span>' : '') + markHtml(snip, q) + '</div>' : '') + '</a>';
-  }).join("") + '<div class="msg" style="font-size:0.8rem;padding-top:4px">Tap a protocol to read it in full.' + (PS.level === "EMT" ? ' Paramedic-only protocols are listed last.' : '') + '</div>');
+    return { k: g.k, html: card(g.k, q, snip ? '<div class="c-snip">' + (lv ? '<span class="tag t-' + (ps.lv === "PEARLS" ? "CF" : ps.lv) + '">' + esc(lv) + '</span>' : '') + markHtml(snip, q) + '</div>' : '') };
+  });
+  function paint(aiHtml, aiKs) {
+    var rest = kw.filter(function(x) { return !aiKs || aiKs.indexOf(x.k) === -1; });
+    show(aiHtml + (rest.length ? '<div class="sec-h">' + (aiKs && aiKs.length ? 'Other matches' : 'Protocols matching “' + esc(q) + '”') + '</div>' + rest.map(function(x) { return x.html; }).join("") : (aiKs && aiKs.length ? '' : '<div class="msg">Nothing matched “' + esc(q) + '”. Try other words, or browse the protocols.</div><a class="card" href="#/">Browse all protocols</a>')) +
+      '<div class="msg" style="font-size:0.78rem;padding-top:4px">Tap a protocol to read it in full.</div>');
+  }
+  paint('<div class="ai-wait">✨ Asking AI to find the best protocols…</div>', null);
+  aiRoute(q).then(function(res) {
+    if (location.hash.indexOf("#/s/") !== 0) return;                 // user moved on
+    var ms = res.matches || [];
+    if (!ms.length) { paint('<div class="ai-note">✨ AI didn\'t find a clear match' + (res.note ? ' — ' + esc(res.note) : '') + '. Keyword matches below.</div>', []); return; }
+    var html = '<div class="sec-h">✨ Best matches <span class="tag t-AI">AI-picked</span></div>' + ms.map(function(m) {
+      var qt = m.quotes[0] ? '<div class="c-snip">“' + esc(m.quotes[0].length > 180 ? m.quotes[0].slice(0, 180) + "…" : m.quotes[0]) + '”</div>' : '';
+      return card(m.k, q, (m.why ? '<div class="c-why">' + esc(m.why) + '</div>' : '') + qt);
+    }).join("") + '<div class="ai-note">AI chooses where to look — it doesn\'t write answers. Always read the protocol.</div>';
+    paint(html, ms.map(function(m) { return m.k; }));
+  }).catch(function(e) {
+    if (location.hash.indexOf("#/s/") !== 0) return;
+    paint('<div class="ai-note">' + (/showing regular search/i.test(e.message) ? esc(e.message) : 'AI search unavailable (' + esc(e.message) + ') — showing regular search.') + '</div>', null);
+  });
 }
 // ── One protocol, laid out from its lines: level sections, numbered steps, sub-points ──
 function structure(pr) {
@@ -484,7 +541,12 @@ function structure(pr) {
 function protocol(k, q) {
   var pr = PS.index.protocols[k]; if (!pr) return home();
   var mk = function(t) { var h = q ? markHtml(t, q) : esc(t); return /^CAUTION\b/i.test(t) ? '<span class="caution">' + h + '</span>' : h; };
-  var hasHit = function(t) { return q && /<mark>/.test(markHtml(t, q)); };
+  var ai = PS.ai[PS.level + "|" + q], aiQ = [];
+  // Step numbers and bullet marks are laid out separately, so compare the words only.
+  var core = function(t) { return normTxt(t).replace(/^(\d{1,2}\.|o|-|–)\s+/, ""); };
+  if (ai) (ai.matches || []).forEach(function(m) { if (m.k === k) aiQ = m.quotes.map(core).filter(function(x) { return x.length > 8; }); });
+  var hasAi = function(t) { var n = core(t); return aiQ.some(function(x) { return n.indexOf(x) !== -1 || (n.length > 20 && x.indexOf(n) !== -1); }); };
+  var hasHit = function(t) { return aiQ.length ? hasAi(t) : (q && /<mark>/.test(markHtml(t, q))); };
   var body = structure(pr).map(function(sec, si) {
     var lv = sec.lv, closed = PS.level === "EMT" && (lv === "ALS" || lv === "CF");
     var items = sec.items.map(function(it) {
