@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.97');
+  window.location.replace('/CallDashboard/mobile.html?v=2.98');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -15625,17 +15625,32 @@ function mWatchCallerLocation(token) {
 }
 // The dispatcher decides — the pin is never applied on its own.
 var mLocApplied = false;
-function mLocPendingNote() {
-  // A newer fix arrived after the dispatcher already took one — offered, never applied on its own.
-  var d = mLocLastData; if (!d || !d.lat) return;
-  var acc = d.accuracy || 0, ago = mLocLastAt ? Math.round((Date.now() - mLocLastAt) / 1000) : 0;
-  mLocStatus("✅ Using the caller's location (within " + mLocAppliedAcc + " m)." +
-    '<br><span style="color:var(--gray)">The caller is still sharing — newer fix within ' + acc + ' m, ' + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + ' ago.</span>' +
-    ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#7dedb5");
+// Distance between two points in metres (haversine) — used to tell a caller who has actually moved
+// from one who is standing still while GPS jitters by a few metres.
+function mMetresBetween(aLat, aLng, bLat, bLng) {
+  var R = 6371000, toRad = function(x){ return x * Math.PI / 180; };
+  var dLat = toRad(bLat - aLat), dLng = toRad(bLng - aLng);
+  var s = Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng/2) * Math.sin(dLng/2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
-var mLocAppliedAcc = 0;
+function mLocPendingNote() {
+  // Offer an update only when the caller has genuinely moved — a stream of near-identical fixes is
+  // the normal case and shouldn't put a button in front of a dispatcher who is mid-call.
+  var d = mLocLastData; if (!d || !d.lat) return;
+  var acc = d.accuracy || 0;
+  var moved = mMetresBetween(mLocAppliedLat, mLocAppliedLng, d.lat, d.lng);
+  // movement has to clear the uncertainty of both fixes before it means anything
+  var threshold = Math.max(30, (acc || 0) * 0.5, (mLocAppliedAcc || 0) * 0.5);
+  if (moved < threshold) return;                       // same place — leave the panel alone
+  var ago = mLocLastAt ? Math.round((Date.now() - mLocLastAt) / 1000) : 0;
+  mLocStatus("✅ Using the caller's location (within " + mLocAppliedAcc + " m)." +
+    '<br><span style="color:#ffc84a">The caller has moved about ' + (moved < 1000 ? Math.round(moved) + " m" : (moved/1000).toFixed(1) + " km") + ' — newer fix within ' + acc + ' m, ' + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + ' ago.</span>' +
+    ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#ffc84a");
+}
+var mLocAppliedAcc = 0, mLocAppliedLat = null, mLocAppliedLng = null;
 function mUseCallerLocation(lat, lng, acc) {
-  mLocApplied = true; mLocAppliedAcc = acc;
+  mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
   document.getElementById("m-nc-lat").value = lat;
   document.getElementById("m-nc-lng").value = lng;
   document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
@@ -15667,7 +15682,7 @@ function mE164(p) {
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
-  mLocApplied = false; mLocAppliedAcc = 0; mLocLastAt = null; mLocLastData = null;
+  mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
