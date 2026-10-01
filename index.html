@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.94');
+  window.location.replace('/CallDashboard/mobile.html?v=2.96');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -12860,6 +12860,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
     <div class="m-disp-label">Callback Number</div>
     <div style="position:relative;margin-bottom:12px"><input type="tel" id="m-nc-callback" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-callback')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div id="m-nc-coords" style="display:none;font-size:0.72rem;color:var(--gray);margin:-6px 0 10px;font-variant-numeric:tabular-nums"></div>
     <button type="button" id="m-nc-loc-btn" onclick="mRequestCallerLocation()" class="m-disp-btn" style="width:100%;margin-bottom:10px;background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.45);color:#bfe0ff;font-size:0.76rem">📍 Text the caller for their location</button>
     <div id="m-nc-loc-status" style="display:none;font-size:0.74rem;line-height:1.45;margin:-4px 0 12px;padding:8px 10px;border-radius:8px"></div>
 
@@ -15567,6 +15568,17 @@ setInterval(function() {
   el.textContent = "⏱ " + txt + (s > 120 ? " — the caller may have closed the page" : "");
   el.style.color = s > 120 ? "#ffc84a" : "var(--gray)";
 }, 5000);
+// Show the coordinates the call will actually be posted with, so a dispatcher can sanity-check the
+// pin against what the caller said — and see at a glance when there are none.
+function mNcShowCoords() {
+  var el = document.getElementById("m-nc-coords"); if (!el) return;
+  var lat = parseFloat((document.getElementById("m-nc-lat") || {}).value) || null;
+  var lng = parseFloat((document.getElementById("m-nc-lng") || {}).value) || null;
+  if (!lat || !lng) { el.style.display = "none"; el.textContent = ""; return; }
+  el.style.display = "block";
+  el.innerHTML = "📍 " + lat.toFixed(6) + ", " + lng.toFixed(6) +
+    ' · <a href="https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng + '" target="_blank" rel="noopener" style="color:#bfe0ff">check on a map</a>';
+}
 function mLocStatus(html, color) {
   var el = document.getElementById("m-nc-loc-status"); if (!el) return;
   el.style.display = "block";
@@ -15603,6 +15615,7 @@ function mWatchCallerLocation(token) {
     var warn = acc > 150 ? "<br><b>Too rough to dispatch on alone — confirm the address with the caller.</b>" : "";
     mLocLastAt = d.at ? new Date(d.at).getTime() : Date.now();
     mLocLastData = d;
+    if (mLocApplied) { mLocPendingNote(); return; }   // already taken — don't keep prompting
     var addrLine = d.approxAddress ? "<br>📮 " + mEscHtml(d.approxAddress) : "";
     mLocStatus("📍 Caller's location — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn + addrLine +
       '<br><span id="m-nc-loc-age" style="color:var(--gray);font-size:0.72rem"></span>' +
@@ -15611,7 +15624,18 @@ function mWatchCallerLocation(token) {
   });
 }
 // The dispatcher decides — the pin is never applied on its own.
+var mLocApplied = false;
+function mLocPendingNote() {
+  // A newer fix arrived after the dispatcher already took one — offered, never applied on its own.
+  var d = mLocLastData; if (!d || !d.lat) return;
+  var acc = d.accuracy || 0, ago = mLocLastAt ? Math.round((Date.now() - mLocLastAt) / 1000) : 0;
+  mLocStatus("✅ Using the caller's location (within " + mLocAppliedAcc + " m)." +
+    '<br><span style="color:var(--gray)">The caller is still sharing — newer fix within ' + acc + ' m, ' + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + ' ago.</span>' +
+    ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#7dedb5");
+}
+var mLocAppliedAcc = 0;
 function mUseCallerLocation(lat, lng, acc) {
+  mLocApplied = true; mLocAppliedAcc = acc;
   document.getElementById("m-nc-lat").value = lat;
   document.getElementById("m-nc-lng").value = lng;
   document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
@@ -15628,7 +15652,9 @@ function mUseCallerLocation(lat, lng, acc) {
       }
       inp.classList.remove("m-nc-need");
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
-      mLocStatus("✅ Using the caller's location (within " + acc + " m). Check the address before posting.", "#7dedb5");
+      mNcShowCoords();
+      mLocStatus("✅ Using the caller's location (within " + acc + " m). Check the address before posting." +
+        '<br><span style="color:var(--gray);font-size:0.72rem">No further action needed — if the caller moves you can take a newer fix.</span>', "#7dedb5");
     });
   }
 }
@@ -15641,7 +15667,9 @@ function mE164(p) {
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
+  mLocApplied = false; mLocAppliedAcc = 0; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
+  setTimeout(mNcShowCoords, 0);
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
   var _ac = document.getElementById("m-nc-accesscode"); if (_ac) _ac.dataset.userEdited = "";
   mBindNcValidation();
@@ -15720,6 +15748,7 @@ function mIsPreciseGeocode(r) {
 }
 // Typing after an address resolved means the old coordinates no longer describe what is written.
 function mNcAddressEdited() {
+  setTimeout(mNcShowCoords, 0);
   var inp = document.getElementById("m-nc-address");
   var latEl = document.getElementById("m-nc-lat");
   if (inp && latEl && latEl.value && inp.value.trim() !== (mNcResolvedAddress || "")) {
@@ -15737,6 +15766,7 @@ function mAddressRejected(why) {
   var banner = document.getElementById("m-nc-zone-banner"); if (banner) banner.style.display = "none";
   if (inp) { inp.classList.add("m-nc-need"); }
   if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+  mNcShowCoords();
   mToast(why || "That address couldn't be found — pick one from the suggestions", true);
 }
 function mResolveTypedAddress(address) {
@@ -15750,6 +15780,7 @@ function mResolveTypedAddress(address) {
       }
       var loc = results[0].geometry.location, lat = loc.lat(), lng = loc.lng();
       mNcResolvedAddress = document.getElementById("m-nc-address").value.trim();
+      setTimeout(mNcShowCoords, 0);
       document.getElementById("m-nc-lat").value = lat;
       document.getElementById("m-nc-lng").value = lng;
       document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
@@ -17518,6 +17549,7 @@ var mBindNcAutocomplete = function() {
     mBestStreetAddress(place, lat, lng).then(function(street) {
       input.value = placeName ? (placeName + " — " + street) : street;
       mNcResolvedAddress = input.value.trim();
+      setTimeout(mNcShowCoords, 0);
       mCheckAccessCode(street, placeName, lat, lng);
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
     });
