@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Share your location — MC Hatzolah</title>
+<title data-org-title="Share your location — {text}">Share your location — MC Hatzolah</title>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <style>
+  :root { --gold:#c9a84c; --gold-light:#e8c96a; --gold-rgb:201,168,76; }
   :root { color-scheme: dark; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { margin:0; min-height:100dvh; background:#0a1628; color:#e8eef8; font-family:'Inter',system-ui,sans-serif;
@@ -14,7 +15,7 @@
   h1 { font-family:'Oswald',sans-serif; font-size:1.25rem; letter-spacing:0.04em; text-transform:uppercase; margin:0 0 6px; color:#fff; }
   p  { font-size:0.95rem; line-height:1.55; color:#9fb0c9; margin:0 0 18px; }
   button { width:100%; border:none; border-radius:11px; padding:17px; font-family:'Oswald',sans-serif; font-size:1rem; font-weight:700;
-           letter-spacing:0.06em; text-transform:uppercase; background:linear-gradient(135deg,#c9a84c,#e8960a); color:#0a1628; cursor:pointer; }
+           letter-spacing:0.06em; text-transform:uppercase; background:linear-gradient(135deg,var(--gold),#e8960a); color:#0a1628; cursor:pointer; }
   button[disabled] { opacity:0.55; cursor:default; }
   .note { font-size:0.8rem; color:#7f8ea6; margin-top:16px; line-height:1.5; }
   .ok   { color:#7dedb5; } .warn { color:#ffc84a; } .err { color:#ff9090; }
@@ -23,7 +24,7 @@
 </head>
 <body>
   <div class="card">
-    <img src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png"
+    <img data-org-logo src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png"
          alt="Hatzolah Middlesex County" style="width:112px;height:auto;margin:0 auto 14px;display:block">
     <h1 id="head">Share your location</h1>
     <p id="msg">Tap the button and choose <b>Allow</b>. This sends your position to the dispatcher so the ambulance can find you.</p>
@@ -45,6 +46,94 @@ var firebaseConfig = { apiKey:"AIzaSyDFWxlw9aLIn9HB2L_B6vbhvY5-nlXhpHM", authDom
   projectId:"hvac-ops", storageBucket:"hvac-ops.firebasestorage.app", messagingSenderId:"636260762798", appId:"1:636260762798:web:2ae24d5c15f3aeb315993f" };
 firebase.initializeApp(firebaseConfig);
 var db = firebase.firestore();
+// ── ORGANIZATION SETTINGS (Admin ▸ Organization) ─────────────────────────────────────────────────
+// Name, logo, colors, unit prefix and home area come from appdata/org. These defaults are MC
+// Hatzolah's own values, so an organization that hasn't changed anything looks exactly as before.
+// The last saved settings are cached on the device so the page doesn't flash the defaults on load.
+var ORG_DEFAULTS = {
+  fullName: "Hatzolah Middlesex County", shortName: "Hatzolah MC", textName: "MC Hatzolah", textSignoff: "",
+  logo: "https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png",
+  accent: "#c9a84c", base: "#0a1628", unitPrefix: "MC-",
+  homeLabel: "Edison, NJ", homeLat: 40.505, homeLng: -74.41
+};
+var ORG = (function() {
+  var o = Object.assign({}, ORG_DEFAULTS);
+  try { var c = JSON.parse(localStorage.getItem("orgCfg") || "null"); if (c) Object.keys(c).forEach(function(k) { if (c[k] !== "" && c[k] !== null && c[k] !== undefined) o[k] = c[k]; }); } catch (e) {}
+  return o;
+})();
+function orgEsc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+// "Hatzolah MC" → Hatzolah <span>MC</span> (the second tone); "Hatzolah Middlesex County" → Hatzolah <span>Middlesex County</span>
+function orgTwoTone(text, mode) {
+  var w = String(text || "").trim().split(/\s+/);
+  if (w.length < 2) return orgEsc(text);
+  return mode === "last" ? orgEsc(w.slice(0, -1).join(" ")) + " <span>" + orgEsc(w[w.length - 1]) + "</span>"
+                         : orgEsc(w[0]) + " <span>" + orgEsc(w.slice(1).join(" ")) + "</span>";
+}
+function orgHexRgb(h) { var m = /^#?([0-9a-f]{6})$/i.exec(String(h || "").trim()); if (!m) return null; var n = parseInt(m[1], 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function orgMix(h, toward, amt) {
+  var a = orgHexRgb(h), b = orgHexRgb(toward); if (!a || !b) return h;
+  return "#" + a.map(function(v, i) { var x = Math.round(v + (b[i] - v) * amt); return ("0" + x.toString(16)).slice(-2); }).join("");
+}
+function orgApply() {
+  var root = document.documentElement.style, a = orgHexRgb(ORG.accent), b = orgHexRgb(ORG.base);
+  if (a) { root.setProperty("--gold", ORG.accent); root.setProperty("--gold-light", orgMix(ORG.accent, "#ffffff", 0.3)); root.setProperty("--gold-rgb", a.join(",")); }
+  if (b) { root.setProperty("--navy", ORG.base); root.setProperty("--navy-mid", orgMix(ORG.base, "#ffffff", 0.05)); root.setProperty("--navy-light", orgMix(ORG.base, "#ffffff", 0.12)); }
+  document.querySelectorAll("[data-org]").forEach(function(el) {
+    var k = el.getAttribute("data-org");
+    if (k === "short2") el.innerHTML = orgTwoTone(ORG.shortName, "last");
+    else if (k === "full2") el.innerHTML = orgTwoTone(ORG.fullName, "first");
+    else if (k === "short") el.textContent = ORG.shortName;
+    else if (k === "full") el.textContent = ORG.fullName;
+    else if (k === "text") el.textContent = ORG.textName;
+    else if (k === "prefix") { el.textContent = ORG.unitPrefix; el.style.display = ORG.unitPrefix ? "" : "none"; }
+  });
+  document.querySelectorAll("input[placeholder], textarea[placeholder]").forEach(function(el) {
+    var orig = el.getAttribute("data-ph-orig") || el.getAttribute("placeholder");
+    if (orig.indexOf("MC-") === -1 || el.id === "org-prefix") return;
+    el.setAttribute("data-ph-orig", orig); el.setAttribute("placeholder", orgPh(orig));
+  });
+  document.querySelectorAll("img[data-org-logo]").forEach(function(img) { if (img.getAttribute("src") !== ORG.logo) img.src = ORG.logo; img.alt = ORG.fullName; });
+  var t = document.querySelector("title[data-org-title]");
+  if (t) document.title = t.getAttribute("data-org-title").replace("{short}", ORG.shortName).replace("{text}", ORG.textName).replace("{full}", ORG.fullName);
+  var m = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if (m) m.setAttribute("content", ORG.shortName);
+  if (typeof M_ORG_FOOTER !== "undefined") M_ORG_FOOTER = orgSignoff();
+}
+// The line that ends outgoing texts: the sign-off set in Admin ▸ Organization, else an older
+// dispatch-settings value, else the organization's text name.
+var ORG_DS_FOOTER = "";
+function orgSignoff() { return ORG.textSignoff || ORG_DS_FOOTER || ORG.textName; }
+function orgLoad() {
+  if (typeof db === "undefined" || !db) return;
+  db.collection("appdata").doc("org").get().then(function(s) {
+    var d = s.exists ? (s.data() || {}) : {};
+    ORG = Object.assign({}, ORG_DEFAULTS);
+    Object.keys(d).forEach(function(k) { if (d[k] !== "" && d[k] !== null && d[k] !== undefined) ORG[k] = d[k]; });
+    try { localStorage.setItem("orgCfg", JSON.stringify(d)); } catch (e) {}
+    orgApply();
+  }).catch(function() {});
+}
+// Unit numbers: "16" ↔ "MC-16" with whatever prefix the organization uses ("" = plain numbers).
+function orgUnit(num) { return (ORG.unitPrefix || "") + String(num == null ? "" : num).trim(); }
+function orgStripUnit(u) {
+  var s = String(u == null ? "" : u).trim(), p = (ORG.unitPrefix || "").toUpperCase(), up = s.toUpperCase();
+  if (p && up.indexOf(p) === 0) return s.slice(p.length);
+  var bare = p.replace(/-$/, "");
+  if (bare && up.indexOf(bare) === 0) return s.slice(bare.length).replace(/^-/, "");
+  return s;
+}
+function orgMentionRe() {
+  var bare = (ORG.unitPrefix || "").replace(/-$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("@(" + (bare ? bare + "-?" : "") + "\\d{1,4})\\b", "gi");
+}
+function orgNormMention(u) { return orgUnit(orgStripUnit(String(u).toUpperCase())); }
+// Example unit numbers in hints follow the prefix: "e.g. MC-30" → "e.g. CH-30", or "e.g. 30" with none.
+function orgPh(t) { return String(t).replace(/MC-/g, ORG.unitPrefix || ""); }
+function orgCenter() { return { lat: Number(ORG.homeLat) || ORG_DEFAULTS.homeLat, lng: Number(ORG.homeLng) || ORG_DEFAULTS.homeLng }; }
+orgApply();
+orgLoad();
+// Parts of the page further down aren't built yet when this first runs — apply again once they are.
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", orgApply);
+
 
 var token = new URLSearchParams(location.search).get("t") || "";
 var head = document.getElementById("head"), msg = document.getElementById("msg"),
