@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.04"; window.M_BUILD = BUILD;
+  var BUILD = "3.05"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -822,7 +822,6 @@ body.m-tile-dragging{overscroll-behavior:none}
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
 <script>
 // ── FIREBASE ──
 firebase.initializeApp({
@@ -4322,8 +4321,20 @@ function mSendAcceptanceEmails(opts) {
 // SMS and email go through the sendSms / sendEmail Cloud Functions with the member's ID token.
 // The function checks membership and test mode; no secret lives in this page.
 function mRelay(fnName, payload) {
-  if (!firebase.auth().currentUser) return Promise.reject(new Error("Not signed in — message not sent"));
-  return firebase.functions().httpsCallable(fnName)(payload).then(function(res) { return res.data; });
+  var u = firebase.auth().currentUser;
+  if (!u) return Promise.reject(new Error("Not signed in — message not sent"));
+  // Called directly rather than through the Functions SDK: the SDK tries to register a push
+  // service worker at the site root before every call, which 404s here and blocks the send.
+  var url = "https://us-central1-" + firebase.app().options.projectId + ".cloudfunctions.net/" + fnName;
+  return u.getIdToken().then(function(tok) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok }, body: JSON.stringify({ data: payload }) });
+  }).then(function(r) {
+    return r.json().catch(function() { return {}; }).then(function(j) {
+      if (j && j.error) throw new Error(j.error.message || j.error.status || ("HTTP " + r.status));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return j.result;
+    });
+  });
 }
 function mGetFirstPhone(phone) {
   if (!phone) return "";

@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.04');
+  window.location.replace('/CallDashboard/mobile.html?v=3.05');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1291,7 +1291,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.84</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.85</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2301,7 +2301,6 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places,geometry,drawing&callback=Function.prototype"></script>
 <script>
 // ── EARLY WINDOW EXPORTS — must be assigned before any other code runs ──
@@ -5189,8 +5188,20 @@ var FROM_EMAIL = "apps@hatzolahmc.org", FROM_NAME = "Hatzolah MC Operations";
 // signed-in member's Firebase ID token. The function checks membership and test mode and is the
 // only thing that can reach the ClickSend worker. No secret lives in this page.
 function hzRelay(fnName, payload) {
-  if (!firebase.auth().currentUser) return Promise.reject(new Error("Not signed in — message not sent"));
-  return firebase.functions().httpsCallable(fnName)(payload).then(function(res) { return res.data; });
+  var u = firebase.auth().currentUser;
+  if (!u) return Promise.reject(new Error("Not signed in — message not sent"));
+  // Called directly rather than through the Functions SDK: the SDK tries to register a push
+  // service worker at the site root before every call, which 404s here and blocks the send.
+  var url = "https://us-central1-" + firebase.app().options.projectId + ".cloudfunctions.net/" + fnName;
+  return u.getIdToken().then(function(tok) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok }, body: JSON.stringify({ data: payload }) });
+  }).then(function(r) {
+    return r.json().catch(function() { return {}; }).then(function(j) {
+      if (j && j.error) throw new Error(j.error.message || j.error.status || ("HTTP " + r.status));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return j.result;
+    });
+  });
 }
 function hzSendFailed(what, e) {
   console.warn(what + " failed:", e);
@@ -13060,7 +13071,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.84";
+var DESKTOP_VERSION = "9.85";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -15111,8 +15122,20 @@ function mDeleteTicket(id) {
 }
 // SMS goes through the sendSms Cloud Function with the member's ID token — no secret in this page.
 function mRelay(fnName, payload) {
-  if (!firebase.auth().currentUser) return Promise.reject(new Error("Not signed in — message not sent"));
-  return firebase.functions().httpsCallable(fnName)(payload).then(function(res) { return res.data; });
+  var u = firebase.auth().currentUser;
+  if (!u) return Promise.reject(new Error("Not signed in — message not sent"));
+  // Called directly rather than through the Functions SDK: the SDK tries to register a push
+  // service worker at the site root before every call, which 404s here and blocks the send.
+  var url = "https://us-central1-" + firebase.app().options.projectId + ".cloudfunctions.net/" + fnName;
+  return u.getIdToken().then(function(tok) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok }, body: JSON.stringify({ data: payload }) });
+  }).then(function(r) {
+    return r.json().catch(function() { return {}; }).then(function(j) {
+      if (j && j.error) throw new Error(j.error.message || j.error.status || ("HTTP " + r.status));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return j.result;
+    });
+  });
 }
 function mGetFirstPhone(phone) {
   if (!phone) return "";
