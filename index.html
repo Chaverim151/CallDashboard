@@ -1311,7 +1311,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.94</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.95</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7192,19 +7192,36 @@ function lrMetres(a, b) {
   var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
+// One card per caller: every link sent to the same number is grouped, and the card shows the link
+// that was active most recently. Earlier links fold away under it.
+var LR_EXPANDED = {};
+function lrKey(r) { var d = String(r.callback || "").replace(/\D/g, ""); if (d.length === 11 && d[0] === "1") d = d.slice(1); return d || ("id:" + r.id); }
+function lrGroups() {
+  var map = {}, order = [];
+  LR_ROWS.forEach(function(r) { var k = lrKey(r); if (!map[k]) { map[k] = []; order.push(k); } map[k].push(r); });
+  return order.map(function(k) {
+    var list = map[k].slice().sort(function(a, b) { return (b.createdAt || "") < (a.createdAt || "") ? -1 : 1; });   // newest link first
+    var act = function(r) { return Math.max(lrLastActivity(r), r.createdAt ? new Date(r.createdAt).getTime() : 0); };
+    var rep = list.slice().sort(function(a, b) { return act(b) - act(a); })[0];
+    return { key: k, rep: rep, list: list, open: list.some(lrIsOpen) };
+  });
+}
+function lrToggleGroup(k, ev) { if (ev) ev.stopPropagation(); LR_EXPANDED[k] = !LR_EXPANDED[k]; lrRender(); }
 function lrRender() {
   var el = document.getElementById("lr-list"); if (!el) return;
-  var open = LR_ROWS.filter(lrIsOpen), ended = LR_ROWS.filter(function(r) { return !lrIsOpen(r); });
+  var groups = lrGroups();
+  var open = groups.filter(function(g) { return g.open; }), ended = groups.filter(function(g) { return !g.open; });
   var cnt = document.getElementById("lr-count");
-  if (cnt) cnt.textContent = open.length + " open · " + ended.length + " ended in the last 24 hours";
+  if (cnt) cnt.textContent = open.length + " caller" + (open.length === 1 ? "" : "s") + " open · " + ended.length + " ended · " + LR_ROWS.length + " link" + (LR_ROWS.length === 1 ? "" : "s") + " in the last 24 hours";
   if (!LR_ROWS.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.84rem;padding:14px;text-align:center">No location requests in the last 24 hours</div>'; return; }
-  function row(r) {
-    var st = lrState(r), isOpen = lrIsOpen(r);
+  function card(g) {
+    var r = g.rep, st = lrState(r), isOpen = g.open;
+    var selInGroup = g.list.some(function(x) { return x.id === LR_SEL; });
     var created = r.createdAt ? new Date(r.createdAt) : null;
     var when = created ? lrTime(r.createdAt) + " · " + created.toLocaleDateString([], { month: "short", day: "numeric" }) : "";
     var acc = r.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
-    var last = lrLastActivity(r);
-    return '<div class="lr-row' + (r.id === LR_SEL ? ' sel' : '') + '" onclick="lrSelect(\'' + r.id + '\')" style="border:1px solid var(--card-border);border-left:3px solid ' + (isOpen ? st.color : "rgba(255,255,255,0.15)") + ';border-radius:8px;padding:9px 11px;margin-bottom:7px;' + (isOpen ? '' : 'opacity:0.72') + '">' +
+    var last = lrLastActivity(r), others = g.list.filter(function(x) { return x.id !== r.id; });
+    var html = '<div class="lr-row' + (selInGroup ? ' sel' : '') + '" onclick="lrSelect(\'' + r.id + '\')" style="border:1px solid var(--card-border);border-left:3px solid ' + (isOpen ? st.color : "rgba(255,255,255,0.15)") + ';border-radius:8px;padding:9px 11px;margin-bottom:7px;' + (isOpen ? '' : 'opacity:0.72') + '">' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
         '<span style="font-family:\'Oswald\',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;color:' + st.color + '">' + escapeHtml(st.text) + '</span>' +
         '<span style="margin-left:auto;font-size:0.7rem;color:var(--gray)">' + escapeHtml(when) + '</span>' +
@@ -7213,12 +7230,25 @@ function lrRender() {
         (r.by ? ' <span style="color:var(--gray)">· sent by ' + escapeHtml(r.by) + '</span>' : '') + '</div>' +
       (r.lat ? '<div style="font-size:0.72rem;margin-top:3px"><b style="color:' + ac + '">' + escapeHtml(r.accuracyLabel || "") + ', ' + acc + ' m</b>' +
         (r.approxAddress ? ' <span style="color:var(--gray)">· ' + escapeHtml(r.approxAddress) + '</span>' : '') + '</div>' : '') +
-      (last ? '<div style="font-size:0.66rem;color:var(--gray);margin-top:2px">last heard from ' + lrAgo(new Date(last).toISOString()) + '</div>' : '') +
-    '</div>';
+      (last ? '<div style="font-size:0.66rem;color:var(--gray);margin-top:2px">last heard from ' + lrAgo(new Date(last).toISOString()) + '</div>' : '');
+    if (others.length) {
+      html += '<div onclick="lrToggleGroup(\'' + g.key + '\', event)" style="font-size:0.7rem;color:#9fc8f0;margin-top:6px;cursor:pointer;user-select:none">' +
+        (LR_EXPANDED[g.key] ? '▾ Hide' : '▸ ' + others.length + ' earlier link' + (others.length === 1 ? '' : 's') + ' to this number') + '</div>';
+      if (LR_EXPANDED[g.key]) {
+        html += others.map(function(x) {
+          var sx = lrState(x);
+          return '<div onclick="event.stopPropagation();lrSelect(\'' + x.id + '\')" style="display:flex;gap:8px;align-items:center;font-size:0.72rem;padding:5px 7px;margin-top:4px;border-radius:6px;cursor:pointer;background:' + (x.id === LR_SEL ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.03)') + '">' +
+            '<span style="color:var(--gray);min-width:44px">' + lrTime(x.createdAt) + '</span>' +
+            '<span style="color:' + sx.color + '">' + escapeHtml(sx.text) + '</span>' +
+            (x.lat ? '<span style="color:var(--gray);margin-left:auto">' + (x.accuracy || 0) + ' m</span>' : '') + '</div>';
+        }).join("");
+      }
+    }
+    return html + '</div>';
   }
   el.innerHTML =
-    (open.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin:2px 0 8px">Open</div>' + open.map(row).join("") : '<div style="color:var(--gray);font-size:0.82rem;padding:4px 0 10px">No open requests right now.</div>') +
-    (ended.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin:14px 0 8px">Ended</div>' + ended.map(row).join("") : '');
+    (open.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin:2px 0 8px">Open</div>' + open.map(card).join("") : '<div style="color:var(--gray);font-size:0.82rem;padding:4px 0 10px">No open requests right now.</div>') +
+    (ended.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin:14px 0 8px">Ended</div>' + ended.map(card).join("") : '');
 }
 // ── map ──
 function lrInitMap() {
@@ -7234,10 +7264,11 @@ function lrPinIcon(color, big) {
 }
 function lrDrawPins() {
   if (!lrMap) return;
-  var keep = {};
+  var keep = {}, reps = {};
+  lrGroups().forEach(function(g) { if (g.open) reps[g.rep.id] = true; });
   LR_ROWS.forEach(function(r) {
     if (!r.lat || !r.lng) return;
-    if (!lrIsOpen(r) && r.id !== LR_SEL) return;          // ended requests only appear when picked
+    if (!reps[r.id] && r.id !== LR_SEL) return;            // one pin per open caller; others only when picked
     keep[r.id] = true;
     var st = lrState(r), pos = { lat: Number(r.lat), lng: Number(r.lng) }, sel = r.id === LR_SEL;
     var title = (r.callback ? formatPhone(r.callback) : "Caller") + " — " + st.text;
@@ -7322,7 +7353,7 @@ function lrRenderDetail() {
       '<div style="font-size:0.74rem;color:var(--gray);margin-top:6px">🧭 Path: ' + (LR_FIXES.length ? LR_FIXES.length + ' position' + (LR_FIXES.length === 1 ? '' : 's') + (good.length > 1 ? ' · moved about ' + (dist < 1000 ? Math.round(dist) + ' m' : (dist / 1000).toFixed(1) + ' km') : '') : 'none recorded yet') + '</div>' +
     '</div>';
 }
-window.lrStart = lrStart; window.lrStop = lrStop; window.lrSelect = lrSelect; window.lrFitAll = lrFitAll;
+window.lrStart = lrStart; window.lrStop = lrStop; window.lrSelect = lrSelect; window.lrFitAll = lrFitAll; window.lrToggleGroup = lrToggleGroup;
 function loadVehicleStatusPanel() {
   var el = document.getElementById("veh-status-list");
   if (!el) return;
@@ -13479,7 +13510,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.94";
+var DESKTOP_VERSION = "9.95";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
