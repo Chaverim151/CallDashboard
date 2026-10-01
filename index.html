@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=2.93');
+  window.location.replace('/CallDashboard/mobile.html?v=2.94');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -15352,9 +15352,21 @@ function mTextAssignedUnit(unitId, call) {
   mSmsEnqueue(function(){ return mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, mCallDetailsSMS(call)); }); });
   mAdminCopy(call, "UNIT ASSIGNED", unitId + " assigned to this call");
 }
+// Classify by what the message IS, not by its first line — assignment texts now open with the
+// address, so a first-line heuristic labelled every dispatch with a street name.
 function mLogKind(message) {
-  var head = String(message || "").split("\n")[0].replace(/^\[TEST\]\s*/, "");
-  return head.replace(/^[^A-Za-z0-9]+\s*/, "").trim() || "Message";
+  var m = String(message || "").replace(/^\[TEST\]\s*/, "").replace(/^\[TEMPLATE TEST[^\]]*\]\s*/, "");
+  var head = m.split("\n")[0].replace(/^[^A-Za-z0-9]+\s*/, "").trim();
+  if (/ADMIN CALL NOTIFICATION/i.test(m)) return "Admin call notification";
+  if (/ROAD CLOSURE/i.test(m)) return "Road closure";
+  if (/tap to send us your location/i.test(m)) return "Caller location request";
+  if (/CALLBACK NUMBER/i.test(m)) return "Callback number";
+  if (/CALL UPDATE/i.test(m)) return "Dispatcher note";
+  if (/ALS DISPATCHED|BLS DISPATCHED|PD NOTIFIED|ALS CANCELLED/i.test(m)) return "Resource dispatched";
+  if (/service request|SERVICE REQUEST|ticket/i.test(m)) return "Service request";
+  if (/CALL TYPE:/i.test(m)) return "Unit assigned";
+  if ((typeof M_BASE !== "undefined" && M_BASE.name && m.indexOf(M_BASE.name) === 0)) return "Rig directions";
+  return head || "Message";
 }
 var mPhoneUnitMap = {};   // phone → unit, filled as recipients are resolved
 function mUnitsForPhones(phones) {
