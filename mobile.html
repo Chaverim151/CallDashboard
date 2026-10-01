@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.09"; window.M_BUILD = BUILD;
+  var BUILD = "3.10"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -917,6 +917,11 @@ function orgMentionRe() {
 function orgNormMention(u) { return orgUnit(orgStripUnit(String(u).toUpperCase())); }
 // Example unit numbers in hints follow the prefix: "e.g. MC-30" → "e.g. CH-30", or "e.g. 30" with none.
 function orgPh(t) { return String(t).replace(/MC-/g, ORG.unitPrefix || ""); }
+// Too short, or built on the organization's own name (the old shared default was).
+function orgWeakPassword(p) {
+  var low = String(p || "").toLowerCase(), word = String(ORG.fullName || "").split(/\s+/)[0].toLowerCase();
+  return low.length < 8 || (word.length >= 4 && low.indexOf(word) !== -1);
+}
 function orgCenter() { return { lat: Number(ORG.homeLat) || ORG_DEFAULTS.homeLat, lng: Number(ORG.homeLng) || ORG_DEFAULTS.homeLng }; }
 orgApply();
 orgLoad();
@@ -1210,13 +1215,11 @@ function mSignIn() {
 function mForgotPw() {
   var unit = (document.getElementById("m-unit-input").value || "").trim();
   if (!unit) { document.getElementById("m-err").textContent = "Enter your unit number first."; return; }
-  var unitFormatted = orgUnit(orgStripUnit(unit));
-  db.collection("unitLookup").doc(unitFormatted).get().then(function(snap) {
-    if (!snap.exists) { mToast("Unit not found", true); return; }
-    var email = snap.data().email;
-    return auth.sendPasswordResetEmail(email);
-  }).then(function() { mToast("Reset email sent"); })
-  .catch(function(e) { mToast(e.message, true); });
+  mToast("Sending…");
+  // The link is texted to the phone on file. The answer is the same whether or not the unit exists.
+  pubRelay("textPasswordLink", { unit: orgUnit(orgStripUnit(unit)) })
+    .then(function(r) { mToast("✓ " + ((r && r.message) || "If that unit number is registered, a link was sent to the phone on file.")); })
+    .catch(function(e) { mToast("Couldn't send the link: " + e.message, true); });
 }
 
 function mSignOut() {
@@ -1230,7 +1233,7 @@ function mSetNewPw() {
   var err = document.getElementById("m-fp-err");
   if (pw.length < 8) { err.textContent = "Password must be at least 8 characters."; return; }
   if (pw !== pw2) { err.textContent = "Passwords do not match."; return; }
-  if (pw === "Hatzolah1!") { err.textContent = "You must choose a new password."; return; }
+  if (orgWeakPassword(pw)) { err.textContent = "Choose a stronger password — at least 8 characters, and not the organization’s name."; return; }
   mCurrentUser.updatePassword(pw).then(function() {
     return db.collection("users").doc(mCurrentUser.uid).update({ mustChangePassword: false });
   }).then(function() {
@@ -4409,6 +4412,17 @@ function mSendAcceptanceEmails(opts) {
 // ── SMS (ClickSend) — mirrors desktop's sendClickSendSMS exactly ──
 // SMS and email go through the sendSms / sendEmail Cloud Functions with the member's ID token.
 // The function checks membership and test mode; no secret lives in this page.
+// Server calls that work before signing in (only "Forgot password?" uses this).
+function pubRelay(fnName, payload) {
+  var url = "https://us-central1-" + firebase.app().options.projectId + ".cloudfunctions.net/" + fnName;
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: payload }) }).then(function(r) {
+    return r.json().catch(function() { return {}; }).then(function(j) {
+      if (j && j.error) throw new Error(j.error.message || j.error.status || ("HTTP " + r.status));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return j.result;
+    });
+  });
+}
 function mRelay(fnName, payload) {
   var u = firebase.auth().currentUser;
   if (!u) return Promise.reject(new Error("Not signed in — message not sent"));

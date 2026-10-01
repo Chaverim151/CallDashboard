@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.09');
+  window.location.replace('/CallDashboard/mobile.html?v=3.10');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1110,7 +1110,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
               style="flex:1;background:transparent;border:none;padding:10px 12px;color:var(--white);font-family:'Oswald',sans-serif;font-size:1rem;font-weight:600;outline:none;width:60px"
               oninput="this.value=this.value.replace(/[^0-9]/g,'')">
           </div>
-          <button onclick="window.doReset()" style="background:var(--navy-light);border:1px solid var(--card-border);border-radius:8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.8rem;letter-spacing:0.07em;text-transform:uppercase;padding:10px 14px;cursor:pointer;white-space:nowrap;">Send Reset</button>
+          <button onclick="window.doReset()" style="background:var(--navy-light);border:1px solid var(--card-border);border-radius:8px;color:var(--white);font-family:'Oswald',sans-serif;font-size:0.8rem;letter-spacing:0.07em;text-transform:uppercase;padding:10px 14px;cursor:pointer;white-space:nowrap;">Text Me a Link</button>
         </div>
         <div id="reset-msg" style="font-size:0.78rem;margin-top:10px;display:none"></div>
       </div>
@@ -1324,7 +1324,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.99</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.00</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1646,15 +1646,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
   </div>
   <div class="inner-scroll"><div class="inner-content">
 
-    <div class="admin-section" data-admin-tab="users" id="bulk-import-section">
-      <div class="admin-section-title">⚡ One-Time Bulk Import</div>
-      <div class="add-user-form" style="max-width:100%">
-        <p style="color:var(--gray);font-size:0.82rem;margin-bottom:14px;line-height:1.6">Default password: <strong style="color:var(--gold-light);font-family:monospace">Hatzolah1!</strong><br><strong style="color:#ff9090">⚠ This button disappears permanently after use.</strong></p>
-        <button class="submit-btn" id="import-btn" onclick="bulkImport()">🚀 Import All Members</button>
-        <div style="margin-top:14px;font-size:0.8rem;color:var(--gray);max-height:300px;overflow-y:auto" id="import-log"></div>
-      </div>
-    
-    </div>
+    <!-- One-time bulk import removed in 10.00: it embedded the member roster and a shared default password in the page. -->
 
     <div class="admin-section" data-admin-tab="users" id="adm-add-user">
       <div class="admin-section-title">Add New User</div>
@@ -1674,7 +1666,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         </div>
         <div class="form-row">
           <div><label>Email</label><input type="email" id="au-email" placeholder="name@email.com"></div>
-          <div><label>Temporary Password</label><input type="text" id="au-pass" placeholder="Min. 6 characters"></div>
+          <div><label>Password <span style="text-transform:none;letter-spacing:0;color:var(--gray)">(leave empty — recommended)</span></label><input type="text" id="au-pass" placeholder="Empty: they're texted a link to set their own"></div>
         </div>
         <div class="form-row single"><div>
           <label>Access Level</label>
@@ -1697,6 +1689,19 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         </div>
         <button class="submit-btn" id="au-btn" onclick="addUser()">Add User</button>
         <div class="form-msg" id="au-msg"></div>
+      </div>
+    </div>
+
+    <div class="admin-section" data-admin-tab="security" id="adm-pwsecure">
+      <div class="admin-section-title">🔑 Accounts That Still Need Their Own Password</div>
+      <div class="add-user-form" style="max-width:640px">
+        <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">
+          Members who have never set their own password — or were told to change it — may still be using a password other people know.
+          Securing them gives each account a random password nobody knows and <b>texts the member a one-time link</b> to set their own.
+          Members who already chose their own password aren't affected. These texts always go to the member, even in Test Mode.
+        </p>
+        <button class="edit-mode-btn" onclick="pwCheck()">🔍 Check accounts</button>
+        <div id="pw-list" style="margin-top:12px"></div>
       </div>
     </div>
 
@@ -2509,12 +2514,11 @@ window.doReset = function() {
   var msg = document.getElementById("reset-msg");
   msg.style.display = "none";
   if (!num) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Enter your unit number."; return; }
-  db.collection("unitLookup").doc(orgUnit(num)).get().then(function(snap) {
-    if (!snap.exists) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Unit not found."; return; }
-    var email = snap.data().email;
-    if (!email) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "No email on file."; return; }
-    return auth.sendPasswordResetEmail(email).then(function() { msg.style.display = "block"; msg.style.color = "#7dedb5"; msg.textContent = "✓ Reset email sent."; });
-  }).catch(function(e) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Error: " + e.message; });
+  msg.style.display = "block"; msg.style.color = "var(--gray)"; msg.textContent = "Sending…";
+  // The link is texted to the phone on file. The answer is the same whether or not the unit exists.
+  pubRelay("textPasswordLink", { unit: orgUnit(num) }).then(function(r) {
+    msg.style.color = "#7dedb5"; msg.textContent = "✓ " + ((r && r.message) || "If that unit number is registered, a link was sent to the phone on file.");
+  }).catch(function(e) { msg.style.color = "#ff9090"; msg.textContent = "Couldn't send the link: " + e.message; });
 };
 
 window.submitForcedPasswordChange = function() {
@@ -2525,7 +2529,7 @@ window.submitForcedPasswordChange = function() {
   msg.className = "form-msg"; msg.textContent = "";
   if (!p1 || p1.length < 8) { msg.className = "form-msg error"; msg.textContent = "Password must be at least 8 characters."; return; }
   if (p1 !== p2) { msg.className = "form-msg error"; msg.textContent = "Passwords do not match."; return; }
-  if (p1 === "Hatzolah1!") { msg.className = "form-msg error"; msg.textContent = "Choose a password different from the default."; return; }
+  if (orgWeakPassword(p1)) { msg.className = "form-msg error"; msg.textContent = "Choose a stronger password — at least 8 characters, and not the organization’s name."; return; }
   btn.disabled = true; btn.textContent = "Updating…";
   currentUser.updatePassword(p1).then(function() {
     return db.collection("users").doc(currentUser.uid).set({ mustChangePassword: false }, { merge: true });
@@ -2633,6 +2637,11 @@ function orgMentionRe() {
 function orgNormMention(u) { return orgUnit(orgStripUnit(String(u).toUpperCase())); }
 // Example unit numbers in hints follow the prefix: "e.g. MC-30" → "e.g. CH-30", or "e.g. 30" with none.
 function orgPh(t) { return String(t).replace(/MC-/g, ORG.unitPrefix || ""); }
+// Too short, or built on the organization's own name (the old shared default was).
+function orgWeakPassword(p) {
+  var low = String(p || "").toLowerCase(), word = String(ORG.fullName || "").split(/\s+/)[0].toLowerCase();
+  return low.length < 8 || (word.length >= 4 && low.indexOf(word) !== -1);
+}
 function orgCenter() { return { lat: Number(ORG.homeLat) || ORG_DEFAULTS.homeLat, lng: Number(ORG.homeLng) || ORG_DEFAULTS.homeLng }; }
 orgApply();
 orgLoad();
@@ -3304,7 +3313,7 @@ function setAdminTab(tab) {
 var ADM_SEARCH = [
   { label: "All users", where: "Users", tab: "users", el: "adm-users", k: "users members roster list people edit user roles dispatcher responder logistics phone email" },
   { label: "Add a new user", where: "Users", tab: "users", el: "adm-add-user", k: "add new user member create account signup" },
-  { label: "One-time bulk import", where: "Users", tab: "users", el: "bulk-import-section", k: "bulk import members default password" },
+  { label: "Accounts that still need their own password", where: "Security", tab: "security", el: "adm-pwsecure", k: "password default secure accounts set password link text reset never logged in" },
   { label: "Force password reset for everyone", where: "Security", tab: "security", el: "adm-security", k: "security password reset force login" },
   { label: "Call natures & ALS", where: "Protocols & Dispatch", tab: "protocols", ds: "natures", k: "call natures nature types als protocol cardiac" },
   { label: "Coverage areas (primary / secondary)", where: "Protocols & Dispatch", tab: "protocols", ds: "zones", k: "coverage areas zones primary secondary polygons map response direct load rig" },
@@ -3665,7 +3674,7 @@ function submitForcedPasswordChange() {
   msg.className = "form-msg"; msg.textContent = "";
   if (!p1 || p1.length < 8) { msg.className = "form-msg error"; msg.textContent = "Password must be at least 8 characters."; return; }
   if (p1 !== p2) { msg.className = "form-msg error"; msg.textContent = "Passwords do not match."; return; }
-  if (p1 === "Hatzolah1!") { msg.className = "form-msg error"; msg.textContent = "Choose a password different from the default."; return; }
+  if (orgWeakPassword(p1)) { msg.className = "form-msg error"; msg.textContent = "Choose a stronger password — at least 8 characters, and not the organization’s name."; return; }
   btn.disabled = true; btn.textContent = "Updating…";
   currentUser.updatePassword(p1).then(function() {
     return db.collection("users").doc(currentUser.uid).set({ mustChangePassword: false }, { merge: true });
@@ -4936,12 +4945,11 @@ function doReset() {
   var msg = document.getElementById("reset-msg");
   msg.style.display = "none";
   if (!num) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Enter your unit number."; return; }
-  db.collection("unitLookup").doc(orgUnit(num)).get().then(function(snap) {
-    if (!snap.exists) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Unit not found."; return; }
-    var email = snap.data().email;
-    if (!email) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "No email on file."; return; }
-    return auth.sendPasswordResetEmail(email).then(function() { msg.style.display = "block"; msg.style.color = "#7dedb5"; msg.textContent = "✓ Reset email sent."; });
-  }).catch(function(e) { msg.style.display = "block"; msg.style.color = "#ff9090"; msg.textContent = "Error: " + e.message; });
+  msg.style.display = "block"; msg.style.color = "var(--gray)"; msg.textContent = "Sending…";
+  // The link is texted to the phone on file. The answer is the same whether or not the unit exists.
+  pubRelay("textPasswordLink", { unit: orgUnit(num) }).then(function(r) {
+    msg.style.color = "#7dedb5"; msg.textContent = "✓ " + ((r && r.message) || "If that unit number is registered, a link was sent to the phone on file.");
+  }).catch(function(e) { msg.style.color = "#ff9090"; msg.textContent = "Couldn't send the link: " + e.message; });
 }
 window.doReset = doReset;
 document.addEventListener("keydown", function(e) {
@@ -5018,14 +5026,18 @@ function addUser() {
   var isAdminCheck = document.getElementById("au-admin").checked;
   var btn = document.getElementById("au-btn"), msg = document.getElementById("au-msg");
   msg.className = "form-msg"; msg.textContent = "";
-  if (!fname || !lname || !email || !pass) { msg.className = "form-msg error"; msg.textContent = "All fields required."; return; }
+  if (!fname || !lname || !email) { msg.className = "form-msg error"; msg.textContent = "First name, last name and email are required."; return; }
+  // No password typed: the account gets a random one and the member is texted a link to set their own.
+  var sendLink = !pass;
+  if (sendLink) { var rnd = new Uint8Array(18); crypto.getRandomValues(rnd); pass = Array.from(rnd, function(b) { return ("0" + b.toString(16)).slice(-2); }).join("") + "aA1!"; }
   var np = normalizePhoneInput(phone); if (!np.ok) { msg.className = "form-msg error"; msg.textContent = "Phone must be a 10-digit US number (e.g. 732-555-1234)."; return; } phone = np.value;
-  if (pass.length < 6) { msg.className = "form-msg error"; msg.textContent = "Password must be 6+ characters."; return; }
+  if (!sendLink && pass.length < 8) { msg.className = "form-msg error"; msg.textContent = "Password must be 8+ characters — or leave it empty to text them a link."; return; }
   if (!opRoles.length) { msg.className = "form-msg error"; msg.textContent = "Select at least one role."; return; }
   btn.disabled = true; btn.textContent = "Adding…";
   var app2 = firebase.initializeApp(firebase.app().options, "secondary-" + Date.now());
+  var newUid = null;
   firebase.auth(app2).createUserWithEmailAndPassword(email, pass).then(function(cred) {
-    var uid = cred.user.uid;
+    var uid = cred.user.uid; newUid = uid;
     return firebase.auth(app2).signOut().then(function() {
       return db.collection("users").doc(uid).set({ firstName: fname, lastName: lname, unit: unit, phone: phone, email: email, roles: opRoles, role: isAdminCheck ? "admin" : "responder", mustChangePassword: true, createdAt: new Date().toISOString() });
     }).then(function() {
@@ -5033,7 +5045,13 @@ function addUser() {
       return db.collection("unitLookup").doc(unit).set({ unit: unit, email: email, updatedAt: new Date().toISOString() });
     });
   }).then(function() {
-    msg.className = "form-msg success"; msg.textContent = "✓ " + fname + " " + lname + " added.";
+    if (!sendLink) return "";
+    return hzRelay("sendPasswordLink", { uid: newUid }).then(function(r) {
+      if (r && r.link) return " Couldn't text or email them — give them this set-password link yourself: " + r.link;
+      return r && /email/.test(r.result || "") ? " They were emailed a link to set their password." : " They were texted a link to set their password.";
+    }).catch(function(e) { return " But the set-password link couldn't be sent (" + e.message + ") — use Security ▸ Check accounts to send it."; });
+  }).then(function(linkNote) {
+    msg.className = "form-msg success"; msg.textContent = "✓ " + fname + " " + lname + " added." + (linkNote || "");
     ["au-fname","au-lname","au-unit","au-phone","au-email","au-pass"].forEach(function(id) { document.getElementById(id).value = ""; });
     document.querySelectorAll("#au-roles input").forEach(function(c) { c.checked = c.value === "responder"; });
     var ct = document.getElementById("au-custom-tags"); if (ct) ct.innerHTML = "";
@@ -5471,88 +5489,6 @@ function checkImportFlag() {
   }).catch(function() {});
 }
 
-// ── BULK IMPORT ──
-var ROSTER = [
-  {unit:"MC-23",lastName:"Zelmanovitz",firstName:"Charles",phone:"917-648-5236",email:"charles@zwigroup.com"},
-  {unit:"MC-51",lastName:"Werzberger",firstName:"Shea",phone:"347-924-1620",email:"sheawertz1@gmail.com"},
-  {unit:"MC-19",lastName:"Weiss",firstName:"Asher",phone:"732-829-1073",email:"azw.tcp@gmail.com"},
-  {unit:"MC-22",lastName:"Weiss",firstName:"Meir",phone:"845-798-0405",email:"meir14weiss@gmail.com"},
-  {unit:"MC-10",lastName:"Wahrman",firstName:"Yaakov",phone:"347-355-9947",email:"yawahrman@aol.com"},
-  {unit:"MC-52",lastName:"Tauber",firstName:"Joseph",phone:"646-481-6633",email:"tauberyossi123@gmail.com"},
-  {unit:"MC-25",lastName:"Siegel",firstName:"Avrohom",phone:"732-421-7980",email:"avrohom.siegel@gmail.com"},
-  {unit:"MC-33",lastName:"Safrin",firstName:"Benjamin",phone:"917-935-2129",email:"benjaminsafrin@gmail.com"},
-  {unit:"MC-14",lastName:"Rosenstock",firstName:"Avraham",phone:"347-633-6913",email:"aarmc14@gmail.com"},
-  {unit:"MC-50",lastName:"Pscherhofer",firstName:"Jack",phone:"347-882-1500",email:"jack@allstarlighting.com"},
-  {unit:"MC-36",lastName:"Platcheck",firstName:"David",phone:"718-490-2873",email:""},
-  {unit:"MC-29",lastName:"Peikes",firstName:"Aharon",phone:"347-572-5832",email:"aaron@plainfieldstaffing.com"},
-  {unit:"MC-11",lastName:"Orgel",firstName:"Evan",phone:"732-423-7821",email:"evan.orgel@gmail.com"},
-  {unit:"MC-26",lastName:"Mandelbaum",firstName:"Howard",phone:"646-732-2481",email:"howlin_m@hotmail.com"},
-  {unit:"MC-12",lastName:"Malik",firstName:"Yakov",phone:"347-578-1945",email:"yakovmalik@gmail.com"},
-  {unit:"MC-30",lastName:"Loewenstein",firstName:"Joshua",phone:"732-642-9628",email:"joshmetfan@yahoo.com"},
-  {unit:"MC-34",lastName:"Lieblich",firstName:"Julian",phone:"520-301-7925",email:"yitzchak@websolutionsnyc.com"},
-  {unit:"MC-17",lastName:"Lewitter",firstName:"Ari",phone:"917-751-2747",email:"lewitter@yahoo.com"},
-  {unit:"MC-02",lastName:"Lerner",firstName:"Eric",phone:"732-985-5201",email:"eric.lerner@hatzolahmc.org"},
-  {unit:"MC-24",lastName:"Lebowitz",firstName:"Jeremy",phone:"732-777-2626",email:"ylebowitz@gmail.com"},
-  {unit:"MC-21",lastName:"Lachman",firstName:"Jay",phone:"516-660-6057",email:"yehudalachman@gmail.com"},
-  {unit:"MC-32",lastName:"Klein",firstName:"Jeffrey",phone:"917-841-6431",email:"jeffreyklein@yahoo.com"},
-  {unit:"MC-20",lastName:"Hoffman",firstName:"Avraham",phone:"732-718-5819",email:"avrahamhoffman@gmail.com"},
-  {unit:"P-47",lastName:"Hirsch",firstName:"Anton",phone:"201-354-0550",email:""},
-  {unit:"MC-27",lastName:"Gross",firstName:"Yosef",phone:"347-920-8958",email:""},
-  {unit:"MC-53",lastName:"Goldwasser",firstName:"Norman",phone:"917-789-3190",email:"normangoldwas@gmail.com"},
-  {unit:"MC-18",lastName:"Gantz",firstName:"Michael",phone:"917-703-2746",email:"eskd2004@gmail.com"},
-  {unit:"MC-01",lastName:"Erps",firstName:"Fishel",phone:"732-543-1969",email:"fishel.erps@hatzolahmc.org"},
-  {unit:"MC-16",lastName:"Eidelman",firstName:"Shmuel",phone:"732-985-2495",email:"shmueleidelman.work@gmail.com"},
-  {unit:"MC-28",lastName:"Dietz",firstName:"Joseph",phone:"732-789-7271",email:"ydietz00@gmail.com"},
-  {unit:"MC-31",lastName:"Bodlander",firstName:"Abraham",phone:"732-339-0908",email:"avibodlander@gmail.com"},
-  {unit:"MC-54",lastName:"Biderman",firstName:"Abraham",phone:"917-863-3524",email:"abeb@msn.com"},
-  {unit:"MC-35",lastName:"Berger",firstName:"Yehuda",phone:"848-245-5932",email:"zeviberger@gmail.com"},
-  {unit:"MC-15",lastName:"Benedek",firstName:"Joseph",phone:"732-545-7353",email:"yoben18@gmail.com"},
-  {unit:"MC-03",lastName:"Ben-Haim",firstName:"Eliezar",phone:"732-572-3895",email:"eli.ben_haim@yahoo.com"},
-  {unit:"MC-13",lastName:"Bauer",firstName:"Jonathan",phone:"917-207-3602",email:"yoni@glatt27.com"},
-  {unit:"MC-705",lastName:"Eis",firstName:"Selma",phone:"201-757-8769",email:"meis3682@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-706",lastName:"Berman",firstName:"Edie",phone:"732-484-1871",email:"Edieberman368@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-707",lastName:"Bodlander",firstName:"Nitza",phone:"848-391-8695",email:"nitzabodlander@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-709",lastName:"Klein",firstName:"Elisha",phone:"732-580-2681",email:"esontz1@aol.com",roles:["dispatcher"]},
-  {unit:"MC-710",lastName:"Golubchik",firstName:"Sharon",phone:"609-418-0058",email:"sgolubchik@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-712",lastName:"Grossman",firstName:"Goldie",phone:"917-922-7152",email:"goldiegrossman@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-713",lastName:"Krumholtz",firstName:"Juliet",phone:"732-762-6543",email:"julietk23@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-714",lastName:"Halon",firstName:"Temima",phone:"732-300-0833",email:"temimski@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-717",lastName:"Black",firstName:"Robyn",phone:"201-410-8902",email:"robynsing@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-718",lastName:"Wahrman",firstName:"Fraida",phone:"917-600-9505",email:"frwahrman@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-721",lastName:"Gantz",firstName:"Miriam",phone:"646-703-1388",email:"msemes@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-722",lastName:"Rothstein",firstName:"Chana",phone:"917-501-7733",email:"chanabee25@gmail.com",roles:["dispatcher"]},
-  {unit:"MC-723",lastName:"Rothstein",firstName:"Betzalel",phone:"917-494-6406",email:"betzalel.rothstein@gmail.com",roles:["dispatcher"]}
-];
-
-async function bulkImport() {
-  if (currentRole !== "admin") return;
-  if (!confirm("Import all roster members? This runs once.")) return;
-  var btn = document.getElementById("import-btn"), log = document.getElementById("import-log");
-  btn.disabled = true; btn.textContent = "Importing…"; log.innerHTML = "";
-  var DEFAULT_PASS = "Hatzolah1!"; var created = 0, skipped = 0, failed = 0;
-  for (var m of ROSTER) {
-    if (!m.email) { log.innerHTML += '<div style="color:var(--gray)">⏭ ' + m.unit + ' ' + m.lastName + ' — no email</div>'; skipped++; continue; }
-    if (m.email.toLowerCase() === SUPER_ADMIN.toLowerCase()) { log.innerHTML += '<div style="color:var(--gold)">⚡ ' + m.unit + ' ' + m.lastName + ' — admin, skipped</div>'; skipped++; continue; }
-    try {
-      var app2 = firebase.initializeApp(firebase.app().options, "bulk-" + Date.now());
-      var cred = await firebase.auth(app2).createUserWithEmailAndPassword(m.email, DEFAULT_PASS);
-      await firebase.auth(app2).signOut();
-      await db.collection("users").doc(cred.user.uid).set({ unit: m.unit, firstName: m.firstName, lastName: m.lastName, email: m.email, phone: m.phone, roles: m.roles || ["responder"], role: "responder", mustChangePassword: true, createdAt: new Date().toISOString() });
-      log.innerHTML += '<div style="color:#7dedb5">✓ ' + m.unit + ' ' + m.firstName + ' ' + m.lastName + '</div>'; created++;
-    } catch(e) {
-      if (e.code === "auth/email-already-in-use") { log.innerHTML += '<div style="color:var(--gray)">⏭ ' + m.unit + ' ' + m.lastName + ' — exists</div>'; skipped++; }
-      else { log.innerHTML += '<div style="color:#ff9090">✗ ' + m.unit + ' ' + m.lastName + ' — ' + e.message + '</div>'; failed++; }
-    }
-    await new Promise(function(r) { setTimeout(r, 300); });
-  }
-  log.innerHTML += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--card-border);color:var(--white)"><strong>Done:</strong> ' + created + ' created · ' + skipped + ' skipped · ' + failed + ' failed</div>';
-  await db.collection("appdata").doc("flags").set({ bulkImportDone: true }, { merge: true });
-  setTimeout(function() {
-    var sec = document.getElementById("bulk-import-section");
-    if (sec) { sec.style.opacity = "0"; setTimeout(function() { sec.remove(); }, 600); }
-  }, 3000);
-  btn.disabled = false; btn.textContent = "✓ Done"; loadUsers();
-}
 
 // ── CONTACTS ──
 var allContacts = [], activeRoleFilter = "all";
@@ -6004,6 +5940,17 @@ var FROM_EMAIL = "apps@hatzolahmc.org", FROM_NAME = "Hatzolah MC Operations";
 // Every SMS and email goes through the sendSms / sendEmail Cloud Functions, called with the
 // signed-in member's Firebase ID token. The function checks membership and test mode and is the
 // only thing that can reach the ClickSend worker. No secret lives in this page.
+// Server calls that work before signing in (only "Forgot password?" uses this).
+function pubRelay(fnName, payload) {
+  var url = "https://us-central1-" + firebase.app().options.projectId + ".cloudfunctions.net/" + fnName;
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: payload }) }).then(function(r) {
+    return r.json().catch(function() { return {}; }).then(function(j) {
+      if (j && j.error) throw new Error(j.error.message || j.error.status || ("HTTP " + r.status));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return j.result;
+    });
+  });
+}
 function hzRelay(fnName, payload) {
   var u = firebase.auth().currentUser;
   if (!u) return Promise.reject(new Error("Not signed in — message not sent"));
@@ -7762,6 +7709,41 @@ function renderNotificationLog() {
     '</div>';
   }).join("");
 }
+// ── Admin ▸ Security ▸ Accounts that still need their own password ──
+var PW_LIST = [];
+function pwCheck() {
+  var host = document.getElementById("pw-list"); if (!host) return;
+  host.innerHTML = '<div style="color:var(--gray);font-size:0.82rem">Checking…</div>';
+  hzRelay("securePasswords", { mode: "preview" }).then(function(r) {
+    PW_LIST = (r && r.accounts) || [];
+    if (!PW_LIST.length) { host.innerHTML = '<div style="color:#7dedb5;font-size:0.84rem">✓ Every member has set their own password.</div>'; return; }
+    host.innerHTML =
+      '<div style="font-size:0.84rem;color:#ffc84a;margin-bottom:8px">' + PW_LIST.length + ' account' + (PW_LIST.length === 1 ? '' : 's') + ' haven\'t set their own password:</div>' +
+      '<div style="max-height:240px;overflow-y:auto;border:1px solid var(--card-border);border-radius:8px">' + PW_LIST.map(function(a) {
+        return '<div style="display:flex;gap:10px;padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.8rem">' +
+          '<b style="min-width:62px;color:var(--white)">' + escapeHtml(a.unit || "—") + '</b><span style="flex:1;color:var(--gray)">' + escapeHtml(a.name || "") + '</span>' +
+          (a.hasPhone ? '<span style="color:#7dedb5">📱 text</span>' : a.hasEmail ? '<span style="color:#ffc84a">✉ email (no phone)</span>' : '<span style="color:#ff9090">no phone or email</span>') + '</div>';
+      }).join("") + '</div>' +
+      '<button class="submit-btn" style="width:auto;padding:10px 20px;margin-top:12px" onclick="pwSecure()">🔒 Secure ' + (PW_LIST.length === 1 ? 'this account' : 'these ' + PW_LIST.length + ' accounts') + ' &amp; send their links</button>';
+  }).catch(function(e) { host.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Couldn\'t check: ' + escapeHtml(e.message) + '</div>'; });
+}
+function pwSecure() {
+  if (!PW_LIST.length) return;
+  if (!confirm("Give " + PW_LIST.length + " account" + (PW_LIST.length === 1 ? "" : "s") + " a random password and text each member a one-time link to set their own?\n\nUntil they use the link, they can't log in with their old password. If a link expires, they can tap \"Forgot password?\" on the login screen.")) return;
+  var host = document.getElementById("pw-list");
+  host.innerHTML = '<div style="color:var(--gray);font-size:0.82rem">Securing accounts and sending links… this can take a minute.</div>';
+  hzRelay("securePasswords", { mode: "run", uids: PW_LIST.map(function(a) { return a.uid; }) }).then(function(r) {
+    var res = (r && r.results) || [], ok = res.filter(function(x) { return /^sent/.test(x.result); }).length;
+    host.innerHTML = '<div style="font-size:0.84rem;color:#7dedb5;margin-bottom:8px">✓ ' + ok + ' of ' + res.length + ' secured and sent.</div>' +
+      res.map(function(x) {
+        var good = /^sent/.test(x.result);
+        return '<div style="font-size:0.78rem;padding:4px 0;color:' + (good ? 'var(--gray)' : '#ffc84a') + '"><b style="color:var(--white)">' + escapeHtml(x.unit || x.uid) + '</b> — ' + escapeHtml(x.result) +
+          (x.link ? '<br><span style="color:var(--gray)">Give them this link yourself: </span><input readonly value="' + escapeHtml(x.link) + '" onclick="this.select()" style="width:100%;margin-top:3px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;color:var(--white);padding:5px 8px;font-size:0.72rem">' : '') + '</div>';
+      }).join("");
+    PW_LIST = [];
+  }).catch(function(e) { host.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Error: ' + escapeHtml(e.message) + '</div>'; });
+}
+window.pwCheck = pwCheck; window.pwSecure = pwSecure;
 // ── Admin ▸ Organization ──
 var ORG_FORM_HOME = null;   // { label, lat, lng } picked from suggestions
 function orgFormLoad() {
@@ -14255,7 +14237,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.99";
+var DESKTOP_VERSION = "10.00";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
