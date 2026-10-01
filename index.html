@@ -1291,7 +1291,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.85</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.86</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1600,6 +1600,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     <button class="admin-tab" data-tab="traffic" onclick="setAdminTab('traffic')">🚧 Traffic &amp; Closures</button>
     <button class="admin-tab" data-tab="templates" onclick="setAdminTab('templates')">✉️ Message Templates</button>
         <button class="admin-tab" data-tab="notifications" onclick="setAdminTab('notifications')">🔔 Notification Log</button>
+        <button class="admin-tab" data-tab="locations" onclick="setAdminTab('locations')">📍 Location Requests</button>
         <button class="admin-tab" data-tab="testing" onclick="setAdminTab('testing')">🧪 Testing</button>
   </div>
   <div class="inner-scroll"><div class="inner-content">
@@ -1758,6 +1759,16 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         <span id="notif-log-count" style="font-size:0.78rem;color:var(--gray)"></span>
       </div>
       <div id="notif-log-list"></div>
+    </div>
+
+    <div class="admin-section" data-admin-tab="locations">
+      <div class="admin-section-title">📍 Location Requests</div>
+      <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">Every caller-location link sent in the last 24 hours, updating live. Open requests are at the top — a link counts as open until it expires, or for as long as the caller's page is still reporting in.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <button class="edit-mode-btn" onclick="lrStart()">↻ Refresh</button>
+        <span id="lr-count" style="font-size:0.78rem;color:var(--gray)"></span>
+      </div>
+      <div id="lr-list"></div>
     </div>
 
     <div class="admin-section" data-admin-tab="testing">
@@ -2594,6 +2605,7 @@ function setAdminTab(tab) {
   if (tab === "codes" && typeof renderCodesEditor === "function") renderCodesEditor();
   if (tab === "fleet" && typeof loadVehicleStatusPanel === "function") loadVehicleStatusPanel();
   if (tab === "notifications" && typeof loadNotificationLog === "function") loadNotificationLog();
+  if (tab === "locations") lrStart(); else lrStop();
   if (tab === "templates" && typeof loadTemplateEditor === "function") loadTemplateEditor();
   else if (typeof tplReleaseCallForm === "function") tplReleaseCallForm();
   else if (typeof tplReleaseCallForm === "function") tplReleaseCallForm();
@@ -6945,6 +6957,95 @@ function renderNotificationLog() {
     '</div>';
   }).join("");
 }
+// ── LOCATION REQUESTS OVERSIGHT (Admin ▸ Location Requests) ──
+// Live view of every caller-location link from the last 24 hours. Read-only. Listing the whole
+// collection is limited to admins by the Firestore rules; a caller's page can still open its own
+// request by its token.
+var LR_ROWS = [], lrUnsub = null, lrTimer = null;
+function lrStart() {
+  lrStop();
+  var el = document.getElementById("lr-list"); if (!el) return;
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.84rem;padding:10px">Loading…</div>';
+  var since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  lrUnsub = db.collection("locationRequests").where("createdAt", ">=", since).orderBy("createdAt", "desc").limit(100)
+    .onSnapshot(function(snap) {
+      LR_ROWS = [];
+      snap.forEach(function(doc) { LR_ROWS.push(Object.assign({ id: doc.id }, doc.data())); });
+      lrRender();
+    }, function(e) {
+      el.innerHTML = '<div style="color:#ff9090;font-size:0.84rem;padding:10px">Couldn\'t load location requests: ' + escapeHtml(e.message) +
+        '<br><span style="color:var(--gray)">If this mentions permissions, the updated Firestore rules haven\'t been published yet.</span></div>';
+    });
+  lrTimer = setInterval(lrRender, 15000);   // keeps the "x min ago" times and open/ended state current
+}
+function lrStop() {
+  if (lrUnsub) { lrUnsub(); lrUnsub = null; }
+  if (lrTimer) { clearInterval(lrTimer); lrTimer = null; }
+}
+function lrAgo(iso) {
+  if (!iso) return "";
+  var s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return s + "s ago";
+  var m = Math.round(s / 60); if (m < 60) return m + " min ago";
+  return Math.round(m / 60) + " h ago";
+}
+function lrLastActivity(r) {
+  var t = [r.seenAt, r.at].filter(Boolean).map(function(x) { return new Date(x).getTime(); });
+  return t.length ? Math.max.apply(null, t) : 0;
+}
+// Open = not yet expired, or the caller's page is still reporting in (it beats every 20 s).
+function lrIsOpen(r) {
+  var recent = Date.now() - lrLastActivity(r) < 90000 && r.status !== "closed";
+  return (r.expiresAt && new Date(r.expiresAt).getTime() > Date.now()) || recent;
+}
+function lrState(r) {
+  var dev = /iPhone|iPad/i.test(r.device || "") ? "iPhone" : /Android/i.test(r.device || "") ? "Android" : "phone";
+  if (!lrIsOpen(r)) return { text: r.lat ? "Ended — location was shared" : (r.status ? "Ended — caller opened it, never shared" : "Expired — link never opened"), color: "var(--gray)" };
+  if (r.status === "closed") return { text: "Caller closed the page", color: "#ff9090" };
+  if (r.status === "background") return { text: "Page in the background on their " + dev, color: "#ffc84a" };
+  if (r.lat) return { text: "Sharing from their " + dev, color: "#7dedb5" };
+  if (r.status) return { text: "Opened on their " + dev + " — hasn't tapped Allow", color: "#ffc84a" };
+  return { text: "Link sent — not opened yet", color: "#ffc84a" };
+}
+function lrRender() {
+  var el = document.getElementById("lr-list"); if (!el) return;
+  var open = LR_ROWS.filter(lrIsOpen), ended = LR_ROWS.filter(function(r) { return !lrIsOpen(r); });
+  var cnt = document.getElementById("lr-count");
+  if (cnt) cnt.textContent = open.length + " open · " + ended.length + " ended in the last 24 hours";
+  if (!LR_ROWS.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.84rem;padding:14px;text-align:center">No location requests in the last 24 hours</div>'; return; }
+  function row(r) {
+    var st = lrState(r), isOpen = lrIsOpen(r);
+    var created = r.createdAt ? new Date(r.createdAt) : null;
+    var when = created ? created.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " · " + created.toLocaleDateString([], { month: "short", day: "numeric" }) : "";
+    var fix = "";
+    if (r.lat && r.lng) {
+      var acc = r.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
+      fix = '<div style="margin-top:7px;font-size:0.8rem;color:#c9d4e6;line-height:1.5">' +
+        '<b style="color:' + ac + '">' + escapeHtml(r.accuracyLabel || "") + ', within ' + acc + ' m</b>' +
+        (acc > 150 ? ' <span style="color:#ff9090">— too rough to dispatch on alone</span>' : '') +
+        (r.approxAddress ? '<br>📮 ' + escapeHtml(r.approxAddress) : '') +
+        '<br><span style="font-variant-numeric:tabular-nums;color:var(--gray)">' + Number(r.lat).toFixed(6) + ', ' + Number(r.lng).toFixed(6) + '</span>' +
+        ' · <a href="https://www.google.com/maps/search/?api=1&query=' + r.lat + ',' + r.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
+        (r.at ? ' · <span style="color:var(--gray)">fix ' + lrAgo(r.at) + '</span>' : '') +
+        '</div>';
+    }
+    var last = lrLastActivity(r);
+    return '<div style="border:1px solid var(--card-border);border-left:3px solid ' + (isOpen ? st.color : "rgba(255,255,255,0.15)") + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;' + (isOpen ? '' : 'opacity:0.7') + '">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<span style="font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:0.04em;color:' + st.color + '">' + escapeHtml(st.text) + '</span>' +
+        '<span style="font-size:0.74rem;color:var(--white)">📞 ' + escapeHtml(r.callback ? formatPhone(r.callback) : "—") + '</span>' +
+        (r.by ? '<span style="font-size:0.72rem;color:var(--gray)">sent by ' + escapeHtml(r.by) + '</span>' : '') +
+        '<span style="margin-left:auto;font-size:0.72rem;color:var(--gray)">' + escapeHtml(when) + '</span>' +
+      '</div>' +
+      (last ? '<div style="font-size:0.7rem;color:var(--gray);margin-top:3px">last heard from ' + lrAgo(new Date(last).toISOString()) + '</div>' : '') +
+      fix +
+    '</div>';
+  }
+  el.innerHTML =
+    (open.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin:4px 0 8px">Open</div>' + open.map(row).join("") : '<div style="color:var(--gray);font-size:0.82rem;padding:6px 0 10px">No open requests right now.</div>') +
+    (ended.length ? '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin:14px 0 8px">Ended</div>' + ended.map(row).join("") : '');
+}
+window.lrStart = lrStart; window.lrStop = lrStop;
 function loadVehicleStatusPanel() {
   var el = document.getElementById("veh-status-list");
   if (!el) return;
@@ -13071,7 +13172,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.85";
+var DESKTOP_VERSION = "9.86";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
