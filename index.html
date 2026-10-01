@@ -1311,7 +1311,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.91</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.92</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7327,6 +7327,7 @@ function lrRenderDetail(quiet) {
   if (!r) { el.innerHTML = '<div style="border:1px dashed var(--card-border);border-radius:10px;padding:22px;text-align:center;color:var(--gray);font-size:0.84rem">Pick a request on the map or in the list to see its path and text the caller.</div>'; return; }
   // keep whatever the admin is typing when the panel refreshes
   var box = document.getElementById("lr-reply"), draft = box ? box.value : "", hadFocus = box && document.activeElement === box;
+  var fsms = document.getElementById("lr-force-sms"), forceWas = !!(fsms && fsms.checked);
   var st = lrState(r), good = LR_FIXES.filter(function(f) { return (f.accuracy || 9999) <= 150; }), dist = 0;
   for (var k = 1; k < good.length; k++) dist += lrMetres(good[k - 1], good[k]);
   var acc = r.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
@@ -7334,6 +7335,7 @@ function lrRenderDetail(quiet) {
     var out = m.dir === "out";
     return '<div class="lr-bubble ' + (out ? 'lr-out' : 'lr-in') + '">' + escapeHtml(m.body || "") + '</div>' +
       '<div class="lr-meta" style="align-self:' + (out ? 'flex-end' : 'flex-start') + '">' + (out ? escapeHtml(m.by || "Admin") + ' · ' : 'Caller · ') + lrTime(m.at) +
+      (out ? (m.delivered === 'page' ? ' · 📱 on their screen' : ' · ✉️ texted') : (m.via === 'page' ? ' · from their screen' : ' · by text')) +
       (m.testMode ? ' · <span style="color:#ffc84a">TEST — sent to your phone</span>' : '') +
       (out && m.ok === false ? ' · <span style="color:#ff9090">not delivered</span>' : '') + '</div>';
   }).join("") : '<div style="color:var(--gray);font-size:0.8rem;text-align:center;padding:16px 6px">No texts yet. Anything you send goes to ' + escapeHtml(r.callback ? formatPhone(r.callback) : "the caller") + ', and their replies show up here.</div>';
@@ -7353,14 +7355,16 @@ function lrRenderDetail(quiet) {
         (r.at ? ' · <span style="color:var(--gray)">latest ' + lrAgo(r.at) + '</span>' : '') + '</div>' : '') +
       '<div style="font-size:0.74rem;color:var(--gray);margin-top:6px">🧭 Path: ' + (LR_FIXES.length ? LR_FIXES.length + ' position' + (LR_FIXES.length === 1 ? '' : 's') + (good.length > 1 ? ' · moved about ' + (dist < 1000 ? Math.round(dist) + ' m' : (dist / 1000).toFixed(1) + ' km') : '') : 'none recorded yet') + '</div>' +
       '<div style="border-top:1px solid var(--card-border);margin:12px 0 10px"></div>' +
-      '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Text the caller</div>' +
+      '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Message the caller</div>' +
       '<div id="lr-thread" style="display:flex;flex-direction:column;max-height:300px;overflow-y:auto;padding-right:4px">' + thread + '</div>' +
       '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">' +
         '<textarea id="lr-reply" rows="2" placeholder="Type a message… (Enter to send, Shift-Enter for a new line)" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();lrSendText();}" style="flex:1;resize:vertical;min-height:42px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;padding:9px 11px;color:var(--white);font-size:0.84rem;font-family:inherit"></textarea>' +
         '<button class="submit-btn" id="lr-send-btn" style="width:auto;padding:10px 18px" onclick="lrSendText()">Send</button>' +
       '</div>' +
-      '<div style="font-size:0.66rem;color:var(--gray);margin-top:5px">Sent from MC Hatzolah. Starts with "MC Hatzolah:" so the caller knows who it is.</div>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--gray);margin-top:6px;cursor:pointer"><input type="checkbox" id="lr-force-sms"> Also send as a text message</label>' +
+      '<div style="font-size:0.66rem;color:var(--gray);margin-top:4px;line-height:1.5">If the caller has the location page open, your message appears on their screen and they can answer there. Otherwise it\'s texted to them, and they can reply by text.' + (r.seenAt && lrIsOpen(r) && ['opened','sharing'].indexOf(r.status) !== -1 && Date.now() - new Date(r.seenAt).getTime() < 45000 ? ' <b style="color:#7dedb5">Their page is open now.</b>' : '') + '</div>' +
     '</div>';
+  var nf = document.getElementById("lr-force-sms"); if (nf) nf.checked = forceWas;
   var nb = document.getElementById("lr-reply"); if (nb) { nb.value = draft; if (hadFocus) { nb.focus({ preventScroll: true }); nb.selectionStart = nb.selectionEnd = nb.value.length; } }
   var th = document.getElementById("lr-thread"); if (th) th.scrollTop = th.scrollHeight;
 }
@@ -7370,7 +7374,8 @@ function lrSendText() {
   if (!body || !LR_SEL) return;
   if (body.length > 600) { showToast("Keep it under 600 characters", true); return; }
   if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
-  hzRelay("locReqText", { token: LR_SEL, body: body }).then(function() {
+  var force = document.getElementById("lr-force-sms");
+  hzRelay("locReqText", { token: LR_SEL, body: body, sms: !!(force && force.checked) }).then(function() {
     var b2 = document.getElementById("lr-reply"); if (b2) b2.value = "";
   }).catch(function(e) {
     showToast("⚠ Text not sent: " + ((e && e.message) || e), true);
@@ -13505,7 +13510,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.91";
+var DESKTOP_VERSION = "9.92";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
