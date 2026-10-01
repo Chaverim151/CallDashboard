@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.05"; window.M_BUILD = BUILD;
+  var BUILD = "3.07"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4771,6 +4771,9 @@ function mNcBindDraft() {
 // with an accuracy in metres, which is shown here — a 15m fix is an address, a 500m fix is a
 // neighbourhood, and the dispatcher needs to know which they have before dispatching on it.
 var mLocReqToken = null, mLocReqUnsub = null, mLocLastAt = null, mLocLastData = null;
+// Every location link sent from this new-call form (a resend makes a new one). Saved on the call as
+// locationRequests so the Call Log can show the conversation with the caller.
+var mLocReqTokensAll = [];
 // The caller's page streams while their tab is open, so show how fresh the last fix is — a position
 // from four minutes ago may be nowhere near where they are now.
 setInterval(function() {
@@ -4820,6 +4823,7 @@ function mRequestCallerLocation(force) {
   }
   mLocReqCallback = cb;
   var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  mLocReqTokensAll.push(token);
   var expires = new Date(Date.now() + 30 * 60000).toISOString();
   db.collection("locationRequests").doc(token).set({ createdAt: new Date().toISOString(), expiresAt: expires, by: mCurrentUserUnit || "", callback: cb })
     .then(function() {
@@ -4960,6 +4964,7 @@ function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
   mLocSetBtn(false);
+  mLocReqTokensAll = [];
   mLocReqCallback = ""; mLocCoordsOnly = false; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
@@ -5356,6 +5361,7 @@ function mPostNewCallNow() {
     callNotes: [],
     testMode: MSysTestingMode ? true : false,
     testModeUnit: MSysTestingMode ? (mCurrentUserUnit||"") : "",
+    locationRequests: mLocReqTokensAll.slice(),
     createdAt: now.toISOString(),
     createdBy: ((mCurrentUserUnit||"") + " " + (mCurrentUserDisplayName||"")).trim(),
     updatedAt: now.toISOString()
@@ -5387,6 +5393,7 @@ function mOpenDispatchCall(callId) {
   }, function(e) { mToast("Call listener error: " + e.message, true); });
 }
 function mCloseDispatchDetail() {
+  mDdLocStop();
   if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
   mDispSelectedCallId = null;
   var _mm = document.getElementById("m-dd-menu"); if (_mm) _mm.style.display = "none";
@@ -5443,6 +5450,142 @@ function mEditCallTime(key, label) {
   db.collection("activeCalls").doc(mDispSelectedCallId).update(update)
     .then(function(){ mToast(v ? "🕒 " + label + " set to " + v : label + " time cleared"); })
     .catch(function(e){ mToast("Error: " + e.message, true); });
+}
+// ── CALLER LOCATION ON A POSTED CALL ─────────────────────────────────────────────────────────────
+// The location link stays live after the call is posted. The call view shows where the caller's phone
+// is now, how far that is from the call's pin, and lets the dispatcher move the pin there and text the
+// assigned units the new location with Google Maps and Waze links. Nothing moves on its own.
+var mDdLocUnsub = null, mDdLocToken = null, mDdLocData = null, mDdLocCall = null;
+function mDdLocStop() {
+  if (mDdLocUnsub) { mDdLocUnsub(); mDdLocUnsub = null; }
+  mDdLocToken = null; mDdLocData = null; mDdLocCall = null;
+}
+function mDdLocSync(call) {
+  mDdLocCall = call;
+  var toks = (call.locationRequests || []).filter(Boolean);
+  var tok = toks.length ? toks[toks.length - 1] : null;      // the newest link is the one that matters
+  if (tok !== mDdLocToken) {
+    if (mDdLocUnsub) { mDdLocUnsub(); mDdLocUnsub = null; }
+    mDdLocToken = tok; mDdLocData = null;
+    if (tok) mDdLocUnsub = db.collection("locationRequests").doc(tok).onSnapshot(function(s) {
+      if (mDdLocToken !== tok) return;
+      mDdLocData = s.exists ? s.data() : {};
+      mDdLocRender();
+    }, function() { mDdLocData = {}; mDdLocRender(); });
+  }
+  mDdLocRender();
+}
+setInterval(function() { if (mDdLocToken && document.getElementById("m-dd-callerloc")) mDdLocRender(); }, 15000);
+function mDdAgo(iso) {
+  if (!iso) return "";
+  var s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  return s < 60 ? s + "s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : Math.round(s / 3600) + " h ago";
+}
+function mDdDist(m) { return m < 1000 ? Math.round(m) + " m" : (m / 1000).toFixed(1) + " km"; }
+function mDdUnits(call) {
+  var units = [];
+  (call.crews || []).forEach(function(cr) { Object.keys(cr || {}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__" && units.indexOf(cr[k]) === -1) units.push(cr[k]); }); });
+  return units;
+}
+function mDdLocRender() {
+  var el = document.getElementById("m-dd-callerloc"); if (!el) return;
+  var call = mDdLocCall;
+  if (!call || call.status === "complete") { el.innerHTML = ""; return; }
+  var btnStyle = function(primary) {
+    return primary
+      ? 'width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;cursor:pointer;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.82rem;background:linear-gradient(135deg,#c9a84c,#e8960a);color:#0a1628'
+      : 'margin-top:8px;padding:7px 12px;border-radius:7px;cursor:pointer;font-size:0.72rem;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);color:var(--gray)';
+  };
+  var wrap = function(inner) {
+    return '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:6px">📍 Caller Location</div>' + inner + '</div>';
+  };
+  if (!mDdLocToken) {
+    if (!call.callbackNumber) { el.innerHTML = ""; return; }
+    el.innerHTML = wrap('<div style="font-size:0.78rem;color:var(--gray)">No location link has been sent for this call.</div>' +
+      '<button type="button" onclick="mDdSendLocLink()" style="' + btnStyle(false) + '">📍 Send the caller a location link</button>');
+    return;
+  }
+  var d = mDdLocData;
+  if (!d) { el.innerHTML = wrap('<div style="font-size:0.78rem;color:var(--gray)">Loading…</div>'); return; }
+  var seenAgo = d.seenAt ? Date.now() - new Date(d.seenAt).getTime() : null;
+  var live = seenAgo !== null && seenAgo < 90000 && d.status !== "closed";
+  var expired = d.expiresAt && new Date(d.expiresAt).getTime() < Date.now() && !live;
+  var dev = /iPhone|iPad/i.test(d.device || "") ? "iPhone" : /Android/i.test(d.device || "") ? "Android" : "phone";
+  var status = d.lat
+    ? (live ? (d.status === "background" ? "🌙 Page in the background — updates may pause" : "📡 Sharing live from their " + dev) : "⏸ Stopped updating " + mDdAgo(d.seenAt || d.at))
+    : d.status === "closed" ? "✖ Caller closed the page without sharing"
+    : d.status ? "👀 Caller opened the link — hasn't tapped Allow yet"
+    : expired ? "⌛ Link expired — never opened" : "📤 Link sent — not opened yet";
+  var html = '<div style="font-size:0.78rem;color:' + (d.lat && live ? '#7dedb5' : '#ffc84a') + '">' + status + '</div>';
+  if (d.lat && d.lng) {
+    var acc = d.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
+    html += '<div style="font-size:0.8rem;color:#c9d4e6;margin-top:6px;line-height:1.5">' +
+      '<b style="color:' + ac + '">' + mEscHtml(d.accuracyLabel || "") + ', within ' + acc + ' m</b> · updated ' + mDdAgo(d.at) +
+      (d.approxAddress ? '<br>📮 ' + mEscHtml(d.approxAddress) : '') +
+      '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a></div>';
+    var moved = (call.lat && call.lng) ? mMetresBetween(call.lat, call.lng, d.lat, d.lng) : null;
+    var threshold = Math.max(30, acc * 0.5);
+    var far = moved === null || moved >= threshold;
+    html += '<div style="font-size:0.78rem;margin-top:6px;color:' + (far ? '#ffc84a' : 'var(--gray)') + '">' +
+      (moved === null ? 'The call has no pin yet.' : far ? '⚠ About ' + mDdDist(moved) + ' from the call\'s pin.' : '✓ Same place as the call\'s pin.') + '</div>';
+    if (acc > 150) html += '<div style="font-size:0.74rem;color:#ff9090;margin-top:4px">Too rough to send crews on alone — confirm with the caller.</div>';
+    html += '<button type="button" onclick="mDdPushLocation()" style="' + btnStyle(far) + (far ? '' : ';width:100%') + '">📍 Update call location &amp; text crew</button>';
+  }
+  if (call.locUpdate && call.locUpdate.at) html += '<div style="font-size:0.7rem;color:var(--gray);margin-top:6px">Last sent to crew ' + mDdAgo(call.locUpdate.at) + (call.locUpdate.by ? ' by ' + mEscHtml(call.locUpdate.by) : '') + '</div>';
+  if (call.callbackNumber) html += '<button type="button" onclick="mDdSendLocLink()" style="' + btnStyle(false) + '">↻ Send a new link</button>';
+  el.innerHTML = wrap(html);
+}
+function mDdSendLocLink() {
+  var call = mDdLocCall; if (!call) return;
+  var to = mE164(call.callbackNumber);
+  if (!to) { mToast("This call's callback number isn't a valid phone number", true); return; }
+  var d = mDdLocData;
+  if (d && d.seenAt && Date.now() - new Date(d.seenAt).getTime() < 90000 && d.status !== "closed" &&
+      !confirm("The caller's page is still sending updates. Send a new link anyway?")) return;
+  var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  var link = "https://chaverim151.github.io/CallDashboard/loc.html?t=" + token;
+  db.collection("locationRequests").doc(token).set({
+    createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
+    by: mCurrentUserUnit || "", callback: call.callbackNumber, callId: call.id
+  }).then(function() {
+    return mSendClickSendSMS([to], "MC Hatzolah — tap to send us your location so the ambulance can find you:\n" + link);
+  }).then(function() {
+    return db.collection("activeCalls").doc(call.id).update({ locationRequests: firebase.firestore.FieldValue.arrayUnion(token), updatedAt: new Date().toISOString() });
+  }).then(function() {
+    mToast("📍 Location link sent to " + call.callbackNumber);
+  }).catch(function(e) { mToast("Couldn't send the link: " + e.message, true); });
+}
+function mDdPushLocation() {
+  var call = mDdLocCall, d = mDdLocData; if (!call || !d || !d.lat) return;
+  var lat = Number(d.lat), lng = Number(d.lng), acc = d.accuracy || 0;
+  var moved = (call.lat && call.lng) ? mMetresBetween(call.lat, call.lng, lat, lng) : null;
+  var units = mDdUnits(call);
+  if (!confirm("Move this call's pin to the caller's latest position (within " + acc + " m)" +
+      (units.length ? " and text " + units.join(", ") + " the new location?" : "?\n\nNo units are assigned yet, so nobody will be texted."))) return;
+  var maps = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
+  var waze = "https://waze.com/ul?ll=" + lat + "," + lng + "&navigate=yes";
+  var now = new Date().toISOString();
+  var noteText = "📍 Caller location updated" + (moved !== null ? " — moved about " + mDdDist(moved) : "") + " (within " + acc + " m)" +
+    (d.approxAddress ? ", near " + d.approxAddress : "") + ". Navigation now goes to the new position.";
+  db.collection("activeCalls").doc(call.id).get().then(function(snap) {
+    if (!snap.exists) throw new Error("Call not found");
+    var notes = (snap.data().callNotes || []).slice();
+    notes.push({ text: noteText, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch", byUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: now });
+    return db.collection("activeCalls").doc(call.id).update({
+      lat: lat, lng: lng, mapsLink: maps, callNotes: notes, updatedAt: now,
+      locUpdate: { at: now, by: mCurrentUserUnit || "", accuracy: acc, token: mDdLocToken, from: (call.lat && call.lng) ? { lat: call.lat, lng: call.lng } : null }
+    });
+  }).then(function() {
+    if (!units.length) { mToast("📍 Call location updated"); return; }
+    var body = "📍 UPDATED LOCATION\n" + mSmsAddress(call) + "\nCaller is now " +
+      (d.approxAddress ? "near " + d.approxAddress : lat.toFixed(6) + ", " + lng.toFixed(6)) + " (within " + acc + " m)" +
+      (moved !== null ? " — moved about " + mDdDist(moved) : "") +
+      "\nGoogle Maps: " + maps + "\n\nWaze: " + waze;
+    mSmsEnqueue(function() { return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
+    mAdminCopy(call, "📍 LOCATION UPDATE", noteText);
+    mToast("📍 New location sent to " + units.join(", "));
+  }).catch(function(e) { mToast("Couldn't update the location: " + e.message, true); });
 }
 function mRenderDispatchDetail(call) {
   call = mSanitizeCall(call);
@@ -5502,6 +5645,8 @@ function mRenderDispatchDetail(call) {
     (call.accessCode ? '<div style="margin-top:4px;font-size:0.78rem;color:var(--gray)">🔑 ' + mEscHtml(call.accessCode) + '</div>' : '') +
     (call.callbackNumber ? '<div style="margin-top:8px;display:flex;gap:8px"><a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="flex:1;text-align:center;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.35);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;padding:6px;text-decoration:none">📞 ' + call.callbackNumber + '</a><button onclick="mPushCallbackSMS()" style="flex:1;background:rgba(122,184,245,0.12);border:1px solid rgba(122,184,245,0.35);border-radius:6px;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;padding:6px;cursor:pointer">📱 Push to Units</button></div>' : '') +
   '</div>';
+
+  content += '<div id="m-dd-callerloc"></div>';
 
   // ALS / BLS / PD banners
   // (ALS / BLS / PD banners are rendered lower, just above Call Disposition — see below)
@@ -5564,6 +5709,7 @@ function mRenderDispatchDetail(call) {
   '</div>';
 
   document.getElementById("m-dd-content").innerHTML = content;
+  mDdLocSync(mDispCallCache[call.id] || call);   // the raw call: `call` here has been HTML-escaped for display
   mAutoScrollToNextStep();
 }
 

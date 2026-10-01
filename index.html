@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.05');
+  window.location.replace('/CallDashboard/mobile.html?v=3.07');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1311,7 +1311,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.92</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.94</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7130,44 +7130,35 @@ function renderNotificationLog() {
     '</div>';
   }).join("");
 }
-// ── LOCATION REQUESTS OVERSIGHT (Admin ▸ Activity ▸ Location Requests) ──
+// ── LOCATION REQUESTS OVERSIGHT (Admin ▸ Location Requests) ──
 // Live map of every caller-location link from the last 24 hours. Picking a request shows the path
-// the caller's phone reported (locationRequests/{token}/fixes, written by loc.html) and a text thread
-// with the caller (…/messages, written only by the locReqText and smsInbound Cloud Functions).
-// Listing requests, fixes and messages is admin-only in the Firestore rules.
+// the caller's phone reported (locationRequests/{token}/fixes, written by loc.html). Listing requests
+// and reading paths is admin-only in the Firestore rules.
 var LR_ROWS = [], lrUnsub = null, lrTimer = null;
-var LR_SEL = null, LR_FIXES = [], LR_MSGS = [], lrFixUnsub = null, lrMsgUnsub = null;
+var LR_SEL = null, LR_FIXES = [], lrFixUnsub = null;
 var lrMap = null, lrPins = {}, lrPath = null, lrAccCircle = null, lrRoughDots = [], lrFittedOnce = false;
-var LR_LAST_IN = {};                     // id → lastInAt already seen this session, to announce new replies once
 function lrStart() {
   lrStop();
   var el = document.getElementById("lr-list"); if (!el) return;
   el.innerHTML = '<div style="color:var(--gray);font-size:0.84rem;padding:10px">Loading…</div>';
   lrInitMap();
-  var since = new Date(Date.now() - 24 * 3600 * 1000).toISOString(), first = true;
+  var since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   lrUnsub = db.collection("locationRequests").where("createdAt", ">=", since).orderBy("createdAt", "desc").limit(100)
     .onSnapshot(function(snap) {
       LR_ROWS = [];
       snap.forEach(function(doc) { LR_ROWS.push(Object.assign({ id: doc.id }, doc.data())); });
-      LR_ROWS.forEach(function(r) {
-        // announce a reply that arrives while the screen is open — not ones already there on load
-        if (r.lastInAt && LR_LAST_IN[r.id] !== r.lastInAt && !first) showToast("💬 Reply from " + (r.callback ? formatPhone(r.callback) : "a caller"));
-        LR_LAST_IN[r.id] = r.lastInAt || "";
-      });
-      first = false;
       lrRender(); lrDrawPins(); lrRenderDetail();
     }, function(e) {
       el.innerHTML = '<div style="color:#ff9090;font-size:0.84rem;padding:10px">Couldn\'t load location requests: ' + escapeHtml(e.message) +
         '<br><span style="color:var(--gray)">If this mentions permissions, the updated Firestore rules haven\'t been published yet.</span></div>';
     });
-  lrTimer = setInterval(function() { lrRender(); lrRenderDetail(true); }, 15000);
+  lrTimer = setInterval(function() { lrRender(); lrRenderDetail(); }, 15000);
   if (LR_SEL) lrWatchSelected();
 }
 function lrStop() {
   if (lrUnsub) { lrUnsub(); lrUnsub = null; }
   if (lrTimer) { clearInterval(lrTimer); lrTimer = null; }
   if (lrFixUnsub) { lrFixUnsub(); lrFixUnsub = null; }
-  if (lrMsgUnsub) { lrMsgUnsub(); lrMsgUnsub = null; }
 }
 function lrAgo(iso) {
   if (!iso) return "";
@@ -7195,11 +7186,6 @@ function lrState(r) {
   if (r.status) return { text: "Opened on their " + dev + " — hasn't tapped Allow", color: "#ffc84a", pin: "#f0a500" };
   return { text: "Link sent — not opened yet", color: "#ffc84a", pin: "#f0a500" };
 }
-function lrUnread(r) {
-  if (!r.lastInAt) return false;
-  var seen = ""; try { seen = localStorage.getItem("lrSeen_" + r.id) || ""; } catch (e) {}
-  return r.lastInAt > seen;
-}
 function lrMetres(a, b) {
   var R = 6371000, toRad = function(x) { return x * Math.PI / 180; };
   var dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
@@ -7221,7 +7207,6 @@ function lrRender() {
     return '<div class="lr-row' + (r.id === LR_SEL ? ' sel' : '') + '" onclick="lrSelect(\'' + r.id + '\')" style="border:1px solid var(--card-border);border-left:3px solid ' + (isOpen ? st.color : "rgba(255,255,255,0.15)") + ';border-radius:8px;padding:9px 11px;margin-bottom:7px;' + (isOpen ? '' : 'opacity:0.72') + '">' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
         '<span style="font-family:\'Oswald\',sans-serif;font-size:0.78rem;font-weight:700;letter-spacing:0.04em;color:' + st.color + '">' + escapeHtml(st.text) + '</span>' +
-        (lrUnread(r) ? '<span style="font-size:0.62rem;background:rgba(122,184,245,0.2);border:1px solid rgba(122,184,245,0.6);color:#bfe0ff;border-radius:4px;padding:1px 6px">💬 new reply</span>' : '') +
         '<span style="margin-left:auto;font-size:0.7rem;color:var(--gray)">' + escapeHtml(when) + '</span>' +
       '</div>' +
       '<div style="font-size:0.76rem;color:var(--white);margin-top:3px">📞 ' + escapeHtml(r.callback ? formatPhone(r.callback) : "—") +
@@ -7294,10 +7279,10 @@ function lrDrawSelected() {
     lrAccCircle = new google.maps.Circle({ map: lrMap, center: { lat: Number(r.lat), lng: Number(r.lng) }, radius: r.accuracy, strokeColor: "#4caf80", strokeOpacity: 0.6, strokeWeight: 1, fillColor: "#4caf80", fillOpacity: 0.12, clickable: false });
   }
 }
-// ── selection, path and conversation ──
+// ── selection and path ──
 function lrSelect(id) {
   if (LR_SEL === id) return;
-  LR_SEL = id; LR_FIXES = []; LR_MSGS = [];
+  LR_SEL = id; LR_FIXES = [];
   lrWatchSelected();
   lrRender(); lrDrawPins(); lrRenderDetail();
   var r = LR_ROWS.filter(function(x) { return x.id === id; })[0];
@@ -7305,40 +7290,21 @@ function lrSelect(id) {
 }
 function lrWatchSelected() {
   if (lrFixUnsub) { lrFixUnsub(); lrFixUnsub = null; }
-  if (lrMsgUnsub) { lrMsgUnsub(); lrMsgUnsub = null; }
   if (!LR_SEL) return;
-  var ref = db.collection("locationRequests").doc(LR_SEL), id = LR_SEL;
-  lrFixUnsub = ref.collection("fixes").orderBy("at").limit(1000).onSnapshot(function(snap) {
+  var id = LR_SEL;
+  lrFixUnsub = db.collection("locationRequests").doc(id).collection("fixes").orderBy("at").limit(1000).onSnapshot(function(snap) {
     if (id !== LR_SEL) return;
     LR_FIXES = []; snap.forEach(function(d) { var f = d.data(); if (typeof f.lat === "number" && typeof f.lng === "number") LR_FIXES.push(f); });
-    lrDrawSelected(); lrRenderDetail(true);
+    lrDrawSelected(); lrRenderDetail();
   }, function(e) { console.warn("Path unavailable:", e.message); });
-  lrMsgUnsub = ref.collection("messages").orderBy("at").limit(500).onSnapshot(function(snap) {
-    if (id !== LR_SEL) return;
-    LR_MSGS = []; snap.forEach(function(d) { LR_MSGS.push(d.data()); });
-    var lastIn = LR_MSGS.filter(function(m) { return m.dir === "in"; }).map(function(m) { return m.at; }).sort().pop();
-    if (lastIn) { try { localStorage.setItem("lrSeen_" + id, lastIn); } catch (e) {} lrRender(); }
-    lrRenderDetail();
-  }, function(e) { console.warn("Messages unavailable:", e.message); });
 }
-function lrRenderDetail(quiet) {
+function lrRenderDetail() {
   var el = document.getElementById("lr-detail"); if (!el) return;
   var r = LR_ROWS.filter(function(x) { return x.id === LR_SEL; })[0];
-  if (!r) { el.innerHTML = '<div style="border:1px dashed var(--card-border);border-radius:10px;padding:22px;text-align:center;color:var(--gray);font-size:0.84rem">Pick a request on the map or in the list to see its path and text the caller.</div>'; return; }
-  // keep whatever the admin is typing when the panel refreshes
-  var box = document.getElementById("lr-reply"), draft = box ? box.value : "", hadFocus = box && document.activeElement === box;
-  var fsms = document.getElementById("lr-force-sms"), forceWas = !!(fsms && fsms.checked);
+  if (!r) { el.innerHTML = '<div style="border:1px dashed var(--card-border);border-radius:10px;padding:22px;text-align:center;color:var(--gray);font-size:0.84rem">Pick a request on the map or in the list to see its path.</div>'; return; }
   var st = lrState(r), good = LR_FIXES.filter(function(f) { return (f.accuracy || 9999) <= 150; }), dist = 0;
   for (var k = 1; k < good.length; k++) dist += lrMetres(good[k - 1], good[k]);
   var acc = r.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
-  var thread = LR_MSGS.length ? LR_MSGS.map(function(m) {
-    var out = m.dir === "out";
-    return '<div class="lr-bubble ' + (out ? 'lr-out' : 'lr-in') + '">' + escapeHtml(m.body || "") + '</div>' +
-      '<div class="lr-meta" style="align-self:' + (out ? 'flex-end' : 'flex-start') + '">' + (out ? escapeHtml(m.by || "Admin") + ' · ' : 'Caller · ') + lrTime(m.at) +
-      (out ? (m.delivered === 'page' ? ' · 📱 on their screen' : ' · ✉️ texted') : (m.via === 'page' ? ' · from their screen' : ' · by text')) +
-      (m.testMode ? ' · <span style="color:#ffc84a">TEST — sent to your phone</span>' : '') +
-      (out && m.ok === false ? ' · <span style="color:#ff9090">not delivered</span>' : '') + '</div>';
-  }).join("") : '<div style="color:var(--gray);font-size:0.8rem;text-align:center;padding:16px 6px">No texts yet. Anything you send goes to ' + escapeHtml(r.callback ? formatPhone(r.callback) : "the caller") + ', and their replies show up here.</div>';
   el.innerHTML =
     '<div style="border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;background:rgba(255,255,255,0.02)">' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
@@ -7354,36 +7320,9 @@ function lrRenderDetail(quiet) {
         ' · <a href="https://www.google.com/maps/search/?api=1&query=' + r.lat + ',' + r.lng + '" target="_blank" style="color:#bfe0ff">Google Maps</a>' +
         (r.at ? ' · <span style="color:var(--gray)">latest ' + lrAgo(r.at) + '</span>' : '') + '</div>' : '') +
       '<div style="font-size:0.74rem;color:var(--gray);margin-top:6px">🧭 Path: ' + (LR_FIXES.length ? LR_FIXES.length + ' position' + (LR_FIXES.length === 1 ? '' : 's') + (good.length > 1 ? ' · moved about ' + (dist < 1000 ? Math.round(dist) + ' m' : (dist / 1000).toFixed(1) + ' km') : '') : 'none recorded yet') + '</div>' +
-      '<div style="border-top:1px solid var(--card-border);margin:12px 0 10px"></div>' +
-      '<div style="font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);margin-bottom:8px">Message the caller</div>' +
-      '<div id="lr-thread" style="display:flex;flex-direction:column;max-height:300px;overflow-y:auto;padding-right:4px">' + thread + '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">' +
-        '<textarea id="lr-reply" rows="2" placeholder="Type a message… (Enter to send, Shift-Enter for a new line)" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();lrSendText();}" style="flex:1;resize:vertical;min-height:42px;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;padding:9px 11px;color:var(--white);font-size:0.84rem;font-family:inherit"></textarea>' +
-        '<button class="submit-btn" id="lr-send-btn" style="width:auto;padding:10px 18px" onclick="lrSendText()">Send</button>' +
-      '</div>' +
-      '<label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--gray);margin-top:6px;cursor:pointer"><input type="checkbox" id="lr-force-sms"> Also send as a text message</label>' +
-      '<div style="font-size:0.66rem;color:var(--gray);margin-top:4px;line-height:1.5">If the caller has the location page open, your message appears on their screen and they can answer there. Otherwise it\'s texted to them, and they can reply by text.' + (r.seenAt && lrIsOpen(r) && ['opened','sharing'].indexOf(r.status) !== -1 && Date.now() - new Date(r.seenAt).getTime() < 45000 ? ' <b style="color:#7dedb5">Their page is open now.</b>' : '') + '</div>' +
     '</div>';
-  var nf = document.getElementById("lr-force-sms"); if (nf) nf.checked = forceWas;
-  var nb = document.getElementById("lr-reply"); if (nb) { nb.value = draft; if (hadFocus) { nb.focus({ preventScroll: true }); nb.selectionStart = nb.selectionEnd = nb.value.length; } }
-  var th = document.getElementById("lr-thread"); if (th) th.scrollTop = th.scrollHeight;
 }
-function lrSendText() {
-  var box = document.getElementById("lr-reply"), btn = document.getElementById("lr-send-btn");
-  var body = box ? box.value.trim() : "";
-  if (!body || !LR_SEL) return;
-  if (body.length > 600) { showToast("Keep it under 600 characters", true); return; }
-  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
-  var force = document.getElementById("lr-force-sms");
-  hzRelay("locReqText", { token: LR_SEL, body: body, sms: !!(force && force.checked) }).then(function() {
-    var b2 = document.getElementById("lr-reply"); if (b2) b2.value = "";
-  }).catch(function(e) {
-    showToast("⚠ Text not sent: " + ((e && e.message) || e), true);
-  }).then(function() {
-    var b3 = document.getElementById("lr-send-btn"); if (b3) { b3.disabled = false; b3.textContent = "Send"; }
-  });
-}
-window.lrStart = lrStart; window.lrStop = lrStop; window.lrSelect = lrSelect; window.lrSendText = lrSendText; window.lrFitAll = lrFitAll;
+window.lrStart = lrStart; window.lrStop = lrStop; window.lrSelect = lrSelect; window.lrFitAll = lrFitAll;
 function loadVehicleStatusPanel() {
   var el = document.getElementById("veh-status-list");
   if (!el) return;
@@ -7808,6 +7747,7 @@ function openCLDetail(callId) {
     if (!snap.exists) { body.innerHTML = '<div style="color:#ff9090">Record not found.</div>'; return; }
     var log = Object.assign({ id: snap.id }, snap.data());
     renderCLDetail(log, body);
+    clLoadConversation(log);
   }).catch(function(e) {
     body.innerHTML = '<div style="color:#ff9090">Error: ' + e.message + '</div>';
   });
@@ -7842,6 +7782,29 @@ function openEPCR() {
 }
 window.openEPCR = openEPCR;
 
+// The caller's shared location for a call: each location link sent from the new-call form or the
+// call view, and what the caller's phone reported. Read live.
+function clLoadConversation(log) {
+  var host = document.getElementById("cl-convo-body"); if (!host) return;
+  var tokens = (log.locationRequests || []).filter(Boolean);
+  Promise.all(tokens.map(function(t) {
+    return db.collection("locationRequests").doc(t).get().then(function(d) { return { req: d.exists ? d.data() : null }; })
+      .catch(function(e) { return { error: e.message }; });
+  })).then(function(parts) {
+    if (document.getElementById("cl-convo-body") !== host) return;   // another call was opened meanwhile
+    var tm = function(iso) { return iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : ""; };
+    host.innerHTML = parts.map(function(p, i) {
+      if (p.error) return '<div style="color:#ff9090">Couldn\'t load link ' + (i + 1) + ': ' + escapeHtml(p.error) + '</div>';
+      var r = p.req || {};
+      return '<div style="font-size:0.8rem;color:#c9d4e6;line-height:1.55;' + (i ? 'border-top:1px solid var(--card-border);padding-top:8px;margin-top:8px' : '') + '">' +
+        (parts.length > 1 ? 'Link ' + (i + 1) + ' · ' : '') + 'sent ' + tm(r.createdAt) + (r.by ? ' by ' + escapeHtml(r.by) : '') + (r.callback ? ' to ' + escapeHtml(formatPhone(r.callback)) : '') +
+        (r.lat ? '<br>Shared: <b>' + escapeHtml(r.accuracyLabel || "") + ', within ' + (r.accuracy || 0) + ' m</b>' + (r.approxAddress ? ' near ' + escapeHtml(r.approxAddress) : '') +
+          ' · last position ' + tm(r.at) + ' · <a href="https://www.google.com/maps/search/?api=1&query=' + r.lat + ',' + r.lng + '" target="_blank" style="color:#bfe0ff">map</a>'
+          : '<br>' + (r.status ? 'Caller opened the link but didn\'t share a location.' : 'The link was never opened.')) +
+      '</div>';
+    }).join("");
+  });
+}
 function renderCLDetail(log, body) {
   var dt = log.createdAt ? new Date(log.createdAt) : null;
   var dateStr = dt ? dt.toLocaleDateString("en-US", {weekday:"long", month:"long", day:"numeric", year:"numeric"}) : "—";
@@ -7934,6 +7897,12 @@ function renderCLDetail(log, body) {
       '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Call Notes</div>' +
       notesHtml +
     '</div>' +
+
+    // Conversation with the caller through the location link, if one was sent from this call
+    ((log.locationRequests || []).length ? '<div id="cl-convo" style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Caller Location</div>' +
+      '<div id="cl-convo-body" style="color:var(--gray);font-size:0.78rem">Loading…</div>' +
+    '</div>' : '') +
 
     // Metadata
     '<div style="font-size:0.65rem;color:var(--gray);border-top:1px solid var(--card-border);padding-top:10px;display:flex;gap:16px;flex-wrap:wrap">' +
@@ -13510,7 +13479,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.92";
+var DESKTOP_VERSION = "9.94";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -16007,6 +15976,9 @@ function mNcBindDraft() {
 // with an accuracy in metres, which is shown here — a 15m fix is an address, a 500m fix is a
 // neighbourhood, and the dispatcher needs to know which they have before dispatching on it.
 var mLocReqToken = null, mLocReqUnsub = null, mLocLastAt = null, mLocLastData = null;
+// Every location link sent from this new-call form (a resend makes a new one). Saved on the call as
+// locationRequests so the Call Log can show the conversation with the caller.
+var mLocReqTokensAll = [];
 // The caller's page streams while their tab is open, so show how fresh the last fix is — a position
 // from four minutes ago may be nowhere near where they are now.
 setInterval(function() {
@@ -16056,6 +16028,7 @@ function mRequestCallerLocation(force) {
   }
   mLocReqCallback = cb;
   var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  mLocReqTokensAll.push(token);
   var expires = new Date(Date.now() + 30 * 60000).toISOString();
   db.collection("locationRequests").doc(token).set({ createdAt: new Date().toISOString(), expiresAt: expires, by: mCurrentUserUnit || "", callback: cb })
     .then(function() {
@@ -16196,6 +16169,7 @@ function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
   mLocSetBtn(false);
+  mLocReqTokensAll = [];
   mLocReqCallback = ""; mLocCoordsOnly = false; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
@@ -16456,6 +16430,7 @@ function mPostNewCallNow() {
     callNotes: [],
     testMode: MSysTestingMode ? true : false,
     testModeUnit: MSysTestingMode ? (mCurrentUserUnit||"") : "",
+    locationRequests: mLocReqTokensAll.slice(),
     createdAt: now.toISOString(),
     createdBy: ((mCurrentUserUnit||"") + " " + (mCurrentUserDisplayName||"")).trim(),
     updatedAt: now.toISOString()
@@ -16485,6 +16460,7 @@ function mOpenDispatchCall(callId) {
   }, function(e) { mToast("Call listener error: " + e.message, true); });
 }
 function mCloseDispatchDetail() {
+  mDdLocStop();
   if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
   mDispSelectedCallId = null;
   var _mm = document.getElementById("m-dd-menu"); if (_mm) _mm.style.display = "none";
@@ -16527,6 +16503,142 @@ function mEditCallTime(key, label) {
   db.collection("activeCalls").doc(mDispSelectedCallId).update(update)
     .then(function(){ mToast(v ? "🕒 " + label + " set to " + v : label + " time cleared"); })
     .catch(function(e){ mToast("Error: " + e.message, true); });
+}
+// ── CALLER LOCATION ON A POSTED CALL ─────────────────────────────────────────────────────────────
+// The location link stays live after the call is posted. The call view shows where the caller's phone
+// is now, how far that is from the call's pin, and lets the dispatcher move the pin there and text the
+// assigned units the new location with Google Maps and Waze links. Nothing moves on its own.
+var mDdLocUnsub = null, mDdLocToken = null, mDdLocData = null, mDdLocCall = null;
+function mDdLocStop() {
+  if (mDdLocUnsub) { mDdLocUnsub(); mDdLocUnsub = null; }
+  mDdLocToken = null; mDdLocData = null; mDdLocCall = null;
+}
+function mDdLocSync(call) {
+  mDdLocCall = call;
+  var toks = (call.locationRequests || []).filter(Boolean);
+  var tok = toks.length ? toks[toks.length - 1] : null;      // the newest link is the one that matters
+  if (tok !== mDdLocToken) {
+    if (mDdLocUnsub) { mDdLocUnsub(); mDdLocUnsub = null; }
+    mDdLocToken = tok; mDdLocData = null;
+    if (tok) mDdLocUnsub = db.collection("locationRequests").doc(tok).onSnapshot(function(s) {
+      if (mDdLocToken !== tok) return;
+      mDdLocData = s.exists ? s.data() : {};
+      mDdLocRender();
+    }, function() { mDdLocData = {}; mDdLocRender(); });
+  }
+  mDdLocRender();
+}
+setInterval(function() { if (mDdLocToken && document.getElementById("m-dd-callerloc")) mDdLocRender(); }, 15000);
+function mDdAgo(iso) {
+  if (!iso) return "";
+  var s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  return s < 60 ? s + "s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : Math.round(s / 3600) + " h ago";
+}
+function mDdDist(m) { return m < 1000 ? Math.round(m) + " m" : (m / 1000).toFixed(1) + " km"; }
+function mDdUnits(call) {
+  var units = [];
+  (call.crews || []).forEach(function(cr) { Object.keys(cr || {}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__" && units.indexOf(cr[k]) === -1) units.push(cr[k]); }); });
+  return units;
+}
+function mDdLocRender() {
+  var el = document.getElementById("m-dd-callerloc"); if (!el) return;
+  var call = mDdLocCall;
+  if (!call || call.status === "complete") { el.innerHTML = ""; return; }
+  var btnStyle = function(primary) {
+    return primary
+      ? 'width:100%;margin-top:10px;padding:12px;border-radius:8px;border:none;cursor:pointer;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.82rem;background:linear-gradient(135deg,#c9a84c,#e8960a);color:#0a1628'
+      : 'margin-top:8px;padding:7px 12px;border-radius:7px;cursor:pointer;font-size:0.72rem;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);color:var(--gray)';
+  };
+  var wrap = function(inner) {
+    return '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:6px">📍 Caller Location</div>' + inner + '</div>';
+  };
+  if (!mDdLocToken) {
+    if (!call.callbackNumber) { el.innerHTML = ""; return; }
+    el.innerHTML = wrap('<div style="font-size:0.78rem;color:var(--gray)">No location link has been sent for this call.</div>' +
+      '<button type="button" onclick="mDdSendLocLink()" style="' + btnStyle(false) + '">📍 Send the caller a location link</button>');
+    return;
+  }
+  var d = mDdLocData;
+  if (!d) { el.innerHTML = wrap('<div style="font-size:0.78rem;color:var(--gray)">Loading…</div>'); return; }
+  var seenAgo = d.seenAt ? Date.now() - new Date(d.seenAt).getTime() : null;
+  var live = seenAgo !== null && seenAgo < 90000 && d.status !== "closed";
+  var expired = d.expiresAt && new Date(d.expiresAt).getTime() < Date.now() && !live;
+  var dev = /iPhone|iPad/i.test(d.device || "") ? "iPhone" : /Android/i.test(d.device || "") ? "Android" : "phone";
+  var status = d.lat
+    ? (live ? (d.status === "background" ? "🌙 Page in the background — updates may pause" : "📡 Sharing live from their " + dev) : "⏸ Stopped updating " + mDdAgo(d.seenAt || d.at))
+    : d.status === "closed" ? "✖ Caller closed the page without sharing"
+    : d.status ? "👀 Caller opened the link — hasn't tapped Allow yet"
+    : expired ? "⌛ Link expired — never opened" : "📤 Link sent — not opened yet";
+  var html = '<div style="font-size:0.78rem;color:' + (d.lat && live ? '#7dedb5' : '#ffc84a') + '">' + status + '</div>';
+  if (d.lat && d.lng) {
+    var acc = d.accuracy || 0, ac = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
+    html += '<div style="font-size:0.8rem;color:#c9d4e6;margin-top:6px;line-height:1.5">' +
+      '<b style="color:' + ac + '">' + mEscHtml(d.accuracyLabel || "") + ', within ' + acc + ' m</b> · updated ' + mDdAgo(d.at) +
+      (d.approxAddress ? '<br>📮 ' + mEscHtml(d.approxAddress) : '') +
+      '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a></div>';
+    var moved = (call.lat && call.lng) ? mMetresBetween(call.lat, call.lng, d.lat, d.lng) : null;
+    var threshold = Math.max(30, acc * 0.5);
+    var far = moved === null || moved >= threshold;
+    html += '<div style="font-size:0.78rem;margin-top:6px;color:' + (far ? '#ffc84a' : 'var(--gray)') + '">' +
+      (moved === null ? 'The call has no pin yet.' : far ? '⚠ About ' + mDdDist(moved) + ' from the call\'s pin.' : '✓ Same place as the call\'s pin.') + '</div>';
+    if (acc > 150) html += '<div style="font-size:0.74rem;color:#ff9090;margin-top:4px">Too rough to send crews on alone — confirm with the caller.</div>';
+    html += '<button type="button" onclick="mDdPushLocation()" style="' + btnStyle(far) + (far ? '' : ';width:100%') + '">📍 Update call location &amp; text crew</button>';
+  }
+  if (call.locUpdate && call.locUpdate.at) html += '<div style="font-size:0.7rem;color:var(--gray);margin-top:6px">Last sent to crew ' + mDdAgo(call.locUpdate.at) + (call.locUpdate.by ? ' by ' + mEscHtml(call.locUpdate.by) : '') + '</div>';
+  if (call.callbackNumber) html += '<button type="button" onclick="mDdSendLocLink()" style="' + btnStyle(false) + '">↻ Send a new link</button>';
+  el.innerHTML = wrap(html);
+}
+function mDdSendLocLink() {
+  var call = mDdLocCall; if (!call) return;
+  var to = mE164(call.callbackNumber);
+  if (!to) { mToast("This call's callback number isn't a valid phone number", true); return; }
+  var d = mDdLocData;
+  if (d && d.seenAt && Date.now() - new Date(d.seenAt).getTime() < 90000 && d.status !== "closed" &&
+      !confirm("The caller's page is still sending updates. Send a new link anyway?")) return;
+  var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  var link = "https://chaverim151.github.io/CallDashboard/loc.html?t=" + token;
+  db.collection("locationRequests").doc(token).set({
+    createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
+    by: mCurrentUserUnit || "", callback: call.callbackNumber, callId: call.id
+  }).then(function() {
+    return mSendClickSendSMS([to], "MC Hatzolah — tap to send us your location so the ambulance can find you:\n" + link);
+  }).then(function() {
+    return db.collection("activeCalls").doc(call.id).update({ locationRequests: firebase.firestore.FieldValue.arrayUnion(token), updatedAt: new Date().toISOString() });
+  }).then(function() {
+    mToast("📍 Location link sent to " + call.callbackNumber);
+  }).catch(function(e) { mToast("Couldn't send the link: " + e.message, true); });
+}
+function mDdPushLocation() {
+  var call = mDdLocCall, d = mDdLocData; if (!call || !d || !d.lat) return;
+  var lat = Number(d.lat), lng = Number(d.lng), acc = d.accuracy || 0;
+  var moved = (call.lat && call.lng) ? mMetresBetween(call.lat, call.lng, lat, lng) : null;
+  var units = mDdUnits(call);
+  if (!confirm("Move this call's pin to the caller's latest position (within " + acc + " m)" +
+      (units.length ? " and text " + units.join(", ") + " the new location?" : "?\n\nNo units are assigned yet, so nobody will be texted."))) return;
+  var maps = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
+  var waze = "https://waze.com/ul?ll=" + lat + "," + lng + "&navigate=yes";
+  var now = new Date().toISOString();
+  var noteText = "📍 Caller location updated" + (moved !== null ? " — moved about " + mDdDist(moved) : "") + " (within " + acc + " m)" +
+    (d.approxAddress ? ", near " + d.approxAddress : "") + ". Navigation now goes to the new position.";
+  db.collection("activeCalls").doc(call.id).get().then(function(snap) {
+    if (!snap.exists) throw new Error("Call not found");
+    var notes = (snap.data().callNotes || []).slice();
+    notes.push({ text: noteText, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch", byUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: now });
+    return db.collection("activeCalls").doc(call.id).update({
+      lat: lat, lng: lng, mapsLink: maps, callNotes: notes, updatedAt: now,
+      locUpdate: { at: now, by: mCurrentUserUnit || "", accuracy: acc, token: mDdLocToken, from: (call.lat && call.lng) ? { lat: call.lat, lng: call.lng } : null }
+    });
+  }).then(function() {
+    if (!units.length) { mToast("📍 Call location updated"); return; }
+    var body = "📍 UPDATED LOCATION\n" + mSmsAddress(call) + "\nCaller is now " +
+      (d.approxAddress ? "near " + d.approxAddress : lat.toFixed(6) + ", " + lng.toFixed(6)) + " (within " + acc + " m)" +
+      (moved !== null ? " — moved about " + mDdDist(moved) : "") +
+      "\nGoogle Maps: " + maps + "\n\nWaze: " + waze;
+    mSmsEnqueue(function() { return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
+    mAdminCopy(call, "📍 LOCATION UPDATE", noteText);
+    mToast("📍 New location sent to " + units.join(", "));
+  }).catch(function(e) { mToast("Couldn't update the location: " + e.message, true); });
 }
 function mRenderDispatchDetail(call) {
   call = mSanitizeCall(call);
@@ -16586,6 +16698,8 @@ function mRenderDispatchDetail(call) {
     (call.accessCode ? '<div style="margin-top:4px;font-size:0.78rem;color:var(--gray)">🔑 ' + mEscHtml(call.accessCode) + '</div>' : '') +
     (call.callbackNumber ? '<div style="margin-top:8px;display:flex;gap:8px"><a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="flex:1;text-align:center;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.35);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;padding:6px;text-decoration:none">📞 ' + call.callbackNumber + '</a><button onclick="mPushCallbackSMS()" style="flex:1;background:rgba(122,184,245,0.12);border:1px solid rgba(122,184,245,0.35);border-radius:6px;color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;padding:6px;cursor:pointer">📱 Push to Units</button></div>' : '') +
   '</div>';
+
+  content += '<div id="m-dd-callerloc"></div>';
 
   // ALS / BLS / PD banners
   // (ALS / BLS / PD banners are rendered lower, just above Call Disposition — see below)
@@ -16648,6 +16762,7 @@ function mRenderDispatchDetail(call) {
   '</div>';
 
   document.getElementById("m-dd-content").innerHTML = content;
+  mDdLocSync(mDispCallCache[call.id] || call);   // the raw call: `call` here has been HTML-escaped for display
   mAutoScrollToNextStep();
 }
 var M_RIDER_STATUSES = ["transporting","at_facility"];
