@@ -1312,7 +1312,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.97</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.98</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1919,7 +1919,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
   <div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px;line-height:1.5">Record a hospital that's on divert and tell the units. Check the official status on <a href="https://njdivert.juvare.com" target="_blank" style="color:#bfe0ff">NJ Divert</a>.</div>
   <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:16px">
     <div class="form-row"><div><label>Hospital</label>
-      <select id="hd-hospital" onchange="document.getElementById('hd-other-wrap').style.display=this.value==='__other__'?'block':'none'"><option value="">Loading…</option></select>
+      <select id="hd-hospital" onchange="document.getElementById('hd-other-wrap').style.display=this.value==='__other__'?'block':'none';if(this.value==='__other__'){tcBindExtras();document.getElementById('hd-other').focus();}"><option value="">Loading…</option></select>
       <div id="hd-other-wrap" style="display:none;margin-top:6px"><input type="text" id="hd-other" placeholder="Hospital name"></div></div>
       <div><label>Type of divert</label>
       <select id="hd-type">
@@ -2565,13 +2565,50 @@ function tcResolve(q) {
   return new Promise(function(resolve) {
     new google.maps.Geocoder().geocode({ address: q, region: "us" }, function(res, st) {
       if (st !== "OK" || !res || !res[0]) { tcGeo = { q: q, lat: null, lng: null, resolved: "", failed: true }; }
-      else { var loc = res[0].geometry.location; tcGeo = { q: q, lat: loc.lat(), lng: loc.lng(), resolved: res[0].formatted_address, vague: tcIsVague(res[0]) }; }
-      if ((document.getElementById("tc-address").value || "").trim() === q) tcShowGeo(tcGeo);
+      else { var loc = res[0].geometry.location; tcGeo = { q: q, lat: loc.lat(), lng: loc.lng(), resolved: res[0].formatted_address, vague: tcIsVague(res[0]) }; tcBiasCross(tcGeo.lat, tcGeo.lng); }
+      if ((document.getElementById("tc-address").value || "").trim() === q && TC_MODE !== "segment") tcShowGeo(tcGeo);
       resolve(tcGeo);
     });
   });
 }
+// Cross streets and the "Other" hospital get Google suggestions too. Cross-street suggestions lean
+// toward the area of the road already chosen, and picking one keeps just the street's name, which is
+// what the intersection lookup needs ("Raritan Ave & 2nd Ave, Highland Park").
+var tcCrossAcs = [];
+function tcStreetName(p) {
+  var comps = (p && p.address_components) || [];
+  for (var i = 0; i < comps.length; i++) if ((comps[i].types || []).indexOf("route") !== -1) return comps[i].short_name || comps[i].long_name;
+  return (p && p.name) || "";
+}
+function tcBiasCross(lat, lng) {
+  if (!lat || !lng || !(window.google && google.maps && google.maps.Circle)) return;
+  var bounds = new google.maps.Circle({ center: { lat: lat, lng: lng }, radius: 3000 }).getBounds();
+  tcCrossAcs.forEach(function(ac) { try { ac.setBounds(bounds); } catch (e) {} });
+}
+function tcBindExtras() {
+  if (!(window.google && google.maps && google.maps.places)) return;
+  ["tc-from", "tc-to"].forEach(function(id) {
+    var el = document.getElementById(id); if (!el || el.dataset.bound) return;
+    el.dataset.bound = "1";
+    try {
+      var ac = new google.maps.places.Autocomplete(el, { componentRestrictions: { country: "us" }, types: ["geocode"], fields: ["address_components", "name"] });
+      ac.addListener("place_changed", function() {
+        var name = tcStreetName(ac.getPlace());
+        setTimeout(function() { if (name) el.value = name; TC_SEG = null; }, 0);   // after Google writes the full address into the box
+      });
+      tcCrossAcs.push(ac);
+    } catch (e) {}
+  });
+  var oth = document.getElementById("hd-other");
+  if (oth && !oth.dataset.bound) {
+    oth.dataset.bound = "1";
+    var mk = function(types) { return new google.maps.places.Autocomplete(oth, { componentRestrictions: { country: "us" }, types: types, fields: ["name", "formatted_address"] }); };
+    var hac; try { hac = mk(["hospital"]); } catch (e) { try { hac = mk(["establishment"]); } catch (e2) {} }
+    if (hac) hac.addListener("place_changed", function() { var pl = hac.getPlace(); setTimeout(function() { if (pl && pl.name) oth.value = pl.name; }, 0); });
+  }
+}
 function tcBindAddress() {
+  tcBindExtras();
   var el = document.getElementById("tc-address"); if (!el || el.dataset.bound) return;
   el.dataset.bound = "1";
   el.addEventListener("blur", function() { tcResolve(el.value.trim()); });
@@ -2585,7 +2622,8 @@ function tcBindAddress() {
         setTimeout(function() {
           if (p && p.geometry) {
             tcGeo = { q: el.value.trim(), lat: p.geometry.location.lat(), lng: p.geometry.location.lng(), resolved: p.formatted_address || el.value, vague: tcIsVague(p) };
-            tcShowGeo(tcGeo);
+            tcBiasCross(tcGeo.lat, tcGeo.lng);
+            if (TC_MODE === "segment") { var n = document.getElementById("tc-zone-note"); if (n) n.textContent = ""; } else tcShowGeo(tcGeo);
           } else tcResolve(el.value.trim());
         }, 0);
       });
@@ -3027,7 +3065,7 @@ function hdLoad() {
       (ended.length ? '<div class="admin-label" style="margin:14px 0 6px;color:var(--gray)">Ended in the last 7 days</div>' + ended.map(function(d) { return card(d, false); }).join("") : '');
   }).catch(function(e) { host.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Couldn\'t load diverts: ' + escapeHtml(e.message) + '<br><span style="color:var(--gray)">If this mentions permissions, the updated Firestore rules haven\'t been published yet.</span></div>'; });
 }
-window.tcSetMode = tcSetMode; window.tcSuggestDetour = tcSuggestDetour; window.tcAddClosure = tcAddClosure; window.tcTestClosure = tcTestClosure; window.tcNotify = tcNotify; window.tcToggle = tcToggle; window.tcDelete = tcDelete; window.tcMoveOld = tcMoveOld;
+window.tcSetMode = tcSetMode; window.tcBindExtras = tcBindExtras; window.tcSuggestDetour = tcSuggestDetour; window.tcAddClosure = tcAddClosure; window.tcTestClosure = tcTestClosure; window.tcNotify = tcNotify; window.tcToggle = tcToggle; window.tcDelete = tcDelete; window.tcMoveOld = tcMoveOld;
 window.hdAdd = hdAdd; window.hdTest = hdTest; window.hdNotify = hdNotify; window.hdOff = hdOff; window.hdDelete = hdDelete;
 function tcLoad() {
   var host = document.getElementById("tc-list"); if (!host) return;
@@ -13942,7 +13980,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.97";
+var DESKTOP_VERSION = "9.98";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
