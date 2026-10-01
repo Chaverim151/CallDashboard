@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.01');
+  window.location.replace('/CallDashboard/mobile.html?v=3.03');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1291,7 +1291,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.82a</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.83a</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13070,7 +13070,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.82a";
+var DESKTOP_VERSION = "9.83a";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -15588,6 +15588,12 @@ function mLocStatus(html, color) {
   el.innerHTML = html;
 }
 var mLocReqCallback = "";
+// Once a link is out, the button's job changes: it is now how you resend to a caller who says
+// nothing arrived.
+function mLocSetBtn(sent) {
+  var b = document.getElementById("m-nc-loc-btn"); if (!b) return;
+  b.textContent = sent ? "↻ Resend SMS" : "📍 Request Location via SMS";
+}
 function mRequestCallerLocation(force) {
   var cb = (document.getElementById("m-nc-callback").value || "").trim();
   if (!cb) { mToast("Enter the caller's number first", true); document.getElementById("m-nc-callback").focus(); return; }
@@ -15611,6 +15617,7 @@ function mRequestCallerLocation(force) {
     })
     .then(function() {
       mLocStatus("📤 Link sent to " + mEscHtml(cb) + " — waiting for them to tap it…", "#ffc84a");
+      mLocSetBtn(true);
       mWatchCallerLocation(token);
     })
     .catch(function(e){ mLocStatus("Couldn't send the link: " + mEscHtml(e.message), "#ff9090"); });
@@ -15666,15 +15673,20 @@ function mLocPendingNote() {
   var acc = d.accuracy || 0;
   var moved = mMetresBetween(mLocAppliedLat, mLocAppliedLng, d.lat, d.lng);
   // movement has to clear the uncertainty of both fixes before it means anything
-  var threshold = Math.max(30, (acc || 0) * 0.5, (mLocAppliedAcc || 0) * 0.5);
+  // On a coordinates-only call there is no street address to fall back on, so the pin IS the
+  // location — any change beyond GPS noise is worth offering.
+  var threshold = mLocCoordsOnly
+    ? Math.max(10, (acc || 0) * 0.5)
+    : Math.max(30, (acc || 0) * 0.5, (mLocAppliedAcc || 0) * 0.5);
   if (moved < threshold) return;                       // same place — leave the panel alone
   var ago = mLocLastAt ? Math.round((Date.now() - mLocLastAt) / 1000) : 0;
   mLocStatus("✅ Using the caller's location (within " + mLocAppliedAcc + " m)." +
-    '<br><span style="color:#ffc84a">The caller has moved about ' + (moved < 1000 ? Math.round(moved) + " m" : (moved/1000).toFixed(1) + " km") + ' — newer fix within ' + acc + ' m, ' + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + ' ago.</span>' +
+    '<br><span style="color:#ffc84a">' + (mLocCoordsOnly ? "Coordinates changed by about " : "The caller has moved about ") + (moved < 1000 ? Math.round(moved) + " m" : (moved/1000).toFixed(1) + " km") + ' — newer fix within ' + acc + ' m, ' + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + ' ago.</span>' +
     ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#ffc84a");
 }
-var mLocAppliedAcc = 0, mLocAppliedLat = null, mLocAppliedLng = null;
+var mLocAppliedAcc = 0, mLocAppliedLat = null, mLocAppliedLng = null, mLocCoordsOnly = false;
 function mUseCallerLocation(lat, lng, acc, coordsOnly) {
+  mLocCoordsOnly = !!coordsOnly;
   if (coordsOnly) {
     mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
     var i2 = document.getElementById("m-nc-address");
@@ -15735,7 +15747,8 @@ function mE164(p) {
 function mOpenNewCallForm() {
   mGoTo("dispatch-newcall");
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
-  mLocReqCallback = ""; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
+  mLocSetBtn(false);
+  mLocReqCallback = ""; mLocCoordsOnly = false; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
   mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
