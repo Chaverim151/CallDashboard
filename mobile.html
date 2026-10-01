@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.23"; window.M_BUILD = BUILD;
+  var BUILD = "3.24"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -5526,6 +5526,10 @@ function mHwPickerStyle() {
     "#hw-modal .hwm-seg button{min-height:48px;border-radius:10px;border:1px solid rgba(122,184,245,0.45);background:rgba(122,184,245,0.08);color:#d6e8ff;font:inherit;font-weight:700;font-size:0.92rem;cursor:pointer}" +
     "#hw-modal .hwm-seg button.on{background:rgba(var(--gold-rgb),0.22);border-color:var(--gold);color:var(--gold-light);box-shadow:inset 0 0 0 1px var(--gold)}" +
     "#hw-modal input{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid var(--card-border);border-radius:10px;color:var(--white);font:inherit;font-size:1.15rem;padding:12px 14px}" +
+    "#hw-modal .hwm-sel{width:100%;box-sizing:border-box;min-height:50px;background:rgba(255,255,255,0.07);border:1px solid var(--card-border);border-radius:10px;color:var(--white);font:inherit;font-size:1.05rem;padding:10px 12px}" +
+    "#hw-modal .hwm-sel:disabled{opacity:0.5}" +
+    "#hw-modal .hwm-sel option{background:#122040;color:#f4f6fa}" +
+    "#hw-modal .hwm-row{display:grid;grid-template-columns:1fr 96px;gap:8px}" +
     "#hw-modal .hwm-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}" +
     "#hw-modal .hwm-chips button{min-height:40px;min-width:56px;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,0.05);color:var(--white);font:inherit;font-weight:700;padding:0 12px;cursor:pointer}" +
     "#hw-modal .hwm-chips button.on{border-color:var(--gold);background:rgba(var(--gold-rgb),0.2)}" +
@@ -5539,15 +5543,16 @@ function mHwPickerStyle() {
 }
 function mHwOpenPicker() {
   mHwPickerStyle();
-  mHwP = { type: "exit", dir: "", lane: "", item: null };
+  mHwP = { type: "exit", dir: "", lane: "", item: null }; mHwListsFor = "";
   var m = document.getElementById("hw-modal"); if (m) m.remove();
   m = document.createElement("div"); m.id = "hw-modal"; m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-label", "Garden State Parkway location");
   m.innerHTML = '<div class="hwm-box">' +
     '<div class="hwm-head"><span class="hwm-title">🛣 Garden State Parkway</span><button type="button" class="hwm-x" aria-label="Close" onclick="mHwClosePicker()">✕</button></div>' +
     '<div class="hwm-label">Location</div><div class="hwm-seg" id="hwm-type"><button type="button" data-v="exit" onclick="mHwSet(\'type\',\'exit\')">🚏 Exit</button><button type="button" data-v="mm" onclick="mHwSet(\'type\',\'mm\')">📍 Mile marker</button></div>' +
     '<div class="hwm-label">Direction of travel</div><div class="hwm-seg" id="hwm-dir"><button type="button" data-v="N" onclick="mHwSet(\'dir\',\'N\')">⬆ Northbound</button><button type="button" data-v="S" onclick="mHwSet(\'dir\',\'S\')">⬇ Southbound</button></div>' +
-    '<div id="hwm-exit-wrap"><div class="hwm-label">Exit number</div><input id="hwm-exit" type="text" placeholder="e.g. 129 or 4A" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="mHwPickerUpdate()"><div class="hwm-chips" id="hwm-exit-chips"></div></div>' +
-    '<div id="hwm-mm-wrap" style="display:none"><div class="hwm-label">Mile marker</div><input id="hwm-mm" type="text" inputmode="decimal" placeholder="e.g. 128.5" autocomplete="off" autocorrect="off" spellcheck="false" oninput="mHwPickerUpdate()"></div>' +
+    '<div id="hwm-exit-wrap"><div class="hwm-label">Exit</div><select id="hwm-exit-sel" class="hwm-sel" onchange="mHwPickerUpdate()" disabled><option value="">Choose the direction first</option></select></div>' +
+    '<div id="hwm-mm-wrap" style="display:none"><div class="hwm-label">Mile marker</div><div class="hwm-row"><select id="hwm-mile-sel" class="hwm-sel" onchange="mHwPickerUpdate()" disabled aria-label="Whole mile"><option value="">Choose the direction first</option></select>' +
+      '<select id="hwm-tenth-sel" class="hwm-sel hwm-tenth" onchange="mHwPickerUpdate()" aria-label="Tenths of a mile">' + [0,1,2,3,4,5,6,7,8,9].map(function(t) { return '<option value="' + t + '">.' + t + '</option>'; }).join("") + '</select></div></div>' +
     '<div id="hwm-lane-wrap" style="display:none"><div class="hwm-label">Roadway — this stretch has both</div><div class="hwm-seg" id="hwm-lane"><button type="button" data-v="LOCAL" onclick="mHwSet(\'lane\',\'LOCAL\')">Local lanes</button><button type="button" data-v="EXPRESS" onclick="mHwSet(\'lane\',\'EXPRESS\')">Express lanes</button></div></div>' +
     '<div class="hwm-result" id="hwm-result" aria-live="polite">Loading Parkway data…</div>' +
     '<button type="button" class="hwm-use" id="hwm-use" disabled onclick="mHwUsePicked()">Use this location</button>' +
@@ -5563,10 +5568,8 @@ function mHwSet(k, v) {
   mHwP[k] = v;
   if (k === "type" || k === "dir") mHwP.lane = mHwP.lane;      // keep the lane choice if still relevant
   mHwPickerUpdate();
-  if (k === "type") { var f = document.getElementById(v === "exit" ? "hwm-exit" : "hwm-mm"); if (f && mHwP.dir) f.focus(); }
-  if (k === "dir") { var g = document.getElementById(mHwP.type === "exit" ? "hwm-exit" : "hwm-mm"); if (g && !g.value) g.focus(); }
+  if (k === "type" || k === "dir") { var f = document.getElementById(mHwP.type === "exit" ? "hwm-exit-sel" : "hwm-mile-sel"); if (f && !f.disabled && !f.value) f.focus(); }
 }
-function mHwPickExitChip(x, d) { if (d) mHwP.dir = d; var f = document.getElementById("hwm-exit"); if (f) f.value = x; mHwPickerUpdate(); }
 function mHwPickerUpdate() {
   var m = document.getElementById("hw-modal"); if (!m) return;
   var P = mHwP, res = document.getElementById("hwm-result"), use = document.getElementById("hwm-use");
@@ -5577,42 +5580,57 @@ function mHwPickerUpdate() {
   var setMsg = function(t) { res.textContent = t; };
   if (!M_HW.loaded) { setMsg("Loading Parkway data…"); return; }
   if (!M_HW.exits.length && !M_HW.markers.length) { setMsg("Couldn't load the Parkway data (highway-exits.csv / highway-mile-markers.csv)."); return; }
-  var dirs = P.dir ? [P.dir] : ["N", "S"];
+  mHwFillLists();
+  if (!P.dir) { setMsg("Choose the direction of travel."); document.getElementById("hwm-lane-wrap").style.display = "none"; return; }
   if (P.type === "exit") {
     document.getElementById("hwm-lane-wrap").style.display = "none";
-    var typed = (document.getElementById("hwm-exit").value || "").trim().toLowerCase(), norm = function(s) { return String(s).toLowerCase().replace(/[^0-9a-z]/g, ""); };
-    var list = M_HW.exits.filter(function(e) { return M_HW_GSP.indexOf(e.hw) !== -1 && dirs.indexOf(e.d) !== -1 && e.type !== "SPLIT"; });
-    var exact = list.filter(function(e) { return typed && norm(e.x) === norm(typed); });
-    var near = list.filter(function(e) { return typed && exact.indexOf(e) === -1 && (norm(e.x).indexOf(norm(typed)) === 0 || (typed.length >= 3 && e.x.toLowerCase().indexOf(typed) !== -1)); })
-      .sort(function(a, b) { return (parseFloat(a.x) || 999) - (parseFloat(b.x) || 999) || a.x.localeCompare(b.x); });
-    var chips = exact.concat(near).slice(0, 12);
-    document.getElementById("hwm-exit-chips").innerHTML = chips.map(function(e) {
-      return '<button type="button" class="' + (exact.indexOf(e) !== -1 && P.dir ? "on" : "") + '" onclick="mHwPickExitChip(\'' + e.x.replace(/'/g, "") + '\',\'' + e.d + '\')">' + mEscHtml(e.x.toUpperCase()) + (P.dir ? "" : "<small>" + (e.d === "N" ? "North" : "South") + "</small>") + "</button>";
-    }).join("");
-    if (!typed) { setMsg(P.dir ? "Type the exit number." : "Choose the direction, then type the exit number."); return; }
-    if (!P.dir) { setMsg(exact.length ? "Choose the direction of travel." : "No exit " + typed.toUpperCase() + " — check the number."); return; }
-    if (!exact.length) { setMsg(chips.length ? "Tap one of the exits above, or keep typing." : "There's no " + (P.dir === "N" ? "northbound" : "southbound") + " exit " + typed.toUpperCase() + " in the Parkway list."); return; }
-    var e = exact[0], label = mHwName(e.hw) + " " + e.d + " — Exit " + e.x.toUpperCase() + (e.mm !== null ? " (MM " + e.mm + ")" : "");
+    var ix = document.getElementById("hwm-exit-sel").value;
+    if (ix === "") { setMsg("Choose the exit from the list."); return; }
+    var e = M_HW.exits[+ix], label = mHwName(e.hw) + " " + e.d + " — Exit " + e.x.toUpperCase() + (e.mm !== null ? " (MM " + e.mm + ")" : "");
     P.item = { kind: "exit", label: label, address: label, lat: e.lat, lng: e.lng };
   } else {
-    var v = parseFloat(String(document.getElementById("hwm-mm").value || "").replace(",", "."));
+    var whole = document.getElementById("hwm-mile-sel").value, tenth = document.getElementById("hwm-tenth-sel").value || "0";
     var laneWrap = document.getElementById("hwm-lane-wrap");
-    if (!P.dir || isNaN(v)) { laneWrap.style.display = "none"; setMsg(!P.dir ? "Choose the direction of travel." : "Type the mile marker, e.g. 128.5"); return; }
+    if (whole === "") { laneWrap.style.display = "none"; setMsg("Choose the mile marker from the list."); return; }
+    var v = Math.round((parseInt(whole, 10) + parseInt(tenth, 10) / 10) * 10) / 10;
     var lanes = {}; M_HW.markers.forEach(function(p) { if (M_HW_GSP.indexOf(p.hw) !== -1 && p.d === P.dir && Math.abs(p.mm - v) <= 1 && p.lane !== "EXIT") lanes[p.lane] = 1; });
     var split = !!(lanes.LOCAL || lanes.EXPRESS);
     laneWrap.style.display = split ? "" : "none";
     if (split && !P.lane) { setMsg("This part of the Parkway has local and express lanes — choose one."); return; }
     var pt = mHwAtMile(M_HW_GSP, P.dir, split ? P.lane : "", v);
-    if (!pt) { setMsg("Mile marker " + v + " isn't on the " + (P.dir === "N" ? "northbound" : "southbound") + " Parkway list (0–172)."); return; }
-    var lbl = mHwName(pt.hw) + " " + P.dir + " — MM " + v + (split ? " " + P.lane.charAt(0) + P.lane.slice(1).toLowerCase() : "");
+    if (!pt) { setMsg("Mile marker " + v + " is past the end of the " + (P.dir === "N" ? "northbound" : "southbound") + " Parkway list."); return; }
+    var mmTxt = (v % 1 === 0) ? String(v) : v.toFixed(1);
+    var lbl = mHwName(pt.hw) + " " + P.dir + " — MM " + mmTxt + (split ? " " + P.lane.charAt(0) + P.lane.slice(1).toLowerCase() : "");
     P.item = { kind: "mm", label: lbl, address: lbl, lat: pt.lat, lng: pt.lng };
   }
   res.className = "hwm-result ok";
   res.innerHTML = "✅ <b>" + mEscHtml(P.item.label) + "</b><br><span style=\"font-size:0.78rem;color:var(--gray)\">The pin goes on this exact spot · <a href=\"https://www.google.com/maps/search/?api=1&query=" + P.item.lat + "," + P.item.lng + "\" target=\"_blank\" rel=\"noopener\" style=\"color:#bfe0ff\">check on a map ↗</a></span>";
   use.disabled = false;
 }
+// Every exit / whole mile for the chosen direction, in order along the Parkway.
+var mHwListsFor = "";
+function mHwFillLists() {
+  var d = mHwP.dir, ex = document.getElementById("hwm-exit-sel"), mi = document.getElementById("hwm-mile-sel");
+  if (!ex || !mi || mHwListsFor === d) return;
+  mHwListsFor = d;
+  if (!d) {
+    ex.innerHTML = mi.innerHTML = '<option value="">Choose the direction first</option>'; ex.disabled = mi.disabled = true; return;
+  }
+  var exits = [];
+  M_HW.exits.forEach(function(e, i) { if (M_HW_GSP.indexOf(e.hw) !== -1 && e.d === d && e.type !== "SPLIT") exits.push({ i: i, e: e }); });
+  exits.sort(function(a, b) { var am = a.e.mm === null ? 999 : a.e.mm, bm = b.e.mm === null ? 999 : b.e.mm; return am - bm || a.e.x.localeCompare(b.e.x); });
+  ex.innerHTML = '<option value="">Choose an exit… (' + exits.length + ')</option>' + exits.map(function(o) {
+    var x = o.e.x.toUpperCase(), name = /^\d/.test(x) ? "Exit " + x : x.charAt(0) + x.slice(1).toLowerCase();
+    return '<option value="' + o.i + '">' + mEscHtml(name) + (o.e.mm !== null ? " · MM " + o.e.mm : "") + '</option>';
+  }).join("");
+  var max = 0; M_HW.markers.forEach(function(p) { if (M_HW_GSP.indexOf(p.hw) !== -1 && p.d === d && p.mm > max) max = p.mm; });
+  var opts = ['<option value="">Choose a mile…</option>'];
+  for (var m = 0; m <= Math.floor(max); m++) opts.push('<option value="' + m + '">MM ' + m + '</option>');
+  mi.innerHTML = opts.join("");
+  ex.disabled = mi.disabled = false;
+}
 function mHwUsePicked() { if (!mHwP.item) return; var it = mHwP.item; mHwClosePicker(); mHwApply(it); }
-window.mHwOpenPicker = mHwOpenPicker; window.mHwClosePicker = mHwClosePicker; window.mHwSet = mHwSet; window.mHwPickExitChip = mHwPickExitChip; window.mHwPickerUpdate = mHwPickerUpdate; window.mHwUsePicked = mHwUsePicked;
+window.mHwOpenPicker = mHwOpenPicker; window.mHwClosePicker = mHwClosePicker; window.mHwSet = mHwSet; window.mHwPickerUpdate = mHwPickerUpdate; window.mHwUsePicked = mHwUsePicked;
 function mInitNcAddressAutocomplete() {
   mHwBind();
   if (window.google && window.google.maps && window.google.maps.places) { mBindNcAutocomplete(); return; }
