@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.14');
+  window.location.replace('/CallDashboard/mobile.html?v=3.15');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.07</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.08</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3030,13 +3030,7 @@ function tcTitle(c) {
 function tcMapLink(lat, lng) { return "https://www.google.com/maps/search/?api=1&query=" + lat + "," + lng; }
 function tcFooter() { return (typeof M_ORG_FOOTER !== "undefined" ? M_ORG_FOOTER : orgSignoff()) + (currentUserUnit ? " " + currentUserUnit : ""); }
 // Closure and divert texts come from Admin ▸ Message Templates (built-in wording until edited).
-// Times inside a text ("Until …") use the call-text style — 24-hour time, then month/day — without the
-// year, so they're never mistaken for the timestamp every text ends with ("09:54 10/1/26").
-function tcFmtWhen(iso) {
-  if (!iso) return "";
-  var d = new Date(iso); if (isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + (d.getMonth() + 1) + "/" + d.getDate();
-}
+function tcFmtWhen(iso) { return iso ? mWhen(iso) : ""; }       // "10/02/2026 18:00" — same date/time style as every text
 function tcClosureBody(c) {
   var seg = c.kind === "segment" && c.from && c.to;
   return mRenderTemplate(mTemplateFor("roadClosure"), {
@@ -7562,7 +7556,7 @@ var TPL_SAMPLE_EXTRA = {
   orgName: "MC Hatzolah", link: "https://chaverim151.github.io/CallDashboard/loc.html?t=loc1example",
   callerPlace: "near 131 Raritan Ave, Highland Park", accuracy: "12", moved: " — moved about 180 m",
   callerMapsLink: "https://www.google.com/maps/search/?api=1&query=40.4999,-74.4251", callerWazeLink: "https://waze.com/ul?ll=40.4999,-74.4251&navigate=yes",
-  closure: "Raritan Ave between 2nd Ave and 5th Ave, Highland Park", detour: "Woodbridge Ave", until: "18:00 10/2",
+  closure: "Raritan Ave between 2nd Ave and 5th Ave, Highland Park", detour: "Woodbridge Ave", until: "10/02/2026 18:00",
   stretchLink: "https://www.google.com/maps/dir/?api=1&origin=40.50,-74.43&destination=40.50,-74.42", mapLink: "", linkLabel: "Closed stretch", closureLink: "https://www.google.com/maps/dir/?api=1&origin=40.50,-74.43&destination=40.50,-74.42", detourLink: "https://www.google.com/maps/dir/?api=1&waypoints=example",
   hospital: "RWJ University Hospital", divertType: "CT down", divertTypeLower: "ct down",
   rig: "Rig 3 (ERV)", reason: "Brake repair", autoNote: "",
@@ -7590,7 +7584,7 @@ var TPL_REQUIRED = { callerLocation: ["link"], passwordLink: ["link"] };
 var TPL_SAMPLE_BYKEY = {
   roadClosure: { detail: "Water main break — one lane open" },
   hospitalDivert: { detail: "Scanner down until repaired" },
-  rigOut: { until: "17:00 10/2" },
+  rigOut: { until: "10/02/2026 17:00" },
   passwordLink: { link: "https://hvac-ops.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=EXAMPLE" }
 };
 function tplSampleFor(which) {
@@ -7733,7 +7727,7 @@ function renderTemplatePreview() {
   if (!box || !out) return;
   var vars = Object.assign(mCallVars(tplSampleCall()), tplExtraVars(), tplSampleFor(tplWhich()));
   var text = mRenderTemplate(mCleanTemplate(box.value), vars);
-  // Every text ends with one "09:54 10/1/26" timestamp when it's sent — show it here too.
+  // Every text ends with one "Date: 10/01/2026  Time: 18:00" stamp when it's sent — show it here too.
   out.textContent = text ? mStampMessage(mOneTimestamp(text)) : "(this template renders nothing)";
 }
 function saveTemplate() {
@@ -14430,7 +14424,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.07";
+var DESKTOP_VERSION = "10.08";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -16650,7 +16644,7 @@ function mCallVars(call) {
     als: (call.alsActivated && call.alsProvider) ? (call.alsProvider + (call.alsEta ? " (ETA " + call.alsEta + " min)" : "")) : "",
     mapsLink: (lat && lng) ? ("https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving")
             : (call.mapsLink || ""),
-    time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" })
+    time: mSmsStamp(now)
   };
 }
 // Cross streets are worked out from the address on their own — there's nothing for a dispatcher to fill in.
@@ -16804,18 +16798,31 @@ function mTextNoteToAssigned(call, noteText) {
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, _nbody); }); });
   mAdminCopy(call, "📝 CALL UPDATE", noteText);
 }
-function mSmsStamp() {
-  var d = new Date();
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + d.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
+// Every text uses one format, the same as Unit assigned: "Date: 10/01/2026  Time: 18:00".
+function mDateTimeParts(d) {
+  var pad = function(n) { return (n < 10 ? "0" : "") + n; };
+  return { date: pad(d.getMonth() + 1) + "/" + pad(d.getDate()) + "/" + d.getFullYear(), time: pad(d.getHours()) + ":" + pad(d.getMinutes()) };
+}
+function mSmsStamp(d) {
+  var p = mDateTimeParts(d || new Date());
+  return "Date: " + p.date + "  Time: " + p.time;
+}
+// A time inside a message ("Until …", "Expected back …"): same date and time, e.g. "10/02/2026 18:00".
+function mWhen(iso) {
+  var d = iso instanceof Date ? iso : new Date(iso); if (isNaN(d.getTime())) return "";
+  var p = mDateTimeParts(d); return p.date + " " + p.time;
 }
 function mStampMessage(msg) {
   msg = String(msg || "");
   // Only add a timestamp when the message doesn't already carry one — templates now end with their
   // own "Date: 09/29/2026  Time: 23:52" line, which this used not to recognise (and so doubled).
   var tail = msg.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/\s+$/, "").split("\n").slice(-3).join("\n");
-  var hasStamp = /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(tail)      // 23:52 9/29/26
-              || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(tail)                             // 09/29/2026, with or without "Date:"
-              || /\bTime:\s*\d{1,2}:\d{2}/.test(tail);
+  // Only a line that STARTS with the date (or is a bare "23:52 9/29/26") is a closing stamp — an
+  // "Until: 10/02/2026 18:00" line inside the message is not.
+  var hasStamp = tail.split("\n").some(function(l) {
+    l = l.trim();
+    return /^(Date:\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}/.test(l) || /^\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(l) || /^Time:\s*\d{1,2}:\d{2}/.test(l);
+  });
   return hasStamp ? msg : msg.replace(/\s+$/, "") + "\n" + mSmsStamp();
 }
 // Nothing leaves the system with two timestamps on it, whichever path built the message.

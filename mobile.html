@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.14"; window.M_BUILD = BUILD;
+  var BUILD = "3.15"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4611,7 +4611,7 @@ function mCallVars(call) {
     als: (call.alsActivated && call.alsProvider) ? (call.alsProvider + (call.alsEta ? " (ETA " + call.alsEta + " min)" : "")) : "",
     mapsLink: (lat && lng) ? ("https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving")
             : (call.mapsLink || ""),
-    time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + now.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" })
+    time: mSmsStamp(now)
   };
 }
 // Cross streets are worked out from the address on their own — there's nothing for a dispatcher to fill in.
@@ -4766,18 +4766,31 @@ function mTextNoteToAssigned(call, noteText) {
   mAdminCopy(call, "📝 CALL UPDATE", noteText);
 }
 // Every SMS ends with a timestamp — added here so no message can go out without one
-function mSmsStamp() {
-  var d = new Date();
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) + " " + d.toLocaleDateString([], { month: "numeric", day: "numeric", year: "2-digit" });
+// Every text uses one format, the same as Unit assigned: "Date: 10/01/2026  Time: 18:00".
+function mDateTimeParts(d) {
+  var pad = function(n) { return (n < 10 ? "0" : "") + n; };
+  return { date: pad(d.getMonth() + 1) + "/" + pad(d.getDate()) + "/" + d.getFullYear(), time: pad(d.getHours()) + ":" + pad(d.getMinutes()) };
+}
+function mSmsStamp(d) {
+  var p = mDateTimeParts(d || new Date());
+  return "Date: " + p.date + "  Time: " + p.time;
+}
+// A time inside a message ("Until …", "Expected back …"): same date and time, e.g. "10/02/2026 18:00".
+function mWhen(iso) {
+  var d = iso instanceof Date ? iso : new Date(iso); if (isNaN(d.getTime())) return "";
+  var p = mDateTimeParts(d); return p.date + " " + p.time;
 }
 function mStampMessage(msg) {
   msg = String(msg || "");
   // Only add a timestamp when the message doesn't already carry one — templates now end with their
   // own "Date: 09/29/2026  Time: 23:52" line, which this used not to recognise (and so doubled).
   var tail = msg.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/\s+$/, "").split("\n").slice(-3).join("\n");
-  var hasStamp = /\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/.test(tail)      // 23:52 9/29/26
-              || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(tail)                             // 09/29/2026, with or without "Date:"
-              || /\bTime:\s*\d{1,2}:\d{2}/.test(tail);
+  // Only a line that STARTS with the date (or is a bare "23:52 9/29/26") is a closing stamp — an
+  // "Until: 10/02/2026 18:00" line inside the message is not.
+  var hasStamp = tail.split("\n").some(function(l) {
+    l = l.trim();
+    return /^(Date:\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}/.test(l) || /^\d{1,2}:\d{2}\s+\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(l) || /^Time:\s*\d{1,2}:\d{2}/.test(l);
+  });
   return hasStamp ? msg : msg.replace(/\s+$/, "") + "\n" + mSmsStamp();
 }
 // Nothing leaves the system with two timestamps on it, whichever path built the message.
