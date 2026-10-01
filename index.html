@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.06</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.07</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3030,7 +3030,13 @@ function tcTitle(c) {
 function tcMapLink(lat, lng) { return "https://www.google.com/maps/search/?api=1&query=" + lat + "," + lng; }
 function tcFooter() { return (typeof M_ORG_FOOTER !== "undefined" ? M_ORG_FOOTER : orgSignoff()) + (currentUserUnit ? " " + currentUserUnit : ""); }
 // Closure and divert texts come from Admin ▸ Message Templates (built-in wording until edited).
-function tcFmtWhen(iso) { return iso ? new Date(iso).toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""; }
+// Times inside a text ("Until …") use the call-text style — 24-hour time, then month/day — without the
+// year, so they're never mistaken for the timestamp every text ends with ("09:54 10/1/26").
+function tcFmtWhen(iso) {
+  if (!iso) return "";
+  var d = new Date(iso); if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) + " " + (d.getMonth() + 1) + "/" + d.getDate();
+}
 function tcClosureBody(c) {
   var seg = c.kind === "segment" && c.from && c.to;
   return mRenderTemplate(mTemplateFor("roadClosure"), {
@@ -7556,7 +7562,7 @@ var TPL_SAMPLE_EXTRA = {
   orgName: "MC Hatzolah", link: "https://chaverim151.github.io/CallDashboard/loc.html?t=loc1example",
   callerPlace: "near 131 Raritan Ave, Highland Park", accuracy: "12", moved: " — moved about 180 m",
   callerMapsLink: "https://www.google.com/maps/search/?api=1&query=40.4999,-74.4251", callerWazeLink: "https://waze.com/ul?ll=40.4999,-74.4251&navigate=yes",
-  closure: "Raritan Ave between 2nd Ave and 5th Ave, Highland Park", detour: "Woodbridge Ave", until: "10/02, 06:00 PM",
+  closure: "Raritan Ave between 2nd Ave and 5th Ave, Highland Park", detour: "Woodbridge Ave", until: "18:00 10/2",
   stretchLink: "https://www.google.com/maps/dir/?api=1&origin=40.50,-74.43&destination=40.50,-74.42", mapLink: "", linkLabel: "Closed stretch", closureLink: "https://www.google.com/maps/dir/?api=1&origin=40.50,-74.43&destination=40.50,-74.42", detourLink: "https://www.google.com/maps/dir/?api=1&waypoints=example",
   hospital: "RWJ University Hospital", divertType: "CT down", divertTypeLower: "ct down",
   rig: "Rig 3 (ERV)", reason: "Brake repair", autoNote: "",
@@ -7573,7 +7579,7 @@ var TPL_HELP = {
   roadReopened: "Sent when a closure is marked reopened and you choose to text it.",
   hospitalDivert: "Sent from Admin ▸ Closure Notifications ▸ Hospital Diverts.",
   offDivert: "Sent when a divert is ended and you choose to text it.",
-  rigOut: "Sent by the server to everyone when a rig is taken out of service (switch it off in Admin ▸ Fleet). Changes apply within a minute.",
+  rigOut: "Sent by the server to everyone when a rig is taken out of service (switch it off in Admin ▸ Fleet). Changes apply within a minute. Like every text, it ends with the time sent.",
   rigBack: "Sent by the server when a rig is back in service. Changes apply within a minute.",
   ticketPriority: "Sent by the server to logistics when an urgent or high-priority service request is submitted. Changes apply within a minute.",
   ticketNotice: "Sent by the server instead of an app notification, to members who don't have app notifications turned on. Changes apply within a minute.",
@@ -7584,7 +7590,7 @@ var TPL_REQUIRED = { callerLocation: ["link"], passwordLink: ["link"] };
 var TPL_SAMPLE_BYKEY = {
   roadClosure: { detail: "Water main break — one lane open" },
   hospitalDivert: { detail: "Scanner down until repaired" },
-  rigOut: { until: "Fri, Oct 2, 5:00 PM" },
+  rigOut: { until: "17:00 10/2" },
   passwordLink: { link: "https://hvac-ops.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=EXAMPLE" }
 };
 function tplSampleFor(which) {
@@ -7727,7 +7733,8 @@ function renderTemplatePreview() {
   if (!box || !out) return;
   var vars = Object.assign(mCallVars(tplSampleCall()), tplExtraVars(), tplSampleFor(tplWhich()));
   var text = mRenderTemplate(mCleanTemplate(box.value), vars);
-  out.textContent = text || "(this template renders nothing)";
+  // Every text ends with one "09:54 10/1/26" timestamp when it's sent — show it here too.
+  out.textContent = text ? mStampMessage(mOneTimestamp(text)) : "(this template renders nothing)";
 }
 function saveTemplate() {
   var which = (document.getElementById("tpl-which")||{}).value || "assignment";
@@ -14423,7 +14430,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.06";
+var DESKTOP_VERSION = "10.07";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
