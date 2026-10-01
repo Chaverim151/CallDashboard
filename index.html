@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.04</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.05</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1800,7 +1800,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
           <option value="PD">PD</option>
           <option value="CALL UPDATE">Call updates</option>
           <option value="CALLBACK">Callback</option>
-        </select>
+        <option value="Rig out of service">Rig out of service</option><option value="Rig back in service">Rig back in service</option></select>
         <select id="notif-filter-mode" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.84rem" onchange="renderNotificationLog()">
           <option value="">Live and test</option>
           <option value="live">Live only</option>
@@ -2041,6 +2041,12 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     <div class="admin-section" data-admin-tab="fleet" id="adm-service-status">
       <div class="admin-section-title">🔧 Service Status</div>
       <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">Take a rig out of service and it stops being offered to dispatchers on both apps — it's skipped by "Add Additional Rig" and flagged in the rig picker. Set an optional return time and it comes back automatically.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:12px">
+        <div style="font-family:'Oswald',sans-serif;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold)">📱 Text everyone when…</div>
+        <label style="display:flex;gap:10px;align-items:center;font-size:0.86rem;min-height:32px;cursor:pointer"><input type="checkbox" id="fa-oos" onchange="saveFleetAlerts()" style="width:18px;height:18px"> a rig is taken <b>out of service</b> <span style="color:var(--gray)">(rig, reason, expected return)</span></label>
+        <label style="display:flex;gap:10px;align-items:center;font-size:0.86rem;min-height:32px;cursor:pointer"><input type="checkbox" id="fa-back" onchange="saveFleetAlerts()" style="width:18px;height:18px"> a rig is <b>back in service</b> <span style="color:var(--gray)">(including when its return time passes)</span></label>
+        <div style="font-size:0.74rem;color:var(--gray)">Goes to all responders, captains, chiefs, observers and admins with a phone on file. In Test Mode it goes only to you. <span id="fa-msg"></span></div>
+      </div>
       <div id="veh-status-list"></div>
     </div>
 
@@ -3338,6 +3344,7 @@ function setAdminTab(tab) {
   if (tab === "fleet" && typeof initVehBaseMap === "function") initVehBaseMap();
   if (tab === "traffic") { tcBindAddress(); tcLoad(); tcCheckOldList(); hdLoad(); }
   if (tab === "org") orgFormLoad();
+  if (tab === "fleet") loadFleetAlerts();
   if (tab === "protoai") paiLoad();
 }
 // ── Admin search: find a setting by name and jump to it, whichever tab it lives on ──
@@ -3354,6 +3361,7 @@ var ADM_SEARCH = [
   { label: "Notifications & permissions (who gets notified)", where: "Protocols & Dispatch", tab: "protocols", ds: "notify", k: "notifications permissions who gets notified admin call notification service ticket group it tickets accept resolve logistics" },
   { label: "Access codes & locations (buildings, shuls, hospital, storage)", where: "Codes & Locations", tab: "codes", el: "adm-codes", k: "codes access code door buildings shuls hospital storage locations" },
   { label: "Vehicle service status", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "service status out of service vehicle rig ambulance oos" },
+  { label: "Text everyone when a rig is out of / back in service", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "oos sms text broadcast out of service back in service rig alert" },
   { label: "Vehicles & equipment", where: "Fleet", tab: "fleet", el: "adm-vehicles", k: "vehicles equipment rigs ambulances home base map" },
   { label: "Road closures", where: "Closure Notifications", tab: "traffic", el: "tc-section", k: "road closures traffic closed street detour notify" },
   { label: "Hospital diverts", where: "Closure Notifications", tab: "traffic", el: "hd-block", exact: true, k: "hospital divert diversion ed saturation trauma stroke stemi closed hospital notify" },
@@ -8187,7 +8195,7 @@ function loadVehicleStatusPanel() {
       if (status === "out" && outUntil && new Date(outUntil).getTime() < now) {
         status = "in";
         // Silently restore
-        db.collection("vehicles").doc(v.docId).set({ serviceStatus:"in", outUntil:null, outReason:"" }, { merge:true }).catch(function(){});
+        db.collection("vehicles").doc(v.docId).set({ serviceStatus:"in", outUntil:null, outReason:"", statusBy:"auto", statusByUid:null, statusAt: new Date().toISOString() }, { merge:true }).catch(function(){});
       }
 
       var isOut = status === "out";
@@ -8231,8 +8239,8 @@ function loadVehicleStatusPanel() {
 }
 
 window.setVehIn = function(docId) {
-  db.collection("vehicles").doc(docId).set({ serviceStatus:"in", outUntil:null, outReason:"" }, { merge:true })
-    .then(function(){ loadVehicleStatusPanel(); showToast("✓ Vehicle restored to service"); })
+  db.collection("vehicles").doc(docId).set({ serviceStatus:"in", outUntil:null, outReason:"", statusBy: currentUserUnit||"", statusByUid: currentUser ? currentUser.uid : "", statusAt: new Date().toISOString() }, { merge:true })
+    .then(function(){ loadVehicleStatusPanel(); showToast(fleetAlertCfg.backSms === false ? "✓ Vehicle restored to service" : "✓ Vehicle restored to service — members are being texted"); })
     .catch(function(e){ showToast("Error: "+e.message,true); });
 };
 
@@ -8275,6 +8283,23 @@ window.openVehOOS = function(docId, label) {
   });
 };
 
+// ── Fleet ▸ texts when a rig goes out of / back in service (sent by the server; on unless switched off) ──
+var fleetAlertCfg = {};
+function loadFleetAlerts() {
+  db.collection("appdata").doc("fleetAlerts").get().then(function(s) {
+    fleetAlertCfg = s.exists ? (s.data() || {}) : {};
+    var a = document.getElementById("fa-oos"), b = document.getElementById("fa-back");
+    if (a) a.checked = fleetAlertCfg.oosSms !== false;
+    if (b) b.checked = fleetAlertCfg.backSms !== false;
+  }).catch(function() {});
+}
+function saveFleetAlerts() {
+  var cfg = { oosSms: document.getElementById("fa-oos").checked, backSms: document.getElementById("fa-back").checked, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" };
+  db.collection("appdata").doc("fleetAlerts").set(cfg, { merge: true }).then(function() {
+    fleetAlertCfg = cfg; var m = document.getElementById("fa-msg"); if (m) { m.textContent = "✓ Saved"; m.style.color = "#7dedb5"; setTimeout(function() { m.textContent = ""; }, 2000); }
+  }).catch(function(e) { showToast("Couldn't save: " + e.message, true); });
+}
+window.saveFleetAlerts = saveFleetAlerts;
 window.confirmVehOOS = function() {
   var docId = window._vehOOSDocId;
   var reason = (document.getElementById("veh-oos-reason").value||"").trim();
@@ -8301,9 +8326,10 @@ window.confirmVehOOS = function() {
     outUntil: outUntil,
     outReason: reason,
     oosAt: new Date().toISOString(),
-    oosBy: currentUserUnit||""
+    oosBy: currentUserUnit||"",
+    oosByUid: currentUser ? currentUser.uid : ""
   }, { merge:true }).then(function() {
-    showToast("Vehicle marked out of service");
+    showToast(fleetAlertCfg.oosSms === false ? "Vehicle marked out of service" : "Vehicle marked out of service — members are being texted");
     var form = document.getElementById("veh-oos-form");
     if (form) form.remove();
     loadVehicleStatusPanel();
@@ -10927,7 +10953,7 @@ function loadAmbulancesCache() {
       // Auto-expire timed OOS
       if (isOOS && v.outUntil && new Date(v.outUntil).getTime() < now) {
         isOOS = false;
-        db.collection("vehicles").doc(d.id).set({ serviceStatus:"in", outUntil:null, outReason:"" }, { merge:true }).catch(function(){});
+        db.collection("vehicles").doc(d.id).set({ serviceStatus:"in", outUntil:null, outReason:"", statusBy:"auto", statusByUid:null, statusAt: new Date().toISOString() }, { merge:true }).catch(function(){});
       }
       allAmbulancesCache.push(Object.assign({ docId: d.id, isOOS: isOOS }, v));
     });
@@ -14313,7 +14339,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.04";
+var DESKTOP_VERSION = "10.05";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
