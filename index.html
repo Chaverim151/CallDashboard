@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.20');
+  window.location.replace('/CallDashboard/mobile.html?v=3.21');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.16</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.17</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -14347,7 +14347,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.16";
+var DESKTOP_VERSION = "10.17";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -16885,7 +16885,8 @@ function mNcShowCoords() {
 }
 function mLocStatus(html, color) {
   var el = document.getElementById("m-nc-loc-status"); if (!el) return;
-  el.style.display = "block";
+  mLocCardKey = null;
+  el.style.display = "block"; el.style.padding = "8px 10px";
   el.style.background = "rgba(255,255,255,0.05)";
   el.style.border = "1px solid " + (color || "var(--card-border)");
   el.style.color = color || "var(--gray)";
@@ -16926,6 +16927,107 @@ function mRequestCallerLocation(force) {
     })
     .catch(function(e){ mLocStatus("Couldn't send the link: " + mEscHtml(e.message), "#ff9090"); });
 }
+// ── Request Location card ─────────────────────────────────────────────────────────────────────────
+// One organised card: accuracy badge, labelled rows, a clear choice of what goes in the address box,
+// and an "the caller has moved" strip. New GPS readings arrive every few seconds; when nothing about
+// the layout changes only the numbers are updated, so buttons never move under the dispatcher's
+// cursor and keyboard focus stays where it is. Styles are anchored to #m-nc-loc-status: the desktop console
+// has "#pg-console * {padding:0}", which would otherwise flatten the card.
+var mLocBusy = false, mLocMsg = "", mLocCardKey = null;
+function mLocStyle() {
+  if (document.getElementById("lc-style")) return;
+  var st = document.createElement("style"); st.id = "lc-style";
+  st.textContent =
+    "#m-nc-loc-status .lc{background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;font-size:0.84rem;line-height:1.45;color:var(--white)}" +
+    "#m-nc-loc-status .lc-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}" +
+    "#m-nc-loc-status .lc-title{font-weight:700}" +
+    "#m-nc-loc-status .lc-badge{font-size:0.72rem;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap}" +
+    "#m-nc-loc-status .lc-good{background:rgba(76,175,128,0.18);color:#7dedb5;border:1px solid rgba(76,175,128,0.5)}" +
+    "#m-nc-loc-status .lc-fair{background:rgba(240,165,0,0.16);color:#ffc84a;border:1px solid rgba(240,165,0,0.5)}" +
+    "#m-nc-loc-status .lc-poor{background:rgba(224,85,85,0.16);color:#ff9f9f;border:1px solid rgba(224,85,85,0.5)}" +
+    "#m-nc-loc-status .lc-rows{display:grid;gap:5px;margin-bottom:10px}" +
+    "#m-nc-loc-status .lc-row{display:grid;grid-template-columns:66px 1fr;gap:8px;align-items:baseline}" +
+    "#m-nc-loc-status .lc-k{font-size:0.66rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray)}" +
+    "#m-nc-loc-status .lc-near{color:#d6deea;overflow-wrap:anywhere}.lc-age{color:var(--gray)}" +
+    "#m-nc-loc-status .lc-map{color:#bfe0ff}" +
+    "#m-nc-loc-status .lc-label{font-size:0.66rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray);margin:2px 0 6px}" +
+    "#m-nc-loc-status .lc-seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}" +
+    "#m-nc-loc-status .lc-opt{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;text-align:left;min-height:54px;padding:9px 11px;border-radius:9px;border:1px solid rgba(122,184,245,0.45);background:rgba(122,184,245,0.08);color:#d6e8ff;font:inherit;font-weight:700;font-size:0.8rem;cursor:pointer}" +
+    "#m-nc-loc-status .lc-opt small{font-weight:400;font-size:0.7rem;color:var(--gray)}" +
+    "#m-nc-loc-status .lc-opt:hover{background:rgba(122,184,245,0.16)}" +
+    "#m-nc-loc-status .lc-opt.on{background:rgba(125,237,181,0.16);border-color:#7dedb5;color:#7dedb5;box-shadow:inset 0 0 0 1px #7dedb5}" +
+    "#m-nc-loc-status .lc-opt.on small{color:#a9f0cc}" +
+    "#m-nc-loc-status .lc-opt:disabled{opacity:0.55;cursor:wait}" +
+    "#m-nc-loc-status .lc-opt:focus-visible,#m-nc-loc-status .lc-update:focus-visible,#m-nc-loc-status .lc-map:focus-visible{outline:2px solid var(--gold);outline-offset:2px}" +
+    "#m-nc-loc-status .lc-note{margin-top:10px;color:#d6deea;overflow-wrap:anywhere}.lc-caution{color:#ffc84a;font-size:0.76rem}" +
+    "#m-nc-loc-status .lc-warn{margin:4px 0 10px;padding:7px 9px;border-radius:7px;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.45);color:#ffb3b3;font-size:0.78rem}" +
+    "#m-nc-loc-status .lc-moved{margin-top:10px;padding:9px 10px;border-radius:8px;background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.5);color:#ffd27a;display:flex;flex-direction:column;gap:8px}" +
+    "#m-nc-loc-status .lc-update{align-self:flex-start;background:var(--gold);color:var(--navy);border:none;border-radius:7px;font:inherit;font-weight:700;font-size:0.8rem;padding:8px 12px;min-height:38px;cursor:pointer}" +
+    "@media (max-width:360px){#m-nc-loc-status .lc-seg{grid-template-columns:1fr}}";
+  document.head.appendChild(st);
+}
+function mLocDist(m) { return m < 1000 ? Math.round(m) + " m" : (m / 1000).toFixed(1) + " km"; }
+// Has the caller genuinely moved since the point in use? (GPS wobble doesn't count.)
+function mLocMovedInfo() {
+  var d = mLocLastData; if (!mLocApplied || !d || !d.lat || mLocAppliedLat === null) return null;
+  var acc = d.accuracy || 0, moved = mMetresBetween(mLocAppliedLat, mLocAppliedLng, d.lat, d.lng);
+  var threshold = mLocCoordsOnly ? Math.max(10, acc * 0.5) : Math.max(30, acc * 0.5, (mLocAppliedAcc || 0) * 0.5);
+  return moved < threshold ? null : { moved: moved, acc: acc };
+}
+function mLocRender() {
+  var el = document.getElementById("m-nc-loc-status"), d = mLocLastData;
+  if (!el || !d || !d.lat) return;
+  mLocStyle();
+  var acc = d.accuracy || 0, q = acc <= 75 ? "good" : acc <= 150 ? "fair" : "poor", mv = mLocMovedInfo();
+  var mode = !mLocApplied ? "" : (mLocCoordsOnly ? "precise" : "address");
+  var inBox = (document.getElementById("m-nc-address") || {}).value || "";
+  var key = [mode, mLocBusy, !!mv, acc > 150, mLocMsg, inBox].join("|");
+  var fill = function() {
+    var badge = el.querySelector(".lc-badge");
+    if (badge) { badge.className = "lc-badge lc-" + q; badge.textContent = (d.accuracyLabel ? d.accuracyLabel + " · " : "") + "within " + acc + " m"; }
+    var near = el.querySelector(".lc-near"); if (near) near.textContent = d.approxAddress || "—";
+    var map = el.querySelector(".lc-map"); if (map) map.href = "https://www.google.com/maps/search/?api=1&query=" + d.lat + "," + d.lng;
+    var mvt = el.querySelector(".lc-moved-text"); if (mvt && mv) mvt.textContent = "The caller has moved about " + mLocDist(mv.moved) + " since this point (newer reading within " + mv.acc + " m).";
+  };
+  if (key === mLocCardKey && el.querySelector(".lc")) { fill(); return; }   // same layout — numbers only
+  mLocCardKey = key;
+  el.style.display = "block"; el.style.background = "transparent"; el.style.border = "0"; el.style.padding = "0"; el.style.color = "var(--white)";
+  var opt = function(m, label, sub) {
+    return '<button type="button" class="lc-opt' + (mode === m ? ' on' : '') + '" aria-pressed="' + (mode === m) + '"' + (mLocBusy ? ' disabled' : '') +
+      ' onclick="mLocChoose(\'' + m + '\')"><span>' + label + '</span><small>' + sub + '</small></button>';
+  };
+  el.innerHTML = '<div class="lc">' +
+    '<div class="lc-head"><span class="lc-title">📍 Caller\'s location</span><span class="lc-badge"></span></div>' +
+    '<div class="lc-rows">' +
+      '<div class="lc-row"><span class="lc-k">Near</span><span class="lc-near"></span></div>' +
+      '<div class="lc-row"><span class="lc-k">Updated</span><span id="m-nc-loc-age" class="lc-age">just now</span></div>' +
+      '<div class="lc-row"><span class="lc-k">Map</span><span><a class="lc-map" target="_blank" rel="noopener">Open on a map ↗</a></span></div>' +
+    '</div>' +
+    (acc > 150 ? '<div class="lc-warn">⚠ Too rough to dispatch on alone — confirm the address with the caller.</div>' : '') +
+    '<div class="lc-label">' + (mode ? 'In the address box' : 'Put in the address box') + '</div>' +
+    '<div class="lc-seg" role="group" aria-label="What to put in the address box">' +
+      opt("address", "📮 Use closest address", "Nearest street address") +
+      opt("precise", "📍 Use precise location (coordinates)", "Exact GPS point, no address") +
+    '</div>' +
+    (mLocBusy ? '<div class="lc-note">Looking up the closest address…</div>' : '') +
+    (mLocMsg ? '<div class="lc-warn" style="margin-top:10px">' + mEscHtml(mLocMsg) + '</div>' : '') +
+    (mode === "address" && !mLocBusy ? '<div class="lc-note">✅ <b>' + mEscHtml(inBox) + '</b><br><span class="lc-caution">Nearest address only — the caller may not be exactly there. The map pin stays on their exact spot.</span></div>' : '') +
+    (mode === "precise" && !mLocBusy ? '<div class="lc-note">✅ <b>' + mEscHtml(inBox) + '</b> — the caller\'s exact GPS point.</div>' : '') +
+    (mv ? '<div class="lc-moved"><span class="lc-moved-text"></span><button type="button" class="lc-update" onclick="mLocUpdateToLatest()">↻ Update to the new spot</button></div>' : '') +
+  '</div>';
+  fill();
+}
+// First choice uses the latest reading; switching later keeps the point already in use (a new point is "Update").
+function mLocChoose(mode) {
+  var d = mLocLastData; if (!d || !d.lat || mLocBusy) return;
+  var lat = mLocApplied ? mLocAppliedLat : d.lat, lng = mLocApplied ? mLocAppliedLng : d.lng, acc = mLocApplied ? mLocAppliedAcc : (d.accuracy || 0);
+  if (mode === "precise") mUseCallerLocation(lat, lng, acc, true); else mUseClosestAddress(lat, lng, acc);
+}
+function mLocUpdateToLatest() {
+  var d = mLocLastData; if (!d || !d.lat || mLocBusy) return;
+  if (mLocCoordsOnly) mUseCallerLocation(d.lat, d.lng, d.accuracy || 0, true); else mUseClosestAddress(d.lat, d.lng, d.accuracy || 0);
+}
+window.mLocChoose = mLocChoose; window.mLocUpdateToLatest = mLocUpdateToLatest;
 function mWatchCallerLocation(token) {
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; }
   mLocReqToken = token;
@@ -16945,18 +17047,9 @@ function mWatchCallerLocation(token) {
       }
       return;
     }
-    var acc = d.accuracy || 0;
-    var color = acc <= 75 ? "#7dedb5" : acc <= 150 ? "#ffc84a" : "#ff9090";
-    var warn = acc > 150 ? "<br><b>Too rough to dispatch on alone — confirm the address with the caller.</b>" : "";
     mLocLastAt = d.at ? new Date(d.at).getTime() : Date.now();
     mLocLastData = d;
-    if (mLocApplied) { mLocPendingNote(); return; }   // already taken — don't keep prompting
-    var addrLine = d.approxAddress ? "<br>📮 " + mEscHtml(d.approxAddress) : "";
-    mLocStatus("📍 Caller's location — <b style=\"color:" + color + "\">" + mEscHtml(d.accuracyLabel || "") + ", within " + acc + " m</b>" + warn + addrLine +
-      '<br><span id="m-nc-loc-age" style="color:var(--gray);font-size:0.72rem"></span>' +
-      '<br><a href="https://www.google.com/maps/search/?api=1&query=' + d.lat + ',' + d.lng + '" target="_blank" style="color:#bfe0ff">Open on a map</a>' +
-      ' · <button type="button" onclick="mUseClosestAddress(' + d.lat + ',' + d.lng + ',' + acc + ')" style="background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.5);border-radius:6px;color:#7dedb5;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">📮 Use closest address</button>' +
-      ' <button type="button" onclick="mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ',true)" title="Highway, park, or anywhere without a street address" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer">📍 Use precise location (coordinates)</button>', color);
+    mLocRender();
   });
 }
 // The dispatcher decides — the pin is never applied on its own.
@@ -16970,29 +17063,7 @@ function mMetresBetween(aLat, aLng, bLat, bLng) {
           Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng/2) * Math.sin(dLng/2);
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
-function mLocPendingNote() {
-  // Offer an update only when the caller has genuinely moved — a stream of near-identical fixes is
-  // the normal case and shouldn't put a button in front of a dispatcher who is mid-call.
-  var d = mLocLastData; if (!d || !d.lat) return;
-  var acc = d.accuracy || 0;
-  var moved = mMetresBetween(mLocAppliedLat, mLocAppliedLng, d.lat, d.lng);
-  // movement has to clear the uncertainty of both fixes before it means anything
-  // On a coordinates-only call there is no street address to fall back on, so the pin IS the
-  // location — any change beyond GPS noise is worth offering.
-  var threshold = mLocCoordsOnly
-    ? Math.max(10, (acc || 0) * 0.5)
-    : Math.max(30, (acc || 0) * 0.5, (mLocAppliedAcc || 0) * 0.5);
-  if (moved < threshold) return;                       // same place — leave the panel alone
-  var ago = mLocLastAt ? Math.round((Date.now() - mLocLastAt) / 1000) : 0;
-  mLocStatus("✅ Using the caller's location (within " + mLocAppliedAcc + " m)." +
-    '<br><span style="color:#ffc84a">' + (mLocCoordsOnly ? "The precise location changed by about " : "The caller has moved about ") + (moved < 1000 ? Math.round(moved) + " m" : (moved/1000).toFixed(1) + " km") + ' — newer fix within ' + acc + ' m, ' + (ago < 60 ? ago + "s" : Math.round(ago/60) + " min") + ' ago.</span>' +
-    ' <button type="button" onclick="' + (mLocCoordsOnly ? 'mUseCallerLocation(' + d.lat + ',' + d.lng + ',' + acc + ',true)' : 'mUseClosestAddress(' + d.lat + ',' + d.lng + ',' + acc + ')') + '" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.7rem;font-weight:700;padding:3px 9px;cursor:pointer;margin-left:4px">↻ Update to this</button>', "#ffc84a");
-  // keep the switch between the two choices available too, for the point already in use
-  var st = document.querySelector("[id*=loc-status]");
-  if (st && mLocAppliedLat !== null) st.insertAdjacentHTML("beforeend", " " + (mLocCoordsOnly
-    ? mLocSwitchBtn("📮 Use closest address", "mUseClosestAddress(" + mLocAppliedLat + "," + mLocAppliedLng + "," + mLocAppliedAcc + ")")
-    : mLocSwitchBtn("📍 Use precise location (coordinates)", "mUseCallerLocation(" + mLocAppliedLat + "," + mLocAppliedLng + "," + mLocAppliedAcc + ",true)")));
-}
+function mLocPendingNote() { mLocRender(); }
 var mLocAppliedAcc = 0, mLocAppliedLat = null, mLocAppliedLng = null, mLocCoordsOnly = false;
 function mUseCallerLocation(lat, lng, acc, coordsOnly) {
   mLocCoordsOnly = !!coordsOnly;
@@ -17008,8 +17079,7 @@ function mUseCallerLocation(lat, lng, acc, coordsOnly) {
     i2.classList.remove("m-nc-need");
     if (typeof mNcValidateMarks === "function") mNcValidateMarks();
     mNcShowCoords();
-    mLocStatus("✅ Using the precise location (coordinates, within " + acc + " m) — no street address." +
-      '<br>' + mLocSwitchBtn("📮 Use closest address", "mUseClosestAddress(" + lat + "," + lng + "," + acc + ")"), "#7dedb5");
+    mLocBusy = false; mLocMsg = ""; mLocRender();
     return;
   }
   mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
@@ -17043,10 +17113,7 @@ function mUseCallerLocation(lat, lng, acc, coordsOnly) {
       inp.classList.remove("m-nc-need");
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
       mNcShowCoords();
-      mLocStatus("✅ Using the caller's location (within " + acc + " m). Check the address before posting." +
-        '<br>' + (r && !precise ? mLocSwitchBtn("📮 Use closest address", "mUseClosestAddress(" + lat + "," + lng + "," + acc + ")") + ' ' : '') +
-        mLocSwitchBtn("📍 Use precise location (coordinates)", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)") +
-        '<br><span style="color:var(--gray);font-size:0.72rem">No further action needed — if the caller moves you can take a newer fix.</span>', "#7dedb5");
+      mLocBusy = false; mLocMsg = ""; mLocRender();
     });
   }
 }
@@ -17058,7 +17125,9 @@ function mLocSwitchBtn(label, onclick) {
 function mUseClosestAddress(lat, lng, acc) {
   var inp = document.getElementById("m-nc-address");
   var done = function(addr) {
-    if (!addr) { mLocStatus("Couldn't find a nearby street address — use the precise location (coordinates) instead." + '<br>' + mLocSwitchBtn("📍 Use precise location (coordinates)", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)"), "#ffc84a"); return; }
+    mLocBusy = false;
+    if (!addr) { mLocMsg = "Couldn't find a nearby street address — use the precise location (coordinates) instead."; mLocRender(); return; }
+    mLocMsg = "";
     mLocCoordsOnly = false; mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
     inp.value = addr; mNcResolvedAddress = addr;
     if (typeof mDetectZoneInfo === "function") { var z = mDetectZoneInfo(lat, lng); if (z) mSetNcZone(z.type, false, z.area); }
@@ -17068,12 +17137,11 @@ function mUseClosestAddress(lat, lng, acc) {
     inp.classList.remove("m-nc-need");
     if (typeof mNcValidateMarks === "function") mNcValidateMarks();
     mNcShowCoords();
-    mLocStatus("✅ Using the closest address: <b>" + mEscHtml(addr) + "</b>" +
-      '<br><span style="color:#ffc84a;font-size:0.76rem">Nearest address only — the caller may not be exactly there. The map pin stays on their exact spot (within ' + acc + ' m).</span>' +
-      '<br>' + mLocSwitchBtn("📍 Use precise location (coordinates)", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)"), "#7dedb5");
+    mLocRender();
   };
-  if (!(window.google && google.maps && google.maps.Geocoder)) { done(mLocLastData && mLocLastData.approxAddress ? mCleanAddress(String(mLocLastData.approxAddress).replace(/, USA$/, "")) : ""); return; }
-  mLocStatus("Looking up the closest address…", "var(--gray)");
+  var approx = mLocLastData && mLocLastData.approxAddress ? mCleanAddress(String(mLocLastData.approxAddress).replace(/, USA$/, "")) : "";
+  if (!(window.google && google.maps && google.maps.Geocoder)) { done(approx); return; }
+  mLocBusy = true; mLocMsg = ""; mLocRender();
   new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
     var pick = null;
     if (st === "OK" && res) {
@@ -17081,7 +17149,7 @@ function mUseClosestAddress(lat, lng, acc) {
       pick = res.filter(function(x) { var t = x.types || []; return t.indexOf("street_address") !== -1 || t.indexOf("premise") !== -1 || t.indexOf("subpremise") !== -1; })[0] ||
              res.filter(function(x) { return (x.address_components || []).some(function(c) { return c.types.indexOf("street_number") !== -1; }); })[0] || null;
     }
-    done(pick ? mCleanAddress(pick.formatted_address.replace(/, USA$/, "")) : (mLocLastData && mLocLastData.approxAddress ? mCleanAddress(String(mLocLastData.approxAddress).replace(/, USA$/, "")) : ""));
+    done(pick ? mCleanAddress(pick.formatted_address.replace(/, USA$/, "")) : approx);
   });
 }
 window.mUseClosestAddress = mUseClosestAddress;
@@ -17096,6 +17164,7 @@ function mOpenNewCallForm() {
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
   mLocSetBtn(false);
   mLocReqTokensAll = [];
+  mLocBusy = false; mLocMsg = ""; mLocCardKey = null;
   mLocReqCallback = ""; mLocCoordsOnly = false; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
