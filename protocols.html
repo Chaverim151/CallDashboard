@@ -99,6 +99,13 @@ mark{background:rgba(255,213,0,0.3);color:inherit;border-radius:2px;padding:0 1p
 #modal h2{font-family:'Oswald',sans-serif;letter-spacing:0.04em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
 #modal ul{margin:8px 0 14px 20px;font-size:0.94rem}
 #modal button{width:100%;background:var(--gold);color:var(--navy);border:none;border-radius:10px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;font-size:1rem;padding:13px;cursor:pointer}
+.ans{background:linear-gradient(180deg,rgba(160,120,255,0.10),rgba(255,255,255,0.03));border:1px solid rgba(160,120,255,0.45);border-radius:14px;padding:14px;margin-bottom:14px}
+.ans-h{font-family:'Oswald',sans-serif;font-size:1rem;letter-spacing:0.05em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.ans-warn{background:rgba(240,165,0,0.14);border:1px solid rgba(240,165,0,0.55);color:#ffd27a;border-radius:9px;padding:9px 11px;font-size:0.86rem;line-height:1.45;margin-bottom:10px}
+.ans-list{margin:0 0 0 18px;font-size:1rem;line-height:1.55}
+.ans-list li{margin:7px 0}
+.ref{display:inline-block;font-family:'Oswald',sans-serif;font-size:0.72rem;letter-spacing:0.04em;background:rgba(122,184,245,0.16);border:1px solid rgba(122,184,245,0.55);color:#bfe0ff;border-radius:6px;padding:2px 8px;margin:2px 3px 0 0;text-decoration:none;white-space:nowrap}
+.ans-foot{font-size:0.74rem;color:var(--gray);margin-top:8px;line-height:1.45}
 </style>
 </head>
 <body>
@@ -398,7 +405,7 @@ function showWarning() {
   if (document.getElementById("modal")) return;
   var m = document.createElement("div"); m.id = "modal";
   m.innerHTML = '<div class="box" role="dialog" aria-modal="true" aria-labelledby="mtitle"><h2 id="mtitle">⚠ Beta — reference only <span class="beta">BETA</span></h2>' +
-    '<ul><li>AI search and the on-screen layout can be <b>wrong or incomplete</b>.</li>' +
+    '<ul><li>AI answers <b>can be wrong or incomplete</b> — every statement links to the protocol line it came from, so check it.</li>' +
     '<li>This is <b>not</b> medical direction and doesn\'t replace the official NJ protocol, your training, or medical command.</li>' +
     '<li>Always read the full protocol — check <b>Original pages</b> when it matters.</li>' +
     '<li>Don\'t type patient names or details.</li></ul>' +
@@ -460,13 +467,13 @@ function onlyTag(pr) { return pr.alsOnly ? '<span class="tag t-ONLY">Paramedic &
 function pageRange(pr) { var a = pr.pages[0], z = pr.pages[pr.pages.length - 1]; return a === z ? "p. " + a : "pp. " + a + "–" + z; }
 var EXAMPLES = ["Pt found down, pinpoint pupils, slow breathing", "Epi dose for anaphylaxis", "When can I use CPAP?", "Woman in labor, baby crowning", "Chest pain, can I give aspirin?", "Kid having a seizure"];
 function home() {
-  show('<div class="hero"><h1>Ask the protocols</h1><p>Describe the situation in your own words — AI finds the right NJ protocol and the steps that matter.</p></div>' +
+  show('<div class="hero"><h1>Ask the protocols</h1><p>Ask in your own words — AI answers from the NJ protocol, with a reference for every statement.</p></div>' +
     '<div class="askbox"><textarea id="hq" rows="3" placeholder="e.g. 70 y/o short of breath, wheezing, hx COPD"></textarea>' +
     '<div class="hero-lvl">My level: <button class="lvl" data-l="EMT">EMT (BLS)</button><button class="lvl" data-l="ALS">Paramedic &amp; MICN</button></div>' +
-    '<button id="hgo">✨ FIND PROTOCOLS</button></div>' +
+    '<button id="hgo">✨ ASK</button></div>' +
     '<div class="chips">' + EXAMPLES.map(function(e) { return '<button>' + esc(e) + '</button>'; }).join("") + '</div>' +
     '<a class="browsebtn" href="#/browse">📚 Browse all protocols</a>' +
-    '<div class="msg" style="text-align:center;font-size:0.76rem;padding-top:6px">AI chooses which protocols to show — it doesn\'t write answers. Always read the protocol.</div>');
+    '<div class="msg" style="text-align:center;font-size:0.76rem;padding-top:6px">AI answers only from the NJ protocol and cites every statement — but AI can make mistakes. Always double-check the protocol.</div>');
   bindLevels();
   var ask = function() { var q = $("hq").value.trim(); if (q) go("/s/" + encodeURIComponent(q)); };
   $("hgo").onclick = ask;
@@ -533,8 +540,63 @@ function aiRoute(q) {
       var full = normTxt(protoText(idx.protocols[m.k] || { lines: [] }));
       m.quotes = (m.quotes || []).filter(function(qt) { var n = normTxt(qt); return n.length > 8 && full.indexOf(n) !== -1; });
     });
+    res.answer = verifyAnswer(res.answer || []);
     PS.ai[key] = res; return res;
   });
+}
+// ── The AI's written answer is shown only where the protocol backs it up ──
+// Each statement must cite a line that is really in that protocol (word for word), and every number in
+// the statement (dose, age, time…) must appear in the lines it cites. Anything else is removed.
+function quoteCore(t) { return normTxt(t).replace(/^(\d{1,2}\.|o|-|–)\s+/, ""); }
+function findLine(pr, quote) {
+  var qc = quoteCore(quote), best = null;
+  pr.lines.forEach(function(l) {
+    if (best || l[2] === "H") return;
+    var lc = quoteCore(l[1]);
+    if (lc.length > 6 && (qc.indexOf(lc) !== -1 || lc.indexOf(qc) !== -1)) best = l;
+  });
+  return best;
+}
+function verifyAnswer(items) {
+  var idx = PS.index, removed = 0;
+  var kept = items.map(function(it) {
+    var cites = (it.cites || []).filter(function(c) {
+      var pr = idx.protocols[c.k]; if (!pr) return false;
+      var qc = quoteCore(c.quote); if (qc.length < 8) return false;
+      var full = normTxt(protoText(pr).replace(/^== .* ==$/gm, ""));
+      if (full.indexOf(qc) === -1) return false;
+      var line = findLine(pr, c.quote);
+      c.p = line ? line[0] : pr.pages[0];
+      c.lv = pr.alsOnly ? "ALS" : (line ? line[line.length - 1] : "ALL");
+      return true;
+    });
+    if (!cites.length) { removed++; return null; }
+    var quoted = cites.map(function(c) { return normTxt(c.quote); }).join(" ");
+    var nums = String(it.text).match(/\d+(?:\.\d+)?/g) || [];
+    var ok = nums.every(function(n) { return new RegExp("(^|[^0-9.])" + n.replace(".", "\\.") + "([^0-9]|$)").test(quoted); });
+    if (!ok) { removed++; return null; }
+    return { text: String(it.text).replace(/\s*\(Paramedic (?:&|and) MICN only\)\s*\.?\s*$/i, ".").replace(/\.\.$/, "."), cites: cites,
+             als: cites.some(function(c) { return c.lv === "ALS" || c.lv === "CF"; }) && !cites.some(function(c) { return c.lv === "EMT" || c.lv === "ALL"; }) };
+  }).filter(Boolean);
+  kept.removed = removed;
+  return kept;
+}
+function answerHtml(ans, q) {
+  if (!ans || !ans.length) return "";
+  var used = {};
+  var items = ans.map(function(it) {
+    var chips = it.cites.map(function(c) {
+      var pr = PS.index.protocols[c.k]; used[c.k] = 1;
+      return '<a class="ref" href="#/p/' + c.k + '/' + encodeURIComponent(q) + '">' + esc(pr.num) + ' · p. ' + c.p + '</a>';
+    }).filter(function(v, i, arr) { return arr.indexOf(v) === i; }).join("");
+    var tag = it.als ? '<span class="tag t-ALS">Paramedic &amp; MICN only</span>' : '';
+    return '<li>' + tag + esc(it.text) + ' ' + chips + '</li>';
+  }).join("");
+  var from = Object.keys(used).map(function(k) { var pr = PS.index.protocols[k]; return esc(pr.num + " " + titleCase(pr.title)); }).join(" · ");
+  return '<div class="ans"><div class="ans-h">✨ AI answer <span class="tag t-AI">BETA</span></div>' +
+    '<div class="ans-warn">⚠ <b>AI-generated — AI can make mistakes.</b> Always double-check the protocol: tap a reference to read it.</div>' +
+    '<ul class="ans-list">' + items + '</ul>' +
+    '<div class="ans-foot">From: ' + from + (ans.removed ? ' · ' + ans.removed + ' statement' + (ans.removed === 1 ? ' was' : 's were') + ' removed because the protocol didn\'t back ' + (ans.removed === 1 ? 'it' : 'them') + ' up word-for-word.' : '') + '</div></div>';
 }
 function card(k, q, extra) {
   var pr = PS.index.protocols[k];
@@ -554,15 +616,16 @@ function results(q) {
     show(aiHtml + (rest.length ? '<div class="sec-h">' + (aiKs && aiKs.length ? 'Other matches' : 'Protocols matching “' + esc(q) + '”') + '</div>' + rest.map(function(x) { return x.html; }).join("") : (aiKs && aiKs.length ? '' : '<div class="msg">Nothing matched “' + esc(q) + '”. Try other words, or browse the protocols.</div><a class="card" href="#/browse">📚 Browse all protocols</a>')) +
       '<div class="msg" style="font-size:0.78rem;padding-top:4px">Tap a protocol to read it in full.</div>');
   }
-  paint('<div class="ai-wait">✨ Asking AI to find the best protocols…</div>', null);
+  paint('<div class="ai-wait">✨ Reading the protocols…</div>', null);
   aiRoute(q).then(function(res) {
     if (location.hash.indexOf("#/s/") !== 0) return;                 // user moved on
-    var ms = res.matches || [];
-    if (!ms.length) { paint('<div class="ai-note">✨ AI didn\'t find a clear match' + (res.note ? ' — ' + esc(res.note) : '') + '. Keyword matches below.</div>', []); return; }
-    var html = '<div class="sec-h">✨ Best matches <span class="tag t-AI">AI-picked</span></div>' + ms.map(function(m) {
+    var ms = res.matches || [], ans = answerHtml(res.answer, q);
+    var noAns = !ans ? '<div class="ai-note">✨ No AI answer' + (res.note ? ' — ' + esc(res.note) : (res.answer && res.answer.removed ? ' — its statements couldn\'t be checked against the protocol, so they aren\'t shown' : '')) + '. Read the protocols below.</div>' : '';
+    if (!ms.length) { paint(ans + noAns + (ans ? '' : '<div class="ai-note">Keyword matches below.</div>'), []); return; }
+    var html = ans + noAns + '<div class="sec-h">' + (ans ? 'Protocols used' : '✨ Best matches <span class="tag t-AI">AI-picked</span>') + '</div>' + ms.map(function(m) {
       var qt = m.quotes[0] ? '<div class="c-snip">“' + esc(m.quotes[0].length > 180 ? m.quotes[0].slice(0, 180) + "…" : m.quotes[0]) + '”</div>' : '';
       return card(m.k, q, (m.why ? '<div class="c-why">' + esc(m.why) + '</div>' : '') + qt);
-    }).join("") + '<div class="ai-note">AI chooses where to look — it doesn\'t write answers. Always read the protocol.</div>';
+    }).join("") + '<div class="ai-note">AI answers only from the protocol and cites it — but it can make mistakes. Always read the protocol.</div>';
     paint(html, ms.map(function(m) { return m.k; }));
   }).catch(function(e) {
     if (location.hash.indexOf("#/s/") !== 0) return;
@@ -597,7 +660,11 @@ function protocol(k, q) {
   var ai = PS.ai[PS.level + "|" + q], aiQ = [];
   // Step numbers and bullet marks are laid out separately, so compare the words only.
   var core = function(t) { return normTxt(t).replace(/^(\d{1,2}\.|o|-|–)\s+/, ""); };
-  if (ai) (ai.matches || []).forEach(function(m) { if (m.k === k) aiQ = m.quotes.map(core).filter(function(x) { return x.length > 8; }); });
+  if (ai) {
+    (ai.matches || []).forEach(function(m) { if (m.k === k) aiQ = aiQ.concat(m.quotes.map(core)); });
+    (ai.answer || []).forEach(function(it) { it.cites.forEach(function(c) { if (c.k === k) aiQ.push(core(c.quote)); }); });
+    aiQ = aiQ.filter(function(x) { return x.length > 8; });
+  }
   var hasAi = function(t) { var n = core(t); return aiQ.some(function(x) { return n.indexOf(x) !== -1 || (n.length > 20 && x.indexOf(n) !== -1); }); };
   var hasHit = function(t) { return aiQ.length ? hasAi(t) : (q && /<mark>/.test(markHtml(t, q))); };
   var body = structure(pr).map(function(sec, si) {
