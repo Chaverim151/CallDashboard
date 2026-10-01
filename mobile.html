@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.13"; window.M_BUILD = BUILD;
+  var BUILD = "3.14"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4475,7 +4475,19 @@ var M_SMS_TEMPLATE_DEFAULTS = {
   resource:   "{header}\n{address}\n{detail}\n{time}",
   note:       "📝 CALL UPDATE\n{address}\n{note}\n{time}",
   callback:   "📞 CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
-  rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}"
+  rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}",
+  adminUpdate:"📟 ADMIN CALL NOTIFICATION\n{header}\n{address}\n{detail}",
+  callerLocation:"{orgName} — tap to send us your location so the ambulance can find you:\n{link}",
+  locationUpdate:"📍 UPDATED LOCATION\n{address}\nCaller is now {callerPlace} (within {accuracy} m){moved}\nGoogle Maps: {callerMapsLink}\n\nWaze: {callerWazeLink}",
+  roadClosure:"🚧 ROAD CLOSURE\n{closure}\n{detail}\nDetour: {detour}\nUntil: {until}\n\n{linkLabel}: {closureLink}\n\nDetour route: {detourLink}\n{org}",
+  roadReopened:"✅ ROAD REOPENED\n{closure}\n{org}",
+  hospitalDivert:"🏥 HOSPITAL DIVERT\n{hospital} — {divertType}\n{detail}\nExpected until: {until}\n{org}",
+  offDivert:"✅ OFF DIVERT\n{hospital} is no longer on {divertTypeLower}.\n{org}",
+  rigOut:"🚑 RIG OUT OF SERVICE\n{rig}\nReason: {reason}\nExpected back: {until}\n— {org}",
+  rigBack:"✅ RIG BACK IN SERVICE\n{rig}\n{autoNote}\n— {org}",
+  ticketPriority:"{priorityIcon} {priority} service request\n{ticketTitle}\n{ticketUnit}\nFrom {from}\nOpen the {app} App → Service Requests to view.",
+  ticketNotice:"{title}\n{message}\nOpen the {app} App → Service Requests to view.",
+  passwordLink:"{orgName}: {action}{unitPart}:\n{link}\nThe link works once and expires in about an hour. If it expires, tap \"Forgot password?\" on the login screen."
 };
 var M_SMS_TEMPLATES = {};
 function mLoadSmsTemplates() {
@@ -4492,6 +4504,12 @@ function mCleanTemplate(t) {
   t = mStripInvisible(t);
   if (t.indexOf("{dateTime}") === -1) return t;
   return t.split("\n").filter(function(line){ return line.trim() !== "{time}"; }).join("\n");
+}
+// Message to the caller with their location link. The link is always included, even if an edited
+// template leaves {link} out.
+function mCallerLocationText(link) {
+  var t = mRenderTemplate(mTemplateFor("callerLocation"), { orgName: ORG.textName, link: link });
+  return t.indexOf(link) === -1 ? t + "\n" + link : t;
 }
 function mTemplateFor(key) {
   var t = mCleanTemplate(M_SMS_TEMPLATES && M_SMS_TEMPLATES[key]);
@@ -4510,7 +4528,10 @@ function mRenderTemplate(tpl, vars) {
     if (used.length && used.every(function(v){ return !v.trim(); })) return null;   // all its variables were empty
     filled = filled.replace(/\s*\|\s*\|\s*/g, " | ").replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, "");   // tidy dividers left by empty values
     return filled.trim() ? filled : null;
-  }).filter(function(l){ return l !== null; })
+  }).filter(function(l, i, arr) {
+     // A blank line written just before a line that was left out goes too ("\n\nDetour route: {detourLink}").
+     return l !== null && !(l === "" && arr[i + 1] === null);
+  })
    .filter(function(l, i, arr) {
      if (l === "") return i > 0 && arr[i-1] !== "" && i < arr.length - 1;   // no leading, double or trailing blanks
      // A saved template may still carry the old {time} line alongside the newer "Date: …" line —
@@ -4667,7 +4688,7 @@ function mAdminCopy(call, header, detail) {
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
   var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call already got it
   if (!units.length) return;
-  var body = "📟 ADMIN CALL NOTIFICATION\n" + mPlainHeader(header) + "\n" + mSmsAddress(call) + (detail ? "\n" + detail : "");
+  var body = mRenderTemplate(mTemplateFor("adminUpdate"), Object.assign(mCallVars(call), { header: mPlainHeader(header), address: mSmsAddress(call), detail: detail || "" }));
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
 }
 function mNotifyAdminUnits(call) {
@@ -4811,7 +4832,7 @@ function mPushCallbackSMS() {
   var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
   if (!targetUnits.length) { mToast("No units assigned", true); return; }
   var addr = (call.address||"").split(",")[0];
-  var msg = "📞 CALLBACK NUMBER\n" + mSmsAddress(call) + "\nCallback: " + call.callbackNumber;
+  var msg = mRenderTemplate(mTemplateFor("callback"), Object.assign(mCallVars(call), { address: mSmsAddress(call), callback: call.callbackNumber }));
   db.collection("users").get().then(function(snap) {
     var phones = [];
     snap.forEach(function(doc) {
@@ -4938,8 +4959,7 @@ function mRequestCallerLocation(force) {
   db.collection("locationRequests").doc(token).set({ createdAt: new Date().toISOString(), expiresAt: expires, by: mCurrentUserUnit || "", callback: cb })
     .then(function() {
       var link = "https://chaverim151.github.io/CallDashboard/loc.html?t=" + token;
-      return mSendClickSendSMS([mE164(cb)].filter(Boolean),
-        ORG.textName + " — tap to send us your location so the ambulance can find you:\n" + link);
+      return mSendClickSendSMS([mE164(cb)].filter(Boolean), mCallerLocationText(link));
     })
     .then(function() {
       mLocStatus("📤 Link sent to " + mEscHtml(cb) + " — waiting for them to tap it…", "#ffc84a");
@@ -5659,7 +5679,7 @@ function mDdSendLocLink() {
     createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
     by: mCurrentUserUnit || "", callback: call.callbackNumber, callId: call.id
   }).then(function() {
-    return mSendClickSendSMS([to], ORG.textName + " — tap to send us your location so the ambulance can find you:\n" + link);
+    return mSendClickSendSMS([to], mCallerLocationText(link));
   }).then(function() {
     return db.collection("activeCalls").doc(call.id).update({ locationRequests: firebase.firestore.FieldValue.arrayUnion(token), updatedAt: new Date().toISOString() });
   }).then(function() {
@@ -5688,10 +5708,9 @@ function mDdPushLocation() {
     });
   }).then(function() {
     if (!units.length) { mToast("📍 Call location updated"); return; }
-    var body = "📍 UPDATED LOCATION\n" + mSmsAddress(call) + "\nCaller is now " +
-      (d.approxAddress ? "near " + d.approxAddress : lat.toFixed(6) + ", " + lng.toFixed(6)) + " (within " + acc + " m)" +
-      (moved !== null ? " — moved about " + mDdDist(moved) : "") +
-      "\nGoogle Maps: " + maps + "\n\nWaze: " + waze;
+    var body = mRenderTemplate(mTemplateFor("locationUpdate"), Object.assign(mCallVars(call), {
+      address: mSmsAddress(call), callerPlace: d.approxAddress ? "near " + d.approxAddress : lat.toFixed(6) + ", " + lng.toFixed(6),
+      accuracy: String(acc), moved: moved !== null ? " — moved about " + mDdDist(moved) : "", callerMapsLink: maps, callerWazeLink: waze }));
     mSmsEnqueue(function() { return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
     mAdminCopy(call, "📍 LOCATION UPDATE", noteText);
     mToast("📍 New location sent to " + units.join(", "));

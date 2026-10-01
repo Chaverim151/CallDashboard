@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.13');
+  window.location.replace('/CallDashboard/mobile.html?v=3.14');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.05</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.06</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1729,18 +1729,43 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <select id="tpl-which" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 12px;color:var(--white);font-size:0.86rem" onchange="loadTemplateEditor()">
+          <optgroup label="Calls">
           <option value="assignment">🚑 Unit assigned to a call</option>
           <option value="admin">📟 Admin call notification</option>
+          <option value="adminUpdate">📟 Admin status update (ALS / BLS / PD)</option>
           <option value="resource">🚨 ALS / BLS / PD dispatched</option>
           <option value="note">📝 Dispatcher note</option>
           <option value="callback">📞 Callback number</option>
           <option value="rigResponse">🏠 Unit responding to the rig</option>
+          </optgroup>
+          <optgroup label="Caller location">
+          <option value="callerLocation">📍 Location link texted to the caller</option>
+          <option value="locationUpdate">📍 Caller's updated location, to the crew</option>
+          </optgroup>
+          <optgroup label="Closures &amp; diverts">
+          <option value="roadClosure">🚧 Road closure</option>
+          <option value="roadReopened">✅ Road reopened</option>
+          <option value="hospitalDivert">🏥 Hospital divert</option>
+          <option value="offDivert">✅ Off divert</option>
+          </optgroup>
+          <optgroup label="Fleet">
+          <option value="rigOut">🚑 Rig out of service</option>
+          <option value="rigBack">✅ Rig back in service</option>
+          </optgroup>
+          <optgroup label="Service requests">
+          <option value="ticketPriority">🔴 Urgent / high-priority service request</option>
+          <option value="ticketNotice">🔧 Service request notice (members without app notifications)</option>
+          </optgroup>
+          <optgroup label="Accounts">
+          <option value="passwordLink">🔑 Set / reset password link</option>
+          </optgroup>
         </select>
         <button class="edit-mode-btn" onclick="saveTemplate()" style="background:linear-gradient(135deg,var(--gold),#e8960a);color:var(--navy);border:none;font-weight:700">Save Template</button>
         <button class="edit-mode-btn" onclick="sendTemplateTest()" id="tpl-test-btn">📱 Send Test to Me</button>
         <button class="edit-mode-btn" onclick="resetTemplate()">↺ Restore Default</button>
         <span id="tpl-status" style="font-size:0.78rem;color:var(--gray);align-self:center"></span>
       </div>
+      <div id="tpl-help" style="font-size:0.8rem;color:var(--gray);margin:-6px 0 14px;line-height:1.5"></div>
       <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start">
         <div>
           <div class="admin-label" style="margin-bottom:6px">Test Data <span style="color:var(--gray);font-weight:400;text-transform:none;letter-spacing:0">— what the preview and test message use</span></div>
@@ -3004,18 +3029,19 @@ function tcTitle(c) {
 // The link shows the closure on a map — it doesn't route the crew to it.
 function tcMapLink(lat, lng) { return "https://www.google.com/maps/search/?api=1&query=" + lat + "," + lng; }
 function tcFooter() { return (typeof M_ORG_FOOTER !== "undefined" ? M_ORG_FOOTER : orgSignoff()) + (currentUserUnit ? " " + currentUserUnit : ""); }
+// Closure and divert texts come from Admin ▸ Message Templates (built-in wording until edited).
+function tcFmtWhen(iso) { return iso ? new Date(iso).toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""; }
 function tcClosureBody(c) {
-  var until = c.until ? new Date(c.until) : null;
   var seg = c.kind === "segment" && c.from && c.to;
-  return "🚧 ROAD CLOSURE\n" + tcTitle(c) +
-    (c.detail ? "\n" + c.detail : "") +
-    (c.detour ? "\nDetour: " + c.detour.replace(/^Use\s+/i, "") : "") +
-    (until ? "\nUntil: " + until.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "") +
-    (seg ? "\n\nClosed stretch: " + tcDirLink(c.from, c.to) : (c.lat && c.lng ? "\n\nMap: " + tcMapLink(c.lat, c.lng) : "")) +
-    (c.detourLink ? "\n\nDetour route: " + c.detourLink : "") +
-    "\n" + tcFooter();
+  return mRenderTemplate(mTemplateFor("roadClosure"), {
+    closure: tcTitle(c), detail: c.detail || "", detour: c.detour ? c.detour.replace(/^Use\s+/i, "") : "", until: tcFmtWhen(c.until),
+    stretchLink: seg ? tcDirLink(c.from, c.to) : "", mapLink: !seg && c.lat && c.lng ? tcMapLink(c.lat, c.lng) : "",
+    linkLabel: seg ? "Closed stretch" : "Map", closureLink: seg ? tcDirLink(c.from, c.to) : (c.lat && c.lng ? tcMapLink(c.lat, c.lng) : ""),
+    detourLink: c.detourLink || "", org: tcFooter() });
 }
-function tcReopenBody(c) { return "✅ ROAD REOPENED\n" + (c.kind === "segment" ? c.road + " between " + c.fromName + " and " + c.toName : (c.resolved || c.road)) + "\n" + tcFooter(); }
+function tcReopenBody(c) {
+  return mRenderTemplate(mTemplateFor("roadReopened"), { closure: c.kind === "segment" ? c.road + " between " + c.fromName + " and " + c.toName : (c.resolved || c.road), org: tcFooter() });
+}
 function tcFormCommon() {
   return { detail: (document.getElementById("tc-detail").value || "").trim(), until: document.getElementById("tc-until").value || "",
            detour: (document.getElementById("tc-detour").value || "").trim() };
@@ -3183,12 +3209,11 @@ function hdFillHospitals() {
 }
 function hdActive(d) { return d.active !== false && !(d.until && new Date(d.until) < new Date()); }
 function hdBody(d) {
-  return "🏥 HOSPITAL DIVERT\n" + d.hospital + " — " + d.type +
-    (d.detail ? "\n" + d.detail : "") +
-    (d.until ? "\nExpected until: " + new Date(d.until).toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "") +
-    "\n" + tcFooter();
+  return mRenderTemplate(mTemplateFor("hospitalDivert"), { hospital: d.hospital, divertType: d.type, detail: d.detail || "", until: tcFmtWhen(d.until), org: tcFooter() });
 }
-function hdOffBody(d) { return "✅ OFF DIVERT\n" + d.hospital + " is no longer on " + String(d.type || "divert").toLowerCase() + ".\n" + tcFooter(); }
+function hdOffBody(d) {
+  return mRenderTemplate(mTemplateFor("offDivert"), { hospital: d.hospital, divertTypeLower: String(d.type || "divert").toLowerCase(), org: tcFooter() });
+}
 function hdForm() {
   var sel = document.getElementById("hd-hospital").value;
   var hospital = sel === "__other__" ? (document.getElementById("hd-other").value || "").trim() : sel;
@@ -3342,7 +3367,7 @@ function setAdminTab(tab) {
   else if (typeof tplReleaseCallForm === "function") tplReleaseCallForm();
   if (tab === "fleet" && typeof loadVehiclesList === "function") loadVehiclesList();
   if (tab === "fleet" && typeof initVehBaseMap === "function") initVehBaseMap();
-  if (tab === "traffic") { tcBindAddress(); tcLoad(); tcCheckOldList(); hdLoad(); }
+  if (tab === "traffic") { tcBindAddress(); tcLoad(); tcCheckOldList(); hdLoad(); if (typeof mLoadSmsTemplates === "function") mLoadSmsTemplates(); }   // closure/divert wording
   if (tab === "org") orgFormLoad();
   if (tab === "fleet") loadFleetAlerts();
   if (tab === "protoai") paiLoad();
@@ -6080,7 +6105,7 @@ window.sendCallbackSMS = function(callId) {
     var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
     if (!targetUnits.length) { showToast("No units assigned", true); return; }
     var addr = (call.address||"").split(",")[0];
-    var msg = "📞 CALLBACK NUMBER\n" + addr + "\nCallback: " + formatPhone(call.callbackNumber);
+    var msg = mRenderTemplate(mTemplateFor("callback"), Object.assign(mCallVars(call), { address: addr, callback: formatPhone(call.callbackNumber) }));
     db.collection("users").get().then(function(uSnap) {
       var phones = [];
       uSnap.forEach(function(doc) {
@@ -7511,6 +7536,61 @@ var TPL_SAMPLE_UNUSED = {
   dispatchNotes: "Dog on premises, use the side entrance", alsActivated: true, alsProvider: "JFK ALS", alsEta: "8",
   mapsLink: "https://www.google.com/maps/dir/?api=1&destination=40.44,-74.42&travelmode=driving"
 };
+// ── Templates beyond the call texts: their own variables, sample values and notes ──
+var TPL_OWN_VARS = {
+  callerLocation: [["orgName","Your name in text messages (Admin ▸ Organization)"],["link","The caller's location link — required"]],
+  roadClosure: [["closure","Road, place or stretch that's closed"],["detail","Detail typed in"],["detour","Suggested detour"],["until","Expected reopening"],["linkLabel","\"Closed stretch\" or \"Map\""],["closureLink","Link to the closed stretch, or to the closure spot"],["stretchLink","Closed-stretch link only (blank for single-spot closures)"],["mapLink","Spot map link only (blank for stretches)"],["detourLink","Detour route link"],["org","Sign-off with your unit"]],
+  roadReopened: [["closure","Road, place or stretch that reopened"],["org","Sign-off with your unit"]],
+  hospitalDivert: [["hospital","Hospital name"],["divertType","Type, e.g. Full divert, CT down"],["detail","Detail typed in"],["until","Expected end"],["org","Sign-off with your unit"]],
+  offDivert: [["hospital","Hospital name"],["divertTypeLower","Type in lower case, e.g. ct down"],["org","Sign-off with your unit"]],
+  rigOut: [["rig","Rig name"],["reason","Reason given"],["until","Expected back, or \"until further notice\""],["org","Sign-off with the unit who marked it"]],
+  rigBack: [["rig","Rig name"],["autoNote","\"(return time reached)\" when it came back automatically"],["org","Sign-off with the unit who marked it"]],
+  ticketPriority: [["priorityIcon","🔴 or 🟠"],["priority","URGENT or HIGH PRIORITY"],["ticketTitle","Request title"],["ticketUnit","Rig / unit the request is about"],["from","Who submitted it"],["app","App name (Admin ▸ Organization)"]],
+  ticketNotice: [["title","Notice title, e.g. ✋ Ticket Accepted"],["message","Notice text"],["app","App name (Admin ▸ Organization)"]],
+  passwordLink: [["orgName","Your name in text messages"],["action","\"set your password…\" or \"here is your link to reset…\""],["unitPart","\" (MC-16)\" — the member's unit in brackets"],["unit","The member's unit on its own"],["link","The one-time password link — required"],["app","App name"]]
+};
+var TPL_CALL_EXTRA_VARS = {
+  locationUpdate: [["callerPlace","\"near 12 Main St\" or coordinates"],["accuracy","How accurate, in metres"],["moved","\" — moved about 200 m\" (blank if not)"],["callerMapsLink","Google Maps link to the caller"],["callerWazeLink","Waze link to the caller"]]
+};
+var TPL_SAMPLE_EXTRA = {
+  orgName: "MC Hatzolah", link: "https://chaverim151.github.io/CallDashboard/loc.html?t=loc1example",
+  callerPlace: "near 131 Raritan Ave, Highland Park", accuracy: "12", moved: " — moved about 180 m",
+  callerMapsLink: "https://www.google.com/maps/search/?api=1&query=40.4999,-74.4251", callerWazeLink: "https://waze.com/ul?ll=40.4999,-74.4251&navigate=yes",
+  closure: "Raritan Ave between 2nd Ave and 5th Ave, Highland Park", detour: "Woodbridge Ave", until: "10/02, 06:00 PM",
+  stretchLink: "https://www.google.com/maps/dir/?api=1&origin=40.50,-74.43&destination=40.50,-74.42", mapLink: "", linkLabel: "Closed stretch", closureLink: "https://www.google.com/maps/dir/?api=1&origin=40.50,-74.43&destination=40.50,-74.42", detourLink: "https://www.google.com/maps/dir/?api=1&waypoints=example",
+  hospital: "RWJ University Hospital", divertType: "CT down", divertTypeLower: "ct down",
+  rig: "Rig 3 (ERV)", reason: "Brake repair", autoNote: "",
+  priorityIcon: "🔴", priority: "URGENT", ticketTitle: "Oxygen regulator leaking", ticketUnit: "Rig 3", from: "MC-16", app: "Hatzolah MC",
+  title: "✋ Ticket Accepted", message: "#112 Oxygen regulator leaking — taken by MC-20",
+  action: "set your password for the Hatzolah MC app", unitPart: " (MC-23)", unit: "MC-23"
+};
+var TPL_HELP = {
+  adminUpdate: "Sent to the admin notification list when ALS, BLS or PD is dispatched, cancelled or updated on a call they aren't on.",
+  callback: "Sent to the units on scene (or assigned) when the dispatcher pushes the callback number.",
+  callerLocation: "Texted to the caller when a dispatcher asks for their location. {link} must stay in — it's added back automatically if removed.",
+  locationUpdate: "Sent to the crew when the dispatcher moves the call to the caller's shared location.",
+  roadClosure: "Sent from Admin ▸ Closure Notifications. {linkLabel}: {closureLink} becomes \"Closed stretch: …\" for between-two-streets closures and \"Map: …\" otherwise.",
+  roadReopened: "Sent when a closure is marked reopened and you choose to text it.",
+  hospitalDivert: "Sent from Admin ▸ Closure Notifications ▸ Hospital Diverts.",
+  offDivert: "Sent when a divert is ended and you choose to text it.",
+  rigOut: "Sent by the server to everyone when a rig is taken out of service (switch it off in Admin ▸ Fleet). Changes apply within a minute.",
+  rigBack: "Sent by the server when a rig is back in service. Changes apply within a minute.",
+  ticketPriority: "Sent by the server to logistics when an urgent or high-priority service request is submitted. Changes apply within a minute.",
+  ticketNotice: "Sent by the server instead of an app notification, to members who don't have app notifications turned on. Changes apply within a minute.",
+  passwordLink: "Sent by the server with a one-time password link. {link} must stay in — it's added back automatically if removed. Changes apply within a minute."
+};
+var TPL_REQUIRED = { callerLocation: ["link"], passwordLink: ["link"] };
+// Sample values that differ by message, for the preview and test text.
+var TPL_SAMPLE_BYKEY = {
+  roadClosure: { detail: "Water main break — one lane open" },
+  hospitalDivert: { detail: "Scanner down until repaired" },
+  rigOut: { until: "Fri, Oct 2, 5:00 PM" },
+  passwordLink: { link: "https://hvac-ops.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=EXAMPLE" }
+};
+function tplSampleFor(which) {
+  return (TPL_OWN_VARS[which] || TPL_CALL_EXTRA_VARS[which]) ? Object.assign({}, TPL_SAMPLE_EXTRA, TPL_SAMPLE_BYKEY[which] || {}) : {};
+}
+function tplWhich() { return (document.getElementById("tpl-which") || {}).value || "assignment"; }
 function tplExtraVars() {
   var g = function(id, dflt) { var el = document.getElementById("tpls-" + id); return el ? el.value : dflt; };
   return { header: g("__header", "🚨 ALS DISPATCHED"), detail: g("__detail", "ALS: JFK ALS (A7) ETA 8 min"), note: g("__note", "Patient is in the lobby by the front desk"),
@@ -7530,7 +7610,9 @@ function loadTemplateEditor() {
 }
 function renderTemplateVars() {
   var el = document.getElementById("tpl-vars"); if (!el) return;
-  el.innerHTML = TPL_VARS.map(function(v) {
+  var which = tplWhich(), list = TPL_OWN_VARS[which] || TPL_VARS.concat(TPL_CALL_EXTRA_VARS[which] || []);
+  var help = document.getElementById("tpl-help"); if (help) help.textContent = TPL_HELP[which] || "";
+  el.innerHTML = list.map(function(v) {
     return '<div draggable="true" ondragstart="event.dataTransfer.setData(\'text/plain\',\'{' + v[0] + '}\')" onclick="tplInsert(\'{' + v[0] + '}\')" title="' + escapeHtml(v[1]) + '" ' +
       'style="background:rgba(122,184,245,0.10);border:1px solid rgba(122,184,245,0.35);border-radius:7px;padding:7px 9px;cursor:grab;user-select:none">' +
       '<div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.76rem;color:#9fc8f0">{' + v[0] + '}</div>' +
@@ -7643,7 +7725,7 @@ function tplDrop(ev) {
 function renderTemplatePreview() {
   var box = document.getElementById("tpl-body"), out = document.getElementById("tpl-preview");
   if (!box || !out) return;
-  var vars = Object.assign(mCallVars(tplSampleCall()), tplExtraVars());
+  var vars = Object.assign(mCallVars(tplSampleCall()), tplExtraVars(), tplSampleFor(tplWhich()));
   var text = mRenderTemplate(mCleanTemplate(box.value), vars);
   out.textContent = text || "(this template renders nothing)";
 }
@@ -7651,6 +7733,8 @@ function saveTemplate() {
   var which = (document.getElementById("tpl-which")||{}).value || "assignment";
   var box = document.getElementById("tpl-body"); if (!box) return;
   var st = document.getElementById("tpl-status");
+  var missing = (TPL_REQUIRED[which] || []).filter(function(v) { return box.value.indexOf("{" + v + "}") === -1; });
+  if (missing.length) { showToast("This message must include {" + missing.join("}, {") + "} — add it back before saving", true); if (st) { st.textContent = "Needs {" + missing.join("}, {") + "}"; st.style.color = "#ff9090"; } return; }
   var payload = {}; payload[which] = box.value;
   db.collection("appdata").doc("smsTemplates").set(payload, { merge: true }).then(function() {
     M_SMS_TEMPLATES[which] = box.value;
@@ -7667,7 +7751,7 @@ function sendTemplateTest() {
   var st = document.getElementById("tpl-status");
   var btn = document.getElementById("tpl-test-btn");
   if (!currentUser) { showToast("Sign in first", true); return; }
-  var vars = Object.assign(mCallVars(tplSampleCall()), tplExtraVars());
+  var vars = Object.assign(mCallVars(tplSampleCall()), tplExtraVars(), tplSampleFor(tplWhich()));
   var body = mRenderTemplate(mCleanTemplate(box.value), vars);
   if (!body.trim()) { showToast("This template renders nothing — add some text first", true); return; }
   if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
@@ -14339,7 +14423,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.05";
+var DESKTOP_VERSION = "10.06";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -16423,7 +16507,19 @@ var M_SMS_TEMPLATE_DEFAULTS = {
   resource:   "{header}\n{address}\n{detail}\n{time}",
   note:       "📝 CALL UPDATE\n{address}\n{note}\n{time}",
   callback:   "📞 CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
-  rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}"
+  rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}",
+  adminUpdate:"📟 ADMIN CALL NOTIFICATION\n{header}\n{address}\n{detail}",
+  callerLocation:"{orgName} — tap to send us your location so the ambulance can find you:\n{link}",
+  locationUpdate:"📍 UPDATED LOCATION\n{address}\nCaller is now {callerPlace} (within {accuracy} m){moved}\nGoogle Maps: {callerMapsLink}\n\nWaze: {callerWazeLink}",
+  roadClosure:"🚧 ROAD CLOSURE\n{closure}\n{detail}\nDetour: {detour}\nUntil: {until}\n\n{linkLabel}: {closureLink}\n\nDetour route: {detourLink}\n{org}",
+  roadReopened:"✅ ROAD REOPENED\n{closure}\n{org}",
+  hospitalDivert:"🏥 HOSPITAL DIVERT\n{hospital} — {divertType}\n{detail}\nExpected until: {until}\n{org}",
+  offDivert:"✅ OFF DIVERT\n{hospital} is no longer on {divertTypeLower}.\n{org}",
+  rigOut:"🚑 RIG OUT OF SERVICE\n{rig}\nReason: {reason}\nExpected back: {until}\n— {org}",
+  rigBack:"✅ RIG BACK IN SERVICE\n{rig}\n{autoNote}\n— {org}",
+  ticketPriority:"{priorityIcon} {priority} service request\n{ticketTitle}\n{ticketUnit}\nFrom {from}\nOpen the {app} App → Service Requests to view.",
+  ticketNotice:"{title}\n{message}\nOpen the {app} App → Service Requests to view.",
+  passwordLink:"{orgName}: {action}{unitPart}:\n{link}\nThe link works once and expires in about an hour. If it expires, tap \"Forgot password?\" on the login screen."
 };
 var M_SMS_TEMPLATES = {};
 function mLoadSmsTemplates() {
@@ -16440,6 +16536,12 @@ function mCleanTemplate(t) {
   t = mStripInvisible(t);
   if (t.indexOf("{dateTime}") === -1) return t;
   return t.split("\n").filter(function(line){ return line.trim() !== "{time}"; }).join("\n");
+}
+// Message to the caller with their location link. The link is always included, even if an edited
+// template leaves {link} out.
+function mCallerLocationText(link) {
+  var t = mRenderTemplate(mTemplateFor("callerLocation"), { orgName: ORG.textName, link: link });
+  return t.indexOf(link) === -1 ? t + "\n" + link : t;
 }
 function mTemplateFor(key) {
   var t = mCleanTemplate(M_SMS_TEMPLATES && M_SMS_TEMPLATES[key]);
@@ -16458,7 +16560,10 @@ function mRenderTemplate(tpl, vars) {
     if (used.length && used.every(function(v){ return !v.trim(); })) return null;   // all its variables were empty
     filled = filled.replace(/\s*\|\s*\|\s*/g, " | ").replace(/^\s*\|\s*/, "").replace(/\s*\|\s*$/, "");   // tidy dividers left by empty values
     return filled.trim() ? filled : null;
-  }).filter(function(l){ return l !== null; })
+  }).filter(function(l, i, arr) {
+     // A blank line written just before a line that was left out goes too ("\n\nDetour route: {detourLink}").
+     return l !== null && !(l === "" && arr[i + 1] === null);
+  })
    .filter(function(l, i, arr) {
      if (l === "") return i > 0 && arr[i-1] !== "" && i < arr.length - 1;   // no leading, double or trailing blanks
      // A saved template may still carry the old {time} line alongside the newer "Date: …" line —
@@ -16620,7 +16725,7 @@ function mAdminCopy(call, header, detail) {
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
   var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call already got it
   if (!units.length) return;
-  var body = "📟 ADMIN CALL NOTIFICATION\n" + mPlainHeader(header) + "\n" + mSmsAddress(call) + (detail ? "\n" + detail : "");
+  var body = mRenderTemplate(mTemplateFor("adminUpdate"), Object.assign(mCallVars(call), { header: mPlainHeader(header), address: mSmsAddress(call), detail: detail || "" }));
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
 }
 function mNotifyAdminUnits(call) {
@@ -16758,7 +16863,7 @@ function mPushCallbackSMS() {
   var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
   if (!targetUnits.length) { mToast("No units assigned", true); return; }
   var addr = (call.address||"").split(",")[0];
-  var msg = "📞 CALLBACK NUMBER\n" + mSmsAddress(call) + "\nCallback: " + call.callbackNumber;
+  var msg = mRenderTemplate(mTemplateFor("callback"), Object.assign(mCallVars(call), { address: mSmsAddress(call), callback: call.callbackNumber }));
   db.collection("users").get().then(function(snap) {
     var phones = [];
     snap.forEach(function(doc) {
@@ -16883,8 +16988,7 @@ function mRequestCallerLocation(force) {
   db.collection("locationRequests").doc(token).set({ createdAt: new Date().toISOString(), expiresAt: expires, by: mCurrentUserUnit || "", callback: cb })
     .then(function() {
       var link = "https://chaverim151.github.io/CallDashboard/loc.html?t=" + token;
-      return mSendClickSendSMS([mE164(cb)].filter(Boolean),
-        ORG.textName + " — tap to send us your location so the ambulance can find you:\n" + link);
+      return mSendClickSendSMS([mE164(cb)].filter(Boolean), mCallerLocationText(link));
     })
     .then(function() {
       mLocStatus("📤 Link sent to " + mEscHtml(cb) + " — waiting for them to tap it…", "#ffc84a");
@@ -17452,7 +17556,7 @@ function mDdSendLocLink() {
     createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
     by: mCurrentUserUnit || "", callback: call.callbackNumber, callId: call.id
   }).then(function() {
-    return mSendClickSendSMS([to], ORG.textName + " — tap to send us your location so the ambulance can find you:\n" + link);
+    return mSendClickSendSMS([to], mCallerLocationText(link));
   }).then(function() {
     return db.collection("activeCalls").doc(call.id).update({ locationRequests: firebase.firestore.FieldValue.arrayUnion(token), updatedAt: new Date().toISOString() });
   }).then(function() {
@@ -17481,10 +17585,9 @@ function mDdPushLocation() {
     });
   }).then(function() {
     if (!units.length) { mToast("📍 Call location updated"); return; }
-    var body = "📍 UPDATED LOCATION\n" + mSmsAddress(call) + "\nCaller is now " +
-      (d.approxAddress ? "near " + d.approxAddress : lat.toFixed(6) + ", " + lng.toFixed(6)) + " (within " + acc + " m)" +
-      (moved !== null ? " — moved about " + mDdDist(moved) : "") +
-      "\nGoogle Maps: " + maps + "\n\nWaze: " + waze;
+    var body = mRenderTemplate(mTemplateFor("locationUpdate"), Object.assign(mCallVars(call), {
+      address: mSmsAddress(call), callerPlace: d.approxAddress ? "near " + d.approxAddress : lat.toFixed(6) + ", " + lng.toFixed(6),
+      accuracy: String(acc), moved: moved !== null ? " — moved about " + mDdDist(moved) : "", callerMapsLink: maps, callerWazeLink: waze }));
     mSmsEnqueue(function() { return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
     mAdminCopy(call, "📍 LOCATION UPDATE", noteText);
     mToast("📍 New location sent to " + units.join(", "));
