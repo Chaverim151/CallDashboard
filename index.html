@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.10');
+  window.location.replace('/CallDashboard/mobile.html?v=3.11');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1324,7 +1324,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.00</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.01</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1801,7 +1801,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
           <option value="">Live and test</option>
           <option value="live">Live only</option>
           <option value="test">Test Mode only</option>
-        </select>
+        <option value="problems">Problems only</option></select>
         <button class="edit-mode-btn" onclick="loadNotificationLog()">↻ Refresh</button>
         <span id="notif-log-count" style="font-size:0.78rem;color:var(--gray)"></span>
       </div>
@@ -7682,6 +7682,7 @@ function renderNotificationLog() {
     if (kind && String(r.kind||"").toUpperCase().indexOf(kind.toUpperCase()) === -1) return false;
     if (mode === "live" && r.testMode) return false;
     if (mode === "test" && !r.testMode) return false;
+    if (mode === "problems" && !(r.checked && /not sent|failed|partly/i.test(r.status || ""))) return false;
     return true;
   });
   var cnt = document.getElementById("notif-log-count");
@@ -7690,17 +7691,25 @@ function renderNotificationLog() {
   el.innerHTML = rows.map(function(r) {
     var when = r.at ? new Date(r.at) : null;
     var t = when ? when.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) + " · " + when.toLocaleDateString([], {month:"short",day:"numeric"}) : "";
-    var failed = /not sent/i.test(r.status||"");
-    return '<div class="notif-row" style="border:1px solid ' + (failed ? "rgba(224,85,85,0.45)" : "var(--card-border)") + ';border-left:3px solid ' + (r.testMode ? "#f0a500" : failed ? "#e05555" : "#4caf80") + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,0.03)">' +
+    // Entries written by the server (r.checked) record ClickSend's answer; older ones recorded only the attempt.
+    var st = String(r.status || "sent"), failed = /not sent|failed/i.test(st), partly = /partly/i.test(st);
+    var badge = !r.checked
+      ? '<span style="font-size:0.6rem;color:var(--gray);border:1px solid var(--card-border);border-radius:4px;padding:2px 6px" title="Logged before this version — whether ClickSend accepted it is unknown">attempted · result not recorded</span>'
+      : failed ? '<span style="font-size:0.6rem;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.5);color:#ff9090;border-radius:4px;padding:2px 6px">✗ ' + escapeHtml(st) + '</span>'
+      : partly ? '<span style="font-size:0.6rem;background:rgba(240,165,0,0.18);border:1px solid rgba(240,165,0,0.5);color:#ffc84a;border-radius:4px;padding:2px 6px">⚠ partly sent</span>'
+      : '<span style="font-size:0.6rem;background:rgba(76,175,128,0.15);border:1px solid rgba(76,175,128,0.45);color:#7dedb5;border-radius:4px;padding:2px 6px" title="ClickSend accepted every number for delivery">✓ sent</span>';
+    var fails = (r.failed || []).length ? '<div style="font-size:0.7rem;color:' + (failed ? '#ff9090' : '#ffc84a') + ';margin-top:6px;line-height:1.5">Not accepted: ' +
+      (r.failed || []).map(function(f) { return escapeHtml((f.unit ? f.unit + ' ' : '') + '(' + f.to + ')') + ' — ' + escapeHtml(f.reason || 'unknown'); }).join('; ') + '</div>' : '';
+    return '<div class="notif-row" style="border:1px solid ' + (failed ? "rgba(224,85,85,0.45)" : partly ? "rgba(240,165,0,0.45)" : "var(--card-border)") + ';border-left:3px solid ' + (r.testMode ? "#f0a500" : failed ? "#e05555" : partly ? "#f0a500" : "#4caf80") + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,0.03)">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
         '<span style="font-family:\'Oswald\',sans-serif;font-size:0.76rem;font-weight:700;letter-spacing:0.05em;color:var(--white)">' + escapeHtml(r.kind || "Message") + '</span>' +
         (r.testMode ? '<span style="font-size:0.6rem;background:rgba(240,165,0,0.2);border:1px solid rgba(240,165,0,0.5);color:#ffc84a;border-radius:4px;padding:2px 6px;letter-spacing:0.06em">TEST</span>' : '') +
-        (failed ? '<span style="font-size:0.6rem;background:rgba(224,85,85,0.18);border:1px solid rgba(224,85,85,0.5);color:#ff9090;border-radius:4px;padding:2px 6px">' + escapeHtml(r.status) + '</span>' : '') +
+        badge +
         '<span style="font-size:0.72rem;color:var(--gray)">👥 ' + (r.count || 0) + '</span>' +
         (r.sentBy ? '<span style="font-size:0.72rem;color:var(--gray)">by ' + escapeHtml(r.sentBy) + '</span>' : '') +
         '<span style="margin-left:auto;font-size:0.72rem;color:var(--gray)">' + escapeHtml(t) + '</span>' +
       '</div>' +
-      '<div style="font-size:0.78rem;color:#c9d4e6;white-space:pre-wrap;line-height:1.45">' + escapeHtml(r.body || "") + '</div>' +
+      '<div style="font-size:0.78rem;color:#c9d4e6;white-space:pre-wrap;line-height:1.45">' + escapeHtml(r.body || "") + '</div>' + fails +
       ((r.units||[]).length ? '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:7px">' +
           (r.units||[]).map(function(u){ return '<span style="font-family:\'Oswald\',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.04em;background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.4);color:#9fc8f0;border-radius:4px;padding:2px 7px">' + escapeHtml(u) + '</span>'; }).join("") +
         '</div>' : '') +
@@ -14237,7 +14246,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.00";
+var DESKTOP_VERSION = "10.01";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -16558,24 +16567,6 @@ function mUnitsForPhones(phones) {
   return (phones || []).map(function(p){ return mPhoneUnitMap[p] || p; });
 }
 // Every outgoing message is recorded so admins can see exactly what went out, to whom, and when.
-function mLogNotification(entry) {
-  try {
-    if (typeof db === "undefined" || !db || !db.collection) return;
-    db.collection("notificationLog").add({
-      at: new Date().toISOString(),
-      channel: entry.channel || "sms",
-      kind: entry.kind || "",
-      body: String(entry.body || "").slice(0, 900),
-      to: (entry.to || []).slice(0, 60),
-      units: (entry.units || mUnitsForPhones(entry.to)).slice(0, 60),
-      count: (entry.to || []).length,
-      testMode: !!entry.testMode,
-      sentBy: entry.sentBy || "",
-      status: entry.status || "sent",
-      intendedUnits: (entry.intendedUnits || []).slice(0, 60)
-    }).catch(function(){});
-  } catch (e) {}
-}
 // SMS ordering: every message goes through one queue, so a slow recipient lookup on an early
 // event can't let a later event's text overtake it. Each send waits for the previous to be away.
 var mSmsChain = Promise.resolve();
@@ -16638,20 +16629,26 @@ function mSendClickSendSMS(toNumbers, message) {
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
   if (!toNumbers.length || !message) return Promise.resolve();
   message = mStampMessage(message);
-  // Test Dispatch Mode ON — only send to the logged-in unit's own phone, prefixed [TEST]
+  // The server writes the Notification Log after ClickSend answers; it only needs the message type and
+  // which unit owns each number. In Test Mode the server sends it to your own phone instead.
+  var phoneUnits = {}; toNumbers.forEach(function(n) { if (mPhoneUnitMap[n]) phoneUnits[n] = mPhoneUnitMap[n]; });
+  var payload = { type: "sms", log: { kind: mLogKind(message), phoneUnits: phoneUnits }, messages: toNumbers.map(function(n){ return { to: n, body: message }; }) };
   if (MSysTestingMode) {
     if (!mCurrentUser) return Promise.resolve();
-    return db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
-      if (!snap.exists) return;
-      var phone = mGetFirstPhone(snap.data().phone);
-      if (!phone) { mToast("Test Mode: no phone on your profile — the text wasn't sent anywhere", true); mLogNotification({ kind: mLogKind(message), body: message, to: [], testMode: true, status: "not sent — no phone on profile", sentBy: mCurrentUserUnit }); return; }
-      mLogNotification({ kind: mLogKind(message), body: message, to: [phone], units: [mCurrentUserUnit || "you"], intendedUnits: mUnitsForPhones(toNumbers), testMode: true, sentBy: mCurrentUserUnit });
-      return mRelay("sendSms", { type: "sms", testMode: true, messages: [{ to: phone, body: "[TEST] " + message }] });
+    payload.testMode = true;
+    return mRelay("sendSms", payload).then(function(r) {
+      if (r && r.error) mToast(/^test mode/i.test(r.error) ? r.error : "Test Mode: " + r.error, true);
+      return r;
     }).catch(function(e){ console.warn("SMS test send failed:", e); mToast("⚠ Test SMS failed: " + ((e && e.message) || e), true); });
   }
-  mLogNotification({ kind: mLogKind(message), body: message, to: toNumbers, testMode: false, sentBy: mCurrentUserUnit });
-  return mRelay("sendSms", { type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
-    .catch(function(e){ console.warn("SMS send failed:", e); mToast("⚠ SMS failed: " + ((e && e.message) || e), true); });
+  return mRelay("sendSms", payload).then(function(r) {
+    // Some numbers rejected (e.g. landline, invalid): say who, so the dispatcher can reach them another way.
+    if (r && r.failedCount) {
+      var who = (r.failed || []).map(function(f) { return f.unit || f.to; }).slice(0, 6).join(", ");
+      mToast("⚠ " + r.failedCount + " text" + (r.failedCount === 1 ? "" : "s") + " not accepted: " + who + " — see Notification Log", true);
+    }
+    return r;
+  }).catch(function(e){ console.warn("SMS send failed:", e); mToast("⚠ SMS failed: " + ((e && e.message) || e), true); });
 }
 /* ported mobile new-call broadcast removed too */
 function mPushCallbackSMS() {

@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.10"; window.M_BUILD = BUILD;
+  var BUILD = "3.11"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4691,24 +4691,6 @@ function mUnitsForPhones(phones) {
   return (phones || []).map(function(p){ return mPhoneUnitMap[p] || p; });
 }
 // Every outgoing message is recorded so admins can see exactly what went out, to whom, and when.
-function mLogNotification(entry) {
-  try {
-    if (typeof db === "undefined" || !db || !db.collection) return;
-    db.collection("notificationLog").add({
-      at: new Date().toISOString(),
-      channel: entry.channel || "sms",
-      kind: entry.kind || "",
-      body: String(entry.body || "").slice(0, 900),
-      to: (entry.to || []).slice(0, 60),
-      units: (entry.units || mUnitsForPhones(entry.to)).slice(0, 60),
-      count: (entry.to || []).length,
-      testMode: !!entry.testMode,
-      sentBy: entry.sentBy || "",
-      status: entry.status || "sent",
-      intendedUnits: (entry.intendedUnits || []).slice(0, 60)
-    }).catch(function(){});
-  } catch (e) {}
-}
 // SMS ordering: every message goes through one queue, so a slow recipient lookup on an early
 // event can't let a later event's text overtake it. Each send waits for the previous to be away.
 var mSmsChain = Promise.resolve();
@@ -4776,20 +4758,26 @@ function mSendClickSendSMS(toNumbers, message) {
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
   if (!toNumbers.length || !message) return Promise.resolve();
   message = mStampMessage(message);
-  // Test Dispatch Mode ON — only send to the logged-in unit's own phone, prefixed [TEST]
+  // The server writes the Notification Log after ClickSend answers; it only needs the message type and
+  // which unit owns each number. In Test Mode the server sends it to your own phone instead.
+  var phoneUnits = {}; toNumbers.forEach(function(n) { if (mPhoneUnitMap[n]) phoneUnits[n] = mPhoneUnitMap[n]; });
+  var payload = { type: "sms", log: { kind: mLogKind(message), phoneUnits: phoneUnits }, messages: toNumbers.map(function(n){ return { to: n, body: message }; }) };
   if (MSysTestingMode) {
     if (!mCurrentUser) return Promise.resolve();
-    return db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
-      if (!snap.exists) return;
-      var phone = mGetFirstPhone(snap.data().phone);
-      if (!phone) { mToast("Test Mode: no phone on your profile — the text wasn't sent anywhere", true); mLogNotification({ kind: mLogKind(message), body: message, to: [], testMode: true, status: "not sent — no phone on profile", sentBy: mCurrentUserUnit }); return; }
-      mLogNotification({ kind: mLogKind(message), body: message, to: [phone], units: [mCurrentUserUnit || "you"], intendedUnits: mUnitsForPhones(toNumbers), testMode: true, sentBy: mCurrentUserUnit });
-      return mRelay("sendSms", { type: "sms", testMode: true, messages: [{ to: phone, body: "[TEST] " + message }] });
+    payload.testMode = true;
+    return mRelay("sendSms", payload).then(function(r) {
+      if (r && r.error) mToast(/^test mode/i.test(r.error) ? r.error : "Test Mode: " + r.error, true);
+      return r;
     }).catch(function(e){ console.warn("SMS test send failed:", e); mToast("⚠ Test SMS failed: " + ((e && e.message) || e), true); });
   }
-  mLogNotification({ kind: mLogKind(message), body: message, to: toNumbers, testMode: false, sentBy: mCurrentUserUnit });
-  return mRelay("sendSms", { type: "sms", messages: toNumbers.map(function(n){ return { to: n, body: message }; }) })
-    .catch(function(e){ console.warn("SMS send failed:", e); mToast("⚠ SMS failed: " + ((e && e.message) || e), true); });
+  return mRelay("sendSms", payload).then(function(r) {
+    // Some numbers rejected (e.g. landline, invalid): say who, so the dispatcher can reach them another way.
+    if (r && r.failedCount) {
+      var who = (r.failed || []).map(function(f) { return f.unit || f.to; }).slice(0, 6).join(", ");
+      mToast("⚠ " + r.failedCount + " text" + (r.failedCount === 1 ? "" : "s") + " not accepted: " + who + " — see Notification Log", true);
+    }
+    return r;
+  }).catch(function(e){ console.warn("SMS send failed:", e); mToast("⚠ SMS failed: " + ((e && e.message) || e), true); });
 }
 /* New-call broadcast SMS removed — the first text a member gets is their assignment */
 function mPushCallbackSMS() {
