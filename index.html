@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.18');
+  window.location.replace('/CallDashboard/mobile.html?v=3.19');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.14</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.15</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -14347,7 +14347,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.14";
+var DESKTOP_VERSION = "10.15";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -17003,7 +17003,8 @@ function mUseCallerLocation(lat, lng, acc, coordsOnly) {
     i2.classList.remove("m-nc-need");
     if (typeof mNcValidateMarks === "function") mNcValidateMarks();
     mNcShowCoords();
-    mLocStatus("✅ Using coordinates only (within " + acc + " m) — no street address.", "#7dedb5");
+    mLocStatus("✅ Using coordinates only (within " + acc + " m) — no street address." +
+      '<br>' + mLocSwitchBtn("📮 Use closest address", "mUseClosestAddress(" + lat + "," + lng + "," + acc + ")"), "#7dedb5");
     return;
   }
   mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
@@ -17038,10 +17039,46 @@ function mUseCallerLocation(lat, lng, acc, coordsOnly) {
       if (typeof mNcValidateMarks === "function") mNcValidateMarks();
       mNcShowCoords();
       mLocStatus("✅ Using the caller's location (within " + acc + " m). Check the address before posting." +
+        '<br>' + (r && !precise ? mLocSwitchBtn("📮 Use closest address", "mUseClosestAddress(" + lat + "," + lng + "," + acc + ")") + ' ' : '') +
+        mLocSwitchBtn("📍 Use coordinates only", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)") +
         '<br><span style="color:var(--gray);font-size:0.72rem">No further action needed — if the caller moves you can take a newer fix.</span>', "#7dedb5");
     });
   }
 }
+// Switch between the caller's exact coordinates and the nearest street address. The pin always stays
+// on the caller's exact spot; only the address text changes.
+function mLocSwitchBtn(label, onclick) {
+  return '<button type="button" onclick="' + onclick + '" style="background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.5);border-radius:6px;color:#bfe0ff;font-size:0.72rem;font-weight:700;padding:5px 10px;margin-top:6px;cursor:pointer">' + label + '</button>';
+}
+function mUseClosestAddress(lat, lng, acc) {
+  var inp = document.getElementById("m-nc-address");
+  var done = function(addr) {
+    if (!addr) { mLocStatus("Couldn't find a nearby street address — keeping the coordinates." + '<br>' + mLocSwitchBtn("📍 Use coordinates only", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)"), "#ffc84a"); return; }
+    mLocCoordsOnly = false; mLocApplied = true; mLocAppliedAcc = acc; mLocAppliedLat = lat; mLocAppliedLng = lng;
+    inp.value = addr; mNcResolvedAddress = addr;
+    document.getElementById("m-nc-lat").value = lat;          // the pin stays on the caller, not on the address
+    document.getElementById("m-nc-lng").value = lng;
+    document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
+    inp.classList.remove("m-nc-need");
+    if (typeof mNcValidateMarks === "function") mNcValidateMarks();
+    mNcShowCoords();
+    mLocStatus("✅ Using the closest address: <b>" + mEscHtml(addr) + "</b>" +
+      '<br><span style="color:#ffc84a;font-size:0.76rem">Nearest address only — the caller may not be exactly there. The map pin stays on their exact spot (within ' + acc + ' m).</span>' +
+      '<br>' + mLocSwitchBtn("📍 Use coordinates only", "mUseCallerLocation(" + lat + "," + lng + "," + acc + ",true)"), "#7dedb5");
+  };
+  if (!(window.google && google.maps && google.maps.Geocoder)) { done(mLocLastData && mLocLastData.approxAddress ? mCleanAddress(String(mLocLastData.approxAddress).replace(/, USA$/, "")) : ""); return; }
+  mLocStatus("Looking up the closest address…", "var(--gray)");
+  new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
+    var pick = null;
+    if (st === "OK" && res) {
+      // the nearest result that is a real address (a building, or at least a numbered spot on a street)
+      pick = res.filter(function(x) { var t = x.types || []; return t.indexOf("street_address") !== -1 || t.indexOf("premise") !== -1 || t.indexOf("subpremise") !== -1; })[0] ||
+             res.filter(function(x) { return (x.address_components || []).some(function(c) { return c.types.indexOf("street_number") !== -1; }); })[0] || null;
+    }
+    done(pick ? mCleanAddress(pick.formatted_address.replace(/, USA$/, "")) : (mLocLastData && mLocLastData.approxAddress ? mCleanAddress(String(mLocLastData.approxAddress).replace(/, USA$/, "")) : ""));
+  });
+}
+window.mUseClosestAddress = mUseClosestAddress;
 function mE164(p) {
   var raw = String(p || "").split(/[\/|]/)[0].replace(/\D/g, "");
   if (raw.length === 10) return "+1" + raw;
