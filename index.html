@@ -1312,7 +1312,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(201,168,76,0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.96</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(201,168,76,0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v9.97</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -1888,12 +1888,26 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
   <div style="font-size:0.78rem;color:var(--gray);margin-bottom:10px;line-height:1.5">Closures are placed on the map and sorted into the coverage area they fall in.</div>
   <div id="tc-migrate"></div>
   <div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:16px">
-    <div class="form-row"><div><label>Road / location</label>
-      <input type="text" id="tc-address" placeholder="e.g. Raritan Ave between 2nd and 4th" autocomplete="off"></div>
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <button type="button" class="ticket-tab active" id="tc-mode-seg" onclick="tcSetMode('segment')">Between two streets</button>
+      <button type="button" class="ticket-tab" id="tc-mode-pt" onclick="tcSetMode('point')">One spot</button>
+    </div>
+    <div class="form-row"><div><label id="tc-address-label">Road (with town)</label>
+      <input type="text" id="tc-address" placeholder="e.g. Raritan Ave, Highland Park" autocomplete="off"></div>
       <div><label>Closed until (optional)</label><input type="datetime-local" id="tc-until"></div></div>
+    <div class="form-row" id="tc-ends"><div><label>From (cross street)</label>
+      <input type="text" id="tc-from" placeholder="e.g. 2nd Ave" autocomplete="off"></div>
+      <div><label>To (cross street)</label><input type="text" id="tc-to" placeholder="e.g. 5th Ave" autocomplete="off"></div></div>
     <div class="form-row single"><div><label>Detail</label>
-      <input type="text" id="tc-detail" placeholder="e.g. Water main work — use Woodbridge Ave"></div></div>
+      <input type="text" id="tc-detail" placeholder="e.g. Water main work, both directions"></div></div>
     <div id="tc-zone-note" style="font-size:0.78rem;color:var(--gray);margin:2px 0 10px"></div>
+    <div id="tc-map" style="display:none;height:260px;border-radius:9px;border:1px solid var(--card-border);margin-bottom:10px"></div>
+    <div class="form-row single"><div><label>Suggested detour (optional — sent with the closure)</label>
+      <textarea id="tc-detour" rows="2" placeholder="e.g. Use Woodbridge Ave → 5th Ave" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 11px;color:var(--white);font:inherit;font-size:0.86rem;resize:vertical"></textarea></div></div>
+    <div style="margin:-4px 0 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="edit-mode-btn" id="tc-detour-btn" onclick="tcSuggestDetour()">🧭 Show stretch &amp; suggest a detour</button>
+      <span id="tc-detour-note" style="font-size:0.76rem;color:var(--gray)"></span>
+    </div>
     <button class="card-save-btn" onclick="tcAddClosure()">+ Add closure</button>
     <button class="edit-mode-btn" onclick="tcTestClosure()" style="margin-left:8px">🧪 Test to me</button>
     <span id="tc-status" style="font-size:0.78rem;color:var(--gray);margin-left:10px"></span>
@@ -2578,35 +2592,240 @@ function tcBindAddress() {
     } catch (e) {}
   }
 }
+// ── Closures between two cross streets, and detour suggestions ──────────────────────────────────
+// "Between two streets": both ends are placed as intersections, Google draws the road between them
+// (the closed stretch), and a detour is suggested: a driving route from one end to the other that
+// stays off the closed stretch. The dispatcher sees both on a map and can edit the detour text.
+var TC_MODE = "segment", TC_SEG = null, tcSegMap = null, tcSegLayers = [], tcDetourAuto = "";
+function tcSetMode(m) {
+  TC_MODE = m;
+  document.getElementById("tc-mode-seg").classList.toggle("active", m === "segment");
+  document.getElementById("tc-mode-pt").classList.toggle("active", m === "point");
+  document.getElementById("tc-ends").style.display = m === "segment" ? "" : "none";
+  document.getElementById("tc-address-label").textContent = m === "segment" ? "Road (with town)" : "Road / location";
+  document.getElementById("tc-address").placeholder = m === "segment" ? "e.g. Raritan Ave, Highland Park" : "e.g. Raritan Ave & 2nd Ave, Highland Park";
+  document.getElementById("tc-detour-btn").style.display = m === "segment" ? "" : "none";
+  document.getElementById("tc-detour-note").textContent = "";
+  document.getElementById("tc-map").style.display = "none";
+  TC_SEG = null;
+}
+function tcSplitRoad(text) {
+  var parts = String(text || "").split(",");
+  return { street: parts[0].trim(), rest: parts.slice(1).join(",").trim() };
+}
+function tcGeocode(q) {
+  return new Promise(function(resolve) {
+    if (!(window.google && google.maps && google.maps.Geocoder)) return resolve(null);
+    new google.maps.Geocoder().geocode({ address: q, region: "us" }, function(res, st) {
+      if (st !== "OK" || !res || !res[0]) return resolve(null);
+      var loc = res[0].geometry.location;
+      resolve({ lat: loc.lat(), lng: loc.lng(), resolved: res[0].formatted_address, types: res[0].types || [] });
+    });
+  });
+}
+function tcIntersectionQuery(road, cross) {
+  var r = tcSplitRoad(road), town = r.rest;
+  return r.street + " & " + cross + (town ? ", " + town : "") + (/\bNJ\b|New Jersey/i.test(town) ? "" : ", NJ");
+}
+function tcSegKey() {
+  return [document.getElementById("tc-address").value, document.getElementById("tc-from").value, document.getElementById("tc-to").value].map(function(x) { return String(x || "").trim().toLowerCase(); }).join("|");
+}
+function tcLL(p) { return typeof p.lat === "function" ? { lat: p.lat(), lng: p.lng() } : { lat: p.lat, lng: p.lng }; }
+function tcDist(a, b) {
+  var R = 6371000, r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+// Share of a route's points that sit on the closed stretch (within ~20 m of it).
+function tcOverlap(path, closed) {
+  if (!path.length || closed.length < 2) return 0;
+  var line = (google.maps.geometry && google.maps.geometry.poly) ? new google.maps.Polyline({ path: closed }) : null;
+  var near = path.filter(function(p) {
+    if (line) return google.maps.geometry.poly.isLocationOnEdge(new google.maps.LatLng(p.lat, p.lng), line, 0.0002);
+    return closed.some(function(c) { return tcDist(p, c) < 25; });
+  }).length;
+  return near / path.length;
+}
+function tcRoute(origin, dest, waypoint, alternatives) {
+  return new Promise(function(resolve) {
+    if (!(window.google && google.maps && google.maps.DirectionsService)) return resolve({ error: "unavailable" });
+    var req = { origin: origin, destination: dest, travelMode: google.maps.TravelMode.DRIVING, provideRouteAlternatives: !!alternatives };
+    if (waypoint) req.waypoints = [{ location: waypoint, stopover: false }];
+    new google.maps.DirectionsService().route(req, function(res, st) {
+      if (st !== "OK" || !res || !res.routes || !res.routes.length) return resolve({ error: st || "no route" });
+      resolve({ routes: res.routes.map(function(rt) {
+        var dist = 0, names = [];
+        (rt.legs || []).forEach(function(l) {
+          dist += (l.distance && l.distance.value) || 0;
+          (l.steps || []).forEach(function(stp) {
+            var bold = String(stp.instructions || stp.html_instructions || "").match(/<b>([^<]+)<\/b>/g) || [];
+            bold.map(function(x) { return x.replace(/<\/?b>/g, "").trim(); })
+                .filter(function(x) { return !/^(north|south|east|west|northeast|northwest|southeast|southwest|left|right|straight)$/i.test(x) && !/^\d+(\.\d+)?\s*(ft|mi|m|km)$/i.test(x); })
+                .forEach(function(x) { if (names[names.length - 1] !== x) names.push(x); });
+          });
+        });
+        return { path: (rt.overview_path || []).map(tcLL), dist: dist, names: names };
+      }) });
+    });
+  });
+}
+// A point beside the middle of the closed stretch, so a route through it has to go around the block.
+function tcOffsetPoint(a, b, metres) {
+  var mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+  var mPerLat = 111320, mPerLng = 111320 * Math.cos(mid.lat * Math.PI / 180);
+  var dx = (b.lng - a.lng) * mPerLng, dy = (b.lat - a.lat) * mPerLat, len = Math.sqrt(dx * dx + dy * dy) || 1;
+  return { lat: mid.lat + (dx / len) * metres / mPerLat, lng: mid.lng + (-dy / len) * metres / mPerLng };
+}
+function tcBuildSegment() {
+  var key = tcSegKey();
+  if (TC_SEG && TC_SEG.key === key) return Promise.resolve(TC_SEG);
+  var road = document.getElementById("tc-address").value.trim(), from = document.getElementById("tc-from").value.trim(), to = document.getElementById("tc-to").value.trim();
+  if (!road || !from || !to) return Promise.reject(new Error("Enter the road and both cross streets"));
+  var note = document.getElementById("tc-detour-note");
+  note.style.color = "var(--gray)"; note.textContent = "Placing both ends…";
+  return Promise.all([tcGeocode(tcIntersectionQuery(road, from)), tcGeocode(tcIntersectionQuery(road, to))]).then(function(ends) {
+    var A = ends[0], B = ends[1];
+    var st = tcSplitRoad(road).street;
+    if (!A || !B) throw new Error("Couldn't find where " + st + " meets " + (!A ? from : to) + " — check the street names, and put the town after the road (e.g. \"" + st + ", Highland Park\")");
+    var exact = function(e) { return e.types.indexOf("intersection") !== -1; };
+    var seg = { key: key, road: tcSplitRoad(road).street, town: tcSplitRoad(road).rest, roadFull: road, fromName: from, toName: to,
+                from: { lat: A.lat, lng: A.lng }, to: { lat: B.lat, lng: B.lng }, approx: !exact(A) || !exact(B),
+                path: [{ lat: A.lat, lng: A.lng }, { lat: B.lat, lng: B.lng }], detour: null, note: "" };
+    if (tcDist(seg.from, seg.to) < 15) throw new Error("Both ends landed on the same spot — check the cross streets");
+    note.textContent = "Finding the road between them…";
+    return tcRoute(seg.from, seg.to, null, true).then(function(r) {
+      if (r.error) { seg.note = r.error === "REQUEST_DENIED" ? "Google refused route requests — the Directions service isn't switched on for your Maps key, so the stretch is a straight line and there's no automatic detour." : "Couldn't get routes (" + r.error + ") — the stretch is a straight line."; return seg; }
+      // The closed stretch is the shortest route along the road between the two ends.
+      var byLen = r.routes.slice().sort(function(x, y) { return x.dist - y.dist; });
+      seg.path = byLen[0].path;
+      var pick = function(cands) {
+        var ok = cands.filter(function(c) { return tcOverlap(c.path, seg.path) < 0.35; }).sort(function(x, y) { return x.dist - y.dist; });
+        return ok[0] || null;
+      };
+      var det = pick(byLen.slice(1));
+      if (det) { seg.detour = det; return seg; }
+      // No ready-made alternative (common for one block): try routes forced around either side.
+      note.textContent = "Looking for a way around…";
+      return Promise.all([150, -150, 350, -350].map(function(m) { return tcRoute(seg.from, seg.to, tcOffsetPoint(seg.from, seg.to, m), false); })).then(function(tries) {
+        var cands = []; tries.forEach(function(t) { if (t.routes) cands = cands.concat(t.routes); });
+        seg.detour = pick(cands);
+        if (!seg.detour) seg.note = "No automatic detour found — type one in the detour box.";
+        return seg;
+      });
+    });
+  }).then(function(seg) { TC_SEG = seg; return seg; });
+}
+function tcDetourText(seg) {
+  if (!seg.detour || !seg.detour.names.length) return "";
+  var names = seg.detour.names.filter(function(n) { return n.toLowerCase() !== seg.road.toLowerCase(); });
+  return names.length ? "Use " + names.join(" → ") : "";
+}
+function tcDirLink(a, b, via) {
+  return "https://www.google.com/maps/dir/?api=1&origin=" + a.lat.toFixed(6) + "," + a.lng.toFixed(6) + "&destination=" + b.lat.toFixed(6) + "," + b.lng.toFixed(6) +
+    (via ? "&waypoints=" + via.lat.toFixed(6) + "," + via.lng.toFixed(6) : "") + "&travelmode=driving";
+}
+function tcDetourLink(seg) {
+  if (!seg.detour || seg.detour.path.length < 2) return "";
+  return tcDirLink(seg.from, seg.to, seg.detour.path[Math.floor(seg.detour.path.length / 2)]);
+}
+function tcDrawSegment(seg) {
+  var host = document.getElementById("tc-map"); if (!host || !(window.google && google.maps && google.maps.Map)) return;
+  host.style.display = "block";
+  if (!tcSegMap || !host.contains(tcSegMap.getDiv())) {
+    tcSegMap = new google.maps.Map(host, { center: seg.from, zoom: 16, mapTypeControl: false, streetViewControl: false, styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }] });
+    try { new google.maps.TrafficLayer().setMap(tcSegMap); } catch (e) {}       // live traffic, for context
+  }
+  tcSegLayers.forEach(function(l) { l.setMap(null); }); tcSegLayers = [];
+  if (seg.detour) tcSegLayers.push(new google.maps.Polyline({ map: tcSegMap, path: seg.detour.path, strokeColor: "#4caf80", strokeOpacity: 0.9, strokeWeight: 5 }));
+  tcSegLayers.push(new google.maps.Polyline({ map: tcSegMap, path: seg.path, strokeColor: "#e05555", strokeOpacity: 0.95, strokeWeight: 7 }));
+  [[seg.from, "A"], [seg.to, "B"]].forEach(function(e) { tcSegLayers.push(new google.maps.Marker({ map: tcSegMap, position: e[0], label: e[1] })); });
+  var b = new google.maps.LatLngBounds();
+  seg.path.concat(seg.detour ? seg.detour.path : []).forEach(function(p) { b.extend(p); });
+  tcSegMap.fitBounds(b, 40);
+}
+function tcSuggestDetour() {
+  var note = document.getElementById("tc-detour-note");
+  TC_SEG = null;
+  tcBuildSegment().then(function(seg) {
+    tcDrawSegment(seg);
+    var box = document.getElementById("tc-detour"), text = tcDetourText(seg);
+    if (text && (!box.value.trim() || box.value === tcDetourAuto)) { box.value = text; tcDetourAuto = text; }
+    note.style.color = seg.note ? "#ffc84a" : "var(--gray)";
+    note.innerHTML = '<span style="color:#ff9090">━</span> closed stretch' + (seg.detour ? ' · <span style="color:#7dedb5">━</span> suggested detour (' + (seg.detour.dist / 1609.34).toFixed(1) + ' mi)' : '') +
+      (seg.approx ? '<br><span style="color:#ffc84a">⚠ One end wasn\'t found as an exact intersection — check the red line is the right stretch.</span>' : '') +
+      (seg.note ? '<br>' + escapeHtml(seg.note) : '');
+  }).catch(function(e) { note.style.color = "#ff9090"; note.textContent = e.message; });
+}
+// Keep stored paths small: at most ~120 points.
+function tcThin(path) { var step = Math.max(1, Math.ceil(path.length / 120)); return path.filter(function(p, i) { return i % step === 0 || i === path.length - 1; }); }
+function tcTitle(c) {
+  if (c.kind === "segment") return c.road + " closed between " + c.fromName + " and " + c.toName + (c.town ? " (" + c.town + ")" : "");
+  return c.resolved || c.road;
+}
 // The link shows the closure on a map — it doesn't route the crew to it.
 function tcMapLink(lat, lng) { return "https://www.google.com/maps/search/?api=1&query=" + lat + "," + lng; }
 function tcFooter() { return (typeof M_ORG_FOOTER !== "undefined" ? M_ORG_FOOTER : "MC Hatzolah") + (currentUserUnit ? " " + currentUserUnit : ""); }
 function tcClosureBody(c) {
   var until = c.until ? new Date(c.until) : null;
-  return "🚧 ROAD CLOSURE\n" + (c.resolved || c.road) +
+  var seg = c.kind === "segment" && c.from && c.to;
+  return "🚧 ROAD CLOSURE\n" + tcTitle(c) +
     (c.detail ? "\n" + c.detail : "") +
+    (c.detour ? "\nDetour: " + c.detour.replace(/^Use\s+/i, "") : "") +
     (until ? "\nUntil: " + until.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "") +
-    (c.lat && c.lng ? "\n\nMap: " + tcMapLink(c.lat, c.lng) : "") +
+    (seg ? "\n\nClosed stretch: " + tcDirLink(c.from, c.to) : (c.lat && c.lng ? "\n\nMap: " + tcMapLink(c.lat, c.lng) : "")) +
+    (c.detourLink ? "\n\nDetour route: " + c.detourLink : "") +
     "\n" + tcFooter();
 }
-function tcReopenBody(c) { return "✅ ROAD REOPENED\n" + (c.resolved || c.road) + "\n" + tcFooter(); }
+function tcReopenBody(c) { return "✅ ROAD REOPENED\n" + (c.kind === "segment" ? c.road + " between " + c.fromName + " and " + c.toName : (c.resolved || c.road)) + "\n" + tcFooter(); }
+function tcFormCommon() {
+  return { detail: (document.getElementById("tc-detail").value || "").trim(), until: document.getElementById("tc-until").value || "",
+           detour: (document.getElementById("tc-detour").value || "").trim() };
+}
+function tcSegmentEntry(seg) {
+  var mid = seg.path[Math.floor(seg.path.length / 2)] || seg.from;
+  var z = tcZoneOf(mid.lat, mid.lng), common = tcFormCommon();
+  var detourText = common.detour;
+  return Object.assign(common, {
+    kind: "segment", road: seg.road, town: seg.town, roadFull: seg.roadFull, fromName: seg.fromName, toName: seg.toName,
+    from: seg.from, to: seg.to, path: tcThin(seg.path), resolved: seg.road + " between " + seg.fromName + " and " + seg.toName,
+    lat: mid.lat, lng: mid.lng, zone: z.type, zoneArea: z.area || "",
+    detourLink: detourText && seg.detour ? tcDetourLink(seg) : "", detourPath: detourText && seg.detour ? tcThin(seg.detour.path) : null
+  });
+}
+function tcClearForm() {
+  ["tc-address", "tc-detail", "tc-until", "tc-from", "tc-to", "tc-detour"].forEach(function(id) { var e = document.getElementById(id); if (e) e.value = ""; });
+  document.getElementById("tc-zone-note").textContent = ""; document.getElementById("tc-detour-note").textContent = "";
+  document.getElementById("tc-map").style.display = "none";
+  tcGeo = { lat: null, lng: null, resolved: "" }; TC_SEG = null; tcDetourAuto = "";
+}
 function tcAddClosure() {
   var road = (document.getElementById("tc-address").value || "").trim();
   if (!road) { tcStatus("tc-status", "Enter the road first", "#ff9090"); return; }
+  if (TC_MODE === "segment") {
+    tcStatus("tc-status", "Placing the closed stretch…");
+    tcBuildSegment().then(function(seg) {
+      tcDrawSegment(seg);
+      if (seg.approx && !confirm("One end wasn't found as an exact intersection, so the closed stretch may be off. Check the red line on the map. Save anyway?")) { tcStatus("tc-status", ""); return; }
+      var entry = tcSegmentEntry(seg);
+      entry.active = true; entry.createdAt = new Date().toISOString(); entry.createdBy = currentUserUnit || "";
+      tcStatus("tc-status", "Saving…");
+      return db.collection("trafficClosures").add(entry).then(function() {
+        tcClearForm(); tcStatus("tc-status", "Added — not yet sent to anyone. Press Notify units on it to send."); tcLoad();
+      });
+    }).catch(function(e) { tcStatus("tc-status", e.message, "#ff9090"); });
+    return;
+  }
   tcStatus("tc-status", "Placing it on the map…");
   tcResolve(road).then(function(geo) {
     if (!geo.lat && !confirm("Couldn't place \"" + road + "\" on the map. Save it anyway as \"Not placed on the map\"?")) { tcStatus("tc-status", ""); return; }
     if (geo.lat && geo.vague && !confirm("Google only found the general area (" + geo.resolved + "), not the road itself, so the coverage area may be wrong. Save anyway?")) { tcStatus("tc-status", ""); return; }
     var z = tcZoneOf(geo.lat, geo.lng);
-    var entry = { road: road, resolved: geo.resolved || road, detail: (document.getElementById("tc-detail").value || "").trim(),
-                  until: document.getElementById("tc-until").value || "", lat: geo.lat, lng: geo.lng,
+    var entry = Object.assign(tcFormCommon(), { kind: "point", road: road, resolved: geo.resolved || road, lat: geo.lat, lng: geo.lng,
                   zone: geo.lat ? z.type : "unknown", zoneArea: z.area || "", active: true,
-                  createdAt: new Date().toISOString(), createdBy: currentUserUnit || "" };
+                  createdAt: new Date().toISOString(), createdBy: currentUserUnit || "" });
     tcStatus("tc-status", "Saving…");
     return db.collection("trafficClosures").add(entry).then(function() {
-      ["tc-address", "tc-detail", "tc-until"].forEach(function(id) { document.getElementById(id).value = ""; });
-      document.getElementById("tc-zone-note").textContent = "";
-      tcGeo = { lat: null, lng: null, resolved: "" };
+      tcClearForm();
       tcStatus("tc-status", "Added — not yet sent to anyone. Press Notify units on it to send.");
       tcLoad();
     });
@@ -2615,11 +2834,20 @@ function tcAddClosure() {
 function tcTestClosure() {
   var road = (document.getElementById("tc-address").value || "").trim();
   if (!road) { tcStatus("tc-status", "Enter the road first", "#ff9090"); return; }
+  if (TC_MODE === "segment") {
+    tcStatus("tc-status", "Sending test…");
+    tcBuildSegment().then(function(seg) {
+      tcDrawSegment(seg);
+      return mSendTestToSelf(tcClosureBody(tcSegmentEntry(seg))).then(function(r) {
+        tcStatus("tc-status", r === null ? "No textable phone number on your profile" : "Test sent to you only", r === null ? "#ff9090" : "");
+      });
+    }).catch(function(e) { tcStatus("tc-status", e.message, "#ff9090"); });
+    return;
+  }
   tcStatus("tc-status", "Sending test…");
   tcResolve(road).then(function(geo) {
     var z = tcZoneOf(geo.lat, geo.lng);
-    var body = tcClosureBody({ road: road, resolved: geo.resolved || road, detail: (document.getElementById("tc-detail").value || "").trim(),
-                               until: document.getElementById("tc-until").value || "", lat: geo.lat, lng: geo.lng });
+    var body = tcClosureBody(Object.assign(tcFormCommon(), { road: road, resolved: geo.resolved || road, lat: geo.lat, lng: geo.lng }));
     var zLabel = !geo.lat ? "not placed" : z.type === "primary" ? "Primary" : z.type === "secondary" ? "Secondary" : "Outside";
     return mSendTestToSelf(body).then(function(r) {
       tcStatus("tc-status", r === null ? "No textable phone number on your profile" : "Test sent to you only · this closure sorts into " + zLabel, r === null ? "#ff9090" : "");
@@ -2799,7 +3027,7 @@ function hdLoad() {
       (ended.length ? '<div class="admin-label" style="margin:14px 0 6px;color:var(--gray)">Ended in the last 7 days</div>' + ended.map(function(d) { return card(d, false); }).join("") : '');
   }).catch(function(e) { host.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Couldn\'t load diverts: ' + escapeHtml(e.message) + '<br><span style="color:var(--gray)">If this mentions permissions, the updated Firestore rules haven\'t been published yet.</span></div>'; });
 }
-window.tcAddClosure = tcAddClosure; window.tcTestClosure = tcTestClosure; window.tcNotify = tcNotify; window.tcToggle = tcToggle; window.tcDelete = tcDelete; window.tcMoveOld = tcMoveOld;
+window.tcSetMode = tcSetMode; window.tcSuggestDetour = tcSuggestDetour; window.tcAddClosure = tcAddClosure; window.tcTestClosure = tcTestClosure; window.tcNotify = tcNotify; window.tcToggle = tcToggle; window.tcDelete = tcDelete; window.tcMoveOld = tcMoveOld;
 window.hdAdd = hdAdd; window.hdTest = hdTest; window.hdNotify = hdNotify; window.hdOff = hdOff; window.hdDelete = hdDelete;
 function tcLoad() {
   var host = document.getElementById("tc-list"); if (!host) return;
@@ -2815,8 +3043,10 @@ function tcLoad() {
       rows.forEach(function(c) {
         var expired = c.until && new Date(c.until) < new Date();
         html += '<div style="background:var(--card-bg);border:1px solid ' + (c.active && !expired ? "var(--card-border)" : "rgba(255,255,255,0.08)") + ';border-radius:9px;padding:10px 12px;margin-bottom:8px;' + (c.active && !expired ? "" : "opacity:0.55") + '">' +
-          '<div style="font-family:\'Oswald\',sans-serif;font-size:0.92rem;font-weight:700;color:var(--white)">🚧 ' + escapeHtml(c.resolved || c.road) + (expired ? ' <span style="font-size:0.66rem;color:var(--gray)">EXPIRED</span>' : '') + '</div>' +
+          '<div style="font-family:\'Oswald\',sans-serif;font-size:0.92rem;font-weight:700;color:var(--white)">🚧 ' + escapeHtml(tcTitle(c)) + (expired ? ' <span style="font-size:0.66rem;color:var(--gray)">EXPIRED</span>' : '') + '</div>' +
           (c.detail ? '<div style="font-size:0.8rem;color:var(--gray);margin-top:2px">' + escapeHtml(c.detail) + '</div>' : '') +
+          (c.detour ? '<div style="font-size:0.8rem;color:#7dedb5;margin-top:2px">↪ Detour: ' + escapeHtml(c.detour) + (c.detourLink ? ' · <a href="' + c.detourLink + '" target="_blank" style="color:#bfe0ff">route</a>' : '') + '</div>' : '') +
+          (c.kind === "segment" && c.from && c.to ? '<div style="font-size:0.74rem;margin-top:2px"><a href="' + tcDirLink(c.from, c.to) + '" target="_blank" style="color:#bfe0ff">View closed stretch</a></div>' : '') +
           '<div style="font-size:0.72rem;color:var(--gray);margin-top:4px">' +
             (c.until ? 'Until ' + new Date(c.until).toLocaleString() + ' · ' : '') +
             (c.zoneArea ? escapeHtml(mZoneAreaLabel(c.zoneArea)) + ' · ' : '') +
@@ -13712,7 +13942,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "9.96";
+var DESKTOP_VERSION = "9.97";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
