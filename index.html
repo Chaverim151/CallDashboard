@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.29</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.31</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -9152,15 +9152,18 @@ function csRender() {
       (c.email ? ' · <a href="mailto:' + csEsc(c.email) + '" style="color:#bfe0ff">' + csEsc(c.email) + '</a>' : '') + '</span></div>';
     if (s.status !== "pending") {
       var r = s.review || {};
+      var priv = /private/.test(r.merged || "") || (!r.merged && /^private home\b/i.test(String(b.name || "").trim()));
+      var codeTxt = (r.entry && r.entry.code) || (s.code || {}).value;
       return '<div class="cs-card' + (s.test ? ' test' : '') + '">' + head + contact +
-        '<div class="cs-grid"><span class="cs-k">Code</span><span style="font-family:Oswald,sans-serif;color:#ffc84a;letter-spacing:0.08em">' + csEsc((r.entry && r.entry.code) || (s.code || {}).value) + '</span>' +
+        '<div class="cs-grid"><span class="cs-k">Code</span>' + (priv ? '<span>' + hzMasked(codeTxt, 'cs:' + s.id, 'cs') + '</span>' : '<span style="font-family:Oswald,sans-serif;color:#ffc84a;letter-spacing:0.08em">' + csEsc(codeTxt) + '</span>') +
         (r.by ? '<span class="cs-k">Decided by</span><span>' + csEsc(r.by) + '</span>' : '') +
         (r.reason ? '<span class="cs-k">Reason</span><span>' + csEsc(r.reason) + '</span>' : '') +
         (r.merged ? '<span class="cs-k">Live codes</span><span>' + csEsc(r.merged === "added" ? "Added as a new entry" : r.merged === "updated" ? "Updated the existing entry" : r.merged) + '</span>' : '') +
-        (r.previousCode && r.previousCode.code ? '<span class="cs-k">Old code</span><span>' + csEsc(r.previousCode.code) + ' <span style="color:var(--gray);font-size:0.76rem">(kept in case you need to put it back)</span></span>' : '') +
+        (r.previousCode && r.previousCode.code ? '<span class="cs-k">Old code</span><span>' + (priv ? hzMasked(r.previousCode.code, 'csold:' + s.id, 'cs') : csEsc(r.previousCode.code)) + ' <span style="color:var(--gray);font-size:0.76rem">(kept in case you need to put it back)</span></span>' : '') +
         '</div></div>';
     }
-    var ex = (e.asPrivate != null ? e.asPrivate : /^private home\b/i.test(String(b.name || "").trim())) ? null : csExistingFor(s);
+    var isPriv = e.asPrivate != null ? e.asPrivate : /^private home\b/i.test(String(b.name || "").trim());
+    var ex = isPriv ? null : csExistingFor(s);
     var twins = CS_LIST.filter(function(o) { return o.id !== s.id && o.status === "pending" && !!o.test === !!s.test && csSameAddress(csFullAddr(o), csFullAddr(s)); });
     var val = function(k, d) { return csEsc(e[k] != null ? e[k] : d); };
     var noteDefault = [b.entrance, b.note].filter(Boolean).join(" — ");
@@ -9169,13 +9172,13 @@ function csRender() {
         '<span class="cs-k">Name</span><input value="' + val("name", b.name) + '" oninput="csEdit(\'' + s.id + '\',\'name\',this.value)">' +
         '<span class="cs-k">Address</span><input value="' + val("address", full) + '" oninput="csEdit(\'' + s.id + '\',\'address\',this.value)">' +
         '<span class="cs-k">Note</span><input value="' + val("note", noteDefault) + '" placeholder="Entrance / instructions" oninput="csEdit(\'' + s.id + '\',\'note\',this.value)">' +
-        '<span class="cs-k">Code</span><span class="cs-code"><input value="' + val("code", (s.code || {}).value) + '" oninput="csEdit(\'' + s.id + '\',\'code\',this.value)"></span>' +
+        '<span class="cs-k">Code</span><span class="cs-code">' + (isPriv ? hzSecretInput('oninput="csEdit(\'' + s.id + '\',\'code\',this.value)"', val("code", (s.code || {}).value)) : '<input value="' + val("code", (s.code || {}).value) + '" oninput="csEdit(\'' + s.id + '\',\'code\',this.value)">') + '</span>' +
       '</div>' +
       (ex ? '<div class="cs-match">⚠ We already have a code for this address: <b>' + csEsc(ex.entry.name) + '</b> — <span style="font-family:Oswald,sans-serif;letter-spacing:0.06em">' + csEsc(ex.entry.code) + '</span>' +
         '<label><input type="radio" name="csm-' + s.id + '" ' + (e.addNew ? '' : 'checked') + ' onchange="csEdit(\'' + s.id + '\',\'addNew\',false)"> Replace that entry with this one (the old code is kept in the history)</label>' +
         '<label><input type="radio" name="csm-' + s.id + '" ' + (e.addNew ? 'checked' : '') + ' onchange="csEdit(\'' + s.id + '\',\'addNew\',true)"> Add as a separate entry (e.g. a different door)</label></div>' : '') +
       (twins.length ? '<div class="cs-match">⚠ ' + (twins.length === 1 ? 'Another submission for this address is also waiting' : twins.length + ' other submissions for this address are also waiting') + ': ' +
-        twins.map(function(o) { return '<b>' + csEsc((o.contact || {}).name || "someone") + '</b>' + ((o.contact || {}).role ? ' (' + csEsc(o.contact.role) + ')' : '') + ' — <span style="font-family:Oswald,sans-serif;letter-spacing:0.06em">' + csEsc((o.code || {}).value) + '</span>' +
+        twins.map(function(o) { return '<b>' + csEsc((o.contact || {}).name || "someone") + '</b>' + ((o.contact || {}).role ? ' (' + csEsc(o.contact.role) + ')' : '') + ' — ' + (isPriv ? hzMasked((o.code || {}).value, 'cstw:' + o.id, 'cs') : '<span style="font-family:Oswald,sans-serif;letter-spacing:0.06em">' + csEsc((o.code || {}).value) + '</span>') +
           (((o.code || {}).value || "") === ((s.code || {}).value || "") ? ' <span style="color:#7dedb5">(same code)</span>' : ' <span style="color:#ff9f9f">(different code)</span>'); }).join("; ") +
         '<div style="color:var(--gray);font-size:0.76rem;margin-top:4px">Approve the right one and reject the other with a reason.</div></div>' : '') +
       '<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:0.84rem;cursor:pointer"><input type="checkbox" ' + ((e.asPrivate != null ? e.asPrivate : /^private home\b/i.test(String(b.name || "").trim())) ? 'checked' : '') +
@@ -9260,6 +9263,32 @@ function phLoad() {
     }).join("") : '<div style="color:var(--gray);font-size:0.8rem">No lookups yet.</div>';
   }).catch(function() {});
 }
+// Private-home codes stay hidden on screen, even for admins, until "Show code" is tapped (hides again
+// after 30 seconds). Typing boxes for them show dots, with an eye button.
+var HZ_SHOW = {};
+// The same eye icons as the login page's password box (open eye = show, crossed-out eye = hide).
+var HZ_EYE_ON = "<path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/><circle cx='12' cy='12' r='3'/>";
+var HZ_EYE_OFF = "<path d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94'/><path d='M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19'/><line x1='1' y1='1' x2='23' y2='23'/>";
+function hzEyeSvg(shown) { return '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (shown ? HZ_EYE_OFF : HZ_EYE_ON) + '</svg>'; }
+var HZ_EYE_BTN = 'background:none;border:none;cursor:pointer;color:var(--gray);display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0';
+function hzMasked(code, key, rerender) {
+  var shown = !!HZ_SHOW[key];
+  return '<span style="display:inline-flex;align-items:center;gap:4px"><span style="font-family:Oswald,sans-serif;color:#ffc84a;letter-spacing:0.08em;min-width:44px">' + (shown ? csEsc(code) : '••••') + '</span>' +
+    '<button type="button" class="hz-eye" title="' + (shown ? 'Hide code' : 'Show code') + '" aria-label="' + (shown ? 'Hide code' : 'Show code') + '" style="' + HZ_EYE_BTN + '" onclick="hzToggleShow(\'' + key + '\',\'' + rerender + '\')">' + hzEyeSvg(shown) + '</button></span>';
+}
+function hzToggleShow(key, rerender) {
+  HZ_SHOW[key] = !HZ_SHOW[key];
+  var redraw = function() { if (rerender === "ph" && typeof phRender === "function") phRender(); else if (typeof csRender === "function") csRender(); };
+  if (HZ_SHOW[key]) setTimeout(function() { if (HZ_SHOW[key]) { HZ_SHOW[key] = false; redraw(); } }, 30000);
+  redraw();
+}
+// Typing box for a private-home code: dots, with the login page's eye inside the box on the right.
+function hzSecretInput(attrs, value) {
+  return '<span style="position:relative;display:block;width:100%"><input type="password" autocomplete="new-password" data-lpignore="true" ' + attrs + ' value="' + value + '" style="width:100%;padding-right:44px;box-sizing:border-box">' +
+    '<button type="button" class="hz-eye" title="Show code" aria-label="Show code" style="position:absolute;right:2px;top:50%;transform:translateY(-50%);' + HZ_EYE_BTN + '" onclick="var i=this.previousElementSibling,s=i.type===\'password\';i.type=s?\'text\':\'password\';this.innerHTML=hzEyeSvg(s);this.title=this.ariaLabel=s?\'Hide code\':\'Show code\'">' + hzEyeSvg(false) + '</button></span>';
+}
+window.hzEyeSvg = hzEyeSvg;
+window.hzToggleShow = hzToggleShow;
 function phRender() {
   var el = document.getElementById("ph-list"); if (!el) return;
   var cnt = document.getElementById("ph-count"); if (cnt) cnt.textContent = PH_LIST.length ? "(" + PH_LIST.length + ")" : "";
@@ -9267,7 +9296,7 @@ function phRender() {
     if (PH_EDIT === h.id) return phFormHTML(h);
     return '<div class="cs-card" style="padding:10px 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
       '<div style="flex:1;min-width:220px"><div style="font-weight:700">' + csEsc(h.address) + '</div><div class="cs-sub">' + csEsc(h.name || "Private home") + (h.note ? " · " + csEsc(h.note) : "") + (h.fromSubmission ? " · from Sign Builder" : "") + '</div></div>' +
-      '<span style="font-family:Oswald,sans-serif;color:#ffc84a;letter-spacing:0.06em">' + csEsc(h.code) + '</span>' +
+      hzMasked(h.code, 'ph:' + h.id, 'ph') +
       '<button class="edit-mode-btn" onclick="phEdit(\'' + h.id + '\')">✏️ Edit</button>' +
       '<button class="edit-mode-btn" style="color:#ff9f9f" onclick="phDelete(\'' + h.id + '\')">🗑</button></div>';
   };
@@ -9279,7 +9308,7 @@ function phFormHTML(h) {
     '<span class="cs-k">Address</span><input id="ph-address" value="' + v("address") + '" placeholder="12 Oak St, Woodbridge (house number, street, town)">' +
     '<span class="cs-k">Name</span><input id="ph-name" value="' + csEsc(h.name || "Private home") + '">' +
     '<span class="cs-k">Note</span><input id="ph-note" value="' + v("note") + '" placeholder="Side door · Apt 2B">' +
-    '<span class="cs-k">Code</span><span class="cs-code"><input id="ph-code" value="' + v("code") + '" placeholder="1-2-3-4"></span>' +
+    '<span class="cs-k">Code</span><span class="cs-code">' + hzSecretInput('id="ph-code" placeholder="1-2-3-4"', v("code")) + '</span>' +
     '</div><div class="cs-actions"><button class="submit-btn" style="width:auto;padding:8px 18px" onclick="phSave(\'' + (h.id || "") + '\')">💾 Save</button>' +
     '<button class="edit-mode-btn" onclick="phEdit(null)">Cancel</button></div></div>';
 }
@@ -14682,7 +14711,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.29";
+var DESKTOP_VERSION = "10.31";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
