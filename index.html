@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.31</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.32</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2109,6 +2109,12 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       </div>
     </div>
 
+    <div class="admin-section" data-admin-tab="protocols" id="adm-imagetrend">
+      <div class="admin-section-title">📋 ImageTrend — Pre-fill the PCR</div>
+      <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">The moment a call is posted, a PCR is started in <strong style="color:var(--white)">ImageTrend Elite</strong> with what CallDashboard knows: address, GPS, nature, patient age / sex, crew, the key times, hospital and outcome. It's updated as those come in, always the same incident; anything not known stays blank for the crew. Notes, the callback number and door codes are never sent. Members' license numbers are in <strong style="color:var(--white)">Users ▸ Edit</strong>.</p>
+      <div id="itr-body"></div>
+    </div>
+
     <div class="admin-section" data-admin-tab="users" id="adm-users">
       <div class="admin-section-title">All Users</div>
       <div class="search-wrap" style="margin-bottom:14px"><input type="text" id="admin-search" placeholder="Search by name, unit, email, or role…" oninput="filterAdminUsers()"></div>
@@ -2466,6 +2472,10 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <div><label class="edit-lbl">Phone</label><input class="edit-inp" type="text" id="edit-phone"></div>
     </div>
     <div class="form-row single"><div><label class="edit-lbl">Email</label><input class="edit-inp" type="email" id="edit-email"></div></div>
+    <div class="form-row">
+      <div><label class="edit-lbl">EMS certification</label><select class="edit-inp" id="edit-emslevel"><option value="">—</option><option value="EMR">EMR</option><option value="EMT">EMT</option><option value="AEMT">AEMT</option><option value="Paramedic">Paramedic</option><option value="Driver">Driver only</option><option value="Other">Other</option></select></div>
+      <div><label class="edit-lbl">State license / cert #</label><input class="edit-inp" type="text" id="edit-emslicense" placeholder="Fills the crew on the PCR" autocomplete="off"></div>
+    </div>
     <div class="form-row single"><div>
       <label class="edit-lbl">Access Levels</label>
       <div class="roles-checkboxes" id="edit-roles">
@@ -3343,6 +3353,7 @@ function setAdminTab(tab) {
   try { localStorage.setItem("adminTab", tab); } catch (e) {}
   var sc = document.querySelector("#pg-admin .inner-scroll"); if (sc) sc.scrollTop = 0;
   if (tab === "protocols" && typeof renderDispatchSettings === "function") renderDispatchSettings();
+  if (tab === "protocols" && typeof itrLoad === "function") itrLoad();
   if (tab === "codes" && typeof renderCodesEditor === "function") renderCodesEditor();
   if (tab === "fleet" && typeof loadVehicleStatusPanel === "function") loadVehicleStatusPanel();
   if (tab === "notifications" && typeof loadNotificationLog === "function") loadNotificationLog();
@@ -3367,6 +3378,8 @@ var ADM_SEARCH = [
   { label: "Coverage areas (primary / secondary)", where: "Protocols & Dispatch", tab: "protocols", ds: "zones", k: "coverage areas zones primary secondary polygons map response direct load rig" },
   { label: "Mutual aid directory", where: "Protocols & Dispatch", tab: "protocols", ds: "mutualAid", k: "mutual aid pd police bls als agencies towns" },
   { label: "Transport hospitals", where: "Protocols & Dispatch", tab: "protocols", ds: "hospitals", k: "transport hospitals destination er" },
+  { label: "ImageTrend — send calls to the PCR (agency #, login, natures, hospitals, rigs)", where: "Protocols & Dispatch", tab: "protocols", el: "adm-imagetrend", k: "imagetrend elite pcr epcr cad import report patient care nemsis agency number dispatch reason destination code" },
+  { label: "EMS license numbers & certification level (for ImageTrend)", where: "Users", tab: "users", el: "adm-users", k: "license licence certification cert emt emr paramedic level state number imagetrend crew" },
   { label: "Outside-coverage contacts", where: "Protocols & Dispatch", tab: "protocols", ds: "outside", k: "outside coverage contacts out of area" },
   { label: "Notifications & permissions (who gets notified)", where: "Protocols & Dispatch", tab: "protocols", ds: "notify", k: "notifications permissions who gets notified admin call notification service ticket group it tickets accept resolve logistics" },
   { label: "Building codes from businesses (Sign Builder) — waiting for approval", where: "Codes & Locations", tab: "codes", el: "adm-code-subs", k: "approve approval pending submission sign builder business door code api phone not confirmed call to verify before approving unconfirmed recaptcha" },
@@ -5264,6 +5277,8 @@ function openEdit(uid) {
     document.getElementById("edit-unit").value = u.unit || "";
     document.getElementById("edit-phone").value = u.phone || "";
     document.getElementById("edit-email").value = u.email || "";
+    document.getElementById("edit-emslevel").value = u.emsLevel || "";
+    document.getElementById("edit-emslicense").value = u.emsLicense || "";
     var opRoles = (u.roles || []).filter(function(r) { return r !== "admin"; });
     document.querySelectorAll("#edit-roles input").forEach(function(c) { c.checked = opRoles.includes(c.value); });
     renderCustomTags("edit", opRoles);
@@ -5282,6 +5297,8 @@ function saveEdit() {
   var unit = document.getElementById("edit-unit").value.trim();
   var phone = document.getElementById("edit-phone").value.trim();
   var email = document.getElementById("edit-email").value.trim();
+  var emsLevel = document.getElementById("edit-emslevel").value;
+  var emsLicense = document.getElementById("edit-emslicense").value.replace(/[^A-Za-z0-9\-]/g, "").slice(0, 30);
   var opRoles = Array.from(new Set(
     Array.from(document.querySelectorAll("#edit-roles input:checked")).map(function(c) { return c.value; }).concat(getCustomRoles("edit"))
   ));
@@ -5290,11 +5307,14 @@ function saveEdit() {
   if (!fname || !lname) { msg.className = "form-msg error"; msg.textContent = "Name required."; return; }
   var np2 = normalizePhoneInput(phone); if (!np2.ok) { msg.className = "form-msg error"; msg.textContent = "Phone must be a 10-digit US number (e.g. 732-555-1234)."; return; } phone = np2.value;
   if (!opRoles.length) { msg.className = "form-msg error"; msg.textContent = "Select at least one role."; return; }
-  db.collection("users").doc(uid).set({ firstName: fname, lastName: lname, unit: unit, phone: phone, email: email, roles: opRoles, role: isAdminCheck ? "admin" : "responder" }, { merge: true })
+  db.collection("users").doc(uid).set({ firstName: fname, lastName: lname, unit: unit, phone: phone, email: email, emsLevel: emsLevel, emsLicense: emsLicense, roles: opRoles, role: isAdminCheck ? "admin" : "responder" }, { merge: true })
     .then(function() {
       return db.collection("unitLookup").doc(unit).set({ unit: unit, email: email, updatedAt: new Date().toISOString() });
     })
-    .then(function() { msg.className = "form-msg success"; msg.textContent = "✓ Saved!"; setTimeout(function() { closeEdit(); loadUsers(); }, 800); })
+    .then(function() {
+      var cu = allUsersCache.find(function(x) { return x.uid === uid; });
+      if (cu) Object.assign(cu, { firstName: fname, lastName: lname, unit: unit, phone: phone, email: email, emsLevel: emsLevel, emsLicense: emsLicense, roles: opRoles, role: isAdminCheck ? "admin" : "responder" });
+      msg.className = "form-msg success"; msg.textContent = "✓ Saved!"; setTimeout(function() { closeEdit(); loadUsers(); }, 800); })
     .catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
 }
 document.getElementById("edit-modal").addEventListener("click", function(e) { if (e.target === this) closeEdit(); });
@@ -9247,6 +9267,254 @@ window.csSetView = csSetView; window.csEdit = csEdit; window.csShowReject = csSh
 
 // ── Admin ▸ Codes & Locations ▸ 🏠 Private Homes (admins only — privateCodes) ──
 var PH_LIST = [], PH_UNSUB = null, PH_EDIT = null;
+var IT_LISTS = {"reasons":[["it2301.158","911 Hang-Up"],["2301001","Abdominal Pain/Problems"],["it2301.143","Aircraft Down"],["it2301.144","Aircraft In Distress"],["it2301.145","Aircraft Into Structures"],["it2301.146","Aircraft Standby"],["2301083","Airmedical Transport"],["it2301.118","Alcohol intoxication"],["2301003","Allergic Reaction/Stings"],["it2301.119","Allergies"],["2301085","Altered Mental Status"],["it2301.120","Altitude Sickness"],["2301005","Animal Bite"],["it2301.142","Asist Other Agency"],["it2301.100","Assault - Sexual"],["2301007","Assault"],["it2301.166","Assist Police with a Citizen"],["it2301.105","Auto vs. Pedestrian"],["2301009","Automated Crash Notification"],["2301011","Back Pain (Non-Traumatic)"],["it2301.125","Barranca Fire"],["it2301.159","Bleeding"],["it2301.126","Boat Fire (Open Water)"],["2301013","Breathing Problem"],["it2301.127","Brush Fire"],["2301015","Burns/Explosion"],["2301017","Carbon Monoxide/Hazmat/Inhalation/CBRN"],["it2301.112","Cardiac Arrest - Possible DOA"],["2301019","Cardiac Arrest/Death"],["2301021","Chest Pain (Non-Traumatic)"],["2301023","Choking"],["it2301.123","Chronic Illness/Medical Condition"],["it2301.128","Commercial Fire Alarm"],["2301025","Convulsions/Seizure"],["2301027","Diabetic Problem"],["it2301.169","Discharged"],["2301081","Drowning/Diving/SCUBA Accident"],["2301029","Electrocution/Lightning"],["it2301.167","Emergency Assist an Officer"],["it2301.121","Epistaxis (Nosebleed)"],["2301031","Eye Problem/Injury"],["2301033","Falls"],["2301035","Fire"],["it2301.110","Fire Standby"],["it2301.130","Flooding (Weather Related)"],["it2301.160","Fracture"],["it2301.116","General Fire Department Call"],["it2301.131","Grass Fire"],["it2301.155","Gunshot"],["it2301.161","Hanging"],["it2301.147","Hazard Investigation"],["it2301.148","Hazardous Condition"],["it2301.149","Hazardous Materials Incident"],["it2301.111","HAZMAT Standby"],["2301037","Headache"],["2301039","Healthcare Professional/Admission"],["2301041","Heart Problems/AICD"],["2301043","Heat/Cold Exposure"],["2301045","Hemorrhage/Laceration"],["it2301.164","Home Health Visit"],["2301047","Industrial Accident/Inaccessible Incident/Other Entrapments (Non-Vehicle)"],["2301087","Intercept"],["it2301.109","Invalid Assist/Lifting Assist"],["it2301.132","Investigation"],["it2301.106","Machine/equipment Injury"],["it2301.133","Marina Fire"],["2301049","Medical Alarm"],["it2301.113","Medical Evaluation/Blood Draw/UA"],["it2301.102","Medical Transport"],["it2301.114","Medication Reaction (Not Allergic)"],["it2301.170","Morgue Transport"],["it2301.150","Motorcycle Collision"],["it2301.129","Mutual Aid-Medical"],["2301089","Nausea"],["2301051","No Other Appropriate Choice"],["it2301.103","Other"],["2301053","Overdose/Poisoning/Ingestion"],["it2301.104","Pain"],["2301055","Pandemic/Epidemic/Outbreak"],["it2301.162","Pediatric Fever"],["it2301.156","Penetrating Wounds"],["it2301.134","Petroleum Fire"],["2301057","Pregnancy/Childbirth/Miscarriage"],["2301059","Psychiatric Problem/Abnormal Behavior/Suicide Attempt"],["it2301.135","Public Service"],["it2301.136","Refuse Fire"],["it2301.137","Residential Fire Alarm"],["it2301.107","Respiratory Arrest"],["it2301.117","Search and Rescue"],["it2301.138","Ship Fire"],["2301061","Sick Person"],["2301063","Stab/Gunshot Wound/Penetrating Trauma"],["it2301.157","Stabbing"],["2301065","Standby"],["it2301.151","STEMI Transport"],["it2301.139","Still Alarm"],["it2301.115","Sting/Envenomation"],["2301067","Stroke/CVA"],["it2301.140","Structure Fire"],["it2301.152","Swift Water Rescue"],["it2301.165","Taser Shock"],["it2301.153","Technical Rescue"],["2301069","Traffic/Transportation Incident"],["2301071","Transfer/Interfacility/Palliative Care"],["2301073","Traumatic Injury"],["2301077","Unconscious/Fainting/Near-Fainting"],["2301079","Unknown Problem/Person Down"],["it2301.122","Urinary problem"],["it2301.141","Vehicle Fire"],["2301091","Vomiting"],["it2301.163","Walkin (EMS Related)"],["it2301.154","Water Rescue"],["it2301.168","Welfare Check"],["2301075","Well Person Check"]],"service":[["2205001","911 Response (Scene)"],["it2205.103","Automatic Aid"],["it2205.106","BLS 911 Response (Scene)"],["it2205.108","Disabled Prisoner Transport"],["it2205.101","Flagdown/Walk-in Emergent"],["it2205.102","Flagdown/Walk-in Non-emergent"],["2205003","Intercept"],["it2205.100","Interfacility Transfer (Unscheduled)"],["2205005","Interfacility Transport"],["2205007","Medical Transport"],["2205009","Mutual Aid"],["it2205.105","Onsite Dispatch"],["it2205.107","Organ Transport"],["it2205.104","PIFT (Paramedic Interfacility Transfer)"],["it2205.110","Private Caller"],["2205011","Public Assistance/Other Not Listed"],["2205013","Standby"],["it2205.109","Transfer to Air from Facility"],["it2205.111","Transport to Dialysis Facility"],["it2205.112","Transport to Doctor's Appointment"]],"role":[["2207001","Air Transport"],["2207003","Ground Transport"],["2207005","Non-Transport Administrative"],["2207007","Non-Transport Assistance"],["2207009","Non-Transport Rescue"],["2207011","Air Transport-Helpicopter"],["2207013","Air Transport-Fixed Wing"],["it2207.001","ALS Ground Transport"],["it2207.002","BLS Ground Transport"],["it2207.003","Critical Care Ground Transport"],["it2207.004","Other Transport"]],"mode":[["2223003","Emergent Downgraded to Non-Emergent"],["2223007","Non-Emergent Upgraded to Emergent"],["2223001","Emergent (Immediate Response)"],["2223005","Non-Emergent"]],"priority":[["2305001","Critical"],["2305003","Emergent"],["2305005","Lower Acuity"],["2305007","Non-Acute [e.g., Scheduled Transfer or Standby]"],["it2305.100","Priority 5"],["it2305.102","Priority 6"],["it2305.104","Bravo"],["it2305.105","Charlie"],["it2305.106","Delta"],["it2305.109","Echo"],["it2305.111","Omega"],["it2305.113","IFT"],["it2305.115","Standby"],["it2305.118","Not Available"],["it2305.119","Alpha"]]};
+// ══ IMAGETREND (Admin ▸ Protocols & Dispatch) — calls pre-fill the crew's PCR ══
+// Settings → appdata/imageTrend (admins). The web-service login goes through the imageTrendAdmin
+// function and is kept server-only; the page only learns whether a password is saved.
+// The server (imageTrendSync) does the sending; this page sets it up and shows what happened.
+var ITR_DEFAULTS = {
+  enabled: false, sendTestCalls: false, agencyNumber: "", state: "NJ", stateGnis: "34", county: "Middlesex", townCounties: {},
+  typeOfService: "2205001", primaryRole: "2207003", responseMode: "2223001", dispatchPriority: "",
+  placeholderUnit: "",
+  natureCodes: { "01":"2301013","02":"2301021","03":"2301019","04":"2301023","05":"2301023","06":"2301081","07":"2301085","08":"2301077","09":"2301027","10":"2301073","11":"2301073","12":"2301073","13":"2301057","14":"2301067","15":"2301025","16":"2301059","17":"2301003","18":"2301003","19":"2301069","20":"it2301.105","21":"2301049","22":"2301077","23":"2301053","24":"it2301.118","25":"2301061","26":"2301051" },
+  hospitals: {
+    "RWJ New Brunswick": { code:"", street:"1 Robert Wood Johnson Pl", city:"New Brunswick", zip:"08901", county:"Middlesex", state:"NJ" },
+    "RWJ Somerset": { code:"", street:"110 Rehill Ave", city:"Somerville", zip:"08876", county:"Somerset", state:"NJ" },
+    "St. Peters University Hospital": { code:"", street:"254 Easton Ave", city:"New Brunswick", zip:"08901", county:"Middlesex", state:"NJ" },
+    "JFK Medical Center": { code:"", street:"65 James St", city:"Edison", zip:"08820", county:"Middlesex", state:"NJ" },
+    "Overlook Medical Center": { code:"", street:"99 Beauvoir Ave", city:"Summit", zip:"07901", county:"Union", state:"NJ" },
+    "Morristown Medical Center": { code:"", street:"100 Madison Ave", city:"Morristown", zip:"07960", county:"Morris", state:"NJ" },
+    "Clara Maass Medical Center": { code:"", street:"1 Clara Maass Dr", city:"Belleville", zip:"07109", county:"Essex", state:"NJ" }
+  },
+  rigs: {}
+};
+var ITR_CFG = null, ITR_STATUS = null, ITR_RIGS = [], ITR_XML = "";
+function itrEsc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function(c) { return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]; }); }
+function itrStyle() {
+  if (document.getElementById("itr-style")) return;
+  var st = document.createElement("style"); st.id = "itr-style";
+  st.textContent =
+    "#adm-imagetrend .itr-card{background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:12px;padding:14px;margin-bottom:12px}" +
+    "#adm-imagetrend .itr-h{font-family:'Oswald',sans-serif;font-size:0.95rem;letter-spacing:0.04em;color:var(--white);margin-bottom:4px}" +
+    "#adm-imagetrend .itr-note{font-size:0.78rem;color:var(--gray);line-height:1.5;margin-bottom:10px}" +
+    "#adm-imagetrend .itr-grid{display:grid;grid-template-columns:minmax(150px,220px) 1fr;gap:8px 12px;align-items:center;font-size:0.86rem}" +
+    "#adm-imagetrend .itr-k{font-size:0.7rem;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray)}" +
+    "#adm-imagetrend input[type=text],#adm-imagetrend input[type=password],#adm-imagetrend select,#adm-imagetrend textarea{width:100%;box-sizing:border-box;min-width:0;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font:inherit;font-size:0.86rem;outline:none}" +
+    "#adm-imagetrend select option{background:var(--navy-mid);color:var(--white)}" +
+    "#adm-imagetrend textarea{font-family:monospace;font-size:0.78rem;min-height:70px;resize:vertical}" +
+    "#adm-imagetrend label.itr-chk{display:flex;gap:10px;align-items:center;min-height:34px;cursor:pointer;font-size:0.86rem}" +
+    "#adm-imagetrend label.itr-chk input{width:18px;height:18px;accent-color:var(--gold);flex-shrink:0}" +
+    "#adm-imagetrend .itr-table{display:grid;gap:6px;font-size:0.82rem}" +
+    "#adm-imagetrend .itr-row{display:grid;gap:6px;align-items:center}" +
+    "#adm-imagetrend .itr-nat{grid-template-columns:minmax(140px,1fr) minmax(180px,1.4fr)}" +
+    "#adm-imagetrend .itr-hosp{grid-template-columns:minmax(130px,1.3fr) 80px minmax(120px,1.3fr) minmax(90px,1fr) 70px minmax(80px,0.8fr)}" +
+    "#adm-imagetrend .itr-rig{grid-template-columns:minmax(110px,1fr) minmax(110px,1fr) minmax(110px,1fr)}" +
+    "#adm-imagetrend .itr-th{font-size:0.64rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray)}" +
+    "#adm-imagetrend .itr-pill{display:inline-block;font-size:0.68rem;font-weight:700;border-radius:999px;padding:2px 9px;border:1px solid;white-space:nowrap}" +
+    "#adm-imagetrend .itr-on{color:#7dedb5;border-color:rgba(125,237,181,0.5);background:rgba(125,237,181,0.1)}" +
+    "#adm-imagetrend .itr-off{color:var(--gray);border-color:var(--card-border);background:rgba(255,255,255,0.04)}" +
+    "#adm-imagetrend .itr-bad{color:#ff9f9f;border-color:rgba(224,85,85,0.5);background:rgba(224,85,85,0.1)}" +
+    "#adm-imagetrend .itr-warn{color:#ffc84a;border-color:rgba(240,165,0,0.5);background:rgba(240,165,0,0.12)}" +
+    "#adm-imagetrend .itr-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}" +
+    "#adm-imagetrend .itr-log{border-top:1px solid rgba(255,255,255,0.06);padding:9px 0;font-size:0.8rem}" +
+    "#adm-imagetrend details summary{cursor:pointer;color:var(--gold);font-size:0.8rem;margin-top:8px}" +
+    "#itr-xml-modal{position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px}" +
+    "#itr-xml-modal .itr-box{background:var(--navy-mid);border:1px solid var(--card-border);border-radius:12px;width:min(900px,100%);max-height:90vh;display:flex;flex-direction:column;padding:16px}" +
+    "#itr-xml-modal pre{flex:1;overflow:auto;background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;font-size:0.74rem;color:#cfe3ff;white-space:pre-wrap;word-break:break-word;margin:10px 0}" +
+    "@media (max-width:760px){#adm-imagetrend .itr-grid{grid-template-columns:1fr}#adm-imagetrend .itr-hosp{grid-template-columns:1fr 1fr}#adm-imagetrend .itr-hosp .itr-th{display:none}#adm-imagetrend .itr-nat,#adm-imagetrend .itr-rig{grid-template-columns:1fr}}";
+  document.head.appendChild(st);
+}
+function itrMerged(d) {
+  d = d || {};
+  var c = JSON.parse(JSON.stringify(ITR_DEFAULTS));
+  Object.keys(d).forEach(function(k) {
+    if (["natureCodes","hospitals","townCounties","rigs"].indexOf(k) !== -1 && d[k] && typeof d[k] === "object") c[k] = Object.assign({}, c[k], d[k]);
+    else c[k] = d[k];
+  });
+  return c;
+}
+function itrLoad() {
+  itrStyle();
+  var host = document.getElementById("itr-body"); if (!host) return;
+  host.innerHTML = '<div class="itr-note">Loading…</div>';
+  Promise.all([
+    db.collection("appdata").doc("imageTrend").get().then(function(s) { return s.exists ? s.data() : {}; }),
+    db.collection("vehicles").get().then(function(snap) { var a = []; snap.forEach(function(d) { var v = d.data(); if (v.id) a.push(String(v.id)); }); return a.sort(); }).catch(function() { return []; }),
+    hzRelay("imageTrendAdmin", { action: "status" }).catch(function(e) { return { error: e.message }; })
+  ]).then(function(r) {
+    ITR_CFG = itrMerged(r[0]); ITR_RIGS = r[1]; ITR_STATUS = r[2] || {};
+    itrRender();
+  }).catch(function(e) { host.innerHTML = '<div class="itr-note" style="color:#ff9090">Couldn\'t load: ' + itrEsc(e.message) + '</div>'; });
+}
+function itrOpts(list, cur, blank) {
+  var h = blank ? '<option value="">' + itrEsc(blank) + '</option>' : '';
+  var found = !cur;
+  list.forEach(function(x) { if (x[0] === cur) found = true; h += '<option value="' + itrEsc(x[0]) + '"' + (x[0] === cur ? ' selected' : '') + '>' + itrEsc(x[1]) + '</option>'; });
+  if (!found) h += '<option value="' + itrEsc(cur) + '" selected>' + itrEsc(cur) + ' (custom code)</option>';
+  return h;
+}
+function itrRender() {
+  var c = ITR_CFG, s = ITR_STATUS || {}, conn = s.connection || {};
+  var host = document.getElementById("itr-body"); if (!host) return;
+  var natures = (typeof CALL_NATURES !== "undefined" ? CALL_NATURES : []).map(function(n) { return { code: ((n.value || "").match(/^(\d{2})\b/) || [])[1] || "", label: n.label || n.value }; }).filter(function(n) { return n.code; });
+  var hospitals = (typeof DISPATCH_HOSPITALS !== "undefined" ? DISPATCH_HOSPITALS : []).filter(function(h) { return h && h !== "Other"; });
+  var townTxt = Object.keys(c.townCounties || {}).map(function(t) { return t + " = " + c.townCounties[t]; }).join("\n");
+  var ready = c.enabled && conn.url && c.agencyNumber;
+  var h = '';
+  h += '<div class="itr-card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">' +
+    '<div class="itr-h">Status</div><div style="display:flex;gap:6px;flex-wrap:wrap">' +
+    '<span class="itr-pill ' + (c.enabled ? 'itr-on' : 'itr-off') + '">' + (c.enabled ? 'Sending is ON' : 'Sending is OFF') + '</span>' +
+    '<span class="itr-pill ' + (conn.url ? 'itr-on' : 'itr-warn') + '">' + (conn.url ? 'Web-service address saved' : 'No web-service address yet') + '</span>' +
+    '<span class="itr-pill ' + (c.agencyNumber ? 'itr-on' : 'itr-warn') + '">' + (c.agencyNumber ? 'Agency # ' + itrEsc(c.agencyNumber) : 'No Agency Number yet') + '</span></div></div>' +
+    '<div class="itr-note" style="margin:8px 0 0">' + (ready ? 'Every new call starts a PCR in ImageTrend the moment it is posted, and is updated as crew, times, hospital and outcome come in.' :
+      'Until ImageTrend gives you the Agency Number and web-service login, nothing is sent. You can still fill in the lists below and download a sample file for them.') + '</div>' +
+    (s.error ? '<div class="itr-note" style="color:#ff9090;margin:6px 0 0">Couldn\'t read the connection: ' + itrEsc(s.error) + '</div>' : '') + '</div>';
+  // switch & agency
+  h += '<div class="itr-card"><div class="itr-h">Sending</div>' +
+    '<label class="itr-chk"><input type="checkbox" id="itr-enabled"' + (c.enabled ? ' checked' : '') + '> Send calls to ImageTrend</label>' +
+    '<label class="itr-chk"><input type="checkbox" id="itr-test"' + (c.sendTestCalls ? ' checked' : '') + '> Also send Test Mode calls (only while ImageTrend is testing with you)</label>' +
+    '<div class="itr-grid" style="margin-top:10px">' +
+      '<div class="itr-k">Agency Number</div><input type="text" id="itr-agency" value="' + itrEsc(c.agencyNumber) + '" placeholder="From ImageTrend">' +
+      '<div class="itr-k">Unit number before a rig is picked (optional)</div><input type="text" id="itr-placeholder" value="' + itrEsc(c.placeholderUnit) + '" placeholder="Blank = unit left empty until a rig is picked">' +
+    '</div><div class="itr-note" style="margin:6px 0 0">The PCR is started the moment a call is posted. Every field stays blank until CallDashboard has that information; the crew fills in the rest. Only four times are sent: call posted (notified), first unit assigned (en route), first unit on scene, and transport (left scene). Leave the unit box empty unless ImageTrend says a unit is required before a rig is picked. Never sent: door codes, dispatcher notes, call notes, callback number.</div></div>';
+  // defaults
+  h += '<div class="itr-card"><div class="itr-h">Every call</div><div class="itr-note">What ImageTrend should assume for every call.</div><div class="itr-grid">' +
+    '<div class="itr-k">Type of service</div><select id="itr-service">' + itrOpts(IT_LISTS.service, c.typeOfService) + '</select>' +
+    '<div class="itr-k">Primary role of unit</div><select id="itr-role">' + itrOpts(IT_LISTS.role, c.primaryRole) + '</select>' +
+    '<div class="itr-k">Response mode to scene</div><select id="itr-mode">' + itrOpts(IT_LISTS.mode, c.responseMode, "— leave for the crew —") + '</select>' +
+    '<div class="itr-k">Dispatch priority</div><select id="itr-priority">' + itrOpts(IT_LISTS.priority, c.dispatchPriority, "— leave for the crew —") + '</select>' +
+    '<div class="itr-k">State</div><input type="text" id="itr-state" value="' + itrEsc(c.state) + '" maxlength="2" style="max-width:80px">' +
+    '<div class="itr-k">County (usual)</div><input type="text" id="itr-county" value="' + itrEsc(c.county) + '">' +
+    '<div class="itr-k">Towns in another county</div><textarea id="itr-towns" placeholder="One per line, e.g.  Lakewood = Ocean">' + itrEsc(townTxt) + '</textarea>' +
+  '</div></div>';
+  // natures
+  h += '<div class="itr-card"><div class="itr-h">Call natures → ImageTrend dispatch reason</div><div class="itr-note">Each nature dispatchers pick is sent as this dispatch reason. Natures come from Call Natures &amp; ALS above.</div>' +
+    '<div class="itr-table"><div class="itr-row itr-nat"><div class="itr-th">Call nature</div><div class="itr-th">ImageTrend dispatch reason</div></div>' +
+    natures.map(function(n) { return '<div class="itr-row itr-nat"><div>' + itrEsc(n.label) + '</div><select data-itr-nat="' + n.code + '">' + itrOpts(IT_LISTS.reasons, c.natureCodes[n.code] || "", "— leave for the crew —") + '</select></div>'; }).join("") +
+    '</div></div>';
+  // hospitals
+  h += '<div class="itr-card"><div class="itr-h">Transport hospitals → ImageTrend destination</div><div class="itr-note">The destination code is the one in your ImageTrend facility list (ask ImageTrend if unsure). Address fills the PCR\'s destination.</div>' +
+    '<div class="itr-table"><div class="itr-row itr-hosp"><div class="itr-th">Hospital</div><div class="itr-th">Code</div><div class="itr-th">Street</div><div class="itr-th">Town</div><div class="itr-th">Zip</div><div class="itr-th">County</div></div>' +
+    hospitals.map(function(name, i) { var x = c.hospitals[name] || {}; return '<div class="itr-row itr-hosp" data-itr-hosp="' + itrEsc(name) + '"><div>' + itrEsc(name) + '</div>' +
+      '<input type="text" data-f="code" value="' + itrEsc(x.code) + '" placeholder="Code"><input type="text" data-f="street" value="' + itrEsc(x.street) + '" placeholder="Street">' +
+      '<input type="text" data-f="city" value="' + itrEsc(x.city) + '" placeholder="Town"><input type="text" data-f="zip" value="' + itrEsc(x.zip) + '" placeholder="Zip"><input type="text" data-f="county" value="' + itrEsc(x.county) + '" placeholder="County"></div>'; }).join("") +
+    '</div></div>';
+  // rigs
+  h += '<div class="itr-card"><div class="itr-h">Rigs → ImageTrend unit</div><div class="itr-note">Blank = sent the way the dashboard names the rig. Fill in only if ImageTrend knows the rig by a different unit number or call sign.</div>' +
+    '<div class="itr-table"><div class="itr-row itr-rig"><div class="itr-th">Rig</div><div class="itr-th">ImageTrend unit number</div><div class="itr-th">Call sign</div></div>' +
+    (ITR_RIGS.length ? ITR_RIGS.map(function(id) { var x = c.rigs[id] || {}; return '<div class="itr-row itr-rig" data-itr-rig="' + itrEsc(id) + '"><div>🚑 ' + itrEsc(id) + '</div>' +
+      '<input type="text" data-f="unitNumber" value="' + itrEsc(x.unitNumber) + '" placeholder="' + itrEsc(id) + '"><input type="text" data-f="callSign" value="' + itrEsc(x.callSign) + '" placeholder="' + itrEsc(id) + '"></div>'; }).join("") : '<div class="itr-note">No rigs in Fleet yet.</div>') +
+    '</div></div>';
+  h += '<div class="itr-actions" style="margin:0 0 18px"><button class="submit-btn" style="width:auto;padding:10px 22px" onclick="itrSave()">💾 Save ImageTrend Settings</button><span class="form-msg" id="itr-msg"></span></div>';
+  // connection
+  h += '<div class="itr-card"><div class="itr-h">Connection (ImageTrend gives you these)</div><div class="itr-note">Saved on the server only — the password is never shown again or sent to anyone\'s phone.' + (conn.savedAt ? ' Last saved ' + itrEsc(new Date(conn.savedAt).toLocaleString()) + '.' : '') + '</div><div class="itr-grid">' +
+    '<div class="itr-k">Web-service address</div><input type="text" id="itr-url" value="' + itrEsc(conn.url) + '" placeholder="https://…">' +
+    '<div class="itr-k">Username</div><input type="text" id="itr-user" value="' + itrEsc(conn.username) + '" autocomplete="off">' +
+    '<div class="itr-k">Password</div><div style="display:flex;gap:6px;align-items:center"><input type="password" id="itr-pass" autocomplete="new-password" placeholder="' + (conn.hasPassword ? '•••••••• saved — type to replace' : 'Not set') + '">' +
+      '<button type="button" class="hz-eye" title="Show" style="' + (typeof HZ_EYE_BTN !== "undefined" ? HZ_EYE_BTN : "") + '" onclick="var i=document.getElementById(\'itr-pass\');var sh=i.type===\'password\';i.type=sh?\'text\':\'password\';this.innerHTML=hzEyeSvg(sh)">' + (typeof hzEyeSvg === "function" ? hzEyeSvg(false) : "👁") + '</button></div>' +
+  '</div><details><summary>Advanced (only if ImageTrend asks)</summary><div class="itr-grid" style="margin-top:10px">' +
+    '<div class="itr-k">Content type</div><input type="text" id="itr-ctype" value="' + itrEsc(conn.contentType) + '" placeholder="application/xml; charset=utf-8">' +
+    '<div class="itr-k">Extra header name</div><input type="text" id="itr-hname" value="' + itrEsc(conn.headerName) + '" placeholder="e.g. SOAPAction">' +
+    '<div class="itr-k">Extra header value</div><input type="password" id="itr-hval" autocomplete="new-password" placeholder="' + (conn.hasHeaderValue ? '•••••••• saved — type to replace' : 'Not set') + '">' +
+    '<div class="itr-k">Wrap the XML in</div><textarea id="itr-wrap" placeholder="Blank = send the XML as is. Use {{xml}} or {{xmlEscaped}} where the XML goes.">' + itrEsc(conn.wrapper) + '</textarea>' +
+  '</div></details>' +
+  '<div class="itr-actions"><button class="edit-mode-btn" onclick="itrSaveConn()">💾 Save Connection</button><button class="edit-mode-btn" onclick="itrTest()">📤 Send a test incident</button>' +
+    '<button class="edit-mode-btn" onclick="itrSample()">📄 Sample file for ImageTrend</button><span class="form-msg" id="itr-conn-msg"></span></div></div>';
+  // recent
+  var recent = (s.recent || []);
+  h += '<div class="itr-card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="itr-h">Recent calls</div><button class="edit-mode-btn" style="padding:5px 11px" onclick="itrLoad()">↻ Refresh</button></div>' +
+    (recent.length ? recent.map(function(r) {
+      var lr = r.lastResult, pill = lr ? (lr.ok ? '<span class="itr-pill itr-on">Sent ' + itrEsc(new Date(lr.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })) + '</span>' : '<span class="itr-pill itr-bad">Failed' + (lr.status ? ' (' + lr.status + ')' : '') + '</span>') : '<span class="itr-pill itr-off">Not sent yet</span>';
+      return '<div class="itr-log"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-family:Oswald,sans-serif;letter-spacing:0.03em">' + itrEsc(r.incidentNumber || "—") + '</b> · ' + itrEsc(String(r.address || "").split(",").slice(0, 2).join(",")) +
+        (r.createdAt ? ' <span style="color:var(--gray)">· ' + itrEsc(new Date(r.createdAt).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })) + '</span>' : '') + (r.testMode ? ' <span class="itr-pill itr-warn">TEST</span>' : '') + '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center">' + pill + '<button class="edit-mode-btn" style="padding:4px 10px;font-size:0.68rem" onclick="itrPreview(\'' + itrEsc(r.callId) + '\')">XML</button><button class="edit-mode-btn" style="padding:4px 10px;font-size:0.68rem" onclick="itrResend(\'' + itrEsc(r.callId) + '\')">Resend</button></div></div>' +
+        (lr && !lr.ok && lr.body ? '<div style="color:#ff9f9f;font-size:0.74rem;margin-top:4px;word-break:break-word">' + itrEsc(String(lr.body).slice(0, 220)) + '</div>' : '') +
+        (r.warnings && r.warnings.length ? '<div style="color:#ffc84a;font-size:0.74rem;margin-top:4px">' + r.warnings.map(itrEsc).join('<br>') + '</div>' : '') + '</div>';
+    }).join("") : '<div class="itr-note" style="margin:6px 0 0">Nothing sent yet.</div>') + '</div>';
+  host.innerHTML = h;
+}
+function itrSave() {
+  var msg = document.getElementById("itr-msg"); msg.className = "form-msg"; msg.textContent = "Saving…";
+  var v = function(id) { var e = document.getElementById(id); return e ? e.value.trim() : ""; };
+  var ch = function(id) { var e = document.getElementById(id); return !!(e && e.checked); };
+  var towns = {};
+  v("itr-towns").split("\n").forEach(function(line) { var p = line.split("="); if (p.length >= 2 && p[0].trim() && p[1].trim()) towns[p[0].trim()] = p.slice(1).join("=").trim(); });
+  var nat = {}; document.querySelectorAll("#adm-imagetrend [data-itr-nat]").forEach(function(sel) { nat[sel.getAttribute("data-itr-nat")] = sel.value; });
+  var hosp = Object.assign({}, ITR_CFG.hospitals);
+  document.querySelectorAll("#adm-imagetrend [data-itr-hosp]").forEach(function(row) {
+    var x = { state: (hosp[row.getAttribute("data-itr-hosp")] || {}).state || v("itr-state").toUpperCase() || "NJ" };
+    row.querySelectorAll("input[data-f]").forEach(function(i) { x[i.getAttribute("data-f")] = i.value.trim(); });
+    hosp[row.getAttribute("data-itr-hosp")] = x;
+  });
+  var rigs = {};
+  document.querySelectorAll("#adm-imagetrend [data-itr-rig]").forEach(function(row) {
+    var x = {}; row.querySelectorAll("input[data-f]").forEach(function(i) { if (i.value.trim()) x[i.getAttribute("data-f")] = i.value.trim(); });
+    if (Object.keys(x).length) rigs[row.getAttribute("data-itr-rig")] = x;
+  });
+  var data = {
+    enabled: ch("itr-enabled"), sendTestCalls: ch("itr-test"),
+    agencyNumber: v("itr-agency"), placeholderUnit: v("itr-placeholder"),
+    typeOfService: v("itr-service"), primaryRole: v("itr-role"), responseMode: v("itr-mode"), dispatchPriority: v("itr-priority"),
+    state: (v("itr-state") || "NJ").toUpperCase(), county: v("itr-county"), townCounties: towns, natureCodes: nat, hospitals: hosp, rigs: rigs,
+    updatedAt: new Date().toISOString(), updatedBy: (typeof currentUserUnit !== "undefined" ? currentUserUnit : "") || ""
+  };
+  if (data.enabled && !data.agencyNumber) { msg.className = "form-msg error"; msg.textContent = "Add the Agency Number from ImageTrend before turning sending on."; return; }
+  // set (not merge) so the code tables are replaced exactly; nothing secret lives in this document
+  db.collection("appdata").doc("imageTrend").set(data).then(function() {
+    ITR_CFG = itrMerged(data); msg.className = "form-msg success"; msg.textContent = "✓ Saved"; setTimeout(function() { itrRender(); }, 900);
+  }).catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
+}
+function itrConnMsg(t, cls) { var m = document.getElementById("itr-conn-msg"); if (m) { m.className = "form-msg" + (cls ? " " + cls : ""); m.textContent = t; } }
+function itrSaveConn() {
+  var g = function(id) { var e = document.getElementById(id); return e ? e.value.trim() : ""; };
+  var url = g("itr-url");
+  if (url && !/^https:\/\//i.test(url)) { itrConnMsg("The address must start with https://", "error"); return; }
+  var payload = { action: "saveConnection", url: url, username: g("itr-user"), contentType: g("itr-ctype"), headerName: g("itr-hname"), wrapper: (document.getElementById("itr-wrap") || {}).value || "" };
+  var pw = (document.getElementById("itr-pass") || {}).value || ""; if (pw) payload.password = pw;
+  var hv = (document.getElementById("itr-hval") || {}).value || ""; if (hv) payload.headerValue = hv;
+  itrConnMsg("Saving…");
+  hzRelay("imageTrendAdmin", payload).then(function() { itrConnMsg("✓ Saved", "success"); setTimeout(itrLoad, 900); })
+    .catch(function(e) { itrConnMsg("Error: " + e.message, "error"); });
+}
+function itrTest() {
+  itrConnMsg("Sending a made-up test incident…");
+  hzRelay("imageTrendAdmin", { action: "test" }).then(function(r) {
+    itrConnMsg(r.ok ? "✓ ImageTrend accepted it (" + r.status + ")" : "✗ Not accepted" + (r.status ? " (" + r.status + ")" : "") + ": " + String(r.body || "").slice(0, 160), r.ok ? "success" : "error");
+  }).catch(function(e) { itrConnMsg("Error: " + e.message, "error"); });
+}
+function itrSample() {
+  itrConnMsg("Building…");
+  hzRelay("imageTrendAdmin", { action: "sample" }).then(function(r) { itrConnMsg(""); itrShowXml("Sample file (made-up call)", r.xml, r.warnings, "CallDashboard-sample-incident.xml"); })
+    .catch(function(e) { itrConnMsg("Error: " + e.message, "error"); });
+}
+function itrPreview(callId) {
+  hzRelay("imageTrendAdmin", { action: "preview", callId: callId }).then(function(r) { itrShowXml("What ImageTrend gets for this call", r.xml, r.warnings, "incident-" + callId + ".xml"); })
+    .catch(function(e) { showToast("Error: " + e.message, true); });
+}
+function itrResend(callId) {
+  hzRelay("imageTrendAdmin", { action: "resend", callId: callId }).then(function(r) {
+    showToast(r.sent ? "✓ Sent to ImageTrend" : r.skipped ? "Not sent: " + r.skipped : "✗ ImageTrend didn't accept it" + (r.status ? " (" + r.status + ")" : ""), !r.sent);
+    itrLoad();
+  }).catch(function(e) { showToast("Error: " + e.message, true); });
+}
+function itrShowXml(title, xml, warnings, fileName) {
+  itrStyle(); ITR_XML = xml || "";
+  var m = document.getElementById("itr-xml-modal"); if (m) m.remove();
+  m = document.createElement("div"); m.id = "itr-xml-modal";
+  m.innerHTML = '<div class="itr-box"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="font-family:Oswald,sans-serif;font-size:1rem;color:var(--white)">' + itrEsc(title) + '</div>' +
+    '<button onclick="document.getElementById(\'itr-xml-modal\').remove()" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer">×</button></div>' +
+    (warnings && warnings.length ? '<div style="color:#ffc84a;font-size:0.78rem;margin-top:6px">' + warnings.map(itrEsc).join('<br>') + '</div>' : '') +
+    '<pre>' + itrEsc(ITR_XML) + '</pre><div style="display:flex;gap:8px"><button class="edit-mode-btn" onclick="itrDownload(\'' + itrEsc(fileName) + '\')">⬇ Download</button>' +
+    '<button class="edit-mode-btn" onclick="navigator.clipboard&&navigator.clipboard.writeText(ITR_XML).then(function(){showToast(\'Copied\')})">Copy</button></div></div>';
+  m.addEventListener("click", function(e) { if (e.target === m) m.remove(); });
+  document.body.appendChild(m);
+}
+function itrDownload(name) {
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([ITR_XML], { type: "application/xml" }));
+  a.download = name || "incident.xml"; document.body.appendChild(a); a.click();
+  setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
 function phLoad() {
   csStyle();
   if (PH_UNSUB) { PH_UNSUB(); PH_UNSUB = null; }
@@ -14711,7 +14979,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.31";
+var DESKTOP_VERSION = "10.32";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
