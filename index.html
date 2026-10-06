@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.26');
+  window.location.replace('/CallDashboard/mobile.html?v=3.27');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.23</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.25</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3368,7 +3368,7 @@ var ADM_SEARCH = [
   { label: "Transport hospitals", where: "Protocols & Dispatch", tab: "protocols", ds: "hospitals", k: "transport hospitals destination er" },
   { label: "Outside-coverage contacts", where: "Protocols & Dispatch", tab: "protocols", ds: "outside", k: "outside coverage contacts out of area" },
   { label: "Notifications & permissions (who gets notified)", where: "Protocols & Dispatch", tab: "protocols", ds: "notify", k: "notifications permissions who gets notified admin call notification service ticket group it tickets accept resolve logistics" },
-  { label: "Building codes from businesses (Sign Builder) — waiting for approval", where: "Codes & Locations", tab: "codes", el: "adm-code-subs", k: "approve approval pending submission sign builder business door code api" },
+  { label: "Building codes from businesses (Sign Builder) — waiting for approval", where: "Codes & Locations", tab: "codes", el: "adm-code-subs", k: "approve approval pending submission sign builder business door code api phone not confirmed call to verify before approving unconfirmed recaptcha" },
   { label: "Access codes & locations (buildings, shuls, hospital, storage)", where: "Codes & Locations", tab: "codes", el: "adm-codes", k: "codes access code door buildings shuls hospital storage locations" },
   { label: "Vehicle service status", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "service status out of service vehicle rig ambulance oos" },
   { label: "Text everyone when a rig is out of / back in service", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "oos sms text broadcast out of service back in service rig alert" },
@@ -5298,36 +5298,10 @@ function saveEdit() {
 document.getElementById("edit-modal").addEventListener("click", function(e) { if (e.target === this) closeEdit(); });
 
 // ── APP DATA ──
-var DEFAULT_DATA = {
-  storage: [
-    { name: "Room Code", note: "Press simultaneously where indicated", code: "[4+5]-2-[1+3]", special: true },
-    { name: "Lock Box", note: "", code: "0-6-1-3" }
-  ],
-  hospital: [
-    { name: "Saint Peters", note: "", code: "3-6-9-3-*" },
-    { name: "RWJ New Brunswick", note: "", code: "4-5-9-6-#" },
-    { name: "JFK", note: "", code: "6-2-0-1-*" }
-  ],
-  buildings: [
-    { name: "The Highlander", address: "123 South Adelaide Ave, Highland Park", note: "", code: "1-5-3" },
-    { name: "The Lafayette", address: "201 S. 2nd Ave., Highland Park", note: "Benner St. / S 2nd Entrance – use # before code", code: "#-1-6-0-2" },
-    { name: "RJJ Main Building", address: "1 Plainfield Ave, Edison", note: "HS dorm and offices", code: "1-3" },
-    { name: "RJJ Beis Medrash", address: "2060 Woodbridge Ave, Edison", note: "Dorm, classrooms, annex, and gym", code: "5-3-1-2-4" },
-    { name: "RJJ Beis Medrash & Mikvah", address: "Behind main building, Edison", note: "", code: "1-3" },
-    { name: "Park Mikveh", address: "", note: "Press 1 and 4 together, then 2 and 5 together", code: "[1+4] then [2+5]", special: true }
-  ],
-  shuls: [
-    { name: "Agudah", address: "", note: "", code: "1-3" },
-    { name: "Ahavas Achim (AA)", address: "", note: "Side door, back of building – turn handle to right", code: "2-4-1" },
-    { name: "Ahavas Yisroel (AY)", address: "", note: "", code: "3-2-4-5" },
-    { name: "Ateres Shlomo", address: "", note: "", code: "1-4-5" },
-    { name: "Eitz Hachaim", address: "", note: "Glass side door in parking lot", code: "1-9-4-9-8-2" },
-    { name: "Khal Chassidim (KC / The Shteible)", address: "", note: "Clear first, then enter code", code: "Clear then 1-5-2", special: true },
-    { name: "Ohav Emeth (OE)", address: "", note: "Back door in parking lot", code: "[4+1] then 5 then 2", special: true },
-    { name: "Ohr Torah (OT)", address: "", note: "", code: "4-1-3" },
-    { name: "Young Israel of East Brunswick", address: "", note: "", code: "[5+4] then 3 then 1", special: true }
-  ]
-};
+// Door codes are NOT kept in this page (it's public on GitHub). They load from the database
+// (appdata/codes, members only) after sign-in — see loadAppData(). Until then these lists are empty,
+// and saving is blocked (codesSaveAllowed) so an empty list can never overwrite the real codes.
+var DEFAULT_DATA = { storage: [], hospital: [], buildings: [], shuls: [] };
 var DEFAULT_SHIFTS = [
   { day: "Sunday", units: ["MC-19","MC-34","MC-11"] },
   { day: "Monday", units: ["MC-20","MC-30","MC-32"] },
@@ -5341,13 +5315,42 @@ window.LIVE_DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
 window.LIVE_SHIFTS = JSON.parse(JSON.stringify(DEFAULT_SHIFTS));
 var editModeActive = {};
 
-function loadAppData() {
-  db.collection("appdata").doc("codes").get().then(function(snap) { if (snap.exists && snap.data().sections) { window.LIVE_DATA = snap.data().sections; window.CODES_LOADED_AT = new Date().toISOString(); } }).catch(function() {});
+window.CODES_READY = false;
+function loadAppData(retry) {
+  db.collection("appdata").doc("codes").get().then(function(snap) {
+    var sec = snap.exists && snap.data().sections ? snap.data().sections : {};
+    ["storage", "hospital", "buildings", "shuls"].forEach(function(k) { if (!Array.isArray(sec[k])) sec[k] = []; });
+    window.LIVE_DATA = sec; window.CODES_LOADED_AT = new Date().toISOString(); window.CODES_READY = true;
+    // refresh whatever is on screen now that the real codes are here
+    ["buildings", "shuls", "hospital", "storage"].forEach(function(k) {
+      var pg = document.getElementById("pg-" + k);
+      if (pg && pg.classList.contains("active") && window.renderCards) window.renderCards(k, window.LIVE_DATA[k]);
+    });
+    if (typeof renderCodesEditor === "function" && document.getElementById("codes-editor-content")) renderCodesEditor();
+  }).catch(function(e) {
+    console.warn("Door codes didn't load:", e && e.message);
+    if (!retry) showToast("⚠ Couldn't load door codes — retrying…", true);
+    setTimeout(function() { loadAppData(true); }, 10000);
+  });
   db.collection("appdata").doc("shifts").get().then(function(snap) { if (snap.exists && snap.data().shifts) window.LIVE_SHIFTS = snap.data().shifts; }).catch(function() {});
+}
+// Never save the codes before the real ones have loaded, and never wipe a non-empty list in one save.
+function codesSaveAllowed() {
+  if (!window.CODES_READY) { showToast("Door codes are still loading — try again in a moment", true); return Promise.resolve(false); }
+  var total = 0; Object.keys(window.LIVE_DATA || {}).forEach(function(k) { total += (window.LIVE_DATA[k] || []).length; });
+  if (total > 0) return Promise.resolve(true);
+  return db.collection("appdata").doc("codes").get().then(function(snap) {
+    var srv = snap.exists && snap.data().sections ? snap.data().sections : {}, n = 0;
+    Object.keys(srv).forEach(function(k) { n += (srv[k] || []).length; });
+    if (n > 0) { showToast("Not saved — that would erase all " + n + " door codes. Reload the page and try again.", true); return false; }
+    return true;
+  });
 }
 window.saveSection = function(sec) {
   Object.keys(window.LIVE_DATA).forEach(function(k){ syncCodes(window.LIVE_DATA[k]); });
+  codesSaveAllowed().then(function(ok) { if (!ok) return;
   db.collection("appdata").doc("codes").set({ sections: window.LIVE_DATA }, { merge: true }).then(function() { showToast("✓ Saved!"); }).catch(function(e) { showToast("Save failed: " + e.message, true); });
+  });
 };
 window.saveShifts = function() {
   db.collection("appdata").doc("shifts").set({ shifts: window.LIVE_SHIFTS }).then(function() { showToast("✓ Shifts saved!"); }).catch(function(e) { showToast("Save failed: " + e.message, true); });
@@ -5959,7 +5962,7 @@ function submitTicket() {
   db.collection("users").doc(currentUser.uid).get().then(function(snap) {
     var d = snap.data();
     var submittedBy = ((d.unit || "") + " " + (d.firstName || "") + " " + (d.lastName || "")).trim();
-    var acceptToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    var acceptToken = hzRandomToken(16);                     // 128-bit, URL-safe
     var isIT = tkType === "it", itInfo = null;
     if (isIT && typeof mDetectDevice === "function") {
       var dd = mDetectDevice();
@@ -6000,6 +6003,14 @@ function pubRelay(fnName, payload) {
       return j.result;
     });
   });
+}
+// Unguessable, URL-safe random IDs (crypto.getRandomValues, 128 bits by default). Used for the
+// caller-location links (anyone with the link can open that request) and ticket "Accept" links.
+function hzRandomToken(bytes) {
+  var a = new Uint8Array(bytes || 16);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  var b = ""; for (var i = 0; i < a.length; i++) b += String.fromCharCode(a[i]);
+  return btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 function hzRelay(fnName, payload) {
   var u = firebase.auth().currentUser;
@@ -7261,7 +7272,7 @@ var TPL_SAMPLE_FIELDS = [
   ["callNature",    "Call nature",                              "02 - Cardiac"],
   ["patientAgeNum", "Age",                                      "72"],
   ["patientSex",    "Sex (male / female)",                      "male"],
-  ["accessCode",    "Access code",                              "[5+4] then 3 then 1"],
+  ["accessCode",    "Access code",                              "[1+2]-3-4"],
   ["callbackNumber","Callback number",                          "732-555-1234"],
   ["dispatchNotes", "Dispatch notes",                           "Dog on premises, use the side entrance"],
   ["alsProvider",   "ALS provider",                             "JFK ALS"],
@@ -7289,7 +7300,7 @@ function tplSampleCall() {
   if (untouched) {           // nothing entered at all — preview against a realistic call
     call.address = "Urban Air Trampoline and Adventure Park — 396 Ryders Ln, Milltown, NJ 08850";
     call.zone = "secondary"; call.callNature = "02 - Cardiac";
-    call.patientAgeNum = "72"; call.patientSex = "male"; call.accessCode = "[5+4] then 3 then 1";
+    call.patientAgeNum = "72"; call.patientSex = "male"; call.accessCode = "[1+2]-3-4";
     call.callbackNumber = "732-555-1234"; call.dispatchNotes = "Dog on premises, use the side entrance";
     call.lat = 40.44; call.lng = -74.42;
   }
@@ -7460,7 +7471,7 @@ function resetTemplateSampleOld() {
 var TPL_SAMPLE_UNUSED = {
   address: "Urban Air Trampoline and Adventure Park — 396 Ryders Ln, Milltown, NJ 08850",
   apt: "", zone: "secondary", callNature: "02 - Cardiac",
-  patientAgeNum: "72", patientSex: "male", accessCode: "[5+4] then 3 then 1", callbackNumber: "732-555-1234",
+  patientAgeNum: "72", patientSex: "male", accessCode: "[1+2]-3-4", callbackNumber: "732-555-1234",
   dispatchNotes: "Dog on premises, use the side entrance", alsActivated: true, alsProvider: "JFK ALS", alsEta: "8",
   mapsLink: "https://www.google.com/maps/dir/?api=1&destination=40.44,-74.42&travelmode=driving"
 };
@@ -9088,6 +9099,8 @@ function csStyle() {
     "#adm-code-subs .cs-reject input{flex:1;min-width:200px;background:rgba(255,255,255,0.06);border:1px solid rgba(224,85,85,0.5);border-radius:7px;color:var(--white);font:inherit;padding:8px 10px}" +
     "#adm-code-subs .cs-settings{background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.84rem}" +
     "#adm-code-subs .cs-settings label{display:flex;gap:10px;align-items:center;min-height:32px;cursor:pointer}" +
+    "#adm-code-subs .cs-unconf{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin:0 0 10px;padding:9px 11px;border-radius:9px;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.55);color:#ffb3b3;font-size:0.84rem}" +
+    "#adm-code-subs .cs-callbtn{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:8px;background:#ffb3b3;color:#2a0b0b;font-weight:700;text-decoration:none;white-space:nowrap}" +
     "#adm-code-subs .cs-empty{color:var(--gray);font-size:0.86rem;padding:18px;text-align:center;border:1px dashed var(--card-border);border-radius:10px}";
   document.head.appendChild(st);
 }
@@ -9129,8 +9142,11 @@ function csRender() {
       (b.lat != null ? ' · <a href="https://www.google.com/maps/search/?api=1&query=' + b.lat + ',' + b.lng + '" target="_blank" rel="noopener" style="color:#bfe0ff">map ↗</a>' : '') +
       ' · ' + (s.status === "pending" ? "sent " + csWhen(s.submittedAt) : csWhen(s.review && s.review.at || s.updatedAt)) + '</div></div>' +
       '<span class="cs-pill cs-' + s.status + '">' + s.status.toUpperCase() + '</span></div>';
-    var contact = '<div class="cs-grid" style="margin-bottom:10px"><span class="cs-k">Contact</span><span>' + csEsc(c.name) + (c.role ? ' · ' + csEsc(c.role) : '') +
+    var unconfirmed = s.phoneVerified === false ? '<div class="cs-unconf"><span>📵 <b>Phone not confirmed — call to verify before approving</b></span>' +
+      '<a class="cs-callbtn" href="tel:' + csEsc(c.phone) + '">📞 Call ' + csEsc(c.phone) + '</a></div>' : '';
+    var contact = unconfirmed + '<div class="cs-grid" style="margin-bottom:10px"><span class="cs-k">Contact</span><span>' + csEsc(c.name) + (c.role ? ' · ' + csEsc(c.role) : '') +
       '<br><a href="tel:' + csEsc(c.phone) + '" style="color:#bfe0ff">📞 ' + csEsc(c.phone) + '</a>' + (s.phoneVerified ? ' <span style="color:#7dedb5;font-size:0.76rem">✓ phone confirmed</span>' : '') +
+      ' <span style="color:var(--gray);font-size:0.74rem">· ' + (s.updates && s.phoneVerified ? 'wants text updates' : 'no text updates') + '</span>' +
       (c.email ? ' · <a href="mailto:' + csEsc(c.email) + '" style="color:#bfe0ff">' + csEsc(c.email) + '</a>' : '') + '</span></div>';
     if (s.status !== "pending") {
       var r = s.review || {};
@@ -9807,7 +9823,8 @@ function saveCodesEditor() {
   if (problems.length) { renderCodesEditor(); var m2 = document.getElementById("codes-editor-msg"); m2.className = "form-msg error"; m2.textContent = "Fix before saving — " + problems[0]; return; }
   msg.textContent = "Geocoding addresses…";
   geocodeMissingCodes(function(done, total){ msg.textContent = "Geocoding addresses… " + done + "/" + total; }).then(function(g) {
-    return codesFoldInApprovals().then(function() { return db.collection("appdata").doc("codes").set({ sections: window.LIVE_DATA }, { merge: true }); }).then(function() {
+    return codesSaveAllowed().then(function(ok) { if (!ok) throw new Error("not saved — door codes still loading or the list would be erased"); return codesFoldInApprovals(); })
+      .then(function() { return db.collection("appdata").doc("codes").set({ sections: window.LIVE_DATA }, { merge: true }); }).then(function() {
       renderCodesEditor(); window.renderCards(codesEditorTab, window.LIVE_DATA[codesEditorTab]);
       var m3 = document.getElementById("codes-editor-msg"); m3.className = "form-msg success"; m3.textContent = "✓ Saved!" + (g.total ? " Geocoded " + g.done + " of " + g.total + " address" + (g.total>1?"es":"") + (g.done < g.total ? " — check the ⚠ entries" : "") : "");
     });
@@ -11691,9 +11708,7 @@ window.toggleTransportHospDD = function(btn) {
       }
       listWrap.innerHTML = '<div style="padding:12px 14px;font-size:0.78rem;color:var(--gray)">Searching…</div>';
       searchTimer = setTimeout(function() {
-        fetch('https://api.api-ninjas.com/v1/hospitals?name=' + encodeURIComponent(q) + '&limit=20', {
-          headers: { 'X-Api-Key': 'pjjLfeqUHWBqhedxV1ow3rfRTQXvE8zgKqYOi20V' }
-        }).then(function(res){ return res.json(); }).then(function(hospitals) {
+        hzRelay("hospitalSearch", { q: q }).then(function(hospitals) {     // key stays on the server
           if (!document.getElementById("transport-hosp-list")) return;
           if (!hospitals || !hospitals.length) {
             listWrap.innerHTML = '<div style="padding:12px 14px;font-size:0.78rem;color:var(--gray)">No hospitals found</div>';
@@ -14583,7 +14598,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.23";
+var DESKTOP_VERSION = "10.25";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -16005,13 +16020,15 @@ function mZoneAreaLabel(name) {
   return /^(MC Primary Response Area|Secondary Response Area)/i.test(name) ? "" : name;
 }
 var mLiveCodes = { buildings: [], shuls: [] };
-var mLiveCodesLoaded = false;
+var mLiveCodesLoaded = false, mLiveCodesAt = 0;
+// Refreshed when the list is older than a minute, so a code approved from a business (or edited by an
+// admin) reaches dispatchers who already had the app open.
 function mLoadLiveCodes() {
-  if (mLiveCodesLoaded) return Promise.resolve(mLiveCodes);
+  if (mLiveCodesLoaded && Date.now() - mLiveCodesAt < 60000) return Promise.resolve(mLiveCodes);
   return db.collection("appdata").doc("codes").get().then(function(snap) {
     var sec = (snap.exists && snap.data().sections) || {};
     mLiveCodes = { buildings: sec.buildings || [], shuls: sec.shuls || [] };
-    mLiveCodesLoaded = true;
+    mLiveCodesLoaded = true; mLiveCodesAt = Date.now();
     return mLiveCodes;
   }).catch(function() { return mLiveCodes; });
 }
@@ -17157,7 +17174,7 @@ function mRequestCallerLocation(force) {
   }
   mLocReqCallback = cb;
   mLocStatus("📤 Sending the location link to " + mEscHtml(cb) + "…", "#ffc84a");
-  var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  var token = "loc" + hzRandomToken(16);                   // 128-bit, URL-safe
   mLocReqTokensAll.push(token);
   var expires = new Date(Date.now() + 30 * 60000).toISOString();
   db.collection("locationRequests").doc(token).set({ createdAt: new Date().toISOString(), expiresAt: expires, by: mCurrentUserUnit || "", callback: cb })
@@ -18158,7 +18175,7 @@ function mDdSendLocLink() {
   var d = mDdLocData;
   if (d && d.seenAt && Date.now() - new Date(d.seenAt).getTime() < 90000 && d.status !== "closed" &&
       !confirm("The caller's page is still sending updates. Send a new link anyway?")) return;
-  var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  var token = "loc" + hzRandomToken(16);                   // 128-bit, URL-safe
   var link = "https://chaverim151.github.io/CallDashboard/loc.html?t=" + token;
   db.collection("locationRequests").doc(token).set({
     createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
@@ -19789,7 +19806,6 @@ var mMapCallFlags = {};
 var mMapCallMarkers = {};
 var mMapCallsListener = null;
 var mHospSearchTimer = null;
-var M_HOSP_API_KEY = "pjjLfeqUHWBqhedxV1ow3rfRTQXvE8zgKqYOi20V";
 // Direct response: the transport update is the destination. Everyone still on the call is recorded
 // as transporting — no one is asked who is aboard or who is clearing.
 function mConfirmTransportDirect(hospital) {
@@ -20117,8 +20133,7 @@ function mHospSearchInput() {
   list.style.display = "block";
   list.innerHTML = '<div style="padding:10px 12px;font-size:0.78rem;color:var(--gray)">Searching…</div>';
   mHospSearchTimer = setTimeout(function() {
-    fetch("https://api.api-ninjas.com/v1/hospitals?name=" + encodeURIComponent(q) + "&limit=20", { headers: { "X-Api-Key": M_HOSP_API_KEY } })
-      .then(function(r){ return r.json(); })
+    mRelay("hospitalSearch", { q: q })                                        // key stays on the server
       .then(function(hospitals) {
         if (inp.value.trim() !== q) return; // stale response
         if (!hospitals || !hospitals.length) { list.innerHTML = '<div style="padding:10px 12px;font-size:0.78rem;color:var(--gray)">No hospitals found</div>'; return; }

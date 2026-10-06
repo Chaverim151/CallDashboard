@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.26"; window.M_BUILD = BUILD;
+  var BUILD = "3.27"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3197,13 +3197,15 @@ function mZoneAreaLabel(name) {
 
 // ── Access code fuzzy matching (mirrors desktop's checkAccessCodeOnFile) ──
 var mLiveCodes = { buildings: [], shuls: [] };
-var mLiveCodesLoaded = false;
+var mLiveCodesLoaded = false, mLiveCodesAt = 0;
+// Refreshed when the list is older than a minute, so a code approved from a business (or edited by an
+// admin) reaches dispatchers who already had the app open.
 function mLoadLiveCodes() {
-  if (mLiveCodesLoaded) return Promise.resolve(mLiveCodes);
+  if (mLiveCodesLoaded && Date.now() - mLiveCodesAt < 60000) return Promise.resolve(mLiveCodes);
   return db.collection("appdata").doc("codes").get().then(function(snap) {
     var sec = (snap.exists && snap.data().sections) || {};
     mLiveCodes = { buildings: sec.buildings || [], shuls: sec.shuls || [] };
-    mLiveCodesLoaded = true;
+    mLiveCodesLoaded = true; mLiveCodesAt = Date.now();
     return mLiveCodes;
   }).catch(function() { return mLiveCodes; });
 }
@@ -4173,7 +4175,7 @@ function mSubmitTicket() {
   db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
     var d = snap.data();
     var submittedBy = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
-    var acceptToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    var acceptToken = hzRandomToken(16);                     // 128-bit, URL-safe
     var isIT = mTkType === "it";
     var itInfo = null;
     if (isIT) {
@@ -4985,7 +4987,7 @@ function mRequestCallerLocation(force) {
   }
   mLocReqCallback = cb;
   mLocStatus("📤 Sending the location link to " + mEscHtml(cb) + "…", "#ffc84a");
-  var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  var token = "loc" + hzRandomToken(16);                   // 128-bit, URL-safe
   mLocReqTokensAll.push(token);
   var expires = new Date(Date.now() + 30 * 60000).toISOString();
   db.collection("locationRequests").doc(token).set({ createdAt: new Date().toISOString(), expiresAt: expires, by: mCurrentUserUnit || "", callback: cb })
@@ -5250,6 +5252,14 @@ function mUseClosestAddress(lat, lng, acc) {
   });
 }
 window.mUseClosestAddress = mUseClosestAddress;
+// Unguessable, URL-safe random IDs (crypto.getRandomValues, 128 bits by default). Used for the
+// caller-location links (anyone with the link can open that request) and ticket "Accept" links.
+function hzRandomToken(bytes) {
+  var a = new Uint8Array(bytes || 16);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  var b = ""; for (var i = 0; i < a.length; i++) b += String.fromCharCode(a[i]);
+  return btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 function mE164(p) {
   var raw = String(p || "").split(/[\/|]/)[0].replace(/\D/g, "");
   if (raw.length === 10) return "+1" + raw;
@@ -6138,7 +6148,7 @@ function mDdSendLocLink() {
   var d = mDdLocData;
   if (d && d.seenAt && Date.now() - new Date(d.seenAt).getTime() < 90000 && d.status !== "closed" &&
       !confirm("The caller's page is still sending updates. Send a new link anyway?")) return;
-  var token = "loc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  var token = "loc" + hzRandomToken(16);                   // 128-bit, URL-safe
   var link = "https://chaverim151.github.io/CallDashboard/loc.html?t=" + token;
   db.collection("locationRequests").doc(token).set({
     createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
@@ -7486,8 +7496,7 @@ function mSetRmaBy(val) {
 }
 
 var mTmNonMap = {}; // { "crewIdx_role": { status: "on_scene_direct"|"cleared_scene"|"other", label } }
-// ── Hospital search (API Ninjas — same source as desktop). Local hospitals stay as quick picks in the dropdown. ──
-var M_HOSP_API_KEY = "pjjLfeqUHWBqhedxV1ow3rfRTQXvE8zgKqYOi20V";
+// ── Hospital search (API Ninjas through the hospitalSearch server function — the key is not in this page). Local hospitals stay as quick picks in the dropdown. ──
 var mHospSearchTimer = null;
 function mHospSearchInput() {
   var inp = document.getElementById("m-tr-hosp-search"), list = document.getElementById("m-tr-hosp-results");
@@ -7497,8 +7506,7 @@ function mHospSearchInput() {
   list.style.display = "block";
   list.innerHTML = '<div style="padding:10px 12px;font-size:0.78rem;color:var(--gray)">Searching…</div>';
   mHospSearchTimer = setTimeout(function() {
-    fetch("https://api.api-ninjas.com/v1/hospitals?name=" + encodeURIComponent(q) + "&limit=20", { headers: { "X-Api-Key": M_HOSP_API_KEY } })
-      .then(function(r){ return r.json(); })
+    mRelay("hospitalSearch", { q: q })                                        // key stays on the server
       .then(function(hospitals) {
         if (inp.value.trim() !== q) return; // stale response
         if (!hospitals || !hospitals.length) { list.innerHTML = '<div style="padding:10px 12px;font-size:0.78rem;color:var(--gray)">No hospitals found</div>'; return; }
