@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.36</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.37</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2475,7 +2475,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
     <div class="form-row single"><div><label class="edit-lbl">Email</label><input class="edit-inp" type="email" id="edit-email"></div></div>
     <div class="form-row">
       <div><label class="edit-lbl">EMS certification</label><select class="edit-inp" id="edit-emslevel"><option value="">—</option><option value="EMR">EMR</option><option value="EMT">EMT</option><option value="AEMT">AEMT</option><option value="Paramedic">Paramedic</option><option value="Driver">Driver only</option><option value="Other">Other</option></select></div>
-      <div><label class="edit-lbl">State license / cert #</label><input class="edit-inp" type="text" id="edit-emslicense" placeholder="Fills the crew on the PCR" autocomplete="off"></div>
+      <div><label class="edit-lbl">ImageTrend Crew Member ID</label><input class="edit-inp" type="text" id="edit-emslicense" placeholder="State license / cert #" autocomplete="off"></div>
     </div>
     <div class="form-row single"><div>
       <label class="edit-lbl">Access Levels</label>
@@ -9275,7 +9275,10 @@ var IT_LISTS = {"reasons":[["it2301.158","911 Hang-Up"],["2301001","Abdominal Pa
 // The server (imageTrendSync) does the sending; this page sets it up and shows what happened.
 var ITR_DEFAULTS = {
   enabled: false, sendTestCalls: false, agencyNumber: "1211071", state: "NJ", stateGnis: "34", county: "Middlesex", townCounties: {},
-  typeOfService: "2205001", primaryRole: "2207003", responseMode: "2223001", dispatchPriority: "",
+  typeOfService: "2205001", primaryRole: "2207003", responseMode: "2223001", dispatchPriority: "2305003", sendIncidentNumbers: true,
+  locationTypes: { highway: "Y92.41", religious: "Y92.22", hospital: "Y92.23", privateHome: "Y92.01" },
+  dispositions: { transported: "itDisposition.112.116", transferred: "itDisposition.112.115", rma: "itDisposition.112.113", cancelledBefore: "itDisposition.112.103", cancelledOnScene: "itDisposition.112.104" },
+  gender: { male: "9906003", female: "9906001" },
   placeholderUnit: "", rigPattern: "9##",
   natureCodes: { "01":"2301013","02":"2301021","03":"2301019","04":"2301023","05":"2301023","06":"2301081","07":"2301085","08":"2301077","09":"2301027","10":"2301073","11":"2301073","12":"2301073","13":"2301057","14":"2301067","15":"2301025","16":"2301059","17":"2301003","18":"2301003","19":"2301069","20":"it2301.105","21":"2301049","22":"2301077","23":"2301053","24":"it2301.118","25":"2301061","26":"2301051" },
   hospitals: {
@@ -9337,7 +9340,7 @@ function itrMerged(d) {
   d = d || {};
   var c = JSON.parse(JSON.stringify(ITR_DEFAULTS));
   Object.keys(d).forEach(function(k) {
-    if (["natureCodes","hospitals","townCounties","rigs"].indexOf(k) !== -1 && d[k] && typeof d[k] === "object") c[k] = Object.assign({}, c[k], d[k]);
+    if (["natureCodes","hospitals","townCounties","rigs","locationTypes","dispositions","gender"].indexOf(k) !== -1 && d[k] && typeof d[k] === "object") c[k] = Object.assign({}, c[k], d[k]);
     else c[k] = d[k];
   });
   return c;
@@ -9416,6 +9419,17 @@ function itrRender() {
     (rigs.length ? rigs.map(function(id) { var x = c.rigs[id] || {}; return '<div class="itr-row itr-rig" data-itr-rig="' + itrEsc(id) + '"><div>🚑 ' + itrEsc(id) + '</div>' +
       '<input type="text" data-f="unitNumber" value="' + itrEsc(x.unitNumber) + '" placeholder="' + itrEsc(id) + '"><input type="text" data-f="callSign" value="' + itrEsc(x.callSign) + '" placeholder="' + itrEsc(id) + '"></div>'; }).join("") : '<div class="itr-note">No rigs in Fleet match this number pattern.</div>') +
     '</div></div>';
+  var cin = function(grp, key, label) { var v = (c[grp] || {})[key] || ""; return '<div class="itr-k">' + label + '</div><input type="text" data-itr-code="' + grp + '.' + key + '" value="' + itrEsc(v) + '">'; };
+  h += '<div class="itr-card"><div class="itr-h">Codes ImageTrend may ask us to change</div><div class="itr-note">Pre-filled from ImageTrend\'s workbook. Change one only if ImageTrend gives you a different code — no new version of the system needed.</div>' +
+    '<label class="itr-chk"><input type="checkbox" id="itr-incnum"' + (c.sendIncidentNumbers !== false ? ' checked' : '') + '> Send our call number (e.g. 26-000014) as the EMS Response # and Incident # — untick if ImageTrend fills those itself</label>' +
+    '<div class="itr-grid" style="margin-top:10px">' +
+      '<div class="itr-k" style="color:var(--gold)">Disposition</div><div></div>' +
+      cin("dispositions", "transported", "Transported by this unit") + cin("dispositions", "transferred", "Another unit transported") + cin("dispositions", "rma", "RMA / refused") +
+      cin("dispositions", "cancelledBefore", "Cancelled before arrival") + cin("dispositions", "cancelledOnScene", "Cancelled on scene") +
+      '<div class="itr-k" style="color:var(--gold)">Patient gender</div><div></div>' + cin("gender", "male", "Male") + cin("gender", "female", "Female") +
+      '<div class="itr-k" style="color:var(--gold)">Incident location type</div><div></div>' +
+      cin("locationTypes", "highway", "Parkway / highway") + cin("locationTypes", "religious", "Address on the Shuls list") + cin("locationTypes", "hospital", "Address on the Hospital list") + cin("locationTypes", "privateHome", "Address on Private Homes") +
+    '</div></div>';
   h += '<div class="itr-actions" style="margin:0 0 18px"><button class="submit-btn" style="width:auto;padding:10px 22px" onclick="itrSave()">💾 Save ImageTrend Settings</button><span class="form-msg" id="itr-msg"></span></div>';
   // connection
   h += '<div class="itr-card"><div class="itr-h">Connection (ImageTrend gives you these)</div><div class="itr-note">Saved on the server only — the password is never shown again or sent to anyone\'s phone.' + (conn.savedAt ? ' Last saved ' + itrEsc(new Date(conn.savedAt).toLocaleString()) + '.' : '') + '</div><div class="itr-grid">' +
@@ -9467,8 +9481,10 @@ function itrSave() {
     agencyNumber: v("itr-agency"), placeholderUnit: v("itr-placeholder"), rigPattern: v("itr-rigpat") || "9##",
     typeOfService: v("itr-service"), primaryRole: v("itr-role"), responseMode: v("itr-mode"), dispatchPriority: v("itr-priority"),
     state: (v("itr-state") || "NJ").toUpperCase(), county: v("itr-county"), townCounties: towns, natureCodes: nat, hospitals: hosp, rigs: rigs,
+    sendIncidentNumbers: ch("itr-incnum"), dispositions: {}, gender: {}, locationTypes: {},
     updatedAt: new Date().toISOString(), updatedBy: (typeof currentUserUnit !== "undefined" ? currentUserUnit : "") || ""
   };
+  document.querySelectorAll("#adm-imagetrend [data-itr-code]").forEach(function(i) { var p = i.getAttribute("data-itr-code").split("."); data[p[0]][p[1]] = i.value.trim(); });
   if (data.enabled && !data.agencyNumber) { msg.className = "form-msg error"; msg.textContent = "Add the Agency Number from ImageTrend before turning sending on."; return; }
   // set (not merge) so the code tables are replaced exactly; nothing secret lives in this document
   db.collection("appdata").doc("imageTrend").set(data).then(function() {
@@ -14990,7 +15006,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.36";
+var DESKTOP_VERSION = "10.37";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
