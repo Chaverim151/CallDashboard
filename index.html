@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.22</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.23</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -9047,12 +9047,19 @@ function loadTicketUnitDropdown() {
 // Submissions arrive through the codesApi server function and wait here. Approve / Reject go through
 // the reviewBuildingCode server function, which merges into appdata/codes safely.
 var CS_LIST = [], CS_UNSUB = null, CS_VIEW = "pending", CS_EDIT = {}, CS_REJECT = {}, CS_BUSY = {};
-function csAddrKey(a) {
-  var first = String(a || "").toLowerCase().split(",")[0].trim();
-  var m = first.match(/^(\d+)[a-z]?\s+(.*)$/); if (!m) return null;
+// Same address? House number + street, and the town too when both have one (matches the server).
+function csAddrParts(a) {
+  var parts = String(a || "").toLowerCase().split(",").map(function(x) { return x.trim(); });
+  var m = (parts[0] || "").match(/^(\d+)[a-z]?\s+(.*)$/); if (!m) return null;
   var words = m[2].replace(/\b(street|st|avenue|ave|road|rd|drive|dr|lane|ln|boulevard|blvd|place|pl|court|ct|north|south|east|west|n|s|e|w)\b\.?/g, " ").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
-  return m[1] + " " + words.join(" ");
+  var town = (parts[1] || "").replace(/\b(township|twp|borough|boro|city|nj|new jersey)\b\.?/g, " ").replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+  return { street: m[1] + " " + words.join(" "), town: town };
 }
+function csSameAddress(a, b) {
+  var x = csAddrParts(a), y = csAddrParts(b);
+  return !!(x && y && x.street === y.street && (!x.town || !y.town || x.town === y.town));
+}
+function csFullAddr(sub) { var b = sub.building || {}; return (b.address || "") + (b.town ? ", " + b.town : ""); }
 function csEsc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
 function csWhen(iso) { if (!iso) return ""; var d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString([], { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }); }
 function csStyle() {
@@ -9106,8 +9113,7 @@ function csCount(n) {
 }
 function csExistingFor(sub) {
   var list = (window.LIVE_DATA && window.LIVE_DATA[sub.section || "buildings"]) || [];
-  var k = csAddrKey((sub.building || {}).address + ", " + (sub.building || {}).town);
-  for (var i = 0; i < list.length; i++) if (k && csAddrKey(list[i].address) === k) return { index: i, entry: list[i] };
+  for (var i = 0; i < list.length; i++) if (csSameAddress(list[i].address, csFullAddr(sub))) return { index: i, entry: list[i] };
   return null;
 }
 function csRender() {
@@ -9137,6 +9143,7 @@ function csRender() {
         '</div></div>';
     }
     var ex = csExistingFor(s);
+    var twins = CS_LIST.filter(function(o) { return o.id !== s.id && o.status === "pending" && !!o.test === !!s.test && csSameAddress(csFullAddr(o), csFullAddr(s)); });
     var val = function(k, d) { return csEsc(e[k] != null ? e[k] : d); };
     var noteDefault = [b.entrance, b.note].filter(Boolean).join(" — ");
     return '<div class="cs-card' + (s.test ? ' test' : '') + '" id="cs-' + s.id + '">' + head + contact +
@@ -9149,6 +9156,10 @@ function csRender() {
       (ex ? '<div class="cs-match">⚠ We already have a code for this address: <b>' + csEsc(ex.entry.name) + '</b> — <span style="font-family:Oswald,sans-serif;letter-spacing:0.06em">' + csEsc(ex.entry.code) + '</span>' +
         '<label><input type="radio" name="csm-' + s.id + '" ' + (e.addNew ? '' : 'checked') + ' onchange="csEdit(\'' + s.id + '\',\'addNew\',false)"> Replace that entry with this one (the old code is kept in the history)</label>' +
         '<label><input type="radio" name="csm-' + s.id + '" ' + (e.addNew ? 'checked' : '') + ' onchange="csEdit(\'' + s.id + '\',\'addNew\',true)"> Add as a separate entry (e.g. a different door)</label></div>' : '') +
+      (twins.length ? '<div class="cs-match">⚠ ' + (twins.length === 1 ? 'Another submission for this address is also waiting' : twins.length + ' other submissions for this address are also waiting') + ': ' +
+        twins.map(function(o) { return '<b>' + csEsc((o.contact || {}).name || "someone") + '</b>' + ((o.contact || {}).role ? ' (' + csEsc(o.contact.role) + ')' : '') + ' — <span style="font-family:Oswald,sans-serif;letter-spacing:0.06em">' + csEsc((o.code || {}).value) + '</span>' +
+          (((o.code || {}).value || "") === ((s.code || {}).value || "") ? ' <span style="color:#7dedb5">(same code)</span>' : ' <span style="color:#ff9f9f">(different code)</span>'); }).join("; ") +
+        '<div style="color:var(--gray);font-size:0.76rem;margin-top:4px">Approve the right one and reject the other with a reason.</div></div>' : '') +
       (s.test ? '<div class="cs-sub" style="margin-top:8px">🧪 Test submission — approving it will NOT add it to the live codes.</div>' : '') +
       '<div class="cs-actions">' +
         '<button class="submit-btn" style="width:auto;padding:8px 18px" ' + (CS_BUSY[s.id] ? 'disabled' : '') + ' onclick="csApprove(\'' + s.id + '\')">✅ Approve</button>' +
@@ -9781,7 +9792,7 @@ function codesFoldInApprovals() {
         if (!en || !en.fromSubmission || !en.approvedAt || en.approvedAt <= since) return;
         var mine = window.LIVE_DATA[sec] = window.LIVE_DATA[sec] || [];
         var i = mine.findIndex(function(x) { return x.fromSubmission === en.fromSubmission; });
-        if (i === -1) { var k = csAddrKey(en.address); i = k ? mine.findIndex(function(x) { return csAddrKey(x.address) === k && !x.fromSubmission; }) : -1; }
+        if (i === -1) i = mine.findIndex(function(x) { return !x.fromSubmission && csSameAddress(x.address, en.address); });
         if (i === -1) mine.push(en); else mine[i] = Object.assign({}, mine[i], en);
         added++;
       });
@@ -14572,7 +14583,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.22";
+var DESKTOP_VERSION = "10.23";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
