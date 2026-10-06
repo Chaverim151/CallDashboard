@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.28</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.29</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2078,18 +2078,11 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <div id="cs-list"><div class="cs-empty">Loading…</div></div>
     </div>
 
-    <div class="admin-section" data-admin-tab="codes" id="adm-private-homes">
-      <div class="admin-section-title">🏠 Private Homes <span id="ph-count" style="color:#ffc84a"></span></div>
-      <p style="color:var(--gray);font-size:0.82rem;margin:0 0 12px;line-height:1.6">Door codes for private homes. <b>Only admins can see this list.</b> Responders can't browse it. A dispatcher gets a home's code only when posting a call at that exact address — it then fills in the call's Access Code like any other code and the call runs as normal. Every lookup is logged below.</p>
-      <div class="cs-bar"><button class="submit-btn" style="width:auto;padding:8px 16px" onclick="phEdit('new')">+ Add a private home</button></div>
-      <div id="ph-list"><div class="cs-empty">Loading…</div></div>
-      <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--gray);font-size:0.82rem">🔎 Recent lookups by dispatchers</summary><div id="ph-log" style="margin-top:8px"></div></details>
-    </div>
-
     <div class="admin-section" data-admin-tab="codes" id="adm-codes">
       <div class="admin-section-title">🔑 Codes &amp; Locations Editor</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px" id="codes-editor-tabs">
         <button class="ticket-tab active" onclick="setCodesTab('buildings',this)">🏢 Buildings</button>
+        <button class="ticket-tab" onclick="setCodesTab('private',this)">🏠 Private Homes <span id="ph-count" style="color:#ffc84a"></span></button>
         <button class="ticket-tab" onclick="setCodesTab('shuls',this)">🕍 Shuls</button>
         <button class="ticket-tab" onclick="setCodesTab('hospital',this)">🏥 Hospital</button>
         <button class="ticket-tab" onclick="setCodesTab('storage',this)">🗄️ Storage</button>
@@ -3361,7 +3354,7 @@ function setAdminTab(tab) {
   if (tab === "traffic") { tcBindAddress(); tcLoad(); tcCheckOldList(); hdLoad(); if (typeof mLoadSmsTemplates === "function") mLoadSmsTemplates(); }   // closure/divert wording
   if (tab === "org") orgFormLoad();
   if (tab === "fleet") loadFleetAlerts();
-  if (tab === "codes") { csLoad(); phLoad(); }
+  if (tab === "codes") csLoad();
   if (tab === "protoai") paiLoad();
 }
 // ── Admin search: find a setting by name and jump to it, whichever tab it lives on ──
@@ -3377,7 +3370,7 @@ var ADM_SEARCH = [
   { label: "Outside-coverage contacts", where: "Protocols & Dispatch", tab: "protocols", ds: "outside", k: "outside coverage contacts out of area" },
   { label: "Notifications & permissions (who gets notified)", where: "Protocols & Dispatch", tab: "protocols", ds: "notify", k: "notifications permissions who gets notified admin call notification service ticket group it tickets accept resolve logistics" },
   { label: "Building codes from businesses (Sign Builder) — waiting for approval", where: "Codes & Locations", tab: "codes", el: "adm-code-subs", k: "approve approval pending submission sign builder business door code api phone not confirmed call to verify before approving unconfirmed recaptcha" },
-  { label: "Private homes — door codes (admins only)", where: "Codes & Locations", tab: "codes", el: "adm-private-homes", k: "private home house residence door code privacy lookup log" },
+  { label: "Private homes — door codes (admins only) — 🏠 tab in the codes editor", where: "Codes & Locations", tab: "codes", el: "adm-codes", k: "private home house residence door code privacy lookup log" },
   { label: "Access codes & locations (buildings, shuls, hospital, storage)", where: "Codes & Locations", tab: "codes", el: "adm-codes", k: "codes access code door buildings shuls hospital storage locations" },
   { label: "Vehicle service status", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "service status out of service vehicle rig ambulance oos" },
   { label: "Text everyone when a rig is out of / back in service", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "oos sms text broadcast out of service back in service rig alert" },
@@ -9086,31 +9079,31 @@ function csStyle() {
   if (document.getElementById("cs-style")) return;
   var st = document.createElement("style"); st.id = "cs-style";
   st.textContent =
-    ":is(#adm-code-subs,#adm-private-homes) .cs-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-card{background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:12px;padding:14px;margin-bottom:12px}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-card.test{border-style:dashed}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-name{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:0.03em;color:var(--white)}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-sub{font-size:0.78rem;color:var(--gray);margin-top:2px}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-pill{font-size:0.68rem;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap;border:1px solid}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-pending{color:#ffc84a;border-color:rgba(240,165,0,0.5);background:rgba(240,165,0,0.12)}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-approved{color:#7dedb5;border-color:rgba(125,237,181,0.5);background:rgba(125,237,181,0.1)}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-rejected,#adm-code-subs .cs-withdrawn{color:#ff9f9f;border-color:rgba(224,85,85,0.5);background:rgba(224,85,85,0.1)}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-grid{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;align-items:center;font-size:0.86rem}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-k{font-size:0.66rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray)}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-grid input{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;color:var(--white);font:inherit;padding:7px 9px}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-code input{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:0.08em;color:#ffc84a}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-match{margin-top:10px;padding:9px 11px;border-radius:9px;background:rgba(240,165,0,0.1);border:1px solid rgba(240,165,0,0.45);font-size:0.82rem;color:#ffd27a}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-match label{display:flex;gap:8px;align-items:center;margin-top:6px;color:var(--white);cursor:pointer}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-actions button{min-height:40px}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-reject{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-reject input{flex:1;min-width:200px;background:rgba(255,255,255,0.06);border:1px solid rgba(224,85,85,0.5);border-radius:7px;color:var(--white);font:inherit;padding:8px 10px}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-settings{background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.84rem}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-settings label{display:flex;gap:10px;align-items:center;min-height:32px;cursor:pointer}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-unconf{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin:0 0 10px;padding:9px 11px;border-radius:9px;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.55);color:#ffb3b3;font-size:0.84rem}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-callbtn{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:8px;background:#ffb3b3;color:#2a0b0b;font-weight:700;text-decoration:none;white-space:nowrap}" +
-    ":is(#adm-code-subs,#adm-private-homes) .cs-empty{color:var(--gray);font-size:0.86rem;padding:18px;text-align:center;border:1px dashed var(--card-border);border-radius:10px}";
+    ":is(#adm-code-subs,#adm-codes) .cs-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-card{background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:12px;padding:14px;margin-bottom:12px}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-card.test{border-style:dashed}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-name{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:0.03em;color:var(--white)}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-sub{font-size:0.78rem;color:var(--gray);margin-top:2px}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-pill{font-size:0.68rem;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap;border:1px solid}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-pending{color:#ffc84a;border-color:rgba(240,165,0,0.5);background:rgba(240,165,0,0.12)}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-approved{color:#7dedb5;border-color:rgba(125,237,181,0.5);background:rgba(125,237,181,0.1)}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-rejected,#adm-code-subs .cs-withdrawn{color:#ff9f9f;border-color:rgba(224,85,85,0.5);background:rgba(224,85,85,0.1)}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-grid{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;align-items:center;font-size:0.86rem}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-k{font-size:0.66rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray)}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-grid input{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;color:var(--white);font:inherit;padding:7px 9px}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-code input{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:0.08em;color:#ffc84a}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-match{margin-top:10px;padding:9px 11px;border-radius:9px;background:rgba(240,165,0,0.1);border:1px solid rgba(240,165,0,0.45);font-size:0.82rem;color:#ffd27a}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-match label{display:flex;gap:8px;align-items:center;margin-top:6px;color:var(--white);cursor:pointer}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-actions button{min-height:40px}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-reject{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-reject input{flex:1;min-width:200px;background:rgba(255,255,255,0.06);border:1px solid rgba(224,85,85,0.5);border-radius:7px;color:var(--white);font:inherit;padding:8px 10px}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-settings{background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.84rem}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-settings label{display:flex;gap:10px;align-items:center;min-height:32px;cursor:pointer}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-unconf{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin:0 0 10px;padding:9px 11px;border-radius:9px;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.55);color:#ffb3b3;font-size:0.84rem}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-callbtn{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:8px;background:#ffb3b3;color:#2a0b0b;font-weight:700;text-decoration:none;white-space:nowrap}" +
+    ":is(#adm-code-subs,#adm-codes) .cs-empty{color:var(--gray);font-size:0.86rem;padding:18px;text-align:center;border:1px dashed var(--card-border);border-radius:10px}";
   document.head.appendChild(st);
 }
 function csLoad() {
@@ -9330,6 +9323,14 @@ function setCodesTab(tab, btn) {
 function renderCodesEditor() {
   if (typeof renderDispatchSettings === "function" && document.getElementById("ds-content") && !document.getElementById("ds-content").innerHTML) renderDispatchSettings();
   var el = document.getElementById("codes-editor-content"); if (!el) return;
+  if (codesEditorTab === "private") {      // admins-only list (privateCodes), not part of the shared codes
+    el.innerHTML = '<p style="color:var(--gray);font-size:0.82rem;margin:0 0 12px;line-height:1.6"><b>Only admins can see this list</b> — responders can\'t browse it. A dispatcher gets a home\'s code only when posting a call at that exact address; it then fills in the call\'s Access Code like any other code and the call runs as normal. Every lookup is logged below.</p>' +
+      '<div class="cs-bar"><button class="submit-btn" style="width:auto;padding:8px 16px" onclick="phEdit(\'new\')">+ Add a private home</button></div>' +
+      '<div id="ph-list"><div class="cs-empty">Loading…</div></div>' +
+      '<details style="margin-top:10px"><summary style="cursor:pointer;color:var(--gray);font-size:0.82rem">🔎 Recent lookups by dispatchers</summary><div id="ph-log" style="margin-top:8px"></div></details>';
+    phLoad();
+    return;
+  }
   var sec = codesEditorTab, items = window.LIVE_DATA[sec] || [], isSpecial = sec === "hospital" || sec === "storage";
   var headHtml = '<div class="ds-head codes-head"><div>Name</div><div>Main code</div><div>Address</div><div>Note</div><div></div></div>' +
     '<div style="font-size:0.72rem;color:var(--gray);margin:-2px 0 10px">📍 = address is geocoded (used for exact matching on New Call) · ⚠ = not geocoded yet — pick the address from the dropdown, or use <b>Geocode missing</b>. Buildings &amp; Shuls feed the New Call access-code suggestion; Hospital &amp; Storage are reference only.</div>';
@@ -14681,7 +14682,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.28";
+var DESKTOP_VERSION = "10.29";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
