@@ -10,7 +10,7 @@
 // The ?v= tag matches mobile.html's BUILD version and forces a fresh fetch, so a phone that has
 // an old copy of mobile.html cached still gets the current build instead of the stale one.
 if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth < 1024) {
-  window.location.replace('/CallDashboard/mobile.html?v=3.27');
+  window.location.replace('/CallDashboard/mobile.html?v=3.30');
 }
 </script>
 <meta name="referrer" content="strict-origin-when-cross-origin">
@@ -1327,7 +1327,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.25</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.28</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2076,6 +2076,14 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
         <button class="submit-btn" style="width:auto;padding:8px 16px;margin-top:8px" onclick="csSaveSettings()">💾 Save settings</button>
       </div>
       <div id="cs-list"><div class="cs-empty">Loading…</div></div>
+    </div>
+
+    <div class="admin-section" data-admin-tab="codes" id="adm-private-homes">
+      <div class="admin-section-title">🏠 Private Homes <span id="ph-count" style="color:#ffc84a"></span></div>
+      <p style="color:var(--gray);font-size:0.82rem;margin:0 0 12px;line-height:1.6">Door codes for private homes. <b>Only admins can see this list.</b> Responders can't browse it. A dispatcher gets a home's code only when posting a call at that exact address — it then fills in the call's Access Code like any other code and the call runs as normal. Every lookup is logged below.</p>
+      <div class="cs-bar"><button class="submit-btn" style="width:auto;padding:8px 16px" onclick="phEdit('new')">+ Add a private home</button></div>
+      <div id="ph-list"><div class="cs-empty">Loading…</div></div>
+      <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--gray);font-size:0.82rem">🔎 Recent lookups by dispatchers</summary><div id="ph-log" style="margin-top:8px"></div></details>
     </div>
 
     <div class="admin-section" data-admin-tab="codes" id="adm-codes">
@@ -3353,7 +3361,7 @@ function setAdminTab(tab) {
   if (tab === "traffic") { tcBindAddress(); tcLoad(); tcCheckOldList(); hdLoad(); if (typeof mLoadSmsTemplates === "function") mLoadSmsTemplates(); }   // closure/divert wording
   if (tab === "org") orgFormLoad();
   if (tab === "fleet") loadFleetAlerts();
-  if (tab === "codes") csLoad();
+  if (tab === "codes") { csLoad(); phLoad(); }
   if (tab === "protoai") paiLoad();
 }
 // ── Admin search: find a setting by name and jump to it, whichever tab it lives on ──
@@ -3369,6 +3377,7 @@ var ADM_SEARCH = [
   { label: "Outside-coverage contacts", where: "Protocols & Dispatch", tab: "protocols", ds: "outside", k: "outside coverage contacts out of area" },
   { label: "Notifications & permissions (who gets notified)", where: "Protocols & Dispatch", tab: "protocols", ds: "notify", k: "notifications permissions who gets notified admin call notification service ticket group it tickets accept resolve logistics" },
   { label: "Building codes from businesses (Sign Builder) — waiting for approval", where: "Codes & Locations", tab: "codes", el: "adm-code-subs", k: "approve approval pending submission sign builder business door code api phone not confirmed call to verify before approving unconfirmed recaptcha" },
+  { label: "Private homes — door codes (admins only)", where: "Codes & Locations", tab: "codes", el: "adm-private-homes", k: "private home house residence door code privacy lookup log" },
   { label: "Access codes & locations (buildings, shuls, hospital, storage)", where: "Codes & Locations", tab: "codes", el: "adm-codes", k: "codes access code door buildings shuls hospital storage locations" },
   { label: "Vehicle service status", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "service status out of service vehicle rig ambulance oos" },
   { label: "Text everyone when a rig is out of / back in service", where: "Fleet", tab: "fleet", el: "adm-service-status", k: "oos sms text broadcast out of service back in service rig alert" },
@@ -9077,31 +9086,31 @@ function csStyle() {
   if (document.getElementById("cs-style")) return;
   var st = document.createElement("style"); st.id = "cs-style";
   st.textContent =
-    "#adm-code-subs .cs-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}" +
-    "#adm-code-subs .cs-card{background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:12px;padding:14px;margin-bottom:12px}" +
-    "#adm-code-subs .cs-card.test{border-style:dashed}" +
-    "#adm-code-subs .cs-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}" +
-    "#adm-code-subs .cs-name{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:0.03em;color:var(--white)}" +
-    "#adm-code-subs .cs-sub{font-size:0.78rem;color:var(--gray);margin-top:2px}" +
-    "#adm-code-subs .cs-pill{font-size:0.68rem;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap;border:1px solid}" +
-    "#adm-code-subs .cs-pending{color:#ffc84a;border-color:rgba(240,165,0,0.5);background:rgba(240,165,0,0.12)}" +
-    "#adm-code-subs .cs-approved{color:#7dedb5;border-color:rgba(125,237,181,0.5);background:rgba(125,237,181,0.1)}" +
-    "#adm-code-subs .cs-rejected,#adm-code-subs .cs-withdrawn{color:#ff9f9f;border-color:rgba(224,85,85,0.5);background:rgba(224,85,85,0.1)}" +
-    "#adm-code-subs .cs-grid{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;align-items:center;font-size:0.86rem}" +
-    "#adm-code-subs .cs-k{font-size:0.66rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray)}" +
-    "#adm-code-subs .cs-grid input{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;color:var(--white);font:inherit;padding:7px 9px}" +
-    "#adm-code-subs .cs-code input{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:0.08em;color:#ffc84a}" +
-    "#adm-code-subs .cs-match{margin-top:10px;padding:9px 11px;border-radius:9px;background:rgba(240,165,0,0.1);border:1px solid rgba(240,165,0,0.45);font-size:0.82rem;color:#ffd27a}" +
-    "#adm-code-subs .cs-match label{display:flex;gap:8px;align-items:center;margin-top:6px;color:var(--white);cursor:pointer}" +
-    "#adm-code-subs .cs-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}" +
-    "#adm-code-subs .cs-actions button{min-height:40px}" +
-    "#adm-code-subs .cs-reject{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}" +
-    "#adm-code-subs .cs-reject input{flex:1;min-width:200px;background:rgba(255,255,255,0.06);border:1px solid rgba(224,85,85,0.5);border-radius:7px;color:var(--white);font:inherit;padding:8px 10px}" +
-    "#adm-code-subs .cs-settings{background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.84rem}" +
-    "#adm-code-subs .cs-settings label{display:flex;gap:10px;align-items:center;min-height:32px;cursor:pointer}" +
-    "#adm-code-subs .cs-unconf{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin:0 0 10px;padding:9px 11px;border-radius:9px;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.55);color:#ffb3b3;font-size:0.84rem}" +
-    "#adm-code-subs .cs-callbtn{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:8px;background:#ffb3b3;color:#2a0b0b;font-weight:700;text-decoration:none;white-space:nowrap}" +
-    "#adm-code-subs .cs-empty{color:var(--gray);font-size:0.86rem;padding:18px;text-align:center;border:1px dashed var(--card-border);border-radius:10px}";
+    ":is(#adm-code-subs,#adm-private-homes) .cs-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-card{background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:12px;padding:14px;margin-bottom:12px}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-card.test{border-style:dashed}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-name{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:0.03em;color:var(--white)}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-sub{font-size:0.78rem;color:var(--gray);margin-top:2px}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-pill{font-size:0.68rem;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap;border:1px solid}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-pending{color:#ffc84a;border-color:rgba(240,165,0,0.5);background:rgba(240,165,0,0.12)}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-approved{color:#7dedb5;border-color:rgba(125,237,181,0.5);background:rgba(125,237,181,0.1)}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-rejected,#adm-code-subs .cs-withdrawn{color:#ff9f9f;border-color:rgba(224,85,85,0.5);background:rgba(224,85,85,0.1)}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-grid{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;align-items:center;font-size:0.86rem}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-k{font-size:0.66rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray)}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-grid input{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;color:var(--white);font:inherit;padding:7px 9px}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-code input{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:0.08em;color:#ffc84a}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-match{margin-top:10px;padding:9px 11px;border-radius:9px;background:rgba(240,165,0,0.1);border:1px solid rgba(240,165,0,0.45);font-size:0.82rem;color:#ffd27a}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-match label{display:flex;gap:8px;align-items:center;margin-top:6px;color:var(--white);cursor:pointer}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-actions button{min-height:40px}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-reject{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-reject input{flex:1;min-width:200px;background:rgba(255,255,255,0.06);border:1px solid rgba(224,85,85,0.5);border-radius:7px;color:var(--white);font:inherit;padding:8px 10px}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-settings{background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.84rem}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-settings label{display:flex;gap:10px;align-items:center;min-height:32px;cursor:pointer}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-unconf{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin:0 0 10px;padding:9px 11px;border-radius:9px;background:rgba(224,85,85,0.12);border:1px solid rgba(224,85,85,0.55);color:#ffb3b3;font-size:0.84rem}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-callbtn{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:8px;background:#ffb3b3;color:#2a0b0b;font-weight:700;text-decoration:none;white-space:nowrap}" +
+    ":is(#adm-code-subs,#adm-private-homes) .cs-empty{color:var(--gray);font-size:0.86rem;padding:18px;text-align:center;border:1px dashed var(--card-border);border-radius:10px}";
   document.head.appendChild(st);
 }
 function csLoad() {
@@ -9158,7 +9167,7 @@ function csRender() {
         (r.previousCode && r.previousCode.code ? '<span class="cs-k">Old code</span><span>' + csEsc(r.previousCode.code) + ' <span style="color:var(--gray);font-size:0.76rem">(kept in case you need to put it back)</span></span>' : '') +
         '</div></div>';
     }
-    var ex = csExistingFor(s);
+    var ex = (e.asPrivate != null ? e.asPrivate : /^private home\b/i.test(String(b.name || "").trim())) ? null : csExistingFor(s);
     var twins = CS_LIST.filter(function(o) { return o.id !== s.id && o.status === "pending" && !!o.test === !!s.test && csSameAddress(csFullAddr(o), csFullAddr(s)); });
     var val = function(k, d) { return csEsc(e[k] != null ? e[k] : d); };
     var noteDefault = [b.entrance, b.note].filter(Boolean).join(" — ");
@@ -9176,6 +9185,8 @@ function csRender() {
         twins.map(function(o) { return '<b>' + csEsc((o.contact || {}).name || "someone") + '</b>' + ((o.contact || {}).role ? ' (' + csEsc(o.contact.role) + ')' : '') + ' — <span style="font-family:Oswald,sans-serif;letter-spacing:0.06em">' + csEsc((o.code || {}).value) + '</span>' +
           (((o.code || {}).value || "") === ((s.code || {}).value || "") ? ' <span style="color:#7dedb5">(same code)</span>' : ' <span style="color:#ff9f9f">(different code)</span>'); }).join("; ") +
         '<div style="color:var(--gray);font-size:0.76rem;margin-top:4px">Approve the right one and reject the other with a reason.</div></div>' : '') +
+      '<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:0.84rem;cursor:pointer"><input type="checkbox" ' + ((e.asPrivate != null ? e.asPrivate : /^private home\b/i.test(String(b.name || "").trim())) ? 'checked' : '') +
+        ' onchange="csEdit(\'' + s.id + '\',\'asPrivate\',this.checked)" style="width:18px;height:18px"> 🏠 Save as a <b>private home</b> <span style="color:var(--gray)">(admins only — dispatchers get it only when posting a call there)</span></label>' +
       (s.test ? '<div class="cs-sub" style="margin-top:8px">🧪 Test submission — approving it will NOT add it to the live codes.</div>' : '') +
       '<div class="cs-actions">' +
         '<button class="submit-btn" style="width:auto;padding:8px 18px" ' + (CS_BUSY[s.id] ? 'disabled' : '') + ' onclick="csApprove(\'' + s.id + '\')">✅ Approve</button>' +
@@ -9188,7 +9199,7 @@ function csRender() {
     '</div>';
   }).join("");
 }
-function csEdit(id, k, v) { CS_EDIT[id] = CS_EDIT[id] || {}; CS_EDIT[id][k] = v; }
+function csEdit(id, k, v) { CS_EDIT[id] = CS_EDIT[id] || {}; CS_EDIT[id][k] = v; if (k === "asPrivate") csRender(); }
 function csShowReject(id, on) { CS_REJECT[id] = on !== false; csRender(); var i = document.getElementById("cs-reason-" + id); if (i) i.focus(); }
 function csReloadCodes() {
   return db.collection("appdata").doc("codes").get().then(function(snap) {
@@ -9200,11 +9211,12 @@ function csApprove(id) {
   var s = CS_LIST.filter(function(x) { return x.id === id; })[0]; if (!s) return;
   var e = CS_EDIT[id] || {}, ex = csExistingFor(s), edits = {};
   ["name", "address", "note", "code"].forEach(function(k) { if (e[k] != null) edits[k] = e[k]; });
-  var payload = { id: id, action: "approve", edits: edits, replaceIndex: ex ? (e.addNew ? -1 : ex.index) : -1 };
+  var asPrivate = e.asPrivate != null ? e.asPrivate : /^private home\b/i.test(String((s.building || {}).name || "").trim());
+  var payload = { id: id, action: "approve", edits: edits, asPrivate: asPrivate, replaceIndex: !asPrivate && ex ? (e.addNew ? -1 : ex.index) : -1 };
   CS_BUSY[id] = true; csRender();
   hzRelay("reviewBuildingCode", payload).then(function(r) {
     delete CS_BUSY[id]; delete CS_EDIT[id];
-    showToast(s.test ? "✓ Test submission approved (not added to the live codes)" : "✓ Approved — " + (r.merged === "updated" ? "existing entry updated" : "added to Buildings"));
+    showToast(s.test ? "✓ Test submission approved (not added to the live codes)" : "✓ Approved — " + (/private/.test(r.merged || "") ? "saved to Private Homes" : r.merged === "updated" ? "existing entry updated" : "added to Buildings"));
     return csReloadCodes();
   }).catch(function(err) { delete CS_BUSY[id]; csRender(); showToast("Couldn't approve: " + err.message, true); });
 }
@@ -9236,6 +9248,77 @@ function csSaveSettings() {
     .catch(function(e) { showToast("Couldn't save: " + e.message, true); });
 }
 window.csSetView = csSetView; window.csEdit = csEdit; window.csShowReject = csShowReject; window.csApprove = csApprove; window.csReject = csReject; window.csSaveSettings = csSaveSettings; window.csLoad = csLoad;
+
+// ── Admin ▸ Codes & Locations ▸ 🏠 Private Homes (admins only — privateCodes) ──
+var PH_LIST = [], PH_UNSUB = null, PH_EDIT = null;
+function phLoad() {
+  csStyle();
+  if (PH_UNSUB) { PH_UNSUB(); PH_UNSUB = null; }
+  PH_UNSUB = db.collection("privateCodes").onSnapshot(function(snap) {
+    PH_LIST = []; snap.forEach(function(d) { PH_LIST.push(Object.assign({ id: d.id }, d.data())); });
+    PH_LIST.sort(function(a, b) { return String(a.address || "").localeCompare(String(b.address || ""), undefined, { numeric: true }); });
+    phRender();
+  }, function(e) { var el = document.getElementById("ph-list"); if (el) el.innerHTML = '<div class="cs-empty">Couldn\'t load private homes: ' + csEsc(e.message) + '</div>'; });
+  db.collection("privateCodeLog").orderBy("at", "desc").limit(25).get().then(function(snap) {
+    var rows = []; snap.forEach(function(d) { rows.push(d.data()); });
+    var el = document.getElementById("ph-log"); if (!el) return;
+    el.innerHTML = rows.length ? rows.map(function(r) {
+      return '<div style="display:flex;gap:10px;font-size:0.78rem;padding:4px 0;border-top:1px solid rgba(255,255,255,0.05)"><span style="color:var(--gray);min-width:120px">' + csWhen(r.at) + '</span><span style="min-width:60px">' + csEsc(r.unit || "?") + '</span><span style="flex:1">' + csEsc(r.address) + '</span><span style="color:' + (r.found ? '#ffc84a' : 'var(--gray)') + '">' + (r.found ? "code given" : "no match") + '</span></div>';
+    }).join("") : '<div style="color:var(--gray);font-size:0.8rem">No lookups yet.</div>';
+  }).catch(function() {});
+}
+function phRender() {
+  var el = document.getElementById("ph-list"); if (!el) return;
+  var cnt = document.getElementById("ph-count"); if (cnt) cnt.textContent = PH_LIST.length ? "(" + PH_LIST.length + ")" : "";
+  var row = function(h) {
+    if (PH_EDIT === h.id) return phFormHTML(h);
+    return '<div class="cs-card" style="padding:10px 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+      '<div style="flex:1;min-width:220px"><div style="font-weight:700">' + csEsc(h.address) + '</div><div class="cs-sub">' + csEsc(h.name || "Private home") + (h.note ? " · " + csEsc(h.note) : "") + (h.fromSubmission ? " · from Sign Builder" : "") + '</div></div>' +
+      '<span style="font-family:Oswald,sans-serif;color:#ffc84a;letter-spacing:0.06em">' + csEsc(h.code) + '</span>' +
+      '<button class="edit-mode-btn" onclick="phEdit(\'' + h.id + '\')">✏️ Edit</button>' +
+      '<button class="edit-mode-btn" style="color:#ff9f9f" onclick="phDelete(\'' + h.id + '\')">🗑</button></div>';
+  };
+  el.innerHTML = (PH_EDIT === "new" ? phFormHTML({}) : "") + (PH_LIST.length ? PH_LIST.map(row).join("") : (PH_EDIT === "new" ? "" : '<div class="cs-empty">No private homes yet. Approved Sign Builder codes for private homes land here, or add one.</div>'));
+}
+function phFormHTML(h) {
+  var v = function(k) { return csEsc(h[k] || ""); };
+  return '<div class="cs-card" id="ph-form"><div class="cs-grid">' +
+    '<span class="cs-k">Address</span><input id="ph-address" value="' + v("address") + '" placeholder="12 Oak St, Woodbridge (house number, street, town)">' +
+    '<span class="cs-k">Name</span><input id="ph-name" value="' + csEsc(h.name || "Private home") + '">' +
+    '<span class="cs-k">Note</span><input id="ph-note" value="' + v("note") + '" placeholder="Side door · Apt 2B">' +
+    '<span class="cs-k">Code</span><span class="cs-code"><input id="ph-code" value="' + v("code") + '" placeholder="1-2-3-4"></span>' +
+    '</div><div class="cs-actions"><button class="submit-btn" style="width:auto;padding:8px 18px" onclick="phSave(\'' + (h.id || "") + '\')">💾 Save</button>' +
+    '<button class="edit-mode-btn" onclick="phEdit(null)">Cancel</button></div></div>';
+}
+function phEdit(id) { PH_EDIT = id; phRender(); var a = document.getElementById("ph-address"); if (a) a.focus(); }
+function phSave(id) {
+  var g = function(k) { return (document.getElementById("ph-" + k).value || "").trim(); };
+  var address = g("address"), code = g("code");
+  if (!csAddrParts(address)) { showToast("The address must start with a house number, e.g. 12 Oak St, Woodbridge", true); return; }
+  if (!code) { showToast("Enter the door code", true); return; }
+  var dup = PH_LIST.filter(function(x) { return x.id !== id && csSameAddress(x.address, address); })[0];
+  if (dup) { showToast("That address is already in the list — edit it instead", true); return; }
+  var data = { address: address, name: g("name") || "Private home", note: g("note"), code: code, special: /\[/.test(code), updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" };
+  var save = function(geo) {
+    if (geo) { data.lat = geo.lat; data.lng = geo.lng; }
+    var ref = id ? db.collection("privateCodes").doc(id) : db.collection("privateCodes").doc();
+    if (!id) data.createdAt = data.updatedAt;
+    return ref.set(data, { merge: true }).then(function() { PH_EDIT = null; showToast("✓ Saved"); phRender(); });
+  };
+  // a pin helps the server tell apart two places with the same street address
+  if (window.google && google.maps && google.maps.Geocoder) {
+    new google.maps.Geocoder().geocode({ address: address + ", NJ" }, function(res, st) {
+      var loc = st === "OK" && res && res[0] ? res[0].geometry.location : null;
+      save(loc ? { lat: loc.lat(), lng: loc.lng() } : null).catch(function(e) { showToast("Couldn't save: " + e.message, true); });
+    });
+  } else save(null).catch(function(e) { showToast("Couldn't save: " + e.message, true); });
+}
+function phDelete(id) {
+  var h = PH_LIST.filter(function(x) { return x.id === id; })[0]; if (!h) return;
+  if (!confirm("Delete the private-home code for " + h.address + "?")) return;
+  db.collection("privateCodes").doc(id).delete().then(function() { showToast("Deleted"); }).catch(function(e) { showToast("Couldn't delete: " + e.message, true); });
+}
+window.phEdit = phEdit; window.phSave = phSave; window.phDelete = phDelete; window.phLoad = phLoad;
 
 // ── CODES EDITOR ──
 var codesEditorTab = "buildings";
@@ -14598,7 +14681,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.25";
+var DESKTOP_VERSION = "10.28";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -16105,6 +16188,32 @@ function mUseSuggestedCode() {
   codeInp.dataset.userEdited = "1";
   var t = document.getElementById("m-nc-code-suggestion-text"); if (t) t.innerHTML = "Access code filled in from <b>" + mEscHtml(m.name || "a saved location") + "</b>";
 }
+// ── PRIVATE HOMES ──────────────────────────────────────────────────────────────────────────────
+// Private homes' codes are kept in an admins-only list (privateCodes). A dispatcher posting a call
+// asks the server about that one address (privateCodeLookup — exact address only, logged); a match
+// fills the Access Code box exactly like any other saved code, and the call runs as normal.
+var mNcPrivateFor = "", mNcPrivateFilled = "";
+function hzRelayAny(fn, data) { return (typeof hzRelay === "function" ? hzRelay : mRelay)(fn, data); }
+function hzNcPrivateLookup(address, lat, lng) {
+  var key = String(address || "").trim().toLowerCase();
+  if (!key || key === mNcPrivateFor) return;
+  mNcPrivateFor = key;
+  hzRelayAny("privateCodeLookup", { address: address, lat: lat || null, lng: lng || null }).then(function(r) {
+    if (mNcPrivateFor !== key || !r || !r.found) return;      // address changed meanwhile, or nothing on file
+    var inp = document.getElementById("m-nc-accesscode");
+    var text = (r.code || "") + (r.note ? " (" + r.note + ")" : "");
+    if (inp && !inp.dataset.userEdited && !inp.value.trim()) { inp.value = text; mNcPrivateFilled = text; }
+    var t = document.getElementById("m-nc-code-suggestion-text"), banner = document.getElementById("m-nc-code-suggestion");
+    if (t && banner) { t.innerHTML = "Access code filled in from <b>a private home</b>"; banner.style.display = "flex"; }
+    if (typeof mNcDraftSave === "function") mNcDraftSave();
+  }).catch(function() { /* not a dispatcher, offline, or nothing on file */ });
+}
+function hzNcPrivateClear() {
+  mNcPrivateFor = "";
+  var inp = document.getElementById("m-nc-accesscode");
+  if (mNcPrivateFilled && inp && inp.value === mNcPrivateFilled && !inp.dataset.userEdited) inp.value = "";
+  mNcPrivateFilled = "";
+}
 function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
   var banner = document.getElementById("m-nc-code-suggestion");
   if (!banner) return;
@@ -16135,6 +16244,8 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
     mAccessCodeSuggestion = null;
     banner.style.display = "none";
   }
+  // no regular code for certain here → ask the server whether it's a private home with a code
+  if (match && bestScore >= 100) hzNcPrivateClear(); else hzNcPrivateLookup(formattedAddress, lat, lng);
 }
 var mDispatchListener = null;
 var mDispatchDetailListener = null;
@@ -17096,6 +17207,7 @@ function mNcDraftRestore(d) {
   if (d.age) mSetNcAge(d.age);
   if (d.sex) { mNcSex = ""; mSetNcSex(d.sex); }
   if (d.zone) mSetNcZone(d.zone, false, d.zoneArea || "");
+  if (d.fields["m-nc-address"] && d.fields["m-nc-lat"]) hzNcPrivateLookup(d.fields["m-nc-address"], parseFloat(d.fields["m-nc-lat"]), parseFloat(d.fields["m-nc-lng"]));
   if (d.loc && d.loc.token) mLocResume(d.loc);
   var an = document.getElementById("m-nc-age-num"); if (an && an.value && an.nextElementSibling) an.nextElementSibling.style.display = "block";
   if (typeof mNcValidateMarks === "function") setTimeout(mNcValidateMarks, 50);
@@ -17451,6 +17563,7 @@ function mOpenNewCallForm() {
   mLocSetBtn(false);
   mLocReqTokensAll = [];
   mLocBusy = false; mLocMsg = ""; mLocCardKey = null;
+  hzNcPrivateClear();
   mLocReqCallback = ""; mLocCoordsOnly = false; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
@@ -17834,6 +17947,7 @@ function mNcAddressEdited() {
   var inp = document.getElementById("m-nc-address");
   var latEl = document.getElementById("m-nc-lat");
   if (inp && latEl && latEl.value && inp.value.trim() !== (mNcResolvedAddress || "")) {
+    hzNcPrivateClear();
     latEl.value = ""; document.getElementById("m-nc-lng").value = "";
     mNcZone = ""; mNcZoneArea = "";
     var banner = document.getElementById("m-nc-zone-banner"); if (banner) banner.style.display = "none";

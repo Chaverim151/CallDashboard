@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.27"; window.M_BUILD = BUILD;
+  var BUILD = "3.30"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3282,6 +3282,32 @@ function mUseSuggestedCode() {
   codeInp.dataset.userEdited = "1";
   var t = document.getElementById("m-nc-code-suggestion-text"); if (t) t.innerHTML = "Access code filled in from <b>" + mEscHtml(m.name || "a saved location") + "</b>";
 }
+// ── PRIVATE HOMES ──────────────────────────────────────────────────────────────────────────────
+// Private homes' codes are kept in an admins-only list (privateCodes). A dispatcher posting a call
+// asks the server about that one address (privateCodeLookup — exact address only, logged); a match
+// fills the Access Code box exactly like any other saved code, and the call runs as normal.
+var mNcPrivateFor = "", mNcPrivateFilled = "";
+function hzRelayAny(fn, data) { return (typeof hzRelay === "function" ? hzRelay : mRelay)(fn, data); }
+function hzNcPrivateLookup(address, lat, lng) {
+  var key = String(address || "").trim().toLowerCase();
+  if (!key || key === mNcPrivateFor) return;
+  mNcPrivateFor = key;
+  hzRelayAny("privateCodeLookup", { address: address, lat: lat || null, lng: lng || null }).then(function(r) {
+    if (mNcPrivateFor !== key || !r || !r.found) return;      // address changed meanwhile, or nothing on file
+    var inp = document.getElementById("m-nc-accesscode");
+    var text = (r.code || "") + (r.note ? " (" + r.note + ")" : "");
+    if (inp && !inp.dataset.userEdited && !inp.value.trim()) { inp.value = text; mNcPrivateFilled = text; }
+    var t = document.getElementById("m-nc-code-suggestion-text"), banner = document.getElementById("m-nc-code-suggestion");
+    if (t && banner) { t.innerHTML = "Access code filled in from <b>a private home</b>"; banner.style.display = "flex"; }
+    if (typeof mNcDraftSave === "function") mNcDraftSave();
+  }).catch(function() { /* not a dispatcher, offline, or nothing on file */ });
+}
+function hzNcPrivateClear() {
+  mNcPrivateFor = "";
+  var inp = document.getElementById("m-nc-accesscode");
+  if (mNcPrivateFilled && inp && inp.value === mNcPrivateFilled && !inp.dataset.userEdited) inp.value = "";
+  mNcPrivateFilled = "";
+}
 function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
   var banner = document.getElementById("m-nc-code-suggestion");
   if (!banner) return;
@@ -3312,6 +3338,8 @@ function mCheckAccessCode(formattedAddress, placeName, lat, lng) {
     mAccessCodeSuggestion = null;
     banner.style.display = "none";
   }
+  // no regular code for certain here → ask the server whether it's a private home with a code
+  if (match && bestScore >= 100) hzNcPrivateClear(); else hzNcPrivateLookup(formattedAddress, lat, lng);
 }
 function mApplyAccessCodeSuggestion() {   // legacy: the code is auto-filled now
   if (!mAccessCodeSuggestion) return;
@@ -4909,6 +4937,7 @@ function mNcDraftRestore(d) {
   if (d.age) mSetNcAge(d.age);
   if (d.sex) { mNcSex = ""; mSetNcSex(d.sex); }
   if (d.zone) mSetNcZone(d.zone, false, d.zoneArea || "");
+  if (d.fields["m-nc-address"] && d.fields["m-nc-lat"]) hzNcPrivateLookup(d.fields["m-nc-address"], parseFloat(d.fields["m-nc-lat"]), parseFloat(d.fields["m-nc-lng"]));
   if (d.loc && d.loc.token) mLocResume(d.loc);
   var an = document.getElementById("m-nc-age-num"); if (an && an.value && an.nextElementSibling) an.nextElementSibling.style.display = "block";
   if (typeof mNcValidateMarks === "function") setTimeout(mNcValidateMarks, 50);
@@ -5272,6 +5301,7 @@ function mOpenNewCallForm() {
   mLocSetBtn(false);
   mLocReqTokensAll = [];
   mLocBusy = false; mLocMsg = ""; mLocCardKey = null;
+  hzNcPrivateClear();
   mLocReqCallback = ""; mLocCoordsOnly = false; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
@@ -5810,6 +5840,7 @@ function mNcAddressEdited() {
   var inp = document.getElementById("m-nc-address");
   var latEl = document.getElementById("m-nc-lat");
   if (inp && latEl && latEl.value && inp.value.trim() !== (mNcResolvedAddress || "")) {
+    hzNcPrivateClear();
     latEl.value = ""; document.getElementById("m-nc-lng").value = "";
     mNcZone = ""; mNcZoneArea = "";
     var banner = document.getElementById("m-nc-zone-banner"); if (banner) banner.style.display = "none";
