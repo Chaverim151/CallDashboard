@@ -788,6 +788,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 .m-rig-unit.other{font-family:inherit;font-weight:600;color:var(--gray);border-style:dashed}
 .m-rig-unit.other.on{color:var(--gold);border-style:solid}
 .m-rig-who-otherbox{display:flex;align-items:center;gap:6px;margin-top:8px;max-width:220px}
+.m-rig-units-foot{display:flex;margin-top:6px;padding-top:6px;border-top:1px dashed var(--card-border)}
 .m-rig-who-otherbox .m-rig-who-field{margin:0;flex:1;font-family:'Oswald',sans-serif;font-size:1rem;letter-spacing:0.04em}
 .m-rig-who-field{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px;color:var(--white);font:inherit;font-size:0.85rem;margin-bottom:8px}
 #pg-console .m-dash-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:16px 14px;margin-bottom:10px;color:var(--white);cursor:pointer;font:inherit;min-height:74px}
@@ -839,6 +840,7 @@ body:has(#sys-test-global-banner) #pg-maps.active{height:calc(100vh - 26px);heig
 #pg-console .m-rig-unit.other{font-family:inherit;font-weight:600;color:var(--gray);border-style:dashed}
 #pg-console .m-rig-unit.other.on{color:var(--gold);border-style:solid}
 #pg-console .m-rig-who-otherbox{display:flex;align-items:center;gap:6px;margin-top:8px;max-width:220px}
+#pg-console .m-rig-units-foot{display:flex;margin-top:6px;padding-top:6px;border-top:1px dashed var(--card-border)}
 #pg-console .m-rig-who-otherbox .m-rig-who-field{margin:0;flex:1;font-family:'Oswald',sans-serif;font-size:1rem;letter-spacing:0.04em}
 #pg-console .m-rig-who-field{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px;color:var(--white);font:inherit;font-size:0.85rem;margin-bottom:8px}
 #desk-console-rigs{position:relative}
@@ -1815,7 +1817,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap">🗺️ DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.58</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.59</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -15542,7 +15544,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.58";
+var DESKTOP_VERSION = "10.59";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -17295,8 +17297,9 @@ function rigWhoTilesHtml(px) {
     '<div class="m-rig-units" id="' + px + '-units">' +
       note + (units.length ? units.map(function(u) { return '<button type="button" class="m-rig-unit" data-u="' + rigEsc(u) + '" onclick="rigPickWho(this,\'' + px + '\')">' + rigEsc(u) + '</button>'; }).join("")
                     : '<span class="m-rig-hist-empty">Loading the roster…</span>') +
-      '<button type="button" class="m-rig-unit other" data-u="" onclick="rigPickOther(\'' + px + '\')">Other…</button>' +
     '</div>' +
+    // Other… sits under the (scrolling) roster so it's always in view, however many units there are
+    '<div class="m-rig-units-foot" id="' + px + '-units-foot"><button type="button" class="m-rig-unit other" data-u="" onclick="rigPickOther(\'' + px + '\')">Other unit…</button></div>' +
     '<div class="m-rig-who-otherbox" id="' + px + '-who-otherbox" style="display:none">' +
       '<input type="text" id="' + px + '-who-other" class="m-rig-who-field" maxlength="12" autocomplete="off" autocapitalize="characters" oninput="rigOtherInput(\'' + px + '\')" placeholder="Other unit #">' +
     '</div>';
@@ -17332,11 +17335,12 @@ function rigWhoValue(px) {
 // Light the token that matches the picked unit
 function rigWhoFilter(px, keepAll) {
   var inp = document.getElementById(px + "-who"), box = document.getElementById(px + "-units"); if (!inp || !box) return;
-  var v = inp.value, f = document.getElementById(px + "-who-other");
+  var v = inp.value, f = document.getElementById(px + "-who-other"), foot = document.getElementById(px + "-units-foot");
   // a value that isn't one of the tokens came from "Other…"
   if (v && !rigWhoOther[px] && !box.querySelector('.m-rig-unit[data-u="' + v.replace(/"/g, '') + '"]')) rigWhoOther[px] = true;
   var other = !!rigWhoOther[px];
-  box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", b.classList.contains("other") ? other : (!other && !!v && b.getAttribute("data-u") === v)); });
+  box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", !other && !!v && b.getAttribute("data-u") === v); });
+  if (foot) { var ob2 = foot.querySelector(".m-rig-unit.other"); if (ob2) ob2.classList.toggle("on", other); }
   var ob = document.getElementById(px + "-who-otherbox");
   if (ob) ob.style.display = other ? "" : "none";
   if (f && other && f.value.trim() !== v) f.value = v;
