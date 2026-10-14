@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.41"; window.M_BUILD = BUILD;
+  var BUILD = "3.42"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -118,6 +118,12 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .m-rig-hist-dot.out{background:#ff9090}.m-rig-hist-dot.in{background:#7dedb5}
 .m-rig-hist-why{color:var(--gray);font-size:0.72rem}
 .m-rig-hist-empty{font-size:0.72rem;color:var(--gray);line-height:1.45}
+.m-rig-units{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;max-height:212px;overflow-y:auto;padding:1px}
+.m-rig-unit{padding:10px 4px;border-radius:7px;border:1px solid var(--card-border);background:rgba(255,255,255,0.04);color:var(--white);font:inherit;font-family:'Oswald',sans-serif;font-size:0.85rem;font-weight:700;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-rig-unit.other{font-family:inherit;font-weight:600;font-size:0.76rem;color:var(--gray)}
+.m-rig-unit.on{border-color:var(--gold);background:rgba(var(--gold-rgb),0.2);color:var(--gold)}
+.m-rig-who-filter,.m-rig-who-other{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 10px;color:var(--white);font:inherit;font-size:0.85rem;margin-bottom:6px}
+.m-rig-who-other{margin:6px 0 0}
 .m-disp-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:all 0.15s;}
 .m-disp-card:active{transform:scale(0.98);opacity:0.9;}
 .m-disp-zone{font-family:'Oswald',sans-serif;font-size:0.6rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:2px 8px;border-radius:5px;display:inline-block;}
@@ -265,6 +271,11 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   animation:fadeUp 0.5s ease both;}
 .m-tile:active{opacity:0.85;transform:scale(0.98);}
+/* color strip across the top of each tile — same colors as the desktop home screen */
+.m-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--accent,var(--gold));z-index:2}
+.m-tile[data-sec="rma"],.m-tile[data-sec="hospital"],.m-tile[data-sec="epcr"],.m-tile[data-sec="buildings"]{--accent:#8b7cef}
+.m-tile[data-sec="shifts"],.m-tile[data-sec="shuls"],.m-tile[data-sec="storage"],.m-tile[data-sec="portal"],.m-tile[data-sec="maps"],.m-tile[data-sec="edispatches"],.m-tile[data-sec="diverts"]{--accent:#4a90d9}
+.m-tile[data-sec="service"],.m-tile[data-sec="contacts"]{--accent:#4caf80}
 .m-tile-inner{position:relative;z-index:1;padding:18px 12px 14px;width:100%;text-align:center;}
 .m-tile-icon{font-size:2rem;display:block;margin-bottom:10px;line-height:1;}
 .m-tile-label{font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;
@@ -456,6 +467,7 @@ html[data-theme="basic"] #pg-console.test-on #desk-test-btn{background:#fff4d6 !
    (Classic's tile edge color, made visible on white), the same soft shadow */
 html[data-theme="basic"] .m-tile,html[data-theme="basic"] .big-btn{border:1px solid #dcc78f !important;border-radius:16px !important;box-shadow:0 1px 3px rgba(31,35,40,0.08) !important}
 html[data-theme="basic"] .big-btn:hover{border-color:#c9a84c !important;box-shadow:0 6px 16px rgba(31,35,40,0.12) !important}
+html[data-theme="basic"] .m-rig-unit.on{background:#e6edf7 !important;border-color:#1d3f72 !important;color:#1d3f72 !important;box-shadow:inset 0 0 0 2px #1d3f72 !important}
 html[data-theme="basic"] .m-rig-hist-dot.out{background:#d92d20 !important}
 html[data-theme="basic"] .m-rig-hist-dot.in{background:#1f9d55 !important}
 html[data-theme="basic"] #desk-console-rigs.on{background:#e6edf7 !important;border-color:#1d3f72 !important;color:#1d3f72 !important}
@@ -529,6 +541,8 @@ html[data-theme="basic"] .m-rig-dur{background:#f8f9fa !important}
 html[data-theme="basic"] .m-rig-dur.on{color:#b42318 !important}
 html[data-theme="basic"] .m-rig-hist{background:#f8f9fa !important}
 html[data-theme="basic"] .m-rig-hist-row{border-top:1px solid #d8dde3 !important}
+html[data-theme="basic"] .m-rig-unit{background:#f8f9fa !important}
+html[data-theme="basic"] .m-rig-who-filter,html[data-theme="basic"] .m-rig-who-other{background:#f3f4f6 !important}
 html[data-theme="basic"] .m-disp-input{background:#f3f4f6 !important}
 html[data-theme="basic"] .m-disp-btn{background:#f8f9fa !important}
 html[data-theme="basic"] .m-disp-unit-box{background:#f8f9fa !important}
@@ -723,112 +737,112 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
     <!-- Home tiles -->
     <div id="m-tile-done-bar"><button onclick="mExitJiggle()">✓ Done rearranging</button></div>
     <div class="m-grid" id="m-home-grid">
-      <a class="m-tile" href="tel:7323481000">
+      <a class="m-tile" data-sec="rma" href="tel:7323481000">
         <div class="m-tile-inner">
           <span class="m-tile-icon">📞</span>
           <span class="m-tile-label">RMA Hotline</span>
           <span class="m-tile-sub">732-348-1000</span>
         </div>
       </a>
-      <button class="m-tile" onclick="mGoTo('hospital')">
+      <button class="m-tile" data-sec="hospital" onclick="mGoTo('hospital')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🏥</span>
           <span class="m-tile-label">Hospital Codes</span>
           <span class="m-tile-sub">Saint Peters · RWJ · JFK</span>
         </div>
       </button>
-      <a class="m-tile" href="https://chmiddlesex.imagetrendelite.com/Elite/Organizationchmiddlesex/RunForm/login" target="_blank">
+      <a class="m-tile" data-sec="epcr" href="https://chmiddlesex.imagetrendelite.com/Elite/Organizationchmiddlesex/RunForm/login" target="_blank">
         <div class="m-tile-inner">
           <span class="m-tile-icon">📋</span>
           <span class="m-tile-label">ePCR</span>
           <span class="m-tile-sub">ImageTrend Elite</span>
         </div>
       </a>
-      <button class="m-tile" onclick="mGoTo('buildings')">
+      <button class="m-tile" data-sec="buildings" onclick="mGoTo('buildings')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🏢</span>
           <span class="m-tile-label">Buildings</span>
           <span class="m-tile-sub">Access codes</span>
         </div>
       </button>
-      <button class="m-tile" onclick="mGoTo('shuls')">
+      <button class="m-tile" data-sec="shuls" onclick="mGoTo('shuls')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🕍</span>
           <span class="m-tile-label">Shuls</span>
           <span class="m-tile-sub">Entrance codes</span>
         </div>
       </button>
-      <button class="m-tile" onclick="mGoTo('shifts')">
+      <button class="m-tile" data-sec="shifts" onclick="mGoTo('shifts')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🌙</span>
           <span class="m-tile-label">Night Shifts</span>
           <span class="m-tile-sub">Unit assignments</span>
         </div>
       </button>
-      <button class="m-tile" onclick="mGoTo('contacts')">
+      <button class="m-tile" data-sec="contacts" onclick="mGoTo('contacts')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">👥</span>
           <span class="m-tile-label">Contacts</span>
           <span class="m-tile-sub">Member directory</span>
         </div>
       </button>
-      <button class="m-tile" id="m-dispatch-tile" onclick="mOpenDispatch()" style="display:none">
+      <button class="m-tile" data-sec="maps" id="m-dispatch-tile" onclick="mOpenDispatch()" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🗺️</span>
           <span class="m-tile-label">Dispatch</span>
           <span class="m-tile-sub">Manage active calls</span>
         </div>
       </button>
-      <a class="m-tile" id="m-protocolai-tile" href="protocols.html" onclick="this.href='protocols.html?v=' + (window.M_BUILD||'') + '&t=' + Date.now()" style="display:none">
+      <a class="m-tile" data-sec="protocols" id="m-protocolai-tile" href="protocols.html" onclick="this.href='protocols.html?v=' + (window.M_BUILD||'') + '&t=' + Date.now()" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">📘</span>
           <span class="m-tile-label">Protocol Search <span style="font-size:0.55rem;background:#f0a500;color:#0a1628;border-radius:3px;padding:1px 4px;vertical-align:2px">BETA</span></span>
           <span class="m-tile-sub">Reference only</span>
         </div>
       </a>
-      <button class="m-tile" id="m-edu-tile" onclick="mGoTo('education')" style="display:none">
+      <button class="m-tile" data-sec="education" id="m-edu-tile" onclick="mGoTo('education')" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🎓</span>
           <span class="m-tile-label">Education</span>
           <span class="m-tile-sub">CME · Classes · Drills</span>
         </div>
       </button>
-      <button class="m-tile" onclick="mGoTo('storage')">
+      <button class="m-tile" data-sec="storage" onclick="mGoTo('storage')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🗄️</span>
           <span class="m-tile-label">Storage Room</span>
           <span class="m-tile-sub">Room code &amp; lock box</span>
         </div>
       </button>
-      <a class="m-tile" href="https://portal.hatzolahmc.org/login.php" target="_blank">
+      <a class="m-tile" data-sec="portal" href="https://portal.hatzolahmc.org/login.php" target="_blank">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🌐</span>
           <span class="m-tile-label">MC Portal</span>
           <span class="m-tile-sub">portal.hatzolahmc.org</span>
         </div>
       </a>
-      <button class="m-tile" onclick="mGoTo('service')">
+      <button class="m-tile" data-sec="service" onclick="mGoTo('service')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🎫</span>
           <span class="m-tile-label">Service Requests</span>
           <span class="m-tile-sub">Submit &amp; track issues</span>
         </div>
       </button>
-      <button class="m-tile" id="m-calllogs-tile" onclick="mGoTo('calllogs')" style="display:none">
+      <button class="m-tile" data-sec="calllogs" id="m-calllogs-tile" onclick="mGoTo('calllogs')" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">📁</span>
           <span class="m-tile-label">Call Logs</span>
           <span class="m-tile-sub">HIPAA-secured records</span>
         </div>
       </button>
-      <a class="m-tile" href="https://chmc.myesched.com/schedule/logon.asp" target="_blank">
+      <a class="m-tile" data-sec="edispatches" href="https://chmc.myesched.com/schedule/logon.asp" target="_blank">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🗓️</span>
           <span class="m-tile-label">eScheduler</span>
           <span class="m-tile-sub">chmc.myesched.com</span>
         </div>
       </a>
-      <a class="m-tile" href="https://njdivert.juvare.com/" target="_blank">
+      <a class="m-tile" data-sec="diverts" href="https://njdivert.juvare.com/" target="_blank">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🏥</span>
           <span class="m-tile-label">Hospital Diverts</span>
@@ -3790,7 +3804,7 @@ function mIs7xxUnit(unit) {
   return !!(m && parseInt(m[1], 10) >= 700 && parseInt(m[1], 10) <= 799);
 }
 function mLoadAllResponders() {
-  db.collection("users").get().then(function(snap) {
+  return db.collection("users").get().then(function(snap) {
     var list = [];
     snap.forEach(function(d) {
       var u = d.data(); if (!u.unit) return;
@@ -4077,7 +4091,7 @@ function mDispView(v) {
   show("m-disp-dash", v === "dash"); show("m-disp-calls-view", v === "calls"); show("m-disp-rigs-view", v === "rigs");
   var sc = document.getElementById("m-dispatch-list-scroll"); if (sc) sc.scrollTop = 0;
   if (desk || v === "rigs" || v === "dash") mRigStatusWatch(); else mRigStatusStop();
-  if (v === "rigs" && typeof mLoadAllResponders === "function" && !(typeof mAllRespondersCache !== "undefined" && mAllRespondersCache && mAllRespondersCache.length)) mLoadAllResponders();   // unit suggestions for "who took it out"
+  if (v === "rigs") rigEnsureRoster(function() { if (mRigOpenForm && mDispViewCur === "rigs") mRenderRigStatus(); });   // unit tiles for "who took it out"
   if (v === "rigs") mRenderRigStatus();
   var rb = document.getElementById("desk-console-rigs"); if (rb) rb.classList.toggle("on", v === "rigs");
 }
@@ -4127,6 +4141,40 @@ function mDashUpdateRigs() {
   var sub = document.getElementById("m-dash-rigs-sub");
   if (sub) sub.textContent = c.in + " available · " + c.busy + " on a call · " + c.out + " out of service";
   ["m-dash-rigs-oos", "desk-rigs-oos"].forEach(function(id) { var b = document.getElementById(id); if (b) { b.textContent = c.out; b.style.display = c.out ? "" : "none"; } });
+}
+// "Who took it out of service?": one tile per unit on the roster (tap to pick), a search box when the
+// roster is long, and "Other…" to type a unit that isn't listed. The picked unit lives in <prefix>-who.
+function rigEnsureRoster(cb) {
+  if (typeof mAllRespondersCache !== "undefined" && mAllRespondersCache && mAllRespondersCache.length) { if (cb) cb(); return; }
+  if (typeof mLoadAllResponders !== "function") return;
+  var pr = mLoadAllResponders(); if (pr && pr.then && cb) pr.then(cb);
+}
+function rigWhoTilesHtml(px) {
+  var units = ((typeof mAllRespondersCache !== "undefined" && mAllRespondersCache) || []).map(function(r) { return r.unit; });
+  var tiles = units.map(function(u) { return '<button type="button" class="m-rig-unit" data-u="' + rigEsc(u) + '" onclick="rigPickWho(this,\'' + px + '\')">' + rigEsc(u) + '</button>'; }).join("") +
+    '<button type="button" class="m-rig-unit other" data-u="" onclick="rigPickWho(this,\'' + px + '\')">Other…</button>';
+  return (units.length > 12 ? '<input type="text" id="' + px + '-who-filter" class="m-rig-who-filter" placeholder="Search unit #" autocomplete="off" oninput="rigWhoFilter(\'' + px + '\')">' : '') +
+    (units.length ? '' : '<div class="m-rig-hist-empty" style="margin-bottom:6px">Loading the unit list… or tap Other… and type the unit.</div>') +
+    '<div class="m-rig-units" id="' + px + '-units">' + tiles + '</div>' +
+    '<input type="text" id="' + px + '-who" class="m-rig-who-other" maxlength="40" autocomplete="off" style="display:none" placeholder="' + rigEsc(orgPh("Type the unit, e.g. MC-23")) + '">';
+}
+function rigPickWho(btn, px) {
+  var box = document.getElementById(px + "-units"), inp = document.getElementById(px + "-who"); if (!box || !inp) return;
+  box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", b === btn); });
+  var u = btn.getAttribute("data-u");
+  if (u) { inp.value = u; inp.style.display = "none"; }
+  else { inp.value = ""; inp.style.display = ""; inp.focus(); }
+}
+// Re-select the tile that matches what's in the box (after the list redraws)
+function rigWhoSync(px) {
+  var box = document.getElementById(px + "-units"), inp = document.getElementById(px + "-who"); if (!box || !inp) return;
+  var v = inp.value, hit = null;
+  box.querySelectorAll(".m-rig-unit").forEach(function(b) { var on = !!v && b.getAttribute("data-u") === v; if (on) hit = b; b.classList.toggle("on", on); });
+  if (!hit && v) { var o = box.querySelector(".m-rig-unit.other"); if (o) o.classList.add("on"); inp.style.display = ""; }
+}
+function rigWhoFilter(px) {
+  var f = ((document.getElementById(px + "-who-filter") || {}).value || "").replace(/\D/g, ""), box = document.getElementById(px + "-units"); if (!box) return;
+  box.querySelectorAll(".m-rig-unit").forEach(function(b) { var u = b.getAttribute("data-u"); b.style.display = !u || !f || u.replace(/\D/g, "").indexOf(f) === 0 ? "" : "none"; });
 }
 // "23" / "mc23" / "MC-23" → "MC-23" (the organization's prefix); anything else is kept as typed
 function rigNormUnit(v) {
@@ -4179,7 +4227,7 @@ function mRenderRigStatus() {
   var keep = null;
   if (mRigOpenForm && document.getElementById("m-rig-form")) {
     var on0 = document.querySelector(".m-rig-dur.on");
-    keep = { who: (document.getElementById("m-rig-who") || {}).value || "", reason: (document.getElementById("m-rig-reason") || {}).value || "", until: (document.getElementById("m-rig-until") || {}).value || "",
+    keep = { filter: (document.getElementById("m-rig-who-filter") || {}).value || "", who: (document.getElementById("m-rig-who") || {}).value || "", reason: (document.getElementById("m-rig-reason") || {}).value || "", until: (document.getElementById("m-rig-until") || {}).value || "",
              dur: on0 ? on0.getAttribute("data-dur") : "", focus: document.activeElement && document.activeElement.id };
   }
   var now = Date.now();
@@ -4206,8 +4254,7 @@ function mRenderRigStatus() {
     var form = "";
     if (mRigOpenForm === v.docId) {
       form = '<div class="m-rig-form" id="m-rig-form">' +
-        '<label class="k" for="m-rig-who">Who took it out of service? (unit #, required)</label><input type="text" id="m-rig-who" maxlength="40" list="m-rig-who-list" autocomplete="off" placeholder="' + rigEsc(orgPh("e.g. MC-23")) + '">' +
-        '<datalist id="m-rig-who-list">' + ((typeof mAllRespondersCache !== "undefined" && mAllRespondersCache) || []).map(function(r) { return '<option value="' + rigEsc(r.unit) + '">'; }).join("") + '</datalist>' +
+        '<label class="k">Who took it out of service? (required)</label>' + rigWhoTilesHtml("m-rig") +
         '<label class="k" for="m-rig-reason">Why is it going out of service? (required)</label><input type="text" id="m-rig-reason" maxlength="120" placeholder="e.g. Maintenance, inspection, out for repair">' +
         '<label class="k">Back in service</label><div class="m-rig-durs">' +
           ['', '1', '4', '8', '24', 'at'].map(function(d) { var lbl = d === '' ? 'Not sure' : d === 'at' ? 'At a time…' : 'In ' + d + ' h';
@@ -4220,13 +4267,14 @@ function mRenderRigStatus() {
     return '<div class="m-rig-card"><div class="m-rig-top"><div class="m-rig-id">' + (v.kind === "erv" ? "🚙 " : "🚑 ") + id + '</div>' + pill + '</div>' +
       (sub ? '<div class="m-rig-sub">' + sub + '</div>' : '') +
       (st.s === "out" ? '<button class="m-rig-btn in" onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
-                      : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();var r=document.getElementById(\'m-rig-who\');if(r)r.focus()">Take out of service…</button>')) +
+                      : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus()">Take out of service…</button>')) +
       rigHistBlock(v.docId, "m-rig-hist-" + v.docId) +
     '</div>';
   }).join("") + '<div style="font-size:0.7rem;color:var(--gray);margin-top:4px;line-height:1.5">Taking a rig out of service or putting it back texts the members, the same as from Admin ▸ Fleet (in Test Mode only you get the text). Your unit number and the reason are recorded in the rig\'s History.</div>';
   if (keep) {
     var r = document.getElementById("m-rig-reason"), u = document.getElementById("m-rig-until"), w = document.getElementById("m-rig-who");
-    if (w) w.value = keep.who;
+    if (w) { w.value = keep.who; rigWhoSync("m-rig"); }
+    var fl = document.getElementById("m-rig-who-filter"); if (fl && keep.filter) { fl.value = keep.filter; rigWhoFilter("m-rig"); }
     if (r) r.value = keep.reason;
     if (u) u.value = keep.until;
     var b = document.querySelector('.m-rig-dur[data-dur="' + keep.dur + '"]'); if (b) mRigPickDur(b);
