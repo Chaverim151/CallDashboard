@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.46"; window.M_BUILD = BUILD;
+  var BUILD = "3.47"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -122,6 +122,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .m-rig-units{display:flex;flex-wrap:wrap;gap:6px;max-height:190px;overflow-y:auto;padding:2px 1px}
 .m-rig-unit{padding:7px 12px;border-radius:999px;border:1px solid var(--card-border);background:rgba(255,255,255,0.05);color:var(--white);font:inherit;font-family:'Oswald',sans-serif;font-size:0.82rem;font-weight:700;letter-spacing:0.03em;cursor:pointer;white-space:nowrap;line-height:1.2}
 .m-rig-unit.on{border-color:var(--gold);background:rgba(var(--gold-rgb),0.22);color:var(--gold)}
+.m-rig-unit.other{font-family:inherit;font-weight:600;color:var(--gray);border-style:dashed}
+.m-rig-unit.other.on{color:var(--gold);border-style:solid}
 .m-rig-who-field{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px;color:var(--white);font:inherit;font-size:0.85rem;margin-bottom:8px}
 .m-disp-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:all 0.15s;}
 .m-disp-card:active{transform:scale(0.98);opacity:0.9;}
@@ -469,7 +471,7 @@ html[data-theme="basic"] #pg-console.test-on #desk-test-btn{background:#fff4d6 !
 html[data-theme="basic"] .m-tile,html[data-theme="basic"] .big-btn{border:1px solid #dcc78f !important;border-radius:16px !important;box-shadow:0 1px 3px rgba(31,35,40,0.08) !important}
 html[data-theme="basic"] .big-btn:hover{border-color:#c9a84c !important;box-shadow:0 6px 16px rgba(31,35,40,0.12) !important}
 html[data-theme="basic"] .m-rig-unit{border-radius:999px !important}
-html[data-theme="basic"] .m-rig-unit.on{background:#e6edf7 !important;border-color:#1d3f72 !important;color:#1d3f72 !important;box-shadow:inset 0 0 0 2px #1d3f72 !important}
+html[data-theme="basic"] .m-rig-unit.other.on,html[data-theme="basic"] .m-rig-unit.on{background:#e6edf7 !important;border-color:#1d3f72 !important;color:#1d3f72 !important;box-shadow:inset 0 0 0 2px #1d3f72 !important}
 html[data-theme="basic"] .m-rig-hist-dot.out{background:#d92d20 !important}
 html[data-theme="basic"] .m-rig-hist-dot.in{background:#1f9d55 !important}
 html[data-theme="basic"] #desk-console-rigs.on{background:#e6edf7 !important;border-color:#1d3f72 !important;color:#1d3f72 !important}
@@ -4160,7 +4162,9 @@ function rigEnsureRoster(cb) {
                               function() { rigRosterState = "error"; if (cb) cb(); });
   else { rigRosterState = "error"; if (cb) cb(); }
 }
+var rigWhoOther = {};   // per form: is "Other…" picked?
 function rigWhoTilesHtml(px) {
+  rigWhoOther[px] = false;
   var units = ((typeof mAllRespondersCache !== "undefined" && mAllRespondersCache) || []).map(function(r) { return r.unit; });
   // If the roster couldn't be loaded, at least offer the person filling in the form
   var me = (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || (typeof currentUserUnit !== "undefined" && currentUserUnit) || "";
@@ -4170,20 +4174,38 @@ function rigWhoTilesHtml(px) {
     '<div class="m-rig-units" id="' + px + '-units">' +
       note + (units.length ? units.map(function(u) { return '<button type="button" class="m-rig-unit" data-u="' + rigEsc(u) + '" onclick="rigPickWho(this,\'' + px + '\')">' + rigEsc(u) + '</button>'; }).join("")
                     : '<span class="m-rig-hist-empty">Loading the roster…</span>') +
-    '</div>';
+      '<button type="button" class="m-rig-unit other" data-u="" onclick="rigPickOther(\'' + px + '\')">Other…</button>' +
+    '</div>' +
+    '<input type="text" id="' + px + '-who-other" class="m-rig-who-field" maxlength="40" autocomplete="off" style="display:none;margin:8px 0 0" oninput="rigOtherInput(\'' + px + '\')" placeholder="' + rigEsc(orgPh("Type who took it out (e.g. MC-23 or a name)")) + '">';
 }
 // Tap a token to pick that unit (tap it again to clear)
 function rigPickWho(btn, px) {
   var inp = document.getElementById(px + "-who"); if (!inp) return;
   var u = btn.getAttribute("data-u");
-  inp.value = inp.value === u ? "" : u;
+  inp.value = (!rigWhoOther[px] && inp.value === u) ? "" : u;
+  rigWhoOther[px] = false;
   rigWhoFilter(px, true);
+}
+// "Other…": type a unit (or name) that isn't a token; tap Other again to close it
+function rigPickOther(px) {
+  var inp = document.getElementById(px + "-who"), f = document.getElementById(px + "-who-other"); if (!inp || !f) return;
+  rigWhoOther[px] = !rigWhoOther[px];
+  inp.value = rigWhoOther[px] ? f.value.trim() : "";
+  rigWhoFilter(px, true);
+  if (rigWhoOther[px]) f.focus();
+}
+function rigOtherInput(px) {
+  var inp = document.getElementById(px + "-who"), f = document.getElementById(px + "-who-other"); if (inp && f) inp.value = f.value.trim();
 }
 // Light the token that matches the picked unit
 function rigWhoFilter(px, keepAll) {
   var inp = document.getElementById(px + "-who"), box = document.getElementById(px + "-units"); if (!inp || !box) return;
-  var v = inp.value;
-  box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", !!v && b.getAttribute("data-u") === v); });
+  var v = inp.value, f = document.getElementById(px + "-who-other");
+  // a value that isn't one of the tokens came from "Other…"
+  if (v && !rigWhoOther[px] && !box.querySelector('.m-rig-unit[data-u="' + v.replace(/"/g, '') + '"]')) rigWhoOther[px] = true;
+  var other = !!rigWhoOther[px];
+  box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", b.classList.contains("other") ? other : (!other && !!v && b.getAttribute("data-u") === v)); });
+  if (f) { f.style.display = other ? "" : "none"; if (other && f.value.trim() !== v) f.value = v; }
 }
 function rigWhoSync(px) { rigWhoFilter(px, true); }
 // "23" / "mc23" / "MC-23" → "MC-23" (the organization's prefix); anything else is kept as typed
@@ -4237,7 +4259,7 @@ function mRenderRigStatus() {
   var keep = null;
   if (mRigOpenForm && document.getElementById("m-rig-form")) {
     var on0 = document.querySelector(".m-rig-dur.on");
-    keep = { who: (document.getElementById("m-rig-who") || {}).value || "", reason: (document.getElementById("m-rig-reason") || {}).value || "", until: (document.getElementById("m-rig-until") || {}).value || "",
+    keep = { other: !!rigWhoOther["m-rig"], who: (document.getElementById("m-rig-who") || {}).value || "", reason: (document.getElementById("m-rig-reason") || {}).value || "", until: (document.getElementById("m-rig-until") || {}).value || "",
              dur: on0 ? on0.getAttribute("data-dur") : "", focus: document.activeElement && document.activeElement.id };
   }
   var now = Date.now();
@@ -4283,7 +4305,7 @@ function mRenderRigStatus() {
   }).join("") + '<div style="font-size:0.7rem;color:var(--gray);margin-top:4px;line-height:1.5">Taking a rig out of service or putting it back texts the members, the same as from Admin ▸ Fleet (in Test Mode only you get the text). Your unit number and the reason are recorded in the rig\'s History.</div>';
   if (keep) {
     var r = document.getElementById("m-rig-reason"), u = document.getElementById("m-rig-until"), w = document.getElementById("m-rig-who");
-    if (w) { w.value = keep.who; rigWhoSync("m-rig"); }
+    if (w) { w.value = keep.who; rigWhoOther["m-rig"] = keep.other; rigWhoFilter("m-rig"); }
     if (r) r.value = keep.reason;
     if (u) u.value = keep.until;
     var b = document.querySelector('.m-rig-dur[data-dur="' + keep.dur + '"]'); if (b) mRigPickDur(b);
