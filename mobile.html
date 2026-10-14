@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.47"; window.M_BUILD = BUILD;
+  var BUILD = "3.49"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -124,6 +124,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .m-rig-unit.on{border-color:var(--gold);background:rgba(var(--gold-rgb),0.22);color:var(--gold)}
 .m-rig-unit.other{font-family:inherit;font-weight:600;color:var(--gray);border-style:dashed}
 .m-rig-unit.other.on{color:var(--gold);border-style:solid}
+.m-rig-who-otherbox{display:flex;align-items:center;gap:6px;margin-top:8px;max-width:220px}
+.m-rig-who-otherbox .m-rig-who-field{margin:0;flex:1;font-family:'Oswald',sans-serif;font-size:1rem;letter-spacing:0.04em}
 .m-rig-who-field{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px;color:var(--white);font:inherit;font-size:0.85rem;margin-bottom:8px}
 .m-disp-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:all 0.15s;}
 .m-disp-card:active{transform:scale(0.98);opacity:0.9;}
@@ -4176,7 +4178,9 @@ function rigWhoTilesHtml(px) {
                     : '<span class="m-rig-hist-empty">Loading the roster…</span>') +
       '<button type="button" class="m-rig-unit other" data-u="" onclick="rigPickOther(\'' + px + '\')">Other…</button>' +
     '</div>' +
-    '<input type="text" id="' + px + '-who-other" class="m-rig-who-field" maxlength="40" autocomplete="off" style="display:none;margin:8px 0 0" oninput="rigOtherInput(\'' + px + '\')" placeholder="' + rigEsc(orgPh("Type who took it out (e.g. MC-23 or a name)")) + '">';
+    '<div class="m-rig-who-otherbox" id="' + px + '-who-otherbox" style="display:none">' +
+      '<input type="text" id="' + px + '-who-other" class="m-rig-who-field" maxlength="12" autocomplete="off" autocapitalize="characters" oninput="rigOtherInput(\'' + px + '\')" placeholder="Other unit #">' +
+    '</div>';
 }
 // Tap a token to pick that unit (tap it again to clear)
 function rigPickWho(btn, px) {
@@ -4194,8 +4198,17 @@ function rigPickOther(px) {
   rigWhoFilter(px, true);
   if (rigWhoOther[px]) f.focus();
 }
+// Other unit number (e.g. another agency's unit): saved exactly as typed — NO organization prefix.
+// Letters, numbers, dashes and spaces only.
 function rigOtherInput(px) {
-  var inp = document.getElementById(px + "-who"), f = document.getElementById(px + "-who-other"); if (inp && f) inp.value = f.value.trim();
+  var inp = document.getElementById(px + "-who"), f = document.getElementById(px + "-who-other"); if (!inp || !f) return;
+  var d = f.value.toUpperCase().replace(/[^A-Z0-9 -]/g, "").slice(0, 12); if (f.value !== d) f.value = d;
+  inp.value = d.trim();
+}
+// The unit to save: a roster token as is, or the Other unit number as typed (never re-prefixed)
+function rigWhoValue(px) {
+  var v = ((document.getElementById(px + "-who") || {}).value || "").trim();
+  return rigWhoOther[px] ? v : rigNormUnit(v);
 }
 // Light the token that matches the picked unit
 function rigWhoFilter(px, keepAll) {
@@ -4205,7 +4218,9 @@ function rigWhoFilter(px, keepAll) {
   if (v && !rigWhoOther[px] && !box.querySelector('.m-rig-unit[data-u="' + v.replace(/"/g, '') + '"]')) rigWhoOther[px] = true;
   var other = !!rigWhoOther[px];
   box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", b.classList.contains("other") ? other : (!other && !!v && b.getAttribute("data-u") === v)); });
-  if (f) { f.style.display = other ? "" : "none"; if (other && f.value.trim() !== v) f.value = v; }
+  var ob = document.getElementById(px + "-who-otherbox");
+  if (ob) ob.style.display = other ? "" : "none";
+  if (f && other && f.value.trim() !== v) f.value = v;
 }
 function rigWhoSync(px) { rigWhoFilter(px, true); }
 // "23" / "mc23" / "MC-23" → "MC-23" (the organization's prefix); anything else is kept as typed
@@ -4317,7 +4332,7 @@ function mRigPickDur(btn) {
   var u = document.getElementById("m-rig-until"); if (u) u.style.display = btn.getAttribute("data-dur") === "at" ? "" : "none";
 }
 function mRigSetOut(docId) {
-  var whoEl = document.getElementById("m-rig-who"), who = rigNormUnit((whoEl || {}).value);
+  var whoEl = document.getElementById("m-rig-who"), who = rigWhoValue("m-rig");
   if (!who) { mToast("Tap the unit that took the vehicle out of service", true); return; }
   var reasonEl = document.getElementById("m-rig-reason");
   var reason = ((reasonEl || {}).value || "").trim().slice(0, 120);
