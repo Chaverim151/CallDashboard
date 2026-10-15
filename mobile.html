@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.81"; window.M_BUILD = BUILD;
+  var BUILD = "3.82"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1583,9 +1583,12 @@ document.addEventListener("DOMContentLoaded", function() {
   if (g) M_DEFAULT_TILES = Array.prototype.map.call(g.querySelectorAll(".m-tile"), function(t) { return t.getAttribute("data-sec"); });
 });
 // Directions in the member's chosen map app (My Settings ▸ Map app)
+// Apple Maps exists only on iPhone, iPad and Mac (iPads report themselves as "Macintosh")
+function hzIsApple() { return /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent || ""); }
 function mDirUrl(lat, lng) {
   var app = ""; try { app = localStorage.getItem("hzMapApp") || ""; } catch (e) {}
   app = mPrefs.mapApp || app;
+  if (app === "apple" && !hzIsApple()) app = "google";   // saved on an iPhone, now on Android / Windows
   if (app === "waze") return "https://waze.com/ul?ll=" + lat + "," + lng + "&navigate=yes";
   if (app === "apple") return "https://maps.apple.com/?daddr=" + lat + "," + lng + "&dirflg=d";
   return "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
@@ -1620,6 +1623,7 @@ function mSettingsRender() {
   var tiles = mSetFlow.tiles || mVisibleTiles(); mSetFlow.tiles = tiles;
   var opts = function(sel) { return tiles.map(function(t) { return '<option value="' + t.k + '"' + (t.k === sel ? " selected" : "") + '>' + mEscHtml(t.label) + '</option>'; }).join(""); };
   var map = mPrefs.mapApp || (function(){ try { return localStorage.getItem("hzMapApp") || "google"; } catch (e) { return "google"; } })();
+  if (map === "apple" && !hzIsApple()) map = "google";
   var pk = typeof mPasskeySupported === "function" && mPasskeySupported();
   var flow = function(kind) {
     var f = mSetFlow[kind] || {};
@@ -1656,7 +1660,7 @@ function mSettingsRender() {
       '<div class="m-set-note">Sends a test notification to your phone and plays the call tone, so you know it works.</div>') +
     mSetCard('🗺️ Map app',
       '<div class="m-set-note" style="margin-top:0">Which app opens when you tap Map or directions.</div>' +
-      [["google", "Google Maps"], ["waze", "Waze"], ["apple", "Apple Maps"]].map(function(o) {
+      [["google", "Google Maps"], ["waze", "Waze"]].concat(hzIsApple() ? [["apple", "Apple Maps"]] : []).map(function(o) {
         return '<label class="m-set-radio"><input type="radio" name="m-set-map" value="' + o[0] + '"' + (map === o[0] ? " checked" : "") + ' onchange="mSetMap(this.value)"> ' + o[1] + '</label>'; }).join("")) +
     mSetCard('🔒 Password' + (pk ? ' &amp; ' + mEscHtml(mBiometricName()) : ''),
       '<div class="m-disp-label">Current password</div><input id="m-set-pw0" class="m-disp-input" type="password" autocomplete="current-password">' +
