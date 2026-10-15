@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.56"; window.M_BUILD = BUILD;
+  var BUILD = "3.58"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -28,7 +28,13 @@
       .then(function (r) { return r.text(); })
       .then(function (txt) {
         var m = txt.match(/var BUILD = "([\d.]+)"/);
-        if (m && m[1] !== BUILD) {
+        // Only move FORWARD, and at most once a minute per version. Right after an upload, GitHub's
+        // servers can answer with the old and new file in turn; reloading on any difference made the
+        // app bounce between versions (screens resetting / jumping back while in use).
+        var newer = function (a, b) { a = a.split(".").map(Number); b = b.split(".").map(Number); for (var i = 0; i < Math.max(a.length, b.length); i++) { var x = a[i] || 0, y = b[i] || 0; if (x !== y) return x > y; } return false; };
+        var tried = 0; try { tried = Number(sessionStorage.getItem("hzReloadTo_" + (m && m[1])) || 0); } catch (e) {}
+        if (m && newer(m[1], BUILD) && Date.now() - tried > 60000) {
+          try { sessionStorage.setItem("hzReloadTo_" + m[1], String(Date.now())); } catch (e) {}
           var p = new URLSearchParams(location.search);
           p.set("v", m[1]); p.set("t", String(Date.now()));
           location.replace(location.pathname + "?" + p.toString() + location.hash);
@@ -111,7 +117,16 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .rs-h{font-size:0.66rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin:2px 0 7px;font-weight:700}
 .rs-req{color:var(--gold);letter-spacing:0.02em;text-transform:none;font-weight:600;margin-left:4px}
 .rs-input{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px;color:var(--white);font:inherit;font-size:0.88rem}
-select.rs-input optgroup,select.rs-input option{background:#16283f;color:#f4f6fa}
+select.rs-input{color-scheme:dark;appearance:auto;-webkit-appearance:auto;cursor:pointer}
+/* every dropdown opens with the phone / computer's own (native) list, dark to match the app */
+select{color-scheme:dark}
+.rs-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;align-items:start}
+.rs-grp{display:flex;flex-direction:column;gap:5px}
+.rs-grp .m-rig-unit{width:100%;padding:9px 6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rs-grp .rs-bag{font-family:inherit;font-weight:600;font-size:0.76rem;padding:7px 6px;border-style:dashed;position:relative}
+.rs-loose{grid-column:1/-1;display:flex;flex-direction:row;flex-wrap:wrap;gap:6px;align-items:center}
+.rs-loose .m-rig-unit{width:auto;padding:7px 10px}
+.rs-grph{width:100%;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);font-weight:700;margin-top:4px}
 .rs-addrow{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
 .rs-qtyl{flex:0 0 112px;font-size:0.62rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.06em;font-weight:700}
 .rs-qtyl span{text-transform:none;letter-spacing:0;font-weight:400}
@@ -124,7 +139,6 @@ select.rs-input optgroup,select.rs-input option{background:#16283f;color:#f4f6fa
 .rs-x{flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,144,144,0.45);background:rgba(224,85,85,0.1);color:#ff9090;font-size:0.9rem;cursor:pointer}
 .rs-note{font-size:0.76rem;color:var(--gray);line-height:1.45}
 .rs-which{color:var(--gray);text-transform:none;letter-spacing:0;font-weight:400}
-.rs-box .m-rig-units{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}
 .m-rig-oos{display:flex;flex-direction:column;gap:3px;margin-top:2px;color:var(--white);font-size:0.78rem}
 .m-rig-oos .k{display:inline-block;min-width:92px;font-size:0.62rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray)}
 .m-rig-histbtn{display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:8px;padding:7px 12px;color:var(--white);font:inherit;font-size:0.76rem;font-weight:600;cursor:pointer}
@@ -497,6 +511,8 @@ html[data-theme="basic"] .m-rig-unit.other.on,html[data-theme="basic"] .m-rig-un
 html[data-theme="basic"] .pai-ok{color:#167a3e !important}
 html[data-theme="basic"] .pai-warnc{color:#8a5a00 !important}
 html[data-theme="basic"] .pai-bad{color:#b42318 !important}
+html[data-theme="basic"] .lvl.on,html[data-theme="basic"] .chips button.on{background:#1d3f72 !important;color:#ffffff !important;border-color:#1d3f72 !important}
+html[data-theme="basic"] select,html[data-theme="basic"] select.rs-input{color-scheme:light !important}
 html[data-theme="basic"] .m-rig-hist-dot.out{background:#d92d20 !important}
 html[data-theme="basic"] .m-rig-hist-dot.in{background:#1f9d55 !important}
 html[data-theme="basic"] #desk-console-rigs.on{background:#e6edf7 !important;border-color:#1d3f72 !important;color:#1d3f72 !important}
@@ -574,7 +590,8 @@ html[data-theme="basic"] .m-rig-form input[type=text],html[data-theme="basic"] .
 html[data-theme="basic"] .m-rig-dur{background:#f8f9fa !important}
 html[data-theme="basic"] .m-rig-dur.on{color:#b42318 !important}
 html[data-theme="basic"] .rs-input{background:#f3f4f6 !important}
-html[data-theme="basic"] select.rs-input optgroup,html[data-theme="basic"] select.rs-input option{background:#f6f7f9 !important;color:#1f2328 !important}
+html[data-theme="basic"] select.rs-input{color-scheme:light !important}
+html[data-theme="basic"] select{color-scheme:light !important}
 html[data-theme="basic"] .rs-row{background:#f8f9fa !important}
 html[data-theme="basic"] .rs-x{color:#b42318 !important}
 html[data-theme="basic"] .m-rig-histbtn{background:#f8f9fa !important}
@@ -4807,7 +4824,7 @@ function rsLoadRigs() {
   if (rsRigs) return Promise.resolve(rsRigs);
   return db.collection("vehicles").get().then(function(snap) {
     var list = [], order = { rig: 0, erv: 1, jumpbag: 2 };
-    snap.forEach(function(d) { var v = d.data(), id = v.id || d.id, k = rsKind(v, id); if (k) list.push({ id: id, kind: k }); });
+    snap.forEach(function(d) { var v = d.data(), id = v.id || d.id, k = rsKind(v, id); if (k) list.push({ id: id, kind: k, on: v.assignedTo || "" }); });
     list.sort(function(a, b) { return (order[a.kind] - order[b.kind]) || String(a.id).localeCompare(String(b.id), undefined, { numeric: true }); });
     rsRigs = list; return list;
   }).catch(function() { rsRigs = []; return rsRigs; });
@@ -4830,9 +4847,25 @@ function rsInit(px, hostId) {
 var RS_ICON = { rig: "🚑 ", erv: "🚙 ", jumpbag: "🎒 " };
 function rsFormHtml(px) {
   var st = RS_STATE[px];
-  var rigs = (rsRigs || []).map(function(r) { return '<button type="button" class="m-rig-unit' + (st.rig === r.id ? ' on' : '') + '" data-u="' + rigEsc(r.id) + '" onclick="rsPickRig(\'' + px + '\',this)">' + RS_ICON[r.kind] + rigEsc(r.id) + '</button>'; }).join("");
+  var tok = function(r, label, cls) { return '<button type="button" class="m-rig-unit' + (cls || '') + (st.rig === r.id ? ' on' : '') + '" data-u="' + rigEsc(r.id) + '" title="' + rigEsc(r.id) + '" onclick="rsPickRig(\'' + px + '\',this)">' + label + '</button>'; };
+  // Each rig / ERV with the jump bag(s) assigned to it (Admin ▸ Fleet) lined up underneath; other bags last
+  var all = rsRigs || [], cars = all.filter(function(r) { return r.kind !== "jumpbag"; }), bags = all.filter(function(r) { return r.kind === "jumpbag"; });
+  var carOf = function(b) {
+    if (b.on && cars.some(function(c) { return c.id === b.on; })) return b.on;
+    var hit = cars.filter(function(c) { return b.id.toUpperCase().indexOf(String(c.id).toUpperCase()) === 0; }).sort(function(x, y) { return String(y.id).length - String(x.id).length; })[0];
+    return hit ? hit.id : "";
+  };
+  var bagLabel = function(b, car) { var rest = car && b.id.toUpperCase().indexOf(car.toUpperCase()) === 0 ? b.id.slice(car.length).replace(/^[\s\-–:]+/, "") : b.id; return "🎒 " + rigEsc(rest || "Jump bag"); };
+  var used = {};
+  var rigs = cars.map(function(c) {
+    var mine = bags.filter(function(b) { return carOf(b) === c.id; });
+    mine.forEach(function(b) { used[b.id] = 1; });
+    return '<div class="rs-grp">' + tok(c, RS_ICON[c.kind] + rigEsc(c.id)) + mine.map(function(b) { return tok(b, bagLabel(b, c.id), ' rs-bag'); }).join("") + '</div>';
+  }).join("");
+  var loose = bags.filter(function(b) { return !used[b.id]; });
+  if (loose.length) rigs += '<div class="rs-grp rs-loose"><div class="rs-grph">Jump bags not on a vehicle</div>' + loose.map(function(b) { return tok(b, "🎒 " + rigEsc(b.id), ' rs-bag'); }).join("") + '</div>';
   return '<div class="rs-h">Which rig, ERV or jump bag? <span class="rs-req">required</span></div>' +
-    (rigs ? '<div class="m-rig-units" id="' + px + '-rs-rigs">' + rigs + '</div>' : '<div class="rs-note">No rigs found — an admin adds them in Admin ▸ Fleet.</div>') +
+    (rigs ? '<div class="rs-groups" id="' + px + '-rs-rigs">' + rigs + '</div>' : '<div class="rs-note">No rigs found — an admin adds them in Admin ▸ Fleet.</div>') +
     '<div class="rs-h" style="margin-top:14px">What\'s missing or running low? <span class="rs-req">add at least one</span> <span class="rs-which" id="' + px + '-rs-which"></span></div>' +
     '<div id="' + px + '-rs-picker"></div>' +
     '<div id="' + px + '-rs-list" class="rs-list"></div>';
