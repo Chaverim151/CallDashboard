@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.83"; window.M_BUILD = BUILD;
+  var BUILD = "3.84"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -64,6 +64,10 @@
 .m-set-in{flex:1;min-width:0;padding:7px 10px;margin:0}
 .m-set-mini{flex:0 0 auto;background:rgba(var(--gold-rgb),0.12);border:1px solid rgba(var(--gold-rgb),0.45);color:var(--gold);border-radius:7px;font-size:0.75rem;font-weight:700;padding:6px 10px;cursor:pointer}
 .m-set-note{font-size:0.72rem;color:var(--gray);margin-top:6px;line-height:1.35}
+.m-set-prev{display:grid;gap:4px;max-width:200px;margin:0 auto 10px;padding:6px;border:1px solid var(--card-border);border-radius:10px}
+.m-set-pcell{position:relative;height:30px;border:1px solid var(--card-border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}
+.m-set-pcell b{font-family:'Oswald',sans-serif;font-size:0.95rem;line-height:1;color:var(--gold)}
+.m-set-pcell span{font-size:0.5rem;color:var(--gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92%;margin-top:2px}
 .m-set-slots{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .m-set-slot{display:flex;align-items:center;gap:5px;min-width:0}.m-set-slot select{flex:1;min-width:0;margin:0;padding:7px 6px;font-size:0.8rem}
 .m-set-num{flex:0 0 20px;height:20px;border-radius:50%;background:rgba(var(--gold-rgb),0.18);border:1px solid rgba(var(--gold-rgb),0.5);color:var(--gold);font-weight:700;font-size:0.68rem;display:inline-flex;align-items:center;justify-content:center}
@@ -1660,6 +1664,7 @@ function mSettingsRender() {
       '<div class="m-set-seg">' + [["google", "Google"], ["waze", "Waze"]].concat(hzIsApple() ? [["apple", "Apple"]] : []).map(function(o) {
         return '<label' + (map === o[0] ? ' class="on"' : '') + '><input type="radio" name="m-set-map" value="' + o[0] + '"' + (map === o[0] ? " checked" : "") + ' onchange="mSetMap(this.value)">' + o[1] + '</label>'; }).join("") + '</div>') +
     mSetCard('🔢 Home screen order',
+      mSetPreview(tiles) +
       '<div class="m-set-slots">' + tiles.map(function(t, i) { return '<div class="m-set-slot"><span class="m-set-num">' + (i + 1) + '</span><select class="m-disp-input" onchange="mSetSlot(' + i + ',this.value)">' + opts(t.k) + '</select></div>'; }).join("") + '</div>' +
       '<div class="m-set-row2"><button class="m-disp-btn m-set-btn primary" onclick="mSetSaveTiles()">💾 Save</button><button class="m-disp-btn m-set-btn" onclick="mSetDefaultTiles()">↺ Default</button></div>' +
       '<div class="m-set-note">Picking a tile that\'s already in another spot swaps the two.</div>') +
@@ -1675,6 +1680,13 @@ function mSettingsRender() {
               '<div class="m-set-row2"><button class="m-disp-btn m-set-btn primary" onclick="mSetChangePw()">Change password</button><button class="m-disp-btn m-set-btn" onclick="mSetFlow.pw=null;mSettingsRender()">Cancel</button></div>'
             : '<div class="m-set-row2"><button class="m-disp-btn m-set-btn primary" onclick="mSetFaceOn()">Turn on ' + mEscHtml(face) + '</button><button class="m-disp-btn m-set-btn" onclick="mSetFlow.pw=null;mSettingsRender()">Cancel</button></div>')));
   if (pwOpen) { var f0 = document.getElementById("m-set-pw0"); if (f0) f0.focus(); }
+}
+// Mini copy of the home screen: same columns, numbered in the order being picked below
+function mSetPreview(tiles) {
+  var g = document.getElementById("m-home-grid"), cols = 2;
+  try { cols = Math.max(1, getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length); } catch (e) {}
+  return '<div class="m-set-prev" style="grid-template-columns:repeat(' + cols + ',1fr)">' + tiles.map(function(t, i) {
+    return '<div class="m-set-pcell"><b>' + (i + 1) + '</b><span>' + mEscHtml(t.label) + '</span></div>'; }).join("") + '</div>';
 }
 function mSetSlot(i, k) {
   var t = mSetFlow.tiles, j = t.findIndex(function(x) { return x.k === k; });

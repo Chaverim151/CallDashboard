@@ -374,8 +374,13 @@ select{color-scheme:dark}
 .set-input{width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;padding:8px 11px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:0.9rem;outline:none;}
 .set-input:focus{border-color:var(--gold);}
 select.set-input option{color:#000;}
-.set-slots{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px 10px;}
-@media(max-width:1100px){.set-slots{grid-template-columns:repeat(3,minmax(0,1fr));}}
+.set-order{display:flex;gap:16px;align-items:flex-start;}
+.set-prev{display:grid;gap:4px;flex:0 0 200px;padding:6px;border:1px solid var(--card-border);border-radius:10px;}
+.set-pcell{height:40px;border:1px solid var(--card-border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;}
+.set-pcell b{font-family:'Oswald',sans-serif;font-size:1rem;line-height:1;color:var(--gold);}
+.set-pcell span{font-size:0.55rem;color:var(--gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92%;margin-top:2px;}
+.set-slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;}
+@media(max-width:1100px){.set-slots{grid-template-columns:repeat(2,minmax(0,1fr));}}
 .set-slot{display:flex;align-items:center;gap:6px;min-width:0;}.set-slot select{flex:1;min-width:0;padding:6px 8px;font-size:0.84rem;}
 .set-num{flex:0 0 22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;background:rgba(var(--gold-rgb),0.15);border:1px solid rgba(var(--gold-rgb),0.4);color:var(--gold);}
 .set-row{display:flex;gap:6px;margin-top:8px;align-items:center;}
@@ -1973,7 +1978,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.92</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.93</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -6398,10 +6403,17 @@ function setRender() {
           '<div class="set-row"><button class="set-btn primary" style="flex:1" onclick="setChangePw()">Change password</button><button class="set-btn" onclick="setFlow.pw=null;setRender()">Cancel</button></div>'));
   el.innerHTML = C(cInfo, cMap) + C(cContact) + C(cAlerts, cPw) +
     setCard('🔢 Home screen order <span class="set-sub" style="text-transform:none;letter-spacing:0">on this computer</span>',
-      '<div class="set-slots">' + tiles.map(function(t, i) { return '<div class="set-slot"><span class="set-num">' + (i + 1) + '</span><select class="set-input" onchange="setSlot(' + i + ',this.value)">' + opts(t.k) + '</select></div>'; }).join("") + '</div>' +
+      '<div class="set-order">' + setPreview(tiles) + '<div style="flex:1;min-width:0"><div class="set-slots">' + tiles.map(function(t, i) { return '<div class="set-slot"><span class="set-num">' + (i + 1) + '</span><select class="set-input" onchange="setSlot(' + i + ',this.value)">' + opts(t.k) + '</select></div>'; }).join("") + '</div>' +
       '<div class="set-row"><button class="set-btn primary" onclick="setSaveTiles()">💾 Save</button><button class="set-btn" onclick="setDefaultTiles()">↺ Default</button>' +
-      '<span class="set-note" style="margin:0 0 0 6px">Picking a tile that\'s already in another spot swaps the two.</span></div>', "wide");
+      '<span class="set-note" style="margin:0 0 0 6px">Picking a tile that\'s already in another spot swaps the two.</span></div></div></div>', "wide");
   if (setFlow.pw) { var f0 = document.getElementById("set-pw0"); if (f0) f0.focus(); }
+}
+// Mini copy of the home screen: same columns, numbered in the order being picked
+function setPreview(tiles) {
+  var g = document.getElementById("home-btn-grid"), cols = 2;
+  try { cols = Math.max(1, getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length); } catch (e) {}
+  return '<div class="set-prev" style="grid-template-columns:repeat(' + cols + ',1fr)">' + tiles.map(function(t, i) {
+    return '<div class="set-pcell"><b>' + (i + 1) + '</b><span>' + orgEsc(t.label) + '</span></div>'; }).join("") + '</div>';
 }
 function setSlot(i, k) {
   var t = setFlow.tiles, j = t.findIndex(function(x) { return x.k === k; });
@@ -16513,7 +16525,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.92";
+var DESKTOP_VERSION = "10.93";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
