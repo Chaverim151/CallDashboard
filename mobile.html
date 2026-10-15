@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.70"; window.M_BUILD = BUILD;
+  var BUILD = "3.71"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4883,13 +4883,25 @@ function rsListFor(px) {
   return { key: key, sections: rsLists[key] || [] };
 }
 // The storage room stocks everything: both checklists, each item once (rig sections first)
+// One key for the same item worded differently on the two checklists ("N-95 Masks" / "N95", "Gloves - M" /
+// "Gloves - Medium", "Cold Packs" / "Ice Pack", both regular O2 tanks …) — the storage room lists it once
+function rsSameKey(n) {
+  var k = " " + rsNorm(n).split(" ").map(function(w) {
+    w = { lg: "large", l: "large", m: "medium", inch: "" }[w] !== undefined ? { lg: "large", l: "large", m: "medium", inch: "" }[w] : w;
+    return w.length > 3 && /[^s]s$/.test(w) ? w.slice(0, -1) : w;            // plurals: masks → mask
+  }).filter(Boolean).join(" ") + " ";
+  k = k.replace(/ n 95 /g, " n95 ").replace(/ c pap /g, " cpap ").replace(/ cold pack /g, " ice pack ")
+       .replace(/ n95 mask /g, " n95 ").replace(/ chest seal .*/, " chest seal ").replace(/ o2 tank regular .*/, " o2 tank regular ");
+  return k.trim();
+}
 function rsStorageSections() {
   var seen = {}, out = [];
   (rsLists.rig || []).concat(rsLists.jumpbag || []).forEach(function(sec) {
-    var items = (sec.items || []).filter(function(it) { var k = rsNorm(it.n); if (seen[k]) return false; seen[k] = 1; return true; }).map(function(it) { return { n: it.n, par: "" }; });
+    var items = (sec.items || []).filter(function(it) { var k = rsSameKey(it.n); if (seen[k]) return false; seen[k] = 1; return true; }).map(function(it) { return { n: it.n, par: "" }; });
     if (!items.length) return;
-    var same = out.filter(function(o) { return o.name === sec.name; })[0];
-    if (same) same.items = same.items.concat(items); else out.push({ name: sec.name, items: items });
+    var name = sec.name === "Jump Bag" ? "Jump Bag Items" : sec.name;
+    var same = out.filter(function(o) { return o.name === name; })[0];
+    if (same) same.items = same.items.concat(items); else out.push({ name: name, items: items });
   });
   return out;
 }
