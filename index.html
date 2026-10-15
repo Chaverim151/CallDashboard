@@ -29,7 +29,7 @@ if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && window.innerWidth <
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
 .hz-tagmir{position:absolute;z-index:0;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;word-wrap:break-word;pointer-events:none;margin:0}
-.hz-taglink{color:var(--gold);background:rgba(var(--gold-rgb),0.18);border-radius:999px;box-shadow:0 0 0 2px rgba(var(--gold-rgb),0.18),0 0 0 3px rgba(var(--gold-rgb),0.6);-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.hz-taglink{color:var(--gold);background:rgba(var(--gold-rgb),0.16);border-radius:999px;padding:1px 4px;margin:0 -4px;box-shadow:inset 0 0 0 1px rgba(var(--gold-rgb),0.6);-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .hz-tag{display:inline-block;padding:0 7px 1px;margin:0 1px;border-radius:999px;background:rgba(var(--gold-rgb),0.18);border:1px solid rgba(var(--gold-rgb),0.6);color:var(--gold);font-weight:700;line-height:1.45;white-space:nowrap}
 .hz-tag.me{background:var(--gold);color:var(--navy);border-color:var(--gold);box-shadow:0 0 0 2px rgba(var(--gold-rgb),0.25)}
 .hz-tagged{display:inline-block;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 8px;border-radius:5px;background:var(--gold);color:var(--navy);border:1px solid var(--gold)}
@@ -1938,7 +1938,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.86</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.88</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -16237,7 +16237,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.86";
+var DESKTOP_VERSION = "10.88";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -20602,7 +20602,8 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Divert: change response mode only while the unit is still on its way — a scene unit en route can
   // divert to base for the rig; a rig unit can divert direct to scene only while still heading to base.
   // Once a unit is onboard / the rig is responding, they're on the ambulance — no divert.
-  var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) || (det.response === "rig" && status === "picking_up_ambo");
+  var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) || (det.response === "rig" && status === "picking_up_ambo")
+    || (det.response === "rig" && status === "ambo_responding" && call.zone !== "secondary");   // Standard call: rig unit still on its way (one-step response)
   if (canDivert) {
     var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
     if (det.response !== "rig") {                      // diverting TO a rig needs a rig to exist
@@ -20629,7 +20630,8 @@ function mDivertResponse(crewIdx, role, unit) {
     var now = mNowHHMM();
     var update = { updatedAt: new Date().toISOString() };
     update["unitDetails." + mUdKey(crewIdx, role) + ".response"] = toRig ? "rig" : "scene";
-    update["unitDetails." + mUdKey(crewIdx, role) + ".status"] = toRig ? "picking_up_ambo" : "enroute_scene";
+    var oneStepD = toRig && call.zone !== "secondary" && !!mCrewOf(call, crewIdx).rig;   // Standard call: straight to responding with the rig
+    update["unitDetails." + mUdKey(crewIdx, role) + ".status"] = toRig ? (oneStepD ? "ambo_responding" : "picking_up_ambo") : "enroute_scene";
     update["unitDetails." + mUdKey(crewIdx, role) + ".statusAt"] = now;
     var notes = call.callNotes || [];
     notes.push({ text: unit + " diverted — now " + (toRig ? "responding to the rig" : "responding direct to scene"), time: now, by: mCurrentUserUnit || "Dispatch" });
@@ -20932,6 +20934,13 @@ function mDoAssign(unitId) {
           if (det.response === "rig" && ["", "picking_up_ambo", "onboard_rig"].indexOf(det.status || "") !== -1)
             ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
         });
+      } else if (call.zone !== "secondary") {
+        // Standard call: a unit already sent to the rig now responds with it — one step, no separate "Responding to Scene"
+        Object.keys(crews[crewIdx] || {}).forEach(function(k) {
+          if (k === "rig" || !crews[crewIdx][k] || crews[crewIdx][k] === "__added__") return;
+          var key = mUdKey(crewIdx, k), det = ud[key] || {};
+          if (det.response === "rig" && det.status === "picking_up_ambo") ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
+        });
       }
       return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("Rig " + unitId + " selected for Crew " + (crewIdx+1) + (divert ? " — diverting from " + divert.address + ", responding to scene" : ""), "🚑", "#ffc84a", "assign")) });
     } else {
@@ -21075,7 +21084,8 @@ function mAddRigWithUnit(unitId) {
       var ud = call.unitDetails || {};
       // A diverting rig already has its crew aboard — it responds to the scene, it doesn't head to base
       var divert = res.rig ? mRigFreeingMap[res.rig] : null;
-      ud[idx + "_rigUnit"] = { response: "rig", status: divert ? "ambo_responding" : "picking_up_ambo", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
+      // Standard call: the unit and the rig respond as one step (see mSetUnitResponse)
+      ud[idx + "_rigUnit"] = { response: "rig", status: (divert || (call.zone !== "secondary" && res.rig)) ? "ambo_responding" : "picking_up_ambo", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
       var assigned = (call.assignedUnits || []).slice(); if (assigned.indexOf(unitId) === -1) assigned.push(unitId);
       mTextAssignedUnit(unitId, call);
       return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assigned, updatedAt: new Date().toISOString(),
@@ -21114,13 +21124,17 @@ function mTextRigDirections(unitId, call) {
 }
 function mSetUnitResponse(crewIdx, role, response) {
   var callId = mDispSelectedCallId;
-  var initialStatus = response === "scene" ? "enroute_scene" : "picking_up_ambo";
+  var callR0 = mDispCallCache[mDispSelectedCallId] || {}, crewR0 = mCrewOf(callR0, crewIdx);
+  // Standard call with the rig known: heading to the rig and the rig responding are ONE step (no separate
+  // "Responding to Rig" → "Mark rig Responding to Scene"). Load-a-Rig keeps the gather-and-board steps.
+  var oneStep = response === "rig" && callR0.zone !== "secondary" && !!crewR0.rig;
+  var initialStatus = response === "scene" ? "enroute_scene" : (oneStep ? "ambo_responding" : "picking_up_ambo");
   var key = "unitDetails." + mUdKey(crewIdx, role);
   var update = {};
   update[key + ".response"] = response;
   update[key + ".status"] = initialStatus;
   var crewR = mCrewOf(mDispCallCache[mDispSelectedCallId]||{}, crewIdx); var unitR = crewR[role] || role;
-  update.callEvents = mEvtUnion(mEvt(unitR + (response === "rig" ? " — Responding to Rig" : " — En Route to Scene"), response === "rig" ? "🏠" : "🏃", response === "rig" ? "#ffc84a" : "#7ab8f5", "status"));
+  update.callEvents = mEvtUnion(mEvt(unitR + (response === "rig" ? (oneStep ? " — Responding with " + crewR0.rig : " — Responding to Rig") : " — En Route to Scene"), response === "rig" ? "🏠" : "🏃", response === "rig" ? "#ffc84a" : "#7ab8f5", "status"));
   update[key + ".statusAt"] = mNowHHMM();
   update.updatedAt = new Date().toISOString();
   db.collection("activeCalls").doc(callId).update(update).then(function() {
