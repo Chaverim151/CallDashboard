@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.71"; window.M_BUILD = BUILD;
+  var BUILD = "3.72"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1865,8 +1865,16 @@ function mShortAddress(raw) {
   var parts = rest.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); });
   return (poi ? poi + " — " : "") + parts.slice(0, 2).join(", ");
 }
+// Call cards: dispatchers / captains / chiefs / admins see every call; everyone else only the calls their
+// unit is assigned to (same people who get the texts)
+function mCallCardVisible(call) {
+  if (mCanDispatch()) return true;
+  var me = mCurrentUserUnit; if (!me) return false;
+  if ((call.assignedUnits || []).indexOf(me) !== -1) return true;
+  return (call.crews || []).some(function(cr) { return Object.keys(cr || {}).some(function(k) { return k !== "rig" && cr[k] === me; }); });
+}
 function mRenderCalls(calls) {
-  calls = (calls || []).filter(function(c){ return !c.status || c.status === "active"; }).map(mSanitizeCall);
+  calls = (calls || []).filter(function(c){ return (!c.status || c.status === "active") && mCallCardVisible(c); }).map(mSanitizeCall);
   var section = document.getElementById("m-calls-section");
   var list = document.getElementById("m-calls-list");
   var count = document.getElementById("m-calls-count");
