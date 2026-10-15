@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.66"; window.M_BUILD = BUILD;
+  var BUILD = "3.69"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -125,7 +125,6 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .rs-h{font-size:0.66rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin:2px 0 7px;font-weight:700}
 .rs-req{color:var(--gold);letter-spacing:0.02em;text-transform:none;font-weight:600;margin-left:4px}
 .rs-input{width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:10px;color:var(--white);font:inherit;font-size:0.88rem}
-select.rs-input{color-scheme:dark;appearance:auto;-webkit-appearance:auto;cursor:pointer}
 /* every dropdown opens with the phone / computer's own (native) list, dark to match the app */
 select{color-scheme:dark}
 .rs-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;align-items:start}
@@ -149,6 +148,18 @@ select{color-scheme:dark}
 .rs-qtytag{color:var(--gold);font-weight:700}
 .rs-x{flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,144,144,0.45);background:rgba(224,85,85,0.1);color:#ff9090;font-size:0.9rem;cursor:pointer}
 .rs-note{font-size:0.76rem;color:var(--gray);line-height:1.45}
+.rs-combo{position:relative}
+.rs-q{-webkit-appearance:none;appearance:none;padding-right:34px;cursor:pointer}
+.rs-q::-webkit-search-cancel-button{display:none}
+.rs-caret{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--gray);pointer-events:none;font-size:0.9rem}
+.rs-dd{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;max-height:280px;overflow-y:auto;background:var(--navy-mid);border:1px solid rgba(var(--gold-rgb),0.45);border-radius:10px;box-shadow:0 10px 26px rgba(0,0,0,0.45);padding:4px 0;-webkit-overflow-scrolling:touch}
+.rs-dd-h{position:sticky;top:-4px;background:var(--navy-mid);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);font-weight:700;padding:8px 12px 4px;border-top:1px solid var(--card-border)}
+.rs-dd-h:first-child{border-top:none}
+.rs-dd-i{padding:10px 12px;font-size:0.88rem;color:var(--white);cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.rs-dd-i:hover,.rs-dd-i:active{background:rgba(var(--gold-rgb),0.14)}
+.rs-dd-par{font-size:0.7rem;color:var(--gray);white-space:nowrap;flex-shrink:0}
+.rs-dd-none{padding:10px 12px;font-size:0.8rem;color:var(--gray)}
+.rs-dd-other{color:var(--gold);font-weight:600;border-top:1px solid var(--card-border)}
 .rs-which{color:var(--gray);text-transform:none;letter-spacing:0;font-weight:400}
 .m-rig-oos{display:flex;flex-direction:column;gap:3px;margin-top:2px;color:var(--white);font-size:0.78rem}
 .m-rig-oos .k{display:inline-block;min-width:92px;font-size:0.62rem;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray)}
@@ -601,10 +612,10 @@ html[data-theme="basic"] .m-rig-form input[type=text],html[data-theme="basic"] .
 html[data-theme="basic"] .m-rig-dur{background:#f8f9fa !important}
 html[data-theme="basic"] .m-rig-dur.on{color:#b42318 !important}
 html[data-theme="basic"] .rs-input{background:#f3f4f6 !important}
-html[data-theme="basic"] select.rs-input{color-scheme:light !important}
 html[data-theme="basic"] select{color-scheme:light !important}
 html[data-theme="basic"] .rs-row{background:#f8f9fa !important}
 html[data-theme="basic"] .rs-x{color:#b42318 !important}
+html[data-theme="basic"] .rs-dd{box-shadow:0 1px 3px rgba(0,0,0,0.12) !important}
 html[data-theme="basic"] .m-rig-histbtn{background:#f8f9fa !important}
 html[data-theme="basic"] .m-rig-callbtn{color:#8a5a00 !important}
 html[data-theme="basic"] .m-rig-hist{background:#f8f9fa !important}
@@ -4760,12 +4771,13 @@ function mTkVehicleChanged() { mTkLocation = document.getElementById("m-tk-vehic
 function mTkLoadVehicles() {
   var sel = document.getElementById("m-tk-vehicle");
   db.collection("vehicles").get().then(function(snap) {
-    var all = []; snap.forEach(function(d) { var v = d.data(); if (v.id || d.id) all.push({ id: v.id || d.id, type: v.type || "", desc: v.description || "" }); });
+    // A service request names a general location — the vehicle itself, never its contents (jump bags, storage bins)
+    var all = []; snap.forEach(function(d) { var v = d.data(), id = v.id || d.id, k = id ? mRigKind(v, id) : ""; if (k) all.push({ id: id, type: k === "erv" ? "erv" : "vehicle", desc: v.description || "" }); });
     all.sort(function(a, b) { return a.id.localeCompare(b.id, undefined, { numeric: true }); });
-    var groups = [["vehicle", "🚑 Ambulances"], ["erv", "🚗 ERVs"], ["jumpbag", "🎒 Jump Bags"], ["storage", "📦 Storage"], ["other", "📋 Other"]];
+    var groups = [["vehicle", "🚑 Ambulances"], ["erv", "🚙 ERVs"]];
     var html = '<option value="">Select vehicle…</option>';
     groups.forEach(function(g) {
-      var items = all.filter(function(v) { return (v.type || "other") === g[0]; });
+      var items = all.filter(function(v) { return v.type === g[0]; });
       if (!items.length) return;
       html += '<optgroup label="' + g[1] + '">' + items.map(function(v) { return '<option value="' + v.id.replace(/"/g,"&quot;") + '">' + v.id + (v.desc ? " — " + v.desc : "") + '</option>'; }).join("") + '</optgroup>';
     });
@@ -4866,8 +4878,20 @@ var RS_ICON = { rig: "🚑 ", erv: "🚙 ", jumpbag: "🎒 " };
 function rsListFor(px) {
   var st = RS_STATE[px];
   if (!st || !st.rig || !st.kind || !rsLists) return null;
-  var key = st.kind === "jumpbag" ? "jumpbag" : st.kind === "erv" ? rsLists.ervUses : "rig";
+  if (st.kind === "storage") return { key: "storage", sections: rsStorageSections() };
+  var key = st.kind === "jumpbag" ? "jumpbag" : "rig";
   return { key: key, sections: rsLists[key] || [] };
+}
+// The storage room stocks everything: both checklists, each item once (rig sections first)
+function rsStorageSections() {
+  var seen = {}, out = [];
+  (rsLists.rig || []).concat(rsLists.jumpbag || []).forEach(function(sec) {
+    var items = (sec.items || []).filter(function(it) { var k = rsNorm(it.n); if (seen[k]) return false; seen[k] = 1; return true; }).map(function(it) { return { n: it.n, par: "" }; });
+    if (!items.length) return;
+    var same = out.filter(function(o) { return o.name === sec.name; })[0];
+    if (same) same.items = same.items.concat(items); else out.push({ name: sec.name, items: items });
+  });
+  return out;
 }
 // Jump bags that belong to a rig / ERV: assigned to it in Admin ▸ Fleet, or named after it ("ERV-1 Jump Bag")
 function rsCars() { return (rsRigs || []).filter(function(r) { return r.kind !== "jumpbag"; }); }
@@ -4879,12 +4903,14 @@ function rsBagCar(b) {
 }
 function rsBagsOf(carId) { return (rsRigs || []).filter(function(r) { return r.kind === "jumpbag" && rsBagCar(r) === carId; }); }
 // Flow: 1) tap the rig / ERV  2) the vehicle itself or its jump bag  3) items from that checklist
+var RS_STORAGE = "Storage Room";
 function rsFormHtml(px) {
   var st = RS_STATE[px], cars = rsCars();
   var loose = (rsRigs || []).filter(function(r) { return r.kind === "jumpbag" && !rsBagCar(r); });
   var carTok = function(c) { return '<button type="button" class="m-rig-unit' + (st.car === c.id ? ' on' : '') + '" data-u="' + rigEsc(c.id) + '" onclick="rsPickCar(\'' + px + '\',this)">' + RS_ICON[c.kind] + rigEsc(c.id) + '</button>'; };
-  var html = '<div class="rs-h">1 · Which rig or ERV? <span class="rs-req">required</span></div>' +
-    (cars.length ? '<div class="m-rig-units rs-cars" id="' + px + '-rs-rigs">' + cars.map(carTok).join("") + '</div>' : '<div class="rs-note">No rigs found — an admin adds them in Admin ▸ Fleet.</div>');
+  var html = '<div class="rs-h">1 · Which ambulance, ERV or the storage room? <span class="rs-req">required</span></div>' +
+    '<div class="m-rig-units rs-cars" id="' + px + '-rs-rigs">' + cars.map(carTok).join("") +
+      '<button type="button" class="m-rig-unit rs-storage' + (st.car === RS_STORAGE ? ' on' : '') + '" data-u="' + RS_STORAGE + '" onclick="rsPickCar(\'' + px + '\',this)">📦 Storage Room</button></div>';
   if (loose.length) html += '<div class="rs-grph">Or a jump bag that isn\'t on a vehicle</div><div class="rs-loose" id="' + px + '-rs-loose">' + loose.map(function(b) {
     return '<button type="button" class="m-rig-unit rs-bag' + (!st.car && st.rig === b.id ? ' on' : '') + '" data-u="' + rigEsc(b.id) + '" onclick="rsPickLoose(\'' + px + '\',this)">🎒 ' + rigEsc(b.id) + '</button>'; }).join("") + '</div>';
   return html +
@@ -4900,10 +4926,12 @@ function rsDrawWhat(px) {
   if (!car) { host.innerHTML = ""; return; }
   var bags = rsBagsOf(car.id);
   if (!bags.length) bags = [{ id: car.id + " Jump Bag", kind: "jumpbag", virtual: true }];
+  var bagName = function(b) { var rest = b.id.toUpperCase().indexOf(car.id.toUpperCase()) === 0 ? b.id.slice(car.id.length).replace(/^[\s\-–:]+/, "") : b.id; return bags.length > 1 ? (rest || b.id) : "Jump bag"; };
   var opt = function(id, kind, label) { return '<button type="button" class="m-rig-unit rs-what' + (st.rig === id ? ' on' : '') + '" data-u="' + rigEsc(id) + '" data-k="' + kind + '" onclick="rsPickWhat(\'' + px + '\',this)">' + label + '</button>'; };
-  host.innerHTML = '<div class="rs-h" style="margin-top:14px">2 · Restock what on ' + rigEsc(car.id) + '? <span class="rs-req">required</span></div>' +
-    '<div class="rs-whats">' + opt(car.id, car.kind, RS_ICON[car.kind] + 'The ' + (car.kind === "erv" ? "ERV" : "rig") + ' itself') +
-    bags.map(function(b) { var rest = b.id.toUpperCase().indexOf(car.id.toUpperCase()) === 0 ? b.id.slice(car.id.length).replace(/^[\s\-–:]+/, "") : b.id; return opt(b.id, "jumpbag", "🎒 " + rigEsc(bags.length > 1 ? (rest || b.id) : "Its jump bag")); }).join("") + '</div>';
+  if (car.kind === "erv" && bags.length === 1) { host.innerHTML = '<div class="rs-note" style="margin-top:8px">🎒 Restocking the ' + rigEsc(car.id) + ' jump bag — an ERV only carries a jump bag.</div>'; return; }
+  host.innerHTML = '<div class="rs-h" style="margin-top:14px">2 · ' + (car.kind === "erv" ? 'Which jump bag on ' : 'Ambulance or jump bag on ') + rigEsc(car.id) + '? <span class="rs-req">required</span></div>' +
+    '<div class="rs-whats">' + (car.kind === "erv" ? '' : opt(car.id, "rig", '🚑 Ambulance')) +
+    bags.map(function(b) { return opt(b.id, "jumpbag", "🎒 " + rigEsc(bagName(b))); }).join("") + '</div>';
 }
 function rsSetTarget(px, id, kind) {
   var st = RS_STATE[px], before = rsListFor(px);
@@ -4917,7 +4945,10 @@ function rsPickCar(px, btn) {
   var box = document.getElementById(px + "-rs-rigs");
   if (box) box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", b.getAttribute("data-u") === st.car); });
   var lz = document.getElementById(px + "-rs-loose"); if (lz) lz.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.remove("on"); });
-  rsSetTarget(px, "", "");
+  var car = rsCars().filter(function(c) { return c.id === st.car; })[0], bags = car ? rsBagsOf(car.id) : [];
+  if (st.car === RS_STORAGE) rsSetTarget(px, RS_STORAGE, "storage");                     // nothing more to choose
+  else if (car && car.kind === "erv" && bags.length <= 1) rsSetTarget(px, bags.length ? bags[0].id : car.id + " Jump Bag", "jumpbag");   // ERV = its jump bag
+  else rsSetTarget(px, "", "");
   rsDrawWhat(px);
 }
 function rsPickWhat(px, btn) {
@@ -4936,38 +4967,142 @@ function rsPickLoose(px, btn) {
 function rsDrawPicker(px) {
   var host = document.getElementById(px + "-rs-picker"), which = document.getElementById(px + "-rs-which"); if (!host) return;
   var L = rsListFor(px);
-  if (which) which.textContent = L ? "— from the " + (L.key === "jumpbag" ? "jump bag" : "rig") + " checklist" : "";
-  if (!L) { host.innerHTML = '<div class="rs-note">Pick the rig or ERV, then whether it\'s the vehicle or its jump bag — the right checklist appears here.</div>'; return; }
-  var opts = '<option value="">Choose an item…</option>' + L.sections.map(function(s, si) {
-    return '<optgroup label="' + rigEsc(s.name) + '">' + (s.items || []).map(function(it, ii) {
-      return '<option value="' + si + ':' + ii + '">' + rigEsc(it.n) + (it.par ? ' — should have ' + rigEsc(it.par) : '') + '</option>'; }).join("") + '</optgroup>';
-  }).join("") + '<option value="other">✏️ Something not on the list…</option>';
-  host.innerHTML = '<select id="' + px + '-rs-item" class="rs-input" onchange="rsItemChanged(\'' + px + '\')">' + opts + '</select>' +
-    '<input type="text" id="' + px + '-rs-other" class="rs-input" maxlength="80" placeholder="What item?" style="display:none;margin-top:6px">' +
+  RS_STATE[px].pick = null;
+  if (which) which.textContent = L ? (L.key === "storage" ? "— from both checklists" : "— from the " + (L.key === "jumpbag" ? "jump bag" : "ambulance") + " checklist") : "";
+  if (!L) { host.innerHTML = '<div class="rs-note">Pick the ambulance (then ambulance or jump bag), the ERV, or the storage room — the right checklist appears here.</div>'; return; }
+  // Searchable list: type part of a name (e.g. "nrb", "gauze"), tap a match. Anything not on the list can be typed and added as is.
+  host.innerHTML = '<div class="rs-combo">' +
+      '<input type="search" id="' + px + '-rs-q" class="rs-input rs-q" autocomplete="off" placeholder="Choose an item — or type to search (e.g. nasal cannula)" oninput="rsComboOpen(\'' + px + '\')" onfocus="rsComboOpen(\'' + px + '\')" onkeydown="rsComboKey(event,\'' + px + '\')" onblur="setTimeout(function(){rsComboClose(\'' + px + '\')},150)">' +
+      '<span class="rs-caret" aria-hidden="true">▾</span><div class="rs-dd" id="' + px + '-rs-dd" style="display:none"></div>' +
+    '</div>' +
     '<div class="rs-addrow"><label class="rs-qtyl">How many <span>(optional)</span><input type="number" id="' + px + '-rs-qty" class="rs-input rs-qty" min="1" max="999" inputmode="numeric" placeholder="—"></label>' +
     '<button type="button" class="rs-addbtn" onclick="rsAdd(\'' + px + '\')">+ Add to the request</button></div>';
 }
-function rsItemChanged(px) {
-  var v = (document.getElementById(px + "-rs-item") || {}).value, o = document.getElementById(px + "-rs-other");
-  if (o) { o.style.display = v === "other" ? "" : "none"; if (v === "other") o.focus(); }
+// Search help for the restock list: common names and spellings for the checklist's abbreviations,
+// so "nasal cannula" finds NC, "non rebreather" finds NRB, "naloxone" finds Narcan. Small typos are forgiven.
+var RS_ALIASES = [
+  [/\bnc\b/, "nasal cannula cannula"], [/\bnrb\b/, "non rebreather nonrebreather mask"], [/\bbvm\b/, "bag valve mask ambu bag"],
+  [/\bopa\b/, "oral airway oropharyngeal"], [/\bnpa\b/, "nasal airway nasopharyngeal trumpet"], [/c-?pap/, "cpap"],
+  [/\bked\b/, "kendrick extrication"], [/\bped\b/, "pediatric peds child kid infant"], [/bp cuff/, "blood pressure cuff sphygmomanometer"],
+  [/narcan/, "naloxone"], [/epi auto/, "epipen epi pen epinephrine"], [/albuterol/, "ventolin neb"], [/aspirin/, "asa"],
+  [/oral glucose/, "glucose gel sugar"], [/glucometer/, "glucose meter bgl sugar dextrose"], [/pulse ox/, "pulse ox spo2 sat oximeter"],
+  [/4 x 4/, "4x4 gauze pad"], [/5 x 9/, "5x9 abd pad abdominal pad"], [/multi-trauma/, "trauma dressing"], [/tourniquet/, "tq cat"],
+  [/quick-clot/, "quikclot hemostatic"], [/lucas|piston|compression unit/, "thumper cpr device lucas"], [/\baed\b/, "defibrillator defib"],
+  [/n-?95/, "n95 respirator mask"], [/ob kit/, "obstetric childbirth delivery maternity"], [/c-collar/, "cervical collar neck collar"],
+  [/stair chair/, "stairchair"], [/emesis/, "vomit bag barf bag"], [/red bags/, "biohazard"], [/germicidal/, "sani wipes cavi wipes disinfectant"],
+  [/sterile saline|saline flush/, "nss saline"], [/burn-gel/, "burn gel"], [/triangular/, "cravat sling"], [/ice pack|cold pack/, "ice pack cold pack"],
+  [/head immobilizer/, "head blocks"], [/thermometer/, "temp temperature"], [/tic removal/, "tick removal"], [/high risk kit/, "ppe kit"],
+  [/\bo2\b/, "oxygen"], [/hand-held suction/, "v-vac vvac manual suction"], [/scoop/, "scoop stretcher"], [/longboard/, "backboard long board spine board"]
+];
+function rsNorm(t) { return String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+function rsHay(it, sec) {
+  var name = String(it.n || "").toLowerCase(), extra = "";
+  RS_ALIASES.forEach(function(a) { if (a[0].test(name)) extra += " " + a[1]; });   // aliases come from the item's own name only
+  var n = rsNorm(name + " " + sec + extra);
+  return { text: " " + n, flat: n.replace(/ /g, ""), words: n.split(" ") };
+}
+// one search word against an item: the start of a word ("nas" → nasal), numbers without spaces ("4x4"),
+// or a one-letter typo ("cannual", "asprin"; two for long words)
+function rsWordHit(w, h) {
+  if (h.text.indexOf(" " + w) !== -1) return true;
+  if (/\d/.test(w) && h.flat.indexOf(w) !== -1) return true;
+  if (w.length < 4) return false;
+  var maxD = w.length >= 8 ? 2 : 1;
+  return h.words.some(function(t) { return Math.abs(t.length - w.length) <= maxD && rsEdit(t, w) <= maxD; });
+}
+function rsEdit(a, b) {
+  var d = [], i, j; for (i = 0; i <= a.length; i++) { d[i] = [i]; } for (j = 1; j <= b.length; j++) d[0][j] = j;
+  for (i = 1; i <= a.length; i++) for (j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);   // swapped letters
+  }
+  return d[a.length][b.length];
+}
+function rsComboOpen(px) {
+  var L = rsListFor(px), q = document.getElementById(px + "-rs-q"), dd = document.getElementById(px + "-rs-dd"); if (!L || !q || !dd) return;
+  var st = RS_STATE[px], text = q.value.trim();
+  if (st.pick && st.pick.label !== q.value) st.pick = null;               // typing again clears the earlier pick
+  var words = rsNorm(text).split(" ").filter(Boolean), html = "", n = 0;
+  var ai = text.length >= 3 ? rsAiCache[L.key + "|" + rsNorm(text)] : null, inAi = {};
+  (ai || []).forEach(function(x) { inAi[x[0] + ":" + x[1]] = 1; });       // shown once, under ✨ Best matches
+  L.sections.forEach(function(s, si) {
+    var hits = (s.items || []).map(function(it, ii) { return { it: it, ii: ii }; }).filter(function(x) {
+      if (inAi[si + ":" + x.ii]) return false;
+      var h = rsHay(x.it, s.name); return words.every(function(w) { return rsWordHit(w, h); }); });
+    if (!hits.length) return;
+    html += '<div class="rs-dd-h">' + rigEsc(s.name) + '</div>' + hits.map(function(x) {
+      n++; return '<div class="rs-dd-i" data-si="' + si + '" data-ii="' + x.ii + '" onmousedown="event.preventDefault()" onclick="rsComboPick(\'' + px + '\',' + si + ',' + x.ii + ')">' +
+        rigEsc(x.it.n) + (x.it.par ? '<span class="rs-dd-par">should have ' + rigEsc(x.it.par) + '</span>' : '') + '</div>'; }).join("");
+  });
+  if (ai && ai.length) {
+    var shown = {}; html = '<div class="rs-dd-h">✨ Best matches</div>' + ai.map(function(x) { var s0 = L.sections[x[0]], it0 = s0 && s0.items[x[1]]; if (!it0 || shown[x[0] + ":" + x[1]]) return ""; shown[x[0] + ":" + x[1]] = 1; n++;
+      return '<div class="rs-dd-i" data-si="' + x[0] + '" data-ii="' + x[1] + '" onmousedown="event.preventDefault()" onclick="rsComboPick(\'' + px + '\',' + x[0] + ',' + x[1] + ')">' + rigEsc(it0.n) + '<span class="rs-dd-par">' + rigEsc(s0.name) + '</span></div>'; }).join("") + html;
+  } else if (text.length >= 3 && rsAiBusy[L.key + "|" + rsNorm(text)]) html = '<div class="rs-dd-none">✨ Looking it up…</div>' + html;
+  if (!n) html += '<div class="rs-dd-none">Not on the checklist.</div>';
+  if (text) html += '<div class="rs-dd-i rs-dd-other" onmousedown="event.preventDefault()" onclick="rsComboOther(\'' + px + '\')">✏️ Add “' + rigEsc(text.slice(0, 80)) + '” (not on the list)</div>';
+  dd.innerHTML = html; dd.style.display = "";
+  rsAiSoon(px, L, text);
+}
+// Ask Gemini (fastest model, server function restockMatch) which checklist items the words mean — e.g. "nasal
+// cannula" → NC, "pulse ox" → Pulse Oximeter. Runs after 450 ms without typing; answers are kept per search.
+var rsAiCache = {}, rsAiBusy = {}, rsAiTimer = null, rsAiOff = false;
+function rsAiSoon(px, L, text) {
+  clearTimeout(rsAiTimer);
+  var key = L.key + "|" + rsNorm(text);
+  if (rsAiOff || rsNorm(text).length < 3 || rsAiCache[key] || rsAiBusy[key]) return;
+  rsAiTimer = setTimeout(function() {
+    var flat = [], idx = [];
+    L.sections.forEach(function(s, si) { (s.items || []).forEach(function(it, ii) { flat.push(it.n + " (" + s.name + ")"); idx.push([si, ii]); }); });
+    rsAiBusy[key] = 1; rsComboOpen(px);
+    var call = typeof hzRelay === "function" ? hzRelay : mRelay;
+    call("restockMatch", { q: text.slice(0, 80), items: flat.slice(0, 300) }).then(function(r) {
+      rsAiCache[key] = ((r && r.matches) || []).filter(function(i) { return idx[i]; }).map(function(i) { return idx[i]; });
+    }).catch(function(e) { rsAiCache[key] = []; if (/not found|404|unavailable/i.test((e && e.message) || "")) rsAiOff = true; })
+      .then(function() { delete rsAiBusy[key]; var q = document.getElementById(px + "-rs-q"); if (q && document.activeElement === q && rsNorm(q.value) === rsNorm(text)) rsComboOpen(px); });
+  }, 450);
+}
+function rsComboClose(px) { var dd = document.getElementById(px + "-rs-dd"); if (dd) dd.style.display = "none"; }
+function rsComboPick(px, si, ii) {
+  var L = rsListFor(px), s = L && L.sections[si], it = s && s.items[ii]; if (!it) return;
+  var q = document.getElementById(px + "-rs-q");
+  RS_STATE[px].pick = { sec: s.name, n: it.n, par: it.par || "", label: it.n };
+  if (q) q.value = it.n;
+  rsComboClose(px);
+  var qty = document.getElementById(px + "-rs-qty"); if (qty) qty.focus();
+}
+function rsComboOther(px) {
+  var q = document.getElementById(px + "-rs-q"), name = ((q || {}).value || "").trim().slice(0, 80); if (!name) return;
+  RS_STATE[px].pick = { sec: "Other", n: name, par: "", label: q.value };
+  rsComboClose(px);
+  var qty = document.getElementById(px + "-rs-qty"); if (qty) qty.focus();
+}
+// Enter picks the first match (or the typed text); Escape closes the list
+function rsComboKey(e, px) {
+  if (e.key === "Escape") { rsComboClose(px); return; }
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  var st = RS_STATE[px];
+  if (st.pick) { rsAdd(px); return; }
+  var first = document.querySelector("#" + px + "-rs-dd .rs-dd-i:not(.rs-dd-other)");
+  if (first) rsComboPick(px, +first.getAttribute("data-si"), +first.getAttribute("data-ii")); else rsComboOther(px);
 }
 function rsAdd(px) {
-  var st = RS_STATE[px], L = rsListFor(px), sel = document.getElementById(px + "-rs-item"), v = sel ? sel.value : "", item = null;
+  var st = RS_STATE[px], L = rsListFor(px), q = document.getElementById(px + "-rs-q");
   if (!L) return;
+  var item = st.pick;
+  if (!item) {                                                            // typed but not picked: an exact name, else take it as typed
+    var text = ((q || {}).value || "").trim();
+    if (!text) { if (q) { q.focus(); rsComboOpen(px); } return; }
+    L.sections.forEach(function(s) { (s.items || []).forEach(function(it) { if (!item && it.n.toLowerCase() === text.toLowerCase()) item = { sec: s.name, n: it.n, par: it.par || "" }; }); });
+    if (!item) item = { sec: "Other", n: text.slice(0, 80), par: "" };
+  }
+  item = { sec: item.sec, n: item.n, par: item.par };
   var qEl = document.getElementById(px + "-rs-qty"), qty = parseInt((qEl || {}).value, 10);
   qty = isFinite(qty) && qty > 0 ? Math.min(qty, 999) : null;
-  if (v === "other") {
-    var o = document.getElementById(px + "-rs-other"), name = ((o || {}).value || "").trim().slice(0, 80);
-    if (!name) { if (o) o.focus(); return; }
-    item = { sec: "Other", n: name, par: "" }; o.value = ""; o.style.display = "none";
-  } else if (v) {
-    var p = v.split(":"), s = L.sections[+p[0]], it = s && s.items[+p[1]];
-    if (!it) return;
-    item = { sec: s.name, n: it.n, par: it.par || "" };
-  } else { if (sel) sel.focus(); return; }
   var same = st.items.filter(function(x) { return x.n === item.n && x.sec === item.sec; })[0];
   if (same) same.qty = qty || same.qty; else { item.qty = qty; st.items.push(item); }
-  if (sel) sel.value = ""; if (qEl) qEl.value = "";
+  st.pick = null; if (q) q.value = ""; if (qEl) qEl.value = "";
+  rsComboClose(px);
   rsRender(px);
 }
 function rsRemove(px, i) { RS_STATE[px].items.splice(i, 1); rsRender(px); }
@@ -4983,7 +5118,7 @@ function rsRender(px) {
 // What a restock request saves: {error} or {unit, title, text, items, list}
 function rsCollect(px, notes) {
   var st = RS_STATE[px] || { rig: "", items: [] };
-  if (!st.rig) return { error: st.car ? "Pick whether it's the " + st.car + " itself or its jump bag." : "Tap the rig or ERV that needs restocking." };
+  if (!st.rig) return { error: st.car ? "Pick the ambulance or its jump bag." : "Tap the ambulance, ERV or storage room that needs restocking." };
   if (!st.items.length) return { error: "Add at least one item that's missing." };
   var L = rsListFor(px);
   var names = st.items.map(function(it) { return it.n + (it.qty ? " ×" + it.qty : ""); });
