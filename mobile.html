@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.62"; window.M_BUILD = BUILD;
+  var BUILD = "3.64"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -55,6 +55,10 @@
 <link rel="apple-touch-icon" href="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
+.hz-tag{display:inline-block;padding:0 7px 1px;margin:0 1px;border-radius:999px;background:rgba(var(--gold-rgb),0.18);border:1px solid rgba(var(--gold-rgb),0.6);color:var(--gold);font-weight:700;line-height:1.45;white-space:nowrap}
+.hz-tag.me{background:var(--gold);color:var(--navy);border-color:var(--gold);box-shadow:0 0 0 2px rgba(var(--gold-rgb),0.25)}
+.hz-tagged{display:inline-block;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 8px;border-radius:5px;background:var(--gold);color:var(--navy);border:1px solid var(--gold)}
+
 /* dispatcher headset (with boom mic) icon — sized like the emoji it replaces */
 .hz-hs{width:1.1em;height:1.1em;vertical-align:-0.2em;display:inline-block;flex-shrink:0}
 .btn-icon .hz-hs,.m-tile-icon .hz-hs{width:1em;height:1em;vertical-align:middle;color:var(--gold)}
@@ -3827,9 +3831,21 @@ function mCodesBadges(item) {
   return mCodesOf(item).map(function(c){ return '<div class="m-code-badge">' + (c.label ? '<span style="font-size:0.62rem;color:var(--gray);margin-right:6px;font-weight:400">' + mEscHtml(c.label) + '</span>' : '') + mEscHtml(c.code) + '</div>'; }).join("");
 }
 function mCodesSummary(item) { return mCodesOf(item).map(function(c){ return (c.label ? c.label + ": " : "") + c.code; }).join(" · "); }
+// @mentions in service requests show as a tag chip; YOUR unit's tag is filled in so you can't miss it
+function hzTagHtml(u) {
+  var unit = orgNormMention(u), me = (typeof currentUserUnit !== "undefined" && currentUserUnit) || (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || "";
+  var mine = !!me && orgNormMention(me) === unit;
+  return '<span class="hz-tag' + (mine ? ' me' : '') + '"' + (mine ? ' title="You were tagged"' : '') + '>🏷️ @' + unit + (mine ? ' · you' : '') + '</span>';
+}
+function hzTaggedMe(text) {
+  var me = (typeof currentUserUnit !== "undefined" && currentUserUnit) || (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || "";
+  if (!me || !text) return false;
+  var hit = false; String(text).replace(orgMentionRe(), function(m, u) { if (orgNormMention(u) === orgNormMention(me)) hit = true; return m; });
+  return hit;
+}
 function mRenderMentions(text) {
   return String(text||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-    .replace(orgMentionRe(), function(m, u) { return '<span style="color:var(--gold);font-weight:700">@' + orgNormMention(u) + '</span>'; });
+    .replace(orgMentionRe(), function(m, u) { return hzTagHtml(u); });
 }
 // Attach an @mention suggestion box to a textarea
 function mAttachMentions(textareaId, boxId) {
@@ -4636,11 +4652,12 @@ function mRenderTickets() {
         '<span style="font-size:0.65rem;color:var(--gray);white-space:nowrap">' + date + '</span>' +
       '</div>' +
       '<div style="font-size:0.72rem;color:var(--gray);margin-bottom:6px">' + mEscHtml(t.unit||"") + ' · ' + mEscHtml(t.submittedBy||"—") + '</div>' +
-      (snippet ? '<div style="font-size:0.75rem;color:var(--white);margin-bottom:6px">' + snippet + '</div>' : '') +
+      (snippet ? '<div style="font-size:0.75rem;color:var(--white);margin-bottom:6px">' + mRenderMentions(snippet) + '</div>' : '') +
       '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
         '<span class="m-disp-zone" style="background:' + sc + '22;color:' + sc + ';border:1px solid ' + sc + '55">' + (t.status||"open") + '</span>' +
         '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + (t.priority||"medium") + '</span>' +
         (t.assignedTo ? '<span class="m-disp-zone" style="background:rgba(125,237,181,0.12);color:#7dedb5;border:1px solid rgba(125,237,181,0.3)">✋ ' + mEscHtml(t.assignedTo) + '</span>' : '') +
+        (hzTaggedMe(t.details) ? '<span class="hz-tagged">🏷️ You\'re tagged</span>' : '') +
       '</div>' +
     '</div>';
   }).join("");
@@ -5084,7 +5101,7 @@ function mRenderTicketDetail(id, t) {
       '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Photos' + ((t.photos||[]).length ? ' (' + t.photos.length + ')' : '') + '</div>' +
       mTicketPhotosHtml(t, function(p){ return isAdmin || (p.byUid && mCurrentUser && p.byUid === mCurrentUser.uid); }) +
       ((t.photos||[]).length < 12 ? '<label style="display:inline-flex;align-items:center;gap:8px;border:1px dashed rgba(var(--gold-rgb),0.45);border-radius:8px;padding:9px 12px;margin-bottom:16px;cursor:pointer;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase">📷 Add photos<input type="file" id="m-tk-detail-photo-input" accept="image/*" multiple style="display:none" onchange="mAddPhotosToTicket(\'' + id + '\')"></label>' : '') +
-      resolveHtml +
+      (resolveHtml || "") +   // only set when the request is assigned — was printing "undefined"
       '<div style="height:16px"></div>' +
       '<div style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Activity Log</div>' +
       '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:6px 12px;margin-bottom:16px">' + mTicketHistoryHtml(t) + '</div>' +
@@ -8825,13 +8842,13 @@ function mCloseAllSheets() {
     </div>
     <!-- Active calls list -->
     <div id="m-disp-calls-view" style="display:none">
-      <button class="m-dash-back" onclick="mDispView('dash')">← Dashboard</button>
+      <button class="m-dash-back" onclick="mDispView('dash')">← Console</button>
       <div class="m-dash-h">Active Calls</div>
       <div id="m-dispatch-list"></div>
     </div>
     <!-- Rig / vehicle status -->
     <div id="m-disp-rigs-view" style="display:none">
-      <button class="m-dash-back" onclick="mDispView('dash')">← Dashboard</button>
+      <button class="m-dash-back" onclick="mDispView('dash')">← Console</button>
       <div class="m-dash-h">Rigs &amp; Vehicles</div>
       <div id="m-rig-status-list"><div style="color:var(--gray);font-size:0.8rem;padding:10px 0">Loading…</div></div>
     </div>
@@ -8937,7 +8954,7 @@ function mCloseAllSheets() {
   </div>
   <div style="padding:10px;flex:1">
     <button onclick="mDrawerGoHome()" class="m-drawer-item">🏠 Home</button>
-    <button onclick="mDrawerGoTo('dispatch-dash')" class="m-drawer-item"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> Dispatch Dashboard</button>
+    <button onclick="mDrawerGoTo('dispatch-dash')" class="m-drawer-item"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> Dispatch Console</button>
     <button onclick="mDrawerGoTo('dispatch')" class="m-drawer-item">📋 Active Calls</button>
     <button onclick="mDrawerGoTo('dispatch-newcall')" class="m-drawer-item">➕ New Call</button>
     <button onclick="mDrawerGoTo('dispatch-map')" class="m-drawer-item">🗺️ Map View</button>
