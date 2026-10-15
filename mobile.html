@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.88"; window.M_BUILD = BUILD;
+  var BUILD = "3.89"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -7698,6 +7698,8 @@ function mBuildCrewRigPanel(call, crewIdx) {
   var body = "";
   if (!crew.rig) {
     body = '<div style="font-size:0.7rem;color:var(--gray)">Select the crew\'s rig above to begin the rig flow.</div>';
+  } else if (mLoadRigBoarded(call, crewIdx) && st.length && st.every(function(x){ return M_LR_PRESCENE.indexOf(x) !== -1; })) {
+    body = btn("Mark " + rig + " On Scene", "on_scene_ambo", "#7dedb5", "green");
   } else if (st.some(function(x){ return x === "" || x === "picking_up_ambo"; })) {
     // Standard call: the rig unit's own button ("Mark rig Responding to Scene") drives this — nothing to gather
     return "";
@@ -7884,11 +7886,12 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   }
 
   var sl = M_STATUS_LOG[status];
+  if (mLoadRigBoarded(call, crewIdx) && det.response === "rig" && M_LR_PRESCENE.indexOf(status) !== -1) sl = M_STATUS_LOG.ambo_responding;
   // Direct response: once someone is on scene, the other units' "En Route to Scene" line is stale —
   // they aren't being tracked individually any more. The rig keeps its own status line.
   if (sl && mIsDirectResponse(call) && !isDriver && status === "enroute_scene" && mSceneMarkedBy(call)) sl = null;
   if (sl) {
-    var withRig = isDriver && crew.rig && ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1;
+    var withRig = isDriver && crew.rig && (mLoadRigBoarded(call, crewIdx) && status === "picking_up_ambo" || ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1);
     var riding = !isDriver && crew.rig && M_RIDER_STATUSES.indexOf(status) !== -1;   // scene-direct unit riding in the rig
     html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.icon + ' ' + unit + ' ' + sl.text + (withRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : '') + '</div>';
   }
@@ -7899,7 +7902,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Divert: change response mode only while the unit is still on its way — a scene unit en route can
   // divert to base for the rig; a rig unit can divert direct to scene only while still heading to base.
   // Once a unit is onboard / the rig is responding, they're on the ambulance — no divert.
-  var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) || (det.response === "rig" && status === "picking_up_ambo")
+  var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) || (det.response === "rig" && status === "picking_up_ambo" && !mLoadRigBoarded(call, crewIdx))
     || (det.response === "rig" && status === "ambo_responding" && call.zone !== "secondary");   // Standard call: rig unit still on its way (one-step response)
   if (canDivert) {
     var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
@@ -7955,6 +7958,10 @@ function mCrewRigGone(call, crewIdx) {
 // After the scene every call — Standard and Load a Rig — runs the same short protocol:
 // on scene → transport (destination only) or RMA → rig back at base.
 function mIsDirectResponse(call) { return !!call; }
+// Load a Rig: once the crew has its rig, every unit on the rig path counts as onboard and responding —
+// whatever earlier step it was left on (calls started before this change, a stale screen, etc.)
+var M_LR_PRESCENE = ["", "picking_up_ambo", "onboard_rig", "ambo_responding"];
+function mLoadRigBoarded(call, crewIdx) { var c = mCrewOf(call, crewIdx); return !!call && call.zone === "secondary" && !!(c && c.rig); }
 function mSceneMarkedBy(call) {
   var ud = call.unitDetails || {}, found = "";
   (call.crews || []).forEach(function(crew, ci) {
@@ -7992,6 +7999,7 @@ function mNextStepButton(call, crewIdx, role, unit) {
   }
   // Rig path. Load-a-Rig: the per-unit step is boarding the rig (everyone gathers at base), then crew-level.
   // Standard: one unit is fetching the rig alone — no boarding step; go straight to "rig responding".
+  if (mLoadRigBoarded(call, crewIdx) && M_LR_PRESCENE.indexOf(status) !== -1) return "";   // the crew panel's "Mark rig On Scene" is next
   if (status === "picking_up_ambo" && crew.rig) {
     return btn("Mark " + crew.rig + " Responding to Scene", "ambo_responding", "#ffc84a", "gold");
   }
