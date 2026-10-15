@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.89"; window.M_BUILD = BUILD;
+  var BUILD = "3.90"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -7902,8 +7902,8 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Divert: change response mode only while the unit is still on its way — a scene unit en route can
   // divert to base for the rig; a rig unit can divert direct to scene only while still heading to base.
   // Once a unit is onboard / the rig is responding, they're on the ambulance — no divert.
-  var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) || (det.response === "rig" && status === "picking_up_ambo" && !mLoadRigBoarded(call, crewIdx))
-    || (det.response === "rig" && status === "ambo_responding" && call.zone !== "secondary");   // Standard call: rig unit still on its way (one-step response)
+  var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) // A unit with the rig can still divert direct to the scene until the rig is marked on scene
+    || (det.response === "rig" && M_LR_PRESCENE.indexOf(status) !== -1);
   if (canDivert) {
     var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
     if (det.response !== "rig") {                      // diverting TO a rig needs a rig to exist
@@ -7952,6 +7952,7 @@ function mDivertResponse(crewIdx, role, unit) {
 function mCrewRigGone(call, crewIdx) {
   var crew = mCrewOf(call, crewIdx); if (!crew || !crew.rig) return null;
   var st = mCrewRigStatusLabel(call, crewIdx, crew);
+  if (mLoadRigBoarded(call, crewIdx) && (st === "picking_up_ambo" || st === "onboard_rig")) st = "ambo_responding";   // Load a Rig: boarded = on its way
   if (["ambo_responding","on_scene_ambo","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(st) === -1) return null;
   return { rig: crew.rig, onScene: st !== "ambo_responding", why: crew.rig + (st === "ambo_responding" ? " is already responding" : st === "on_scene_ambo" ? " is already on scene" : " has already left") };
 }
