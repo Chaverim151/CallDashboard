@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.58"; window.M_BUILD = BUILD;
+  var BUILD = "3.59"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -7327,6 +7327,14 @@ function mBuildUnitBox(call, crewIdx, role, label) {
 
   if (!det.response) {
     var isLoadRig = call.zone === "secondary";
+    var rigGone = mCrewRigGone(call, crewIdx);
+    if (rigGone) {
+      // The rig is already out (on scene / responding) — the only way to this crew is direct to the scene
+      html += '<div style="font-size:0.68rem;color:var(--gray);margin-bottom:6px;line-height:1.4">' + mEscHtml(rigGone.why) + ' — this unit goes direct to the scene.</div>' +
+        '<button class="m-disp-btn m-pulse-blue" style="width:100%;border-color:rgba(122,184,245,0.6);background:rgba(122,184,245,0.12);color:#7ab8f5" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Respond to Scene</button>';
+      html += '</div>';
+      return html;
+    }
     var rigAvail = mRigAvailabilityFor(call, crewIdx);
     var rigLbl = "🏠 Respond to Rig" + (crew.rig ? " → " + crew.rig : "");   // rig is chosen once per crew, never per unit
     if (isLoadRig) {
@@ -7373,7 +7381,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Divert: change response mode only while the unit is still on its way — a scene unit en route can
   // divert to base for the rig; a rig unit can divert direct to scene only while still heading to base.
   // Once a unit is onboard / the rig is responding, they're on the ambulance — no divert.
-  var canDivert = (det.response === "scene" && status === "enroute_scene") || (det.response === "rig" && status === "picking_up_ambo");
+  var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) || (det.response === "rig" && status === "picking_up_ambo");
   if (canDivert) {
     var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
     if (det.response !== "rig") {                      // diverting TO a rig needs a rig to exist
@@ -7416,6 +7424,14 @@ function mDivertResponse(crewIdx, role, unit) {
 //   2. the next update is the transport (destination only) or, on an RMA, the rig back at base
 //   3. transport records where they are going, not who is aboard or who is clearing
 //   4. after transport the only remaining update is the rig back at base
+// The crew's rig has already left base (responding, on scene, transporting…): a unit can no longer go
+// to base to ride it, so "Respond to Rig" / "Divert to rig" make no sense for that crew.
+function mCrewRigGone(call, crewIdx) {
+  var crew = mCrewOf(call, crewIdx); if (!crew || !crew.rig) return null;
+  var st = mCrewRigStatusLabel(call, crewIdx, crew);
+  if (["ambo_responding","on_scene_ambo","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(st) === -1) return null;
+  return { rig: crew.rig, onScene: st !== "ambo_responding", why: crew.rig + (st === "ambo_responding" ? " is already responding" : st === "on_scene_ambo" ? " is already on scene" : " has already left") };
+}
 function mIsDirectResponse(call) { return !!call && call.zone !== "secondary"; }
 function mSceneMarkedBy(call) {
   var ud = call.unitDetails || {}, found = "";
