@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.64"; window.M_BUILD = BUILD;
+  var BUILD = "3.66"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -132,7 +132,10 @@ select{color-scheme:dark}
 .rs-grp{display:flex;flex-direction:column;gap:5px}
 .rs-grp .m-rig-unit{width:100%;padding:9px 6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rs-grp .rs-bag{font-family:inherit;font-weight:600;font-size:0.76rem;padding:7px 6px;border-style:dashed;position:relative}
-.rs-loose{grid-column:1/-1;display:flex;flex-direction:row;flex-wrap:wrap;gap:6px;align-items:center}
+.rs-loose{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rs-box .rs-cars{grid-template-columns:repeat(auto-fill,minmax(122px,1fr))}
+.rs-whats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rs-whats .m-rig-unit{padding:12px 8px;white-space:normal;line-height:1.25}
 .rs-loose .m-rig-unit{width:auto;padding:7px 10px}
 .rs-grph{width:100%;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);font-weight:700;margin-top:4px}
 .rs-addrow{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
@@ -856,7 +859,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="m-tile" data-sec="maps" id="m-dispatch-tile" onclick="mOpenDispatch()" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg></span>
-          <span class="m-tile-label">Dispatch</span>
+          <span class="m-tile-label">Dispatch Console</span>
           <span class="m-tile-sub">Manage active calls</span>
         </div>
       </button>
@@ -4851,51 +4854,90 @@ function rsLoadRigs() {
   }).catch(function() { rsRigs = []; return rsRigs; });
 }
 // Which checklist the picked rig / ERV / jump bag uses
-function rsListFor(px) {
-  var st = RS_STATE[px], r = (rsRigs || []).filter(function(x) { return x.id === st.rig; })[0];
-  if (!r || !rsLists) return null;
-  var key = r.kind === "jumpbag" ? "jumpbag" : r.kind === "erv" ? rsLists.ervUses : "rig";
-  return { key: key, sections: rsLists[key] || [] };
-}
 // Draw the restock part of a new-request form into element `hostId`; px keeps two forms apart.
 function rsInit(px, hostId) {
-  RS_STATE[px] = RS_STATE[px] || { rig: "", items: [] };
+  RS_STATE[px] = RS_STATE[px] || { car: "", rig: "", kind: "", items: [] };
   var host = document.getElementById(hostId); if (!host) return;
   host.innerHTML = '<div class="rs-note">Loading the checklists…</div>';
   rsLists = null; rsRigs = null;                          // pick up admin / fleet edits each time the form opens
-  Promise.all([rsLoadList(), rsLoadRigs()]).then(function() { host.innerHTML = rsFormHtml(px); rsDrawPicker(px); rsRender(px); });
+  Promise.all([rsLoadList(), rsLoadRigs()]).then(function() { host.innerHTML = rsFormHtml(px); rsDrawWhat(px); rsDrawPicker(px); rsRender(px); });
 }
 var RS_ICON = { rig: "🚑 ", erv: "🚙 ", jumpbag: "🎒 " };
-function rsFormHtml(px) {
+function rsListFor(px) {
   var st = RS_STATE[px];
-  var tok = function(r, label, cls) { return '<button type="button" class="m-rig-unit' + (cls || '') + (st.rig === r.id ? ' on' : '') + '" data-u="' + rigEsc(r.id) + '" title="' + rigEsc(r.id) + '" onclick="rsPickRig(\'' + px + '\',this)">' + label + '</button>'; };
-  // Each rig / ERV with the jump bag(s) assigned to it (Admin ▸ Fleet) lined up underneath; other bags last
-  var all = rsRigs || [], cars = all.filter(function(r) { return r.kind !== "jumpbag"; }), bags = all.filter(function(r) { return r.kind === "jumpbag"; });
-  var carOf = function(b) {
-    if (b.on && cars.some(function(c) { return c.id === b.on; })) return b.on;
-    var hit = cars.filter(function(c) { return b.id.toUpperCase().indexOf(String(c.id).toUpperCase()) === 0; }).sort(function(x, y) { return String(y.id).length - String(x.id).length; })[0];
-    return hit ? hit.id : "";
-  };
-  var bagLabel = function(b, car) { var rest = car && b.id.toUpperCase().indexOf(car.toUpperCase()) === 0 ? b.id.slice(car.length).replace(/^[\s\-–:]+/, "") : b.id; return "🎒 " + rigEsc(rest || "Jump bag"); };
-  var used = {};
-  var rigs = cars.map(function(c) {
-    var mine = bags.filter(function(b) { return carOf(b) === c.id; });
-    mine.forEach(function(b) { used[b.id] = 1; });
-    return '<div class="rs-grp">' + tok(c, RS_ICON[c.kind] + rigEsc(c.id)) + mine.map(function(b) { return tok(b, bagLabel(b, c.id), ' rs-bag'); }).join("") + '</div>';
-  }).join("");
-  var loose = bags.filter(function(b) { return !used[b.id]; });
-  if (loose.length) rigs += '<div class="rs-grp rs-loose"><div class="rs-grph">Jump bags not on a vehicle</div>' + loose.map(function(b) { return tok(b, "🎒 " + rigEsc(b.id), ' rs-bag'); }).join("") + '</div>';
-  return '<div class="rs-h">Which rig, ERV or jump bag? <span class="rs-req">required</span></div>' +
-    (rigs ? '<div class="rs-groups" id="' + px + '-rs-rigs">' + rigs + '</div>' : '<div class="rs-note">No rigs found — an admin adds them in Admin ▸ Fleet.</div>') +
+  if (!st || !st.rig || !st.kind || !rsLists) return null;
+  var key = st.kind === "jumpbag" ? "jumpbag" : st.kind === "erv" ? rsLists.ervUses : "rig";
+  return { key: key, sections: rsLists[key] || [] };
+}
+// Jump bags that belong to a rig / ERV: assigned to it in Admin ▸ Fleet, or named after it ("ERV-1 Jump Bag")
+function rsCars() { return (rsRigs || []).filter(function(r) { return r.kind !== "jumpbag"; }); }
+function rsBagCar(b) {
+  var cars = rsCars();
+  if (b.on && cars.some(function(c) { return c.id === b.on; })) return b.on;
+  var hit = cars.filter(function(c) { return b.id.toUpperCase().indexOf(String(c.id).toUpperCase()) === 0; }).sort(function(x, y) { return String(y.id).length - String(x.id).length; })[0];
+  return hit ? hit.id : "";
+}
+function rsBagsOf(carId) { return (rsRigs || []).filter(function(r) { return r.kind === "jumpbag" && rsBagCar(r) === carId; }); }
+// Flow: 1) tap the rig / ERV  2) the vehicle itself or its jump bag  3) items from that checklist
+function rsFormHtml(px) {
+  var st = RS_STATE[px], cars = rsCars();
+  var loose = (rsRigs || []).filter(function(r) { return r.kind === "jumpbag" && !rsBagCar(r); });
+  var carTok = function(c) { return '<button type="button" class="m-rig-unit' + (st.car === c.id ? ' on' : '') + '" data-u="' + rigEsc(c.id) + '" onclick="rsPickCar(\'' + px + '\',this)">' + RS_ICON[c.kind] + rigEsc(c.id) + '</button>'; };
+  var html = '<div class="rs-h">1 · Which rig or ERV? <span class="rs-req">required</span></div>' +
+    (cars.length ? '<div class="m-rig-units rs-cars" id="' + px + '-rs-rigs">' + cars.map(carTok).join("") + '</div>' : '<div class="rs-note">No rigs found — an admin adds them in Admin ▸ Fleet.</div>');
+  if (loose.length) html += '<div class="rs-grph">Or a jump bag that isn\'t on a vehicle</div><div class="rs-loose" id="' + px + '-rs-loose">' + loose.map(function(b) {
+    return '<button type="button" class="m-rig-unit rs-bag' + (!st.car && st.rig === b.id ? ' on' : '') + '" data-u="' + rigEsc(b.id) + '" onclick="rsPickLoose(\'' + px + '\',this)">🎒 ' + rigEsc(b.id) + '</button>'; }).join("") + '</div>';
+  return html +
+    '<div id="' + px + '-rs-what"></div>' +
     '<div class="rs-h" style="margin-top:14px">What\'s missing or running low? <span class="rs-req">add at least one</span> <span class="rs-which" id="' + px + '-rs-which"></span></div>' +
     '<div id="' + px + '-rs-picker"></div>' +
     '<div id="' + px + '-rs-list" class="rs-list"></div>';
+}
+// Step 2: the vehicle itself, or its jump bag(s)
+function rsDrawWhat(px) {
+  var host = document.getElementById(px + "-rs-what"), st = RS_STATE[px]; if (!host) return;
+  var car = rsCars().filter(function(c) { return c.id === st.car; })[0];
+  if (!car) { host.innerHTML = ""; return; }
+  var bags = rsBagsOf(car.id);
+  if (!bags.length) bags = [{ id: car.id + " Jump Bag", kind: "jumpbag", virtual: true }];
+  var opt = function(id, kind, label) { return '<button type="button" class="m-rig-unit rs-what' + (st.rig === id ? ' on' : '') + '" data-u="' + rigEsc(id) + '" data-k="' + kind + '" onclick="rsPickWhat(\'' + px + '\',this)">' + label + '</button>'; };
+  host.innerHTML = '<div class="rs-h" style="margin-top:14px">2 · Restock what on ' + rigEsc(car.id) + '? <span class="rs-req">required</span></div>' +
+    '<div class="rs-whats">' + opt(car.id, car.kind, RS_ICON[car.kind] + 'The ' + (car.kind === "erv" ? "ERV" : "rig") + ' itself') +
+    bags.map(function(b) { var rest = b.id.toUpperCase().indexOf(car.id.toUpperCase()) === 0 ? b.id.slice(car.id.length).replace(/^[\s\-–:]+/, "") : b.id; return opt(b.id, "jumpbag", "🎒 " + rigEsc(bags.length > 1 ? (rest || b.id) : "Its jump bag")); }).join("") + '</div>';
+}
+function rsSetTarget(px, id, kind) {
+  var st = RS_STATE[px], before = rsListFor(px);
+  st.rig = id; st.kind = kind;
+  var after = rsListFor(px);
+  if (!before || !after || before.key !== after.key) rsDrawPicker(px);    // a different checklist — swap the dropdown
+}
+function rsPickCar(px, btn) {
+  var st = RS_STATE[px], id = btn.getAttribute("data-u");
+  st.car = st.car === id ? "" : id;
+  var box = document.getElementById(px + "-rs-rigs");
+  if (box) box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", b.getAttribute("data-u") === st.car); });
+  var lz = document.getElementById(px + "-rs-loose"); if (lz) lz.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.remove("on"); });
+  rsSetTarget(px, "", "");
+  rsDrawWhat(px);
+}
+function rsPickWhat(px, btn) {
+  rsSetTarget(px, btn.getAttribute("data-u"), btn.getAttribute("data-k"));
+  var host = document.getElementById(px + "-rs-what");
+  if (host) host.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", b === btn); });
+}
+function rsPickLoose(px, btn) {
+  var st = RS_STATE[px], id = btn.getAttribute("data-u"), off = !st.car && st.rig === id;
+  st.car = "";
+  var box = document.getElementById(px + "-rs-rigs"); if (box) box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.remove("on"); });
+  var lz = document.getElementById(px + "-rs-loose"); if (lz) lz.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", !off && b === btn); });
+  rsDrawWhat(px);
+  rsSetTarget(px, off ? "" : id, off ? "" : "jumpbag");
 }
 function rsDrawPicker(px) {
   var host = document.getElementById(px + "-rs-picker"), which = document.getElementById(px + "-rs-which"); if (!host) return;
   var L = rsListFor(px);
   if (which) which.textContent = L ? "— from the " + (L.key === "jumpbag" ? "jump bag" : "rig") + " checklist" : "";
-  if (!L) { host.innerHTML = '<div class="rs-note">Tap the rig, ERV or jump bag first — then pick from its checklist.</div>'; return; }
+  if (!L) { host.innerHTML = '<div class="rs-note">Pick the rig or ERV, then whether it\'s the vehicle or its jump bag — the right checklist appears here.</div>'; return; }
   var opts = '<option value="">Choose an item…</option>' + L.sections.map(function(s, si) {
     return '<optgroup label="' + rigEsc(s.name) + '">' + (s.items || []).map(function(it, ii) {
       return '<option value="' + si + ':' + ii + '">' + rigEsc(it.n) + (it.par ? ' — should have ' + rigEsc(it.par) : '') + '</option>'; }).join("") + '</optgroup>';
@@ -4904,14 +4946,6 @@ function rsDrawPicker(px) {
     '<input type="text" id="' + px + '-rs-other" class="rs-input" maxlength="80" placeholder="What item?" style="display:none;margin-top:6px">' +
     '<div class="rs-addrow"><label class="rs-qtyl">How many <span>(optional)</span><input type="number" id="' + px + '-rs-qty" class="rs-input rs-qty" min="1" max="999" inputmode="numeric" placeholder="—"></label>' +
     '<button type="button" class="rs-addbtn" onclick="rsAdd(\'' + px + '\')">+ Add to the request</button></div>';
-}
-function rsPickRig(px, btn) {
-  var st = RS_STATE[px], id = btn.getAttribute("data-u"), before = rsListFor(px);
-  st.rig = st.rig === id ? "" : id;
-  var box = document.getElementById(px + "-rs-rigs");
-  if (box) box.querySelectorAll(".m-rig-unit").forEach(function(b) { b.classList.toggle("on", b.getAttribute("data-u") === st.rig); });
-  var after = rsListFor(px);
-  if (!before || !after || before.key !== after.key) rsDrawPicker(px);    // a different checklist — swap the dropdown
 }
 function rsItemChanged(px) {
   var v = (document.getElementById(px + "-rs-item") || {}).value, o = document.getElementById(px + "-rs-other");
@@ -4949,18 +4983,22 @@ function rsRender(px) {
 // What a restock request saves: {error} or {unit, title, text, items, list}
 function rsCollect(px, notes) {
   var st = RS_STATE[px] || { rig: "", items: [] };
-  if (!st.rig) return { error: "Tap the rig, ERV or jump bag that needs restocking." };
+  if (!st.rig) return { error: st.car ? "Pick whether it's the " + st.car + " itself or its jump bag." : "Tap the rig or ERV that needs restocking." };
   if (!st.items.length) return { error: "Add at least one item that's missing." };
   var L = rsListFor(px);
   var names = st.items.map(function(it) { return it.n + (it.qty ? " ×" + it.qty : ""); });
-  var title = "Restock " + st.rig + ": " + names.join(", ");
+  // "MC-902 jump bag (Bag A)" — always say which vehicle a jump bag belongs to
+  var what = st.kind === "jumpbag" && st.car
+    ? (st.rig.toUpperCase().indexOf(st.car.toUpperCase()) === 0 ? st.rig : st.car + " jump bag (" + st.rig + ")")
+    : st.rig;
+  var title = "Restock " + what + ": " + names.join(", ");
   if (title.length > 90) title = title.slice(0, 87) + "…";
-  var text = "Restock needed on " + st.rig + ":\n" + st.items.map(function(it) {
+  var text = "Restock needed on " + what + ":\n" + st.items.map(function(it) {
     return "• " + it.n + (it.qty ? " × " + it.qty : "") + "  (" + it.sec + (it.par ? " — should have " + it.par : "") + ")"; }).join("\n") +
     (notes ? "\n\nNotes: " + notes : "");
   return { unit: st.rig, list: L ? L.key : "", title: title, text: text, items: st.items.map(function(it) { return { section: it.sec, item: it.n, qty: it.qty || null, par: it.par || "" }; }) };
 }
-function rsReset(px) { RS_STATE[px] = { rig: "", items: [] }; }
+function rsReset(px) { RS_STATE[px] = { car: "", rig: "", kind: "", items: [] }; }
 
 function mSubmitTicket() {
   var title = document.getElementById("m-tk-title").value.trim();
