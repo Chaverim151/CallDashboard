@@ -1977,7 +1977,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.00</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.03</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -16533,7 +16533,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.00";
+var DESKTOP_VERSION = "11.03";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -20580,7 +20580,7 @@ function mRenderDispatchDetail(call) {
   });
   content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
 
-  // Disposition — a second rig can still be added at this point, so offer it alongside the choice
+  // Disposition (Add Additional Rig lives under the units — not repeated here)
   var needDisp = mAllOnSceneCheck(call) && !call.disposition.type;
   content += '<div id="m-dd-anchor-disposition" style="border-top:1px solid var(--card-border);padding-top:12px;margin-bottom:14px">';
   content += needDisp
@@ -20600,7 +20600,6 @@ function mRenderDispatchDetail(call) {
   } else if (call.disposition.type === 'transport' && call.disposition.hospital) {
     content += '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px;font-size:0.78rem;color:#7ab8f5">🏥 ' + call.disposition.hospital + '</div>';
   }
-  content += '<button class="m-disp-btn" style="width:100%;margin-top:8px;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold)" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
   content += '</div>';
 
   // Additional resources — under the disposition
@@ -20868,10 +20867,9 @@ function mBuildUnitBox(call, crewIdx, role, label) {
           '</div>';
         return html;
       }
-      // Every unit rides the rig — no per-unit choice. Before the rig is picked there's nothing to do here;
-      // picking it (above) puts every unit on the crew onboard and responding.
-      if (!crew.rig) html += '<div style="font-size:0.68rem;color:var(--gray);line-height:1.4">Choose the rig above — every unit on this crew rides it to the scene.</div>';
-      else html += '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(255,200,74,0.6);background:rgba(255,200,74,0.15);color:#ffc84a" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">🚑 ' + mEscHtml(unit) + ' Onboard ' + mEscHtml(crew.rig) + ' → Responding</button>';
+      // Respond to the rig (main choice). With the crew's rig known it's one step: straight to "Rig Responding".
+      html += '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(255,200,74,0.6);background:rgba(255,200,74,0.15);color:#ffc84a;margin-bottom:6px" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>';
+      html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(122,184,245,0.3);color:var(--gray);font-size:0.62rem" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Direct to Scene <span style="opacity:0.7">(only if close to the scene)</span></button>';
       html += '</div>';
       return html;
     }
@@ -20952,7 +20950,7 @@ function mDivertResponse(crewIdx, role, unit) {
 function mCrewRigGone(call, crewIdx) {
   var crew = mCrewOf(call, crewIdx); if (!crew || !crew.rig) return null;
   var st = mCrewRigStatusLabel(call, crewIdx, crew);
-  if (mLoadRigBoarded(call, crewIdx) && (st === "picking_up_ambo" || st === "onboard_rig")) st = "ambo_responding";   // Load a Rig: boarded = on its way
+  if (call.zone === "secondary" && M_LR_PRESCENE.indexOf(st) !== -1) return null;   // Load a Rig: units can still join the rig until it's on scene
   if (["ambo_responding","on_scene_ambo","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(st) === -1) return null;
   return { rig: crew.rig, onScene: st !== "ambo_responding", why: crew.rig + (st === "ambo_responding" ? " is already responding" : st === "on_scene_ambo" ? " is already on scene" : " has already left") };
 }
@@ -21244,14 +21242,11 @@ function mDoAssign(unitId) {
             ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
         });
       } else {
-        // A unit already sent to the rig now responds with it — one step. Load a Rig: every unit on the
-        // crew is presumed onboard the rig and heading to the scene.
-        var loadRigR = call.zone === "secondary";
+        // A unit already sent to the rig now responds with it — one step (no separate onboard step).
         Object.keys(crews[crewIdx] || {}).forEach(function(k) {
           if (k === "rig" || !crews[crewIdx][k] || crews[crewIdx][k] === "__added__") return;
           var key = mUdKey(crewIdx, k), det = ud[key] || {};
           if (det.response === "rig" && ["", "picking_up_ambo", "onboard_rig"].indexOf(det.status || "") !== -1) ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
-          else if (loadRigR && !det.response) ud[key] = Object.assign({}, det, { response: "rig", status: "ambo_responding", statusAt: mNowHHMM() });
         });
       }
       return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("Rig " + unitId + " selected for Crew " + (crewIdx+1) + (divert ? " — diverting from " + divert.address + ", responding to scene" : ""), "🚑", "#ffc84a", "assign")) });
@@ -21262,12 +21257,7 @@ function mDoAssign(unitId) {
       assignedUnits = assignedUnits.filter(function(u,i){ return assignedUnits.indexOf(u)===i; });
       var ud2 = call.unitDetails || {};
       ud2[mUdKey(crewIdx, role)] = Object.assign({}, ud2[mUdKey(crewIdx, role)]||{}, { assignedAt: mNowHHMM() });
-      // Load a Rig: once assigned, the unit is presumed onboard the crew's rig and heading to the scene
       var onboardNote = "";
-      if (call.zone === "secondary" && crews[crewIdx].rig && ["", "picking_up_ambo", "onboard_rig", "ambo_responding"].indexOf(mCrewRigStatusLabel(call, crewIdx, crews[crewIdx])) !== -1) {
-        ud2[mUdKey(crewIdx, role)] = Object.assign(ud2[mUdKey(crewIdx, role)], { response: "rig", status: "ambo_responding", statusAt: mNowHHMM() });
-        onboardNote = " — onboard " + crews[crewIdx].rig + ", responding";
-      }
       mTextAssignedUnit(unitId, Object.assign({}, call, { crews: crews }));   // full details straight to the assigned unit
       return db.collection("activeCalls").doc(callId).update({ crews: crews, assignedUnits: assignedUnits, unitDetails: ud2, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(unitId + " assigned" + onboardNote, "👤", "var(--white)", "assign")) });
     }
