@@ -1938,7 +1938,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.88</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v10.89</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2245,6 +2245,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
     <button class="admin-tab" data-tab="security" onclick="setAdminTab('security')">🔒 Security</button>
     <button class="admin-tab" data-tab="protocols" onclick="setAdminTab('protocols')">📋 Protocols &amp; Dispatch</button>
     <button class="admin-tab" data-tab="codes" onclick="setAdminTab('codes')">🔑 Codes &amp; Locations</button>
+    <button class="admin-tab" data-tab="shifts" onclick="setAdminTab('shifts')">🌙 Night Shifts</button>
     <button class="admin-tab" data-tab="fleet" onclick="setAdminTab('fleet')">🚑 Fleet</button>
     <button class="admin-tab" data-tab="traffic" onclick="setAdminTab('traffic')">🚧 Closure Notifications</button>
     <button class="admin-tab" data-tab="templates" onclick="setAdminTab('templates')">✉️ Message Templates</button>
@@ -2653,6 +2654,11 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
   </div>
 </div>
 
+    <div class="admin-section" data-admin-tab="shifts" id="adm-shifts">
+      <div class="admin-section-title">🌙 Night Shifts</div>
+      <div style="font-size:0.82rem;color:var(--gray);margin:-4px 0 12px;max-width:760px">The units on each night. Members see this on the 🌙 Night Shifts tile (it can't be edited there). Change a unit, ✕ removes one, type a unit and press <b>+ Add</b> to add one, then <b>💾 Save night shifts</b>.</div>
+      <div id="adm-shifts-list" class="add-user-form" style="max-width:760px"></div>
+    </div>
     <div class="admin-section" data-admin-tab="fleet" id="adm-service-status">
       <div class="admin-section-title">🔧 Service Status</div>
       <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">Take a rig out of service and it stops being offered to dispatchers on both apps — it's skipped by "Add Additional Rig" and flagged in the rig picker. Set an optional return time and it comes back automatically.</p>
@@ -3962,7 +3968,7 @@ function tcLoad() {
 }
 // The original tabs. Names used by 9.87–9.90 (when tabs were briefly regrouped) still work.
 var ADMIN_TAB_ALIASES = { members: "users", dispatch: "protocols", messaging: "templates", activity: "notifications" };
-var ADMIN_TABS = ["users", "security", "protocols", "codes", "fleet", "traffic", "templates", "notifications", "locations", "testing", "org", "protoai", "imagetrend"];
+var ADMIN_TABS = ["users", "security", "protocols", "codes", "shifts", "fleet", "traffic", "templates", "notifications", "locations", "testing", "org", "protoai", "imagetrend"];
 // A new tab starts at the top.
 function admUnstickPage() {
   var pg = document.getElementById("pg-admin"); if (pg) pg.scrollTop = 0;
@@ -4008,9 +4014,11 @@ function setAdminTab(tab) {
   if (tab === "fleet") rsAdminLoad();
   if (tab === "codes") csLoad();
   if (tab === "protoai") paiLoad();
+  if (tab === "shifts") shAdmLoad();
 }
 // ── Admin search: find a setting by name and jump to it, whichever tab it lives on ──
 var ADM_SEARCH = [
+  { label: "Night shifts", where: "Night Shifts", tab: "shifts", el: "adm-shifts", k: "night shifts shift schedule nights units tonight on call" },
   { label: "All users", where: "Users", tab: "users", el: "adm-users", k: "users members roster list people edit user roles dispatcher responder logistics phone email" },
   { label: "Add a new user", where: "Users", tab: "users", el: "adm-add-user", k: "add new user member create account signup" },
   { label: "Accounts that still need their own password", where: "Security", tab: "security", el: "adm-pwsecure", k: "password default secure accounts set password link text reset never logged in" },
@@ -6031,14 +6039,72 @@ window.saveShifts = function() {
   db.collection("appdata").doc("shifts").set({ shifts: window.LIVE_SHIFTS }).then(function() { showToast("✓ Shifts saved!"); }).catch(function(e) { showToast("Save failed: " + e.message, true); });
 };
 
+// ── Admin ▸ Night Shifts (the only place shifts are edited) ──
+function shAdmLoad() {
+  var el = document.getElementById("adm-shifts-list"); if (!el) return;
+  el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem">Loading…</div>';
+  db.collection("appdata").doc("shifts").get().then(function(snap) {
+    if (snap.exists && Array.isArray(snap.data().shifts)) window.LIVE_SHIFTS = snap.data().shifts;
+    shAdmRender();
+  }).catch(function(e) { el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem">Couldn\'t load: ' + escapeHtml(e.message) + '</div>'; });
+}
+function shAdmCollect() {   // keep what's typed before redrawing
+  document.querySelectorAll("#adm-shifts-list .sh-day").forEach(function(inp) { var si = +inp.dataset.si; if (window.LIVE_SHIFTS[si]) window.LIVE_SHIFTS[si].day = inp.value.trim(); });
+  document.querySelectorAll("#adm-shifts-list .sh-unit").forEach(function(inp) { var si = +inp.dataset.si, ui = +inp.dataset.ui; if (window.LIVE_SHIFTS[si]) window.LIVE_SHIFTS[si].units[ui] = inp.value.trim().toUpperCase(); });
+}
+function shAdmRender() {
+  var el = document.getElementById("adm-shifts-list"); if (!el) return;
+  var inp = "background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;color:var(--white);padding:6px 8px;font-size:0.85rem";
+  el.innerHTML = (window.LIVE_SHIFTS || []).map(function(s, si) {
+    return '<div style="border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input class="sh-day" data-si="' + si + '" value="' + escapeHtml(s.day || "") + '" placeholder="Night (e.g. Sunday)" style="' + inp + ';font-weight:700;flex:1;max-width:260px">' +
+      '<button class="edit-mode-btn" onclick="shAdmRemoveNight(' + si + ')" title="Remove this night">✕ Remove night</button></div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">' +
+      (s.units || []).map(function(u, ui) {
+        return '<span style="display:inline-flex;align-items:center;gap:3px"><input class="sh-unit" data-si="' + si + '" data-ui="' + ui + '" value="' + escapeHtml(u) + '" style="' + inp + ';width:92px">' +
+          '<button class="rm-unit-btn" onclick="shAdmRemoveUnit(' + si + ',' + ui + ')" title="Remove">✕</button></span>';
+      }).join("") +
+      '<span style="display:inline-flex;gap:4px;align-items:center;margin-left:6px"><input id="sh-add-' + si + '" placeholder="' + orgPh("MC-##") + '" style="' + inp + ';width:92px" onkeydown="if(event.key===\'Enter\')shAdmAddUnit(' + si + ')">' +
+      '<button class="edit-mode-btn" onclick="shAdmAddUnit(' + si + ')">+ Add</button></span></div></div>';
+  }).join("") +
+  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="edit-mode-btn" onclick="shAdmAddNight()">+ Add a night</button>' +
+  '<button class="card-save-btn" onclick="shAdmSave()">💾 Save night shifts</button></div>';
+}
+function shAdmRemoveUnit(si, ui) { shAdmCollect(); window.LIVE_SHIFTS[si].units.splice(ui, 1); shAdmRender(); }
+function shAdmAddUnit(si) {
+  shAdmCollect();
+  var box = document.getElementById("sh-add-" + si), v = (box && box.value || "").trim().toUpperCase(); if (!v) return;
+  window.LIVE_SHIFTS[si].units.push(orgUnit(orgStripUnit(v))); shAdmRender();
+  var nb = document.getElementById("sh-add-" + si); if (nb) nb.focus();
+}
+function shAdmAddNight() { shAdmCollect(); window.LIVE_SHIFTS.push({ day: "", units: [] }); shAdmRender(); }
+function shAdmRemoveNight(si) {
+  shAdmCollect();
+  if (!confirm("Remove " + (window.LIVE_SHIFTS[si].day || "this night") + " from the shift list?")) return;
+  window.LIVE_SHIFTS.splice(si, 1); shAdmRender();
+}
+function shAdmSave() {
+  shAdmCollect();
+  window.LIVE_SHIFTS = window.LIVE_SHIFTS.filter(function(s) { return s.day || (s.units || []).length; })
+    .map(function(s) { return { day: s.day, units: (s.units || []).filter(Boolean) }; });
+  window.saveShifts(); shAdmRender();
+}
+window.shAdmLoad = shAdmLoad; window.shAdmRemoveUnit = shAdmRemoveUnit; window.shAdmAddUnit = shAdmAddUnit;
+window.shAdmAddNight = shAdmAddNight; window.shAdmRemoveNight = shAdmRemoveNight; window.shAdmSave = shAdmSave;
+
+// Tile pages are read-only: no editing from a tile — admins get a button to the right Admin tab instead.
 function injectAdminBar(sec) {
   var bar = document.getElementById("admin-bar-" + sec);
-  if (!bar || currentRole !== "admin") return;
+  if (!bar) return;
+  bar.innerHTML = currentRole === "admin" ? '<div class="admin-edit-bar"><button class="edit-mode-btn" onclick="goTo(\'admin\');setAdminTab(\'codes\')">⚙ Edit in Admin ▸ Codes &amp; Locations</button></div>' : "";
+  return;
   bar.innerHTML = '<div class="admin-edit-bar"><button class="edit-mode-btn ' + (editModeActive[sec] ? "active" : "") + '" onclick="toggleEditMode(\'' + sec + '\')">' + (editModeActive[sec] ? "✓ Done Editing" : "✏️ Edit Codes") + '</button></div>';
 }
 function injectShiftAdminBar() {
   var bar = document.getElementById("admin-bar-shifts");
-  if (!bar || currentRole !== "admin") return;
+  if (!bar) return;
+  bar.innerHTML = currentRole === "admin" ? '<div class="admin-edit-bar"><button class="edit-mode-btn" onclick="goTo(\'admin\');setAdminTab(\'shifts\')">⚙ Edit in Admin ▸ Night Shifts</button></div>' : "";
+  return;
   bar.innerHTML = '<div class="admin-edit-bar"><button class="edit-mode-btn ' + (editModeActive["shifts"] ? "active" : "") + '" onclick="toggleEditMode(\'shifts\')">' + (editModeActive["shifts"] ? "✓ Done Editing" : "✏️ Edit Shifts") + '</button></div>';
 }
 function toggleEditMode(sec) {
@@ -6084,7 +6150,7 @@ function codesSummary(item, sep) {
   return codesOf(item).map(function(c){ return (c.label ? c.label + ": " : "") + c.code; }).join(sep || " · ");
 }
 function mkCard(item, i, sec) {
-  var editing = editModeActive[sec] && currentRole === "admin";
+  var editing = false;   // codes are edited only in Admin ▸ Codes & Locations
   var html = '<div class="card ' + (editing ? "editable" : "") + '" style="animation-delay:' + (i * 40) + 'ms">';
   html += '<div class="card-name">' + (item.name || "") + '</div>';
   if (item.address) html += '<div class="card-addr">' + item.address + '</div>';
@@ -6115,7 +6181,7 @@ window.renderCards = function(sec, items) {
 };
 window.renderShifts = function() {
   var el = document.getElementById("shifts-list"); if (!el) return;
-  var editing = editModeActive["shifts"] && currentRole === "admin";
+  var editing = false;   // shifts are edited only in Admin ▸ Night Shifts
   var html = "";
   window.LIVE_SHIFTS.forEach(function(s, si) {
     html += '<div class="s-row" style="flex-direction:column;align-items:flex-start;gap:6px"><span class="s-day">' + s.day + '</span><span class="s-units">';
@@ -16237,7 +16303,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "10.88";
+var DESKTOP_VERSION = "10.89";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
