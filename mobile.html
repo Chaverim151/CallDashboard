@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.87"; window.M_BUILD = BUILD;
+  var BUILD = "3.88"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -7698,7 +7698,7 @@ function mBuildCrewRigPanel(call, crewIdx) {
   var body = "";
   if (!crew.rig) {
     body = '<div style="font-size:0.7rem;color:var(--gray)">Select the crew\'s rig above to begin the rig flow.</div>';
-  } else if (call.zone !== "secondary" && st.some(function(x){ return x === "" || x === "picking_up_ambo"; })) {
+  } else if (st.some(function(x){ return x === "" || x === "picking_up_ambo"; })) {
     // Standard call: the rig unit's own button ("Mark rig Responding to Scene") drives this — nothing to gather
     return "";
   } else if (st.some(function(x){ return x === "" || x === "picking_up_ambo"; })) {
@@ -7865,8 +7865,10 @@ function mBuildUnitBox(call, crewIdx, role, label) {
           '</div>';
         return html;
       }
-      html += '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(255,200,74,0.6);background:rgba(255,200,74,0.15);color:#ffc84a;margin-bottom:6px" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>';
-      html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(122,184,245,0.3);color:var(--gray);font-size:0.62rem" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">🏃 Direct to Scene <span style="opacity:0.7">(only if close to the scene)</span></button>';
+      // Every unit rides the rig — no per-unit choice. Before the rig is picked there's nothing to do here;
+      // picking it (above) puts every unit on the crew onboard and responding.
+      if (!crew.rig) html += '<div style="font-size:0.68rem;color:var(--gray);line-height:1.4">Choose the rig above — every unit on this crew rides it to the scene.</div>';
+      else html += '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(255,200,74,0.6);background:rgba(255,200,74,0.15);color:#ffc84a" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">🚑 ' + mEscHtml(unit) + ' Onboard ' + mEscHtml(crew.rig) + ' → Responding</button>';
       html += '</div>';
       return html;
     }
@@ -7925,7 +7927,7 @@ function mDivertResponse(crewIdx, role, unit) {
     var now = mNowHHMM();
     var update = { updatedAt: new Date().toISOString() };
     update["unitDetails." + mUdKey(crewIdx, role) + ".response"] = toRig ? "rig" : "scene";
-    var oneStepD = toRig && call.zone !== "secondary" && !!mCrewOf(call, crewIdx).rig;   // Standard call: straight to responding with the rig
+    var oneStepD = toRig && !!mCrewOf(call, crewIdx).rig;   // Standard call: straight to responding with the rig
     update["unitDetails." + mUdKey(crewIdx, role) + ".status"] = toRig ? (oneStepD ? "ambo_responding" : "picking_up_ambo") : "enroute_scene";
     update["unitDetails." + mUdKey(crewIdx, role) + ".statusAt"] = now;
     var notes = call.callNotes || [];
@@ -7950,7 +7952,9 @@ function mCrewRigGone(call, crewIdx) {
   if (["ambo_responding","on_scene_ambo","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(st) === -1) return null;
   return { rig: crew.rig, onScene: st !== "ambo_responding", why: crew.rig + (st === "ambo_responding" ? " is already responding" : st === "on_scene_ambo" ? " is already on scene" : " has already left") };
 }
-function mIsDirectResponse(call) { return !!call && call.zone !== "secondary"; }
+// After the scene every call — Standard and Load a Rig — runs the same short protocol:
+// on scene → transport (destination only) or RMA → rig back at base.
+function mIsDirectResponse(call) { return !!call; }
 function mSceneMarkedBy(call) {
   var ud = call.unitDetails || {}, found = "";
   (call.crews || []).forEach(function(crew, ci) {
@@ -7988,7 +7992,7 @@ function mNextStepButton(call, crewIdx, role, unit) {
   }
   // Rig path. Load-a-Rig: the per-unit step is boarding the rig (everyone gathers at base), then crew-level.
   // Standard: one unit is fetching the rig alone — no boarding step; go straight to "rig responding".
-  if (status === "picking_up_ambo" && call.zone !== "secondary" && crew.rig) {
+  if (status === "picking_up_ambo" && crew.rig) {
     return btn("Mark " + crew.rig + " Responding to Scene", "ambo_responding", "#ffc84a", "gold");
   }
   if (status === "picking_up_ambo") {
@@ -8257,12 +8261,15 @@ function mDoAssign(unitId) {
           if (det.response === "rig" && ["", "picking_up_ambo", "onboard_rig"].indexOf(det.status || "") !== -1)
             ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
         });
-      } else if (call.zone !== "secondary") {
-        // Standard call: a unit already sent to the rig now responds with it — one step, no separate "Responding to Scene"
+      } else {
+        // A unit already sent to the rig now responds with it — one step. Load a Rig: every unit on the
+        // crew is presumed onboard the rig and heading to the scene.
+        var loadRigR = call.zone === "secondary";
         Object.keys(crews[crewIdx] || {}).forEach(function(k) {
           if (k === "rig" || !crews[crewIdx][k] || crews[crewIdx][k] === "__added__") return;
           var key = mUdKey(crewIdx, k), det = ud[key] || {};
-          if (det.response === "rig" && det.status === "picking_up_ambo") ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
+          if (det.response === "rig" && ["", "picking_up_ambo", "onboard_rig"].indexOf(det.status || "") !== -1) ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
+          else if (loadRigR && !det.response) ud[key] = Object.assign({}, det, { response: "rig", status: "ambo_responding", statusAt: mNowHHMM() });
         });
       }
       return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("Rig " + unitId + " selected for Crew " + (crewIdx+1) + (divert ? " — diverting from " + divert.address + ", responding to scene" : ""), "🚑", "#ffc84a", "assign")) });
@@ -8273,8 +8280,14 @@ function mDoAssign(unitId) {
       assignedUnits = assignedUnits.filter(function(u,i){ return assignedUnits.indexOf(u)===i; });
       var ud2 = call.unitDetails || {};
       ud2[mUdKey(crewIdx, role)] = Object.assign({}, ud2[mUdKey(crewIdx, role)]||{}, { assignedAt: mNowHHMM() });
+      // Load a Rig: once assigned, the unit is presumed onboard the crew's rig and heading to the scene
+      var onboardNote = "";
+      if (call.zone === "secondary" && crews[crewIdx].rig && ["", "picking_up_ambo", "onboard_rig", "ambo_responding"].indexOf(mCrewRigStatusLabel(call, crewIdx, crews[crewIdx])) !== -1) {
+        ud2[mUdKey(crewIdx, role)] = Object.assign(ud2[mUdKey(crewIdx, role)], { response: "rig", status: "ambo_responding", statusAt: mNowHHMM() });
+        onboardNote = " — onboard " + crews[crewIdx].rig + ", responding";
+      }
       mTextAssignedUnit(unitId, Object.assign({}, call, { crews: crews }));   // full details straight to the assigned unit
-      return db.collection("activeCalls").doc(callId).update({ crews: crews, assignedUnits: assignedUnits, unitDetails: ud2, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(unitId + " assigned", "👤", "var(--white)", "assign")) });
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, assignedUnits: assignedUnits, unitDetails: ud2, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(unitId + " assigned" + onboardNote, "👤", "var(--white)", "assign")) });
     }
   }).then(function() { mCloseAllSheets(); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -8417,7 +8430,7 @@ function mAddRigWithUnit(unitId) {
       // A diverting rig already has its crew aboard — it responds to the scene, it doesn't head to base
       var divert = res.rig ? mRigFreeingMap[res.rig] : null;
       // Standard call: the unit and the rig respond as one step (see mSetUnitResponse)
-      ud[idx + "_rigUnit"] = { response: "rig", status: (divert || (call.zone !== "secondary" && res.rig)) ? "ambo_responding" : "picking_up_ambo", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
+      ud[idx + "_rigUnit"] = { response: "rig", status: (divert || res.rig) ? "ambo_responding" : "picking_up_ambo", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
       var assigned = (call.assignedUnits || []).slice(); if (assigned.indexOf(unitId) === -1) assigned.push(unitId);
       mTextAssignedUnit(unitId, call);
       return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assigned, updatedAt: new Date().toISOString(),
@@ -8468,7 +8481,7 @@ function mSetUnitResponse(crewIdx, role, response) {
   var callR0 = mDispCallCache[mDispSelectedCallId] || {}, crewR0 = mCrewOf(callR0, crewIdx);
   // Standard call with the rig known: heading to the rig and the rig responding are ONE step (no separate
   // "Responding to Rig" → "Mark rig Responding to Scene"). Load-a-Rig keeps the gather-and-board steps.
-  var oneStep = response === "rig" && callR0.zone !== "secondary" && !!crewR0.rig;
+  var oneStep = response === "rig" && !!crewR0.rig;
   var initialStatus = response === "scene" ? "enroute_scene" : (oneStep ? "ambo_responding" : "picking_up_ambo");
   var key = "unitDetails." + mUdKey(crewIdx, role);
   var update = {};
