@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.76"; window.M_BUILD = BUILD;
+  var BUILD = "3.77"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1704,6 +1704,11 @@ function mEnterHome() {
   var homeTestRow = document.getElementById("m-home-test-row"); if (homeTestRow) homeTestRow.style.display = canDispatch ? "flex" : "none";
   var callLogsTile = document.getElementById("m-calllogs-tile");
   if (callLogsTile) callLogsTile.style.display = canDispatch ? "" : "none";
+  // Same rules as the computer: eScheduler and Hospital Diverts are dispatcher tools (and admins');
+  // a dispatcher-only account (no responder / captain / chief role) doesn't get the field tiles.
+  var isDispRole = roles.includes("dispatcher"), isField = roles.includes("responder") || roles.includes("captain") || roles.includes("chief");
+  ["edispatches", "diverts"].forEach(function(sec) { var t = document.querySelector('#m-home-grid .m-tile[data-sec="' + sec + '"]'); if (t) t.style.display = (isDispRole || mCurrentRole === "admin") ? "" : "none"; });
+  ["rma", "epcr", "portal"].forEach(function(sec) { var t = document.querySelector('#m-home-grid .m-tile[data-sec="' + sec + '"]'); if (t) t.style.display = (isDispRole && !isField && mCurrentRole !== "admin") ? "none" : ""; });
 }
 
 function mRequestPermissions() {
@@ -2019,7 +2024,7 @@ function mGuideRoles() {
   var r = ["responder"]; if (mCanDispatch()) r.push("dispatcher"); if (mCurrentRole === "admin") r.push("admin");
   return r;
 }
-function mOpenGuide() { location.href = "guide.html?roles=" + mGuideRoles().join(",") + "&from=app&v=" + (window.M_BUILD || "") + "&t=" + Date.now(); }
+function mOpenGuide() { var r = mGuideRoles(); location.href = "guide.html?roles=" + r.join(",") + "&role=" + r[r.length - 1] + "&from=app&v=" + (window.M_BUILD || "") + "&t=" + Date.now(); }
 function mCanDispatch() {
   var roles = (mCurrentUserRoles || []).map(function(r){ return String(r).toLowerCase(); });
   return mCurrentRole === "admin" || roles.indexOf("dispatcher") !== -1 || roles.indexOf("captain") !== -1 || roles.indexOf("chief") !== -1;
