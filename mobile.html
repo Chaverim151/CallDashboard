@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.19"; window.M_BUILD = BUILD;
+  var BUILD = "4.20"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6106,6 +6106,12 @@ function mCallerLocationText(link) {
   var t = mRenderTemplate(mTemplateFor("callerLocation"), { orgName: ORG.textName, link: link });
   return t.indexOf(link) === -1 ? t + "\n" + link : t;
 }
+// Admin ▸ Message Templates on/off boxes — appdata/smsTemplates._send[key] = { sms, push, admin }.
+// Anything not set is ON; only an explicit false turns that channel off for that message.
+function hzSendOn(key, ch) {
+  var s = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, k = s && s[key];
+  return !(k && k[ch] === false);
+}
 function mTemplateFor(key) {
   var t = mCleanTemplate(M_SMS_TEMPLATES && M_SMS_TEMPLATES[key]);
   return (typeof t === "string" && t.trim()) ? t : M_SMS_TEMPLATE_DEFAULTS[key];
@@ -6278,7 +6284,8 @@ function mCanManageTickets() {
 }
 // The admin group is copied on every call notification, under their own header
 function mPlainHeader(h) { return String(h || "").replace(/^[^A-Za-z0-9]+\s*/, ""); }
-function mAdminCopy(call, header, detail) {
+function mAdminCopy(call, header, detail, key) {
+  if (key && !hzSendOn(key, "admin")) return;   // Admin group box off for this message
   var already = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
   var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call already got it
@@ -6287,6 +6294,7 @@ function mAdminCopy(call, header, detail) {
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
 }
 function mNotifyAdminUnits(call) {
+  if (!hzSendOn("assignment", "admin")) return;   // Message Templates ▸ Unit assigned ▸ Admin group off
   var assigned = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") assigned[cr[k]] = true; }); });
   (call.assignedUnits || []).forEach(function(u){ assigned[u] = true; });
@@ -6298,8 +6306,8 @@ function mNotifyAdminUnits(call) {
 }
 // Text one unit the full call details the moment it's assigned
 function mTextAssignedUnit(unitId, call) {
-  mSmsEnqueue(function(){ return mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, mCallDetailsSMS(call)); }); });
-  mAdminCopy(call, "UNIT ASSIGNED", unitId + " assigned to this call");
+  if (hzSendOn("assignment", "sms")) mSmsEnqueue(function(){ return mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, mCallDetailsSMS(call)); }); });
+  mAdminCopy(call, "UNIT ASSIGNED", unitId + " assigned to this call", "assignment");
 }
 // Classify by what the message IS, not by its first line — assignment texts now open with the
 // address, so a first-line heuristic labelled every dispatch with a street name.
@@ -6348,8 +6356,8 @@ function mTextResourceToAssigned(call, header, detail) {
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
   var _body = mRenderTemplate(mTemplateFor("resource"), Object.assign(mCallVars(call), { header: header, detail: detail || "", address: mSmsAddress(call) }));
-  mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, _body); }); });
-  mAdminCopy(call, header, detail);
+  if (hzSendOn("resource", "sms")) mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, _body); }); });
+  mAdminCopy(call, header, detail, "resource");
 }
 // Text every assigned unit a new dispatcher note
 function mTextNoteToAssigned(call, noteText) {
@@ -6357,8 +6365,8 @@ function mTextNoteToAssigned(call, noteText) {
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") units.push(cr[k]); }); });
   if (!units.length) return;
   var _nbody = mRenderTemplate(mTemplateFor("note"), Object.assign(mCallVars(call), { note: noteText, address: mSmsAddress(call) }));
-  mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, _nbody); }); });
-  mAdminCopy(call, "📝 CALL UPDATE", noteText);
+  if (hzSendOn("note", "sms")) mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, _nbody); }); });
+  mAdminCopy(call, "📝 CALL UPDATE", noteText, "note");
 }
 // Every SMS ends with a timestamp — added here so no message can go out without one
 // Every text uses one format, the same as Unit assigned: "Date: 10/01/2026  Time: 18:00".
@@ -6440,6 +6448,7 @@ function mPushCallbackSMS() {
   var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
   if (!targetUnits.length) { mToast("No units assigned", true); return; }
   var addr = (call.address||"").split(",")[0];
+  if (!hzSendOn("callback", "sms")) { mToast("Callback texts are turned off (Admin ▸ Message Templates)", true); return; }
   var msg = mRenderTemplate(mTemplateFor("callback"), Object.assign(mCallVars(call), { address: mSmsAddress(call), callback: call.callbackNumber }));
   db.collection("users").get().then(function(snap) {
     var phones = [];
@@ -7911,8 +7920,8 @@ function mDdPushLocation() {
     var body = mRenderTemplate(mTemplateFor("locationUpdate"), Object.assign(mCallVars(call), {
       address: mSmsAddress(call), callerPlace: d.approxAddress ? "near " + d.approxAddress : lat.toFixed(6) + ", " + lng.toFixed(6),
       accuracy: String(acc), moved: moved !== null ? " — moved about " + mDdDist(moved) : "", callerMapsLink: maps, callerWazeLink: waze }));
-    mSmsEnqueue(function() { return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
-    mAdminCopy(call, "📍 LOCATION UPDATE", noteText);
+    if (hzSendOn("locationUpdate", "sms")) mSmsEnqueue(function() { return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
+    mAdminCopy(call, "📍 LOCATION UPDATE", noteText, "locationUpdate");
     mToast("📍 New location sent to " + units.join(", "));
   }).catch(function(e) { mToast("Couldn't update the location: " + e.message, true); });
 }
@@ -8888,6 +8897,7 @@ function mRemoveCrew(crewIdx) {
 }
 // A unit sent to collect the rig gets the base address and directions to it.
 function mTextRigDirections(unitId, call) {
+  if (!hzSendOn("rigResponse", "sms")) return;
   mSmsEnqueue(function() {
     return mEnsureBaseCoords().then(function() {
       var body = mRenderTemplate(mTemplateFor("rigResponse"), mCallVars(call || {}));
