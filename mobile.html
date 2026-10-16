@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.18"; window.M_BUILD = BUILD;
+  var BUILD = "4.19"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6846,12 +6846,17 @@ function mUseClosestAddress(lat, lng, acc) {
   var addCand = function(r, from) {
     if (!r || !r.geometry || !r.geometry.location) return;
     var hasNum = (r.address_components || []).some(function(c) { return c.types.indexOf("street_number") !== -1; });
-    if (!hasNum) return;
+    if (!hasNum && from !== "near") return;
     var d = mMetresBetween(lat, lng, r.geometry.location.lat(), r.geometry.location.lng());
     var rooftop = r.geometry.location_type === "ROOFTOP";
     cands.push({ addr: mCleanAddress(r.formatted_address.replace(/, USA$/, "")), d: d, score: d + (rooftop ? 0 : 25), from: from });
   };
   var finish = function() {
+    // The caller's own page ("Near") names the building they're at — use it whenever Google agrees it's
+    // in the same spot (within ~150 m). Only fall back to Google's closest building when "Near" has no
+    // house number or Google puts it somewhere else.
+    var near = cands.filter(function(c) { return c.from === "near"; })[0];
+    if (near && near.d <= Math.max(150, (acc || 0) * 2)) { done(near.addr || approx); return; }
     cands.sort(function(x, y) { return x.score - y.score; });
     done(cands.length ? cands[0].addr : approx);
   };
@@ -6861,6 +6866,7 @@ function mUseClosestAddress(lat, lng, acc) {
     if (!nearHasNum) { finish(); return; }
     gc.geocode({ address: approx, region: "us" }, function(r2, st2) {
       if (st2 === "OK" && r2 && r2[0]) addCand(r2[0], "near");
+      else { done(approx); return; }   // Google couldn't look it up — the caller's own address is still the best
       finish();
     });
   });
