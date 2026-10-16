@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.03"; window.M_BUILD = BUILD;
+  var BUILD = "4.04"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6347,7 +6347,7 @@ var M_NC_DRAFT_KEY = "mNewCallDraft";
 var M_NC_DRAFT_FIELDS = ["m-nc-address","m-nc-lat","m-nc-lng","m-nc-mapslink","m-nc-apt","m-nc-nature","m-nc-nature-custom","m-nc-age-num","m-nc-callback","m-nc-accesscode","m-nc-notes"];
 var mNcDraftTimer = null, mNcPosted = false;   // mNcPosted: the call on the form was posted — never save it as a draft again
 function mNcDraftSnapshot() {
-  var d = { fields: {}, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", sex: mNcSex || "", savedAt: new Date().toISOString() };
+  var d = { fields: {}, highway: !!mNcHighway, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", sex: mNcSex || "", savedAt: new Date().toISOString() };
   M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d.fields[id] = el.value; });
   // the caller-location request too, so a phone that reloads the app (common after a phone call) reconnects
   if (typeof mLocReqToken !== "undefined" && mLocReqToken) d.loc = { token: mLocReqToken, tokensAll: (mLocReqTokensAll || []).slice(), callback: mLocReqCallback || "",
@@ -6389,6 +6389,7 @@ function mNcDraftRestore(d) {
   if (d.age) mSetNcAge(d.age);
   if (d.sex) { mNcSex = ""; mSetNcSex(d.sex); }
   if (d.zone) mSetNcZone(d.zone, false, d.zoneArea || "");
+  mSetNcHighway(!!d.highway, false);
   if (d.fields["m-nc-address"] && d.fields["m-nc-lat"]) hzNcPrivateLookup(d.fields["m-nc-address"], parseFloat(d.fields["m-nc-lat"]), parseFloat(d.fields["m-nc-lng"]));
   if (d.loc && d.loc.token) mLocResume(d.loc);
   var an = document.getElementById("m-nc-age-num"); if (an && an.value && an.nextElementSibling) an.nextElementSibling.style.display = "block";
@@ -6687,6 +6688,7 @@ function mUseCallerLocation(lat, lng, acc, coordsOnly) {
         mUseClosestAddress(lat, lng, acc); return;
       } else if (roadName) {
         inp.value = roadName + " — " + coords;        // e.g. Garden State Pkwy — 40.512345, -74.398765
+        mNcAutoHighway(roadName);
       } else {
         inp.value = coords;
       }
@@ -6766,6 +6768,7 @@ function mE164(p) {
 }
 function mOpenNewCallForm() {
   mNcPosted = false;
+  setTimeout(function(){ mSetNcHighway(false, false); }, 0);
   mGoTo("dispatch-newcall");
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
   mLocSetBtn(false);
@@ -6877,6 +6880,29 @@ function mSetNcAge(a) {
     b.style.color = isThis ? "#e8a0ff" : "var(--white)";
   });
 }
+// ── "Is the location on a highway?" ── Yes: the Garden State Parkway picker opens (exit / mile marker) and the
+// Apt / Suite field is hidden (there's no apartment on a highway). No: picker button hidden, Apt shown.
+var mNcHighway = false;
+var M_HW_ROAD_RX = /\b(parkway|pkwy|turnpike|tpke|interstate|expressway|expy|freeway|highway|hwy)\b|\b(i|us|nj|rt|route)[\s-]?\d+\b|\bgsp\b/i;
+function mSetNcHighway(on, fromUser) {
+  mNcHighway = !!on;
+  document.querySelectorAll("#m-pg-dispatch-newcall [data-hwq]").forEach(function(b) {
+    var isThis = (b.getAttribute("data-hwq") === "yes") === mNcHighway;
+    b.style.borderColor = isThis ? "#7ab8f5" : "var(--card-border)";
+    b.style.background = isThis ? "rgba(122,184,245,0.18)" : "";
+    b.style.color = isThis ? "#7ab8f5" : "var(--gray)";
+    b.style.fontWeight = isThis ? "700" : "";
+  });
+  var hb = document.getElementById("m-nc-hw-btn"); if (hb) hb.style.display = mNcHighway ? "flex" : "none";
+  var aw = document.getElementById("m-nc-apt-wrap"); if (aw) aw.style.display = mNcHighway ? "none" : "";
+  if (mNcHighway) { var apt = document.getElementById("m-nc-apt"); if (apt) apt.value = ""; }
+  if (mNcHighway && fromUser) mHwOpenPicker();
+  if (!mNcHighway) { var hm = document.getElementById("hw-modal"); if (hm) hm.remove(); }
+  if (fromUser && typeof mNcDraftSave === "function") mNcDraftSave();
+}
+// An address that is clearly a highway (picked from the Parkway list, or the caller is on one) → answer "Yes"
+// without popping the picker — the location is already known.
+function mNcAutoHighway(addr) { if (!mNcHighway && M_HW_ROAD_RX.test(String(addr || ""))) mSetNcHighway(true, false); }
 function mSetNcSex(s) {
   mNcSex = (s === "" ? "" : (mNcSex === s ? "" : s));
   mPaintNcSex();
@@ -7059,6 +7085,7 @@ var M_HW_GSP = ["GSP", "GSPC"];
 function mHwApply(it) {
   var inp = document.getElementById("m-nc-address"); if (!inp || !it) return;
   inp.value = it.address; mNcResolvedAddress = inp.value.trim(); mNcLastPlace = null;
+  if (!mNcHighway) mSetNcHighway(true, false);
   document.getElementById("m-nc-lat").value = it.lat;
   document.getElementById("m-nc-lng").value = it.lng;
   document.getElementById("m-nc-mapslink").value = "https://www.google.com/maps/dir/?api=1&destination=" + it.lat + "," + it.lng + "&travelmode=driving";
@@ -7454,6 +7481,7 @@ function mPostNewCallNow() {
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
     zone: mNcZone, // always a detected value — posting is blocked below if it's unknown
     zoneArea: mNcZoneArea || "",   // which coverage area it fell in, for the card and call info
+    onHighway: !!mNcHighway,
     callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }],
     callNature: nature,
     patientAge: mNcAge,
@@ -9591,10 +9619,11 @@ function mCloseAllSheets() {
     </div>
     <div class="m-disp-label">Location</div>
     <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcAddressEdited()" class="m-disp-input" style="padding-right:38px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><div id="m-nc-hw-list" role="listbox" aria-label="Highway locations" style="display:none"></div><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
-    <button type="button" onclick="mHwOpenPicker()" style="display:flex;align-items:center;gap:8px;width:100%;justify-content:center;min-height:44px;margin:-2px 0 12px;background:rgba(122,184,245,0.10);border:1px solid rgba(122,184,245,0.45);border-radius:10px;color:#d6e8ff;font:inherit;font-weight:700;font-size:0.88rem;cursor:pointer">🛣 Garden State Parkway — exit or mile marker</button>
+    <div id="m-nc-hw-q" style="display:flex;align-items:center;gap:8px;margin:-2px 0 10px"><span style="flex:1;font-size:0.78rem;color:var(--gray)">🛣 Is the location on a highway?</span><button type="button" class="m-disp-btn" data-hwq="yes" onclick="mSetNcHighway(true, true)" style="min-width:64px">Yes</button><button type="button" class="m-disp-btn" data-hwq="no" onclick="mSetNcHighway(false, true)" style="min-width:64px">No</button></div>
+    <button type="button" id="m-nc-hw-btn" onclick="mHwOpenPicker()" style="display:none;align-items:center;gap:8px;width:100%;justify-content:center;min-height:44px;margin:-2px 0 12px;background:rgba(122,184,245,0.10);border:1px solid rgba(122,184,245,0.45);border-radius:10px;color:#d6e8ff;font:inherit;font-weight:700;font-size:0.88rem;cursor:pointer">🛣 Garden State Parkway — exit or mile marker</button>
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
-    <div class="m-disp-label">Apt / Suite / Unit</div>
-    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-apt" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-apt')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div id="m-nc-apt-wrap"><div class="m-disp-label">Apt / Suite / Unit</div>
+    <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-apt" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-apt')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div></div>
 
     <div id="m-nc-zone-banner" style="display:none;margin-bottom:12px"></div>
 
