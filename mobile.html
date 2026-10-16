@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.94"; window.M_BUILD = BUILD;
+  var BUILD = "3.95"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6179,7 +6179,7 @@ function mPushCallbackSMS() {
 //    is cleared, so leaving the app mid-entry (a phone call, a text, an accidental swipe) loses nothing ──
 var M_NC_DRAFT_KEY = "mNewCallDraft";
 var M_NC_DRAFT_FIELDS = ["m-nc-address","m-nc-lat","m-nc-lng","m-nc-mapslink","m-nc-apt","m-nc-nature","m-nc-nature-custom","m-nc-age-num","m-nc-callback","m-nc-accesscode","m-nc-notes"];
-var mNcDraftTimer = null;
+var mNcDraftTimer = null, mNcPosted = false;   // mNcPosted: the call on the form was posted — never save it as a draft again
 function mNcDraftSnapshot() {
   var d = { fields: {}, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", sex: mNcSex || "", savedAt: new Date().toISOString() };
   M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d.fields[id] = el.value; });
@@ -6194,8 +6194,10 @@ function mNcDraftHasContent(d) {
 }
 function mNcDraftSave() {
   clearTimeout(mNcDraftTimer);
+  if (mNcPosted) return;
   mNcDraftTimer = setTimeout(function() {
     try {
+      if (mNcPosted) return;
       var d = mNcDraftSnapshot();
       if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d));
       else localStorage.removeItem(M_NC_DRAFT_KEY);
@@ -6203,7 +6205,18 @@ function mNcDraftSave() {
   }, 250);
 }
 function mNcDraftClear() { clearTimeout(mNcDraftTimer); try { localStorage.removeItem(M_NC_DRAFT_KEY); } catch (e) {} var b = document.getElementById("m-nc-draft-bar"); if (b) b.style.display = "none"; }
-function mNcDraftLoad() { try { var d = JSON.parse(localStorage.getItem(M_NC_DRAFT_KEY) || "null"); return mNcDraftHasContent(d) ? d : null; } catch (e) { return null; } }
+function mNcDraftLoad() {
+  try {
+    var d = JSON.parse(localStorage.getItem(M_NC_DRAFT_KEY) || "null");
+    if (!mNcDraftHasContent(d)) return null;
+    // Already posted? (a call at the same address created after the draft was last saved) → not a lost call
+    var addr = String((d.fields || {})["m-nc-address"] || "").trim().toLowerCase(), saved = d.savedAt ? new Date(d.savedAt).getTime() : 0;
+    if (addr && (mActiveCallsLive || []).some(function(c) {
+      return String(c.address || "").toLowerCase().indexOf(addr) !== -1 && (!saved || new Date(c.createdAt || 0).getTime() >= saved - 120000);
+    })) { mNcDraftClear(); return null; }
+    return d;
+  } catch (e) { return null; }
+}
 function mNcDraftRestore(d) {
   M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el && d.fields[id] !== undefined) el.value = d.fields[id]; });
   if (d.fields["m-nc-nature"] === "__custom__") { var w = document.getElementById("m-nc-nature-custom-wrap"); if (w) w.style.display = "block"; }
@@ -6228,8 +6241,8 @@ function mNcBindDraft() {
   // zone / age / sex are set by buttons, not inputs
   form.addEventListener("click", function(e){ if (e.target.closest("button")) mNcDraftSave(); }, true);
   // and flush immediately when the app goes to the background
-  document.addEventListener("visibilitychange", function(){ if (document.hidden) { clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} } });
-  window.addEventListener("pagehide", function(){ clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} });
+  document.addEventListener("visibilitychange", function(){ if (document.hidden && !mNcPosted) { clearTimeout(mNcDraftTimer); try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} } });
+  window.addEventListener("pagehide", function(){ clearTimeout(mNcDraftTimer); if (mNcPosted) return; try { var d = mNcDraftSnapshot(); if (mNcDraftHasContent(d)) localStorage.setItem(M_NC_DRAFT_KEY, JSON.stringify(d)); } catch (err) {} });
 }
 // ── CALLER LOCATION ────────────────────────────────────────────────────────────────────────────
 // Texts the caller a one-time link. They tap "Share my location" and their phone reports a position
@@ -6569,6 +6582,7 @@ function mE164(p) {
   return null;
 }
 function mOpenNewCallForm() {
+  mNcPosted = false;
   mGoTo("dispatch-newcall");
   if (mLocReqUnsub) { mLocReqUnsub(); mLocReqUnsub = null; mLocReqToken = null; }
   mLocSetBtn(false);
@@ -7277,7 +7291,7 @@ function mPostNewCallNow() {
   };
   db.collection("activeCalls").add(call).then(function(ref) {
     mNotifyAdminUnits(Object.assign({ id: ref.id }, call));   // chiefs are told about every call
-    mNcDraftClear();
+    mNcPosted = true; mNcDraftClear();
     mToast("🚑 Call posted!");
     btn.disabled = false; btn.textContent = "🚑 Dispatch Call";
     mOpenDispatchCall(ref.id);
