@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.09"; window.M_BUILD = BUILD;
+  var BUILD = "4.10"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -265,6 +265,7 @@ body.m-test-on .m-subpage-header{padding-top:15px}
 .m-btn.alerts-on{color:#7dedb5;border-color:rgba(76,175,128,0.4);}
 
 /* ── SCROLL CONTENT ── */
+.m-scroll.m-fits{overflow-y:hidden}   /* nothing to scroll → no rubber-band on iPhone */
 .m-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
   padding:20px 16px calc(28px + env(safe-area-inset-bottom));overscroll-behavior:contain;
   touch-action:pan-y;will-change:scroll-position;}
@@ -1785,6 +1786,30 @@ function mSetFaceOn() {
   }).then(function() { mSetFlow.pw = null; mSettingsRender(); }).catch(function(e) { mToast(e.message, true); });
 }
 
+
+// ── Pages only scroll when they need to ──
+// iPhone lets a scroll area bounce even when everything already fits, which makes a static page (e.g. the dispatch
+// dashboard with no calls) feel scrollable. Each .m-scroll that fits its content gets .m-fits (overflow hidden);
+// as soon as the content grows (calls come in, a card opens) it scrolls again.
+(function() {
+  var queued = false;
+  function check() {
+    queued = false;
+    document.querySelectorAll(".m-scroll").forEach(function(el) {
+      if (!el.offsetParent) return;                                    // hidden page — check when it shows
+      var fits = el.scrollHeight <= el.clientHeight + 1;               // scrollHeight is right even while hidden
+      if (fits !== el.classList.contains("m-fits")) el.classList.toggle("m-fits", fits);   // only touch it on a change (no observer loop)
+    });
+  }
+  function soon() { if (!queued) { queued = true; requestAnimationFrame(check); } }
+  document.addEventListener("DOMContentLoaded", function() {
+    new MutationObserver(soon).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+    window.addEventListener("resize", soon);
+    document.addEventListener("load", soon, true);                     // pictures finishing loading change heights too
+    document.addEventListener("transitionend", soon, true);
+    soon();
+  });
+})();
 // ── TOAST ──
 function mToast(msg, isErr) {
   var t = document.getElementById("m-toast");
