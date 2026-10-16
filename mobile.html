@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.02"; window.M_BUILD = BUILD;
+  var BUILD = "4.03"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -65,6 +65,7 @@
 .m-set-kv{display:flex;align-items:center;gap:8px;font-size:0.85rem;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)}.m-set-kv span{color:var(--gray);flex:0 0 auto;min-width:50px}.m-set-kv b{color:var(--white);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m-set-in{flex:1;min-width:0;padding:7px 10px;margin:0}
 .m-set-mini{flex:0 0 auto;background:rgba(var(--gold-rgb),0.12);border:1px solid rgba(var(--gold-rgb),0.45);color:var(--gold);border-radius:7px;font-size:0.72rem;font-weight:700;padding:5px 8px;cursor:pointer;white-space:nowrap}
+#m-pg-calllogs > div:nth-child(2) > button{min-height:40px}
 .m-set-1l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m-set-note{font-size:0.72rem;color:var(--gray);margin-top:6px;line-height:1.35}
 .m-set-prev{display:grid;gap:4px;max-width:200px;margin:0 auto 10px;padding:6px;border:1px solid var(--card-border);border-radius:10px}
@@ -1051,7 +1052,9 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <option value="cancelled">Cancelled</option>
     </select>
     <input type="text" id="m-cl-unit" class="m-disp-input" placeholder="Unit (MC-##)" style="flex:1;min-width:100px">
+    <input type="search" id="m-cl-q" class="m-disp-input" placeholder="Search address, hospital, notes…" style="flex:1 1 100%;min-width:160px" onkeydown="if(event.key==='Enter')mLoadCallLogs()">
     <button onclick="mLoadCallLogs()" style="flex-shrink:0;background:rgba(var(--gold-rgb),0.15);border:1px solid rgba(var(--gold-rgb),0.4);border-radius:8px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;padding:0 14px;cursor:pointer">Search</button>
+    <button id="m-cl-export" onclick="mExportCallLogs()" style="display:none;flex-shrink:0;background:rgba(var(--gold-rgb),0.15);border:1px solid rgba(var(--gold-rgb),0.4);border-radius:8px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;padding:0 14px;cursor:pointer">⬇ Excel</button>
     <button onclick="mClearCLFilters()" style="flex-shrink:0;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;padding:0 14px;cursor:pointer">Clear</button>
   </div>
   <div class="m-scroll" id="m-cl-list">
@@ -4860,11 +4863,11 @@ function mLoadCallLogs() {
   var disp = document.getElementById("m-cl-disp").value;
   var nature = document.getElementById("m-cl-nature").value;
   var unit = (document.getElementById("m-cl-unit").value||"").trim().toUpperCase();
-  function process(snap) {
-    var logs = [];
-    snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
-    if (from) logs = logs.filter(function(l) { return (l.createdAt||"") >= from + "T00:00:00.000Z"; });
-    if (to)   logs = logs.filter(function(l) { return (l.createdAt||"") <= to   + "T23:59:59.999Z"; });
+  var q = ((document.getElementById("m-cl-q") || {}).value || "").trim();
+  var exp = document.getElementById("m-cl-export");
+  if (exp) exp.style.display = (mCurrentRole === "admin" || (mCurrentUserRoles||[]).some(function(r){ return /^(captain|chief)$/i.test(r); })) ? "" : "none";
+  function process(logs) {
+    if (q) logs = logs.filter(function(l) { return hzCallLogMatches(l, q); });
     if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
     if (disp) logs = logs.filter(function(l) { return (l.disposition||{}).type === disp; });
     if (nature === "__custom__") logs = logs.filter(function(l) { return l.callNature && !M_CALL_NATURES.some(function(nn){ return nn.value === l.callNature; }); });
@@ -4876,15 +4879,169 @@ function mLoadCallLogs() {
     mAllCallLogs = logs;
     mRenderCallLogs(logs);
   }
-  // Matches desktop exactly: only status=="complete" is queried (cancelled calls aren't stored under this status)
-  db.collection("activeCalls").where("status","==","complete").orderBy("createdAt","desc").limit(500).get()
-    .then(process)
-    .catch(function() {
-      db.collection("activeCalls").where("status","==","complete").get()
-        .then(process)
-        .catch(function(e) { el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
-    });
+  // Same as desktop: completed calls over the whole date range (local days), not just the newest 500
+  hzFetchCallLogs(from, to).then(process)
+    .catch(function(e) { el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
 }
+function mExportCallLogs() {
+  if (!(mAllCallLogs || []).length) { mToast("No calls to export — change the dates or filters", true); return; }
+  var lines = (function(pre) {
+    var v = function(id) { var e = document.getElementById(pre + id); return e ? (e.value || "").trim() : ""; };
+    var label = function(id) { var e = document.getElementById(pre + id); return e && e.selectedIndex > 0 ? e.options[e.selectedIndex].text : "All"; };
+    return [["From", v("from") || "(any)"], ["To", v("to") || "(any)"], ["Zone", label("zone")], ["Nature", label("nature")], ["Disposition", label("disp")], ["Unit", v("unit") || "All"], ["Search", v("q") || "(none)"]];
+  })("m-cl-");
+  try { db.collection("callLogAudit").add({ action: "call_logs_export", callId: null, uid: mCurrentUser ? mCurrentUser.uid : "", unit: mCurrentUserUnit || "", role: mCurrentRole || "", timestamp: new Date().toISOString(), userAgent: navigator.userAgent.substring(0, 100) }).catch(function(){}); } catch (e) {}
+  hzExportCallLogsXlsx(mAllCallLogs, lines).then(function() { mToast("✓ " + mAllCallLogs.length + " call" + (mAllCallLogs.length === 1 ? "" : "s") + " exported to Excel"); });
+}
+
+// ══ CALL LOGS → EXCEL (.xlsx) — identical block in index.html and mobile.html ══
+// A tiny .xlsx writer (no outside library, works offline): a zip ("stored", no compression) of the few XML files
+// Excel needs. Sheets: [{ name, cols:[{h, w, t:"s"|"n"|"d"|"dt"}], rows:[[...]] }]. Row 1 is bold, frozen, filterable.
+function hzXlsxBlob(sheets) {
+  var enc = new TextEncoder();
+  var esc = function(v) { return String(v == null ? "" : v).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ""); };
+  var colName = function(i) { var s = ""; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  var serial = function(d) { return (d.getTime() - d.getTimezoneOffset() * 60000) / 86400000 + 25569; };   // local date/time as an Excel number
+  var files = [];
+  var add = function(path, text) { files.push({ path: path, data: enc.encode(text) }); };
+  add("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    sheets.map(function(s, i) { return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join("") + '</Types>');
+  add("_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  add("xl/workbook.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+    sheets.map(function(s, i) { return '<sheet name="' + esc(s.name.slice(0, 31)) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join("") + '</sheets>' +
+    '<definedNames>' + sheets.map(function(s, i) { return s.rows.length ? '<definedName name="_xlnm._FilterDatabase" localSheetId="' + i + '" hidden="1">\'' + esc(s.name.slice(0, 31)) + '\'!$A$1:$' + colName(s.cols.length - 1) + '$' + (s.rows.length + 1) + '</definedName>' : ''; }).join("") + '</definedNames></workbook>');
+  add("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    sheets.map(function(s, i) { return '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join("") +
+    '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+  // styles: 0 normal · 1 bold header · 2 date · 3 date + time · 4 wrapped text
+  add("xl/styles.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/><numFmt numFmtId="165" formatCode="yyyy-mm-dd hh:mm"/></numFmts>' +
+    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F3864"/><bgColor indexed="64"/></patternFill></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+  sheets.forEach(function(s, si) {
+    var cell = function(ref, v, t) {
+      if (v === null || v === undefined || v === "") return "";
+      if ((t === "d" || t === "dt") && v instanceof Date && !isNaN(v)) return '<c r="' + ref + '" s="' + (t === "d" ? 2 : 3) + '"><v>' + (t === "d" ? Math.floor(serial(v)) : serial(v)) + '</v></c>';
+      if (typeof v === "number" && isFinite(v)) return '<c r="' + ref + '"><v>' + v + '</v></c>';
+      return '<c r="' + ref + '" t="inlineStr"' + (t === "w" ? ' s="4"' : '') + '><is><t xml:space="preserve">' + esc(v) + '</t></is></c>';
+    };
+    var xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+      '<cols>' + s.cols.map(function(c, i) { return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + (c.w || 14) + '" customWidth="1"/>'; }).join("") + '</cols><sheetData>' +
+      '<row r="1">' + s.cols.map(function(c, i) { return '<c r="' + colName(i) + '1" t="inlineStr" s="1"><is><t>' + esc(c.h) + '</t></is></c>'; }).join("") + '</row>' +
+      s.rows.map(function(r, ri) { return '<row r="' + (ri + 2) + '">' + r.map(function(v, ci) { return cell(colName(ci) + (ri + 2), v, s.cols[ci] && s.cols[ci].t); }).join("") + '</row>'; }).join("") +
+      '</sheetData>' + (s.rows.length ? '<autoFilter ref="A1:' + colName(s.cols.length - 1) + (s.rows.length + 1) + '"/>' : '') + '</worksheet>';
+    add("xl/worksheets/sheet" + (si + 1) + ".xml", xml);
+  });
+  // zip (stored)
+  var crcT = hzXlsxBlob._crc || (hzXlsxBlob._crc = (function() { var t = new Uint32Array(256); for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })());
+  var crc32 = function(b) { var c = 0xFFFFFFFF; for (var i = 0; i < b.length; i++) c = crcT[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  var parts = [], central = [], offset = 0;
+  var u16 = function(v) { return [v & 255, (v >>> 8) & 255]; }, u32 = function(v) { return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; };
+  files.forEach(function(f) {
+    var name = enc.encode(f.path), crc = crc32(f.data), size = f.data.length;
+    var local = new Uint8Array([].concat([0x50, 0x4b, 0x03, 0x04], u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(size), u32(size), u16(name.length), u16(0)));
+    parts.push(local, name, f.data);
+    central.push(new Uint8Array([].concat([0x50, 0x4b, 0x01, 0x02], u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(size), u32(size), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset))), name);
+    offset += local.length + name.length + size;
+  });
+  var cdSize = central.reduce(function(a, p) { return a + p.length; }, 0);
+  var end = new Uint8Array([].concat([0x50, 0x4b, 0x05, 0x06], u16(0), u16(0), u16(files.length), u16(files.length), u32(cdSize), u32(offset), u16(0)));
+  return new Blob(parts.concat(central, [end]), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+// Save a file: phones get the Share sheet (Save to Files, AirDrop, email…) when they support it; otherwise download.
+function hzSaveFile(blob, filename) {
+  try {
+    var file = new File([blob], filename, { type: blob.type });
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [file] }))
+      return navigator.share({ files: [file], title: filename }).catch(function() {});
+  } catch (e) {}
+  var url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 4000);
+  return Promise.resolve();
+}
+// Completed calls in a date range (local dates "yyyy-mm-dd"). Range query first; if Firestore's index isn't
+// there, all completed calls are read and filtered here — either way the WHOLE range is covered, not just the newest 500.
+function hzCLDayStartISO(d) { return d ? new Date(d + "T00:00:00").toISOString() : ""; }
+function hzCLDayEndISO(d)   { return d ? new Date(d + "T23:59:59.999").toISOString() : ""; }
+function hzFetchCallLogs(from, to) {
+  var fromISO = hzCLDayStartISO(from), toISO = hzCLDayEndISO(to);
+  var keep = function(snap) {
+    var logs = [];
+    snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
+    return logs.filter(function(l) { var c = l.createdAt || ""; return (!fromISO || c >= fromISO) && (!toISO || c <= toISO); });
+  };
+  var q = db.collection("activeCalls").where("status", "==", "complete");
+  if (fromISO) q = q.where("createdAt", ">=", fromISO);
+  if (toISO) q = q.where("createdAt", "<=", toISO);
+  return q.orderBy("createdAt", "desc").limit(5000).get().then(keep)
+    .catch(function() { return db.collection("activeCalls").where("status", "==", "complete").get().then(keep); });
+}
+// Free-text search across a call: address, nature, units, rigs, hospital, notes, who created it, call ID…
+function hzCallLogText(l) {
+  var bits = [l.id, l.address, l.apt, l.crossStreet, l.callNature, l.zone, l.zoneArea, l.patientAgeNum || l.patientAge, l.patientSex, l.callbackNumber,
+    l.dispatchNotes, l.createdBy, l.completedBy, (l.disposition || {}).type, (l.disposition || {}).hospital, (l.disposition || {}).rmaBy, l.alsProvider, l.alsUnit, l.blsProvider];
+  (l.crews || []).forEach(function(c) { Object.keys(c || {}).forEach(function(k) { if (c[k] && c[k] !== "__added__") bits.push(c[k]); }); });
+  ((l.disposition || {}).transports || []).forEach(function(t) { bits.push(t.hospital, t.rig); });
+  (l.callNotes || []).forEach(function(n) { if (n) bits.push(n.text, n.by); });
+  return bits.filter(Boolean).join(" ").toLowerCase();
+}
+function hzCallLogMatches(l, q) {
+  q = String(q || "").trim().toLowerCase(); if (!q) return true;
+  var hay = hzCallLogText(l);
+  return q.split(/\s+/).every(function(w) { return hay.indexOf(w) !== -1; });   // every word must appear
+}
+function hzExportCallLogsXlsx(logs, filterLines) {
+  var zoneName = function(z) { return z === "primary" ? "Standard" : z === "secondary" ? "Load a Rig" : z === "outside" ? "Outside Zone" : (z || ""); };
+  var natureName = function(v) { var m = (typeof M_CALL_NATURES !== "undefined" ? M_CALL_NATURES : []).filter(function(n) { return n.value === v; })[0]; return m ? m.label : (v || ""); };
+  var statusName = function(s) { var m = (typeof M_STATUS_LOG !== "undefined" && M_STATUS_LOG[s]) || null; return m ? m.text : (s || ""); };
+  var asDate = function(iso) { var d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d : null; };
+  var calls = [], units = [];
+  var nT = 0, nR = 0, nAls = 0;
+  logs.forEach(function(l) {
+    var dt = asDate(l.createdAt), t = l.times || {}, disp = l.disposition || {};
+    var unitList = [], rigs = [];
+    (l.crews || []).forEach(function(c, ci) {
+      if (!c) return;
+      if (c.rig && rigs.indexOf(c.rig) === -1) rigs.push(c.rig);
+      Object.keys(c).forEach(function(k) {
+        if (k === "rig" || !c[k] || c[k] === "__added__") return;
+        if (unitList.indexOf(c[k]) === -1) unitList.push(c[k]);
+        var det = (l.unitDetails || {})[ci + "_" + k] || {};
+        units.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", natureName(l.callNature), "Crew " + (ci + 1), c.rig || "", c[k],
+          k.replace(/\d+$/, "").replace("rigUnit", "Unit 3").replace("primary", "Unit 1").replace("backup", "Unit 2").replace(/^sup_?|^supervisor/, "Supervisor").replace(/^observer/, "Observer").replace(/^responder/, "Responder"),
+          det.response === "rig" ? "Rig" : det.response === "scene" ? "Direct to scene" : "", det.customStatus || statusName(det.status), l.id]);
+      });
+    });
+    var hosp = (disp.transports && disp.transports.length > 1) ? disp.transports.map(function(x) { return (x.rig ? x.rig + " → " : "") + x.hospital; }).join("; ") : (disp.hospital || "");
+    if (disp.type === "transport") nT++; if (disp.type === "rma") nR++; if (l.alsActivated) nAls++;
+    calls.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", l.apt || "", zoneName(l.zone), l.zoneArea || "", natureName(l.callNature),
+      l.patientAgeNum ? Number(l.patientAgeNum) || l.patientAgeNum : (l.patientAge || ""), l.patientSex || "", unitList.join(", "), rigs.join(", "),
+      t.dispatched || "", t.first_on_scene || "", t.enroute || "", t.at_hospital || "", t.cleared || "", t.home || "",
+      disp.type === "rma" ? "RMA" : disp.type === "transport" ? "Transport" : (disp.type || ""), hosp, disp.rmaBy || "",
+      l.alsActivated ? "Yes" : "No", l.alsProvider || "", l.alsUnit || "", l.blsActivated ? "Yes" : "No", l.pdActivated ? "Yes" : "No",
+      l.dispatchNotes || "", (l.callNotes || []).filter(Boolean).map(function(n) { return (n.time ? n.time + " " : "") + (n.by ? n.by + ": " : "") + (n.text || ""); }).join("\n"),
+      l.createdBy || "", l.completedBy || "", asDate(l.completedAt), l.testMode ? "Yes" : "", l.id]);
+  });
+  var summary = [["Exported", new Date().toLocaleString()], ["By", (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || (typeof currentUserUnit !== "undefined" && currentUserUnit) || ""], ["", ""]]
+    .concat((filterLines || []).map(function(f) { return f; }))
+    .concat([["", ""], ["Calls", logs.length], ["Transports", nT], ["RMA", nR], ["ALS activated", nAls]]);
+  var sheets = [
+    { name: "Calls", cols: [{ h: "Date", w: 12, t: "d" }, { h: "Time", w: 7 }, { h: "Address", w: 38 }, { h: "Apt", w: 7 }, { h: "Zone", w: 12 }, { h: "Area", w: 14 }, { h: "Nature", w: 24 },
+      { h: "Age", w: 6, t: "n" }, { h: "Sex", w: 7 }, { h: "Units", w: 22 }, { h: "Rigs", w: 10 }, { h: "Dispatched", w: 10 }, { h: "On Scene", w: 9 }, { h: "En Route", w: 9 },
+      { h: "At Hospital", w: 10 }, { h: "Cleared", w: 9 }, { h: "Home", w: 8 }, { h: "Disposition", w: 11 }, { h: "Hospital", w: 26 }, { h: "RMA Approved By", w: 14 },
+      { h: "ALS", w: 6 }, { h: "ALS Provider", w: 16 }, { h: "ALS Unit", w: 10 }, { h: "BLS Mutual Aid", w: 9 }, { h: "PD", w: 6 },
+      { h: "Dispatch Notes", w: 40, t: "w" }, { h: "Call Notes", w: 50, t: "w" }, { h: "Created By", w: 18 }, { h: "Completed By", w: 18 }, { h: "Completed At", w: 16, t: "dt" }, { h: "Test Call", w: 8 }, { h: "Call ID", w: 22 }], rows: calls },
+    { name: "Units", cols: [{ h: "Date", w: 12, t: "d" }, { h: "Time", w: 7 }, { h: "Address", w: 38 }, { h: "Nature", w: 24 }, { h: "Crew", w: 8 }, { h: "Rig", w: 9 },
+      { h: "Unit", w: 9 }, { h: "Slot", w: 11 }, { h: "Response", w: 14 }, { h: "Last Status", w: 20 }, { h: "Call ID", w: 22 }], rows: units },
+    { name: "Filters & Totals", cols: [{ h: "Item", w: 22 }, { h: "Value", w: 40 }], rows: summary }
+  ];
+  var org = (typeof ORG !== "undefined" && ORG.shortName) ? ORG.shortName.replace(/[^A-Za-z0-9]+/g, "") : "CallLogs";
+  return hzSaveFile(hzXlsxBlob(sheets), org + "_CallLogs_" + (function(d){ return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); })(new Date()) + ".xlsx");
+}
+
 function mPopulateCLNatureFilter() {
   var sel = document.getElementById("m-cl-nature");
   if (!sel || sel.options.length > 1) return;
@@ -4893,12 +5050,13 @@ function mPopulateCLNatureFilter() {
 function mClearCLFilters() {
   var today = new Date();
   var from = new Date(); from.setDate(today.getDate() - 30);
-  document.getElementById("m-cl-from").value = from.toISOString().split("T")[0];
-  document.getElementById("m-cl-to").value = today.toISOString().split("T")[0];
+  document.getElementById("m-cl-from").value = from.toLocaleDateString("en-CA");
+  document.getElementById("m-cl-to").value = today.toLocaleDateString("en-CA");
   document.getElementById("m-cl-zone").value = "";
   document.getElementById("m-cl-disp").value = "";
   document.getElementById("m-cl-nature").value = "";
   document.getElementById("m-cl-unit").value = "";
+  var _q = document.getElementById("m-cl-q"); if (_q) _q.value = "";
   mLoadCallLogs();
 }
 function mRenderCallLogs(logs) {
