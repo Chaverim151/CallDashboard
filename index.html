@@ -596,6 +596,15 @@ select.set-input option{color:#000;}
 .m-ec-tell input{width:18px;height:18px;margin:0;accent-color:var(--gold)}
 .m-ec-btns{display:flex;gap:8px}.m-ec-btns .m-disp-btn{flex:1}
 .m-ec-btns .m-ec-save{background:rgba(var(--gold-rgb),0.18);border-color:rgba(var(--gold-rgb),0.5);color:var(--gold)}
+#m-ec-modal .m-ec-card{padding:18px !important;box-sizing:border-box !important}
+#m-ec-modal .m-ec-title{margin:0 0 14px !important}
+#m-ec-modal .m-disp-label{margin:0 0 5px !important}
+#m-ec-modal .m-disp-input{margin:0 0 12px !important;width:100% !important;box-sizing:border-box !important}
+#m-ec-modal .m-ec-tell{margin:2px 0 14px !important}
+#m-ec-modal .m-ec-btns button{flex:1 !important;margin:0 !important;padding:11px !important;border-radius:8px !important}
+#m-ec-modal .m-ec-btns .m-ec-save{background:rgba(var(--gold-rgb),0.18) !important;border:1px solid rgba(var(--gold-rgb),0.55) !important;color:var(--gold) !important}
+html[data-theme="basic"] #m-ec-modal .m-ec-btns .m-ec-save{background:#0b5cad !important;border-color:#0b5cad !important;color:#ffffff !important}
+.m-dd-edit-row{display:flex;gap:8px;flex-wrap:wrap}
 .m-dd-edit{background:none;border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-size:0.72rem;padding:4px 9px;cursor:pointer;margin-top:8px}
 button.m-dd-edit.m-dd-edit.m-dd-edit.m-dd-edit.m-dd-edit.m-dd-edit{display:inline-block;margin-top:10px !important;font-size:0.74rem !important;padding:5px 10px !important;min-height:0 !important;width:auto !important;font-family:inherit !important;letter-spacing:0 !important;text-transform:none !important}
 .pac-container{z-index:1000 !important}
@@ -2060,7 +2069,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.30</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.31</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -9110,8 +9119,8 @@ var TPL_SAMPLE_EXTRA = {
 };
 var TPL_HELP = {
   adminUpdate: "Sent to the admin notification list when ALS, BLS or PD is dispatched, cancelled or updated on a call they aren't on.",
-  callback: "Sent to the units on the call when a dispatcher changes the callback number (✎ Update location / callback on the call). The number itself is already in the assignment text.",
-  addressChange: "Sent to the units on the call when a dispatcher changes the call's location or apt after dispatch (✎ Update location / callback on the call).",
+  callback: "Sent to the units on the call when a dispatcher changes the callback number (📞 Update callback on the call). The number itself is already in the assignment text.",
+  addressChange: "Sent to the units on the call when a dispatcher changes the call's location or apt after dispatch (📞 Update callback on the call).",
   callerLocation: "Texted to the caller when a dispatcher asks for their location. {link} must stay in — it's added back automatically if removed.",
   locationUpdate: "Sent to the crew when the dispatcher moves the call to the caller's shared location.",
   roadClosure: "Sent from Admin ▸ Closure Notifications. {linkLabel}: {closureLink} becomes \"Closed stretch: …\" for between-two-streets closures and \"Map: …\" otherwise.",
@@ -16945,7 +16954,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.30";
+var DESKTOP_VERSION = "11.31";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -20210,26 +20219,31 @@ window.mUseClosestAddress = mUseClosestAddress;
 //    timeline event, and tells the units on the call — per Admin ▸ Message Templates:
 //    "Call location changed" (addressChange) and "Callback number" (callback): text / push / admin copy. ──
 var mEcPlace = null;
-function mEditCallInfo() {
+function mEditCallInfo(mode) {
   var call = mDispCallCache[mDispSelectedCallId]; if (!call) return;
   mEditCallClose(); mEcPlace = null;
+  var isCb = mode === "cb";
   var m = document.createElement("div"); m.id = "m-ec-modal"; m.className = "m-ec-modal";
   m.onclick = function(e) { if (e.target === m) mEditCallClose(); };
   m.innerHTML = '<div class="m-ec-card">' +
-    '<div class="m-ec-title">✎ Update Call</div>' +
-    '<div class="m-disp-label">Location</div>' +
-    '<input type="text" id="m-ec-addr" class="m-disp-input" autocomplete="off" value="' + mEscHtml(mCleanAddress(call.address || "")) + '">' +
-    '<div id="m-ec-addr-st" class="m-ec-st"></div>' +
-    '<div class="m-disp-label">Apt / Suite / Unit</div>' +
-    '<input type="text" id="m-ec-apt" class="m-disp-input" autocomplete="off" value="' + mEscHtml(call.apt || "") + '">' +
-    '<div class="m-disp-label">Callback Number</div>' +
-    '<input type="tel" id="m-ec-cb" class="m-disp-input" autocomplete="off" value="' + mEscHtml(call.callbackNumber || "") + '">' +
+    '<div class="m-ec-title">' + (isCb ? "📞 Update Callback Number" : "📍 Update Location") + '</div>' +
+    (isCb
+      ? '<div class="m-disp-label">Callback Number</div>' +
+        '<input type="tel" id="m-ec-cb" class="m-disp-input" autocomplete="off" value="' + mEscHtml(call.callbackNumber || "") + '">'
+      : '<div class="m-disp-label">Location</div>' +
+        '<input type="text" id="m-ec-addr" class="m-disp-input" autocomplete="off" value="' + mEscHtml(mCleanAddress(call.address || "")) + '">' +
+        '<div id="m-ec-addr-st" class="m-ec-st"></div>' +
+        '<div class="m-disp-label">Apt / Suite / Unit</div>' +
+        '<input type="text" id="m-ec-apt" class="m-disp-input" autocomplete="off" value="' + mEscHtml(call.apt || "") + '">') +
     '<label class="m-ec-tell"><input type="checkbox" id="m-ec-tell" checked> Text &amp; alert the units on this call</label>' +
     '<div id="m-ec-msg" class="m-ec-st"></div>' +
     '<div class="m-ec-btns"><button type="button" class="m-disp-btn" onclick="mEditCallClose()">Cancel</button>' +
     '<button type="button" class="m-disp-btn m-ec-save" id="m-ec-save" onclick="mEditCallSave()">Save</button></div>' +
   '</div>';
-  document.body.appendChild(m);
+  (document.getElementById("pg-console") || document.body).appendChild(m);   // inside the console on desktop, so its form styles apply
+  var first = document.getElementById(isCb ? "m-ec-cb" : "m-ec-addr");
+  if (first) setTimeout(function() { first.focus(); try { first.setSelectionRange(0, first.value.length); } catch (e) {} }, 50);
+  if (isCb) return;
   var inp = document.getElementById("m-ec-addr");
   inp.addEventListener("input", function() { mEcPlace = null; mEcSt("m-ec-addr-st", inp.value.trim() ? "Pick a suggestion — or Save and it's looked up." : ""); });
   if (window.google && google.maps && google.maps.places) {
@@ -20260,13 +20274,16 @@ function mEcGeocode(text) {
 }
 function mEditCallSave() {
   var call = mDispCallCache[mDispSelectedCallId]; if (!call) return;
-  var addrIn = document.getElementById("m-ec-addr").value.trim(), aptIn = document.getElementById("m-ec-apt").value.trim();
-  var cbIn = document.getElementById("m-ec-cb").value.trim(), tell = document.getElementById("m-ec-tell").checked;
-  var oldAddr = mCleanAddress(call.address || ""), digits = function(x) { return String(x || "").replace(/\D/g, ""); };
+  var val = function(id, dflt) { var el = document.getElementById(id); return el ? el.value.trim() : dflt; };
+  var oldAddr = mCleanAddress(call.address || "");
+  var addrIn = val("m-ec-addr", oldAddr), aptIn = val("m-ec-apt", call.apt || "");
+  var cbIn = val("m-ec-cb", call.callbackNumber || ""), tell = document.getElementById("m-ec-tell").checked;
+  var digits = function(x) { return String(x || "").replace(/\D/g, ""); };
   var addrChanged = !!addrIn && (mEcPlace ? mEcPlace.address !== oldAddr : addrIn !== oldAddr);
   var aptChanged = aptIn !== (call.apt || "");
   var cbChanged = digits(cbIn) !== digits(call.callbackNumber);
   if (!addrIn) { mEcSt("m-ec-msg", "Location can't be empty.", "err"); return; }
+  if (document.getElementById("m-ec-cb") && !cbIn) { mEcSt("m-ec-msg", "Enter the callback number.", "err"); return; }
   if (cbIn && digits(cbIn).length < 10) { mEcSt("m-ec-msg", "Callback number looks too short.", "err"); return; }
   if (!addrChanged && !aptChanged && !cbChanged) { mEditCallClose(); return; }
   var btn = document.getElementById("m-ec-save"); if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
@@ -21245,7 +21262,7 @@ function mRenderDispatchDetail(call) {
     (call.callbackNumber ? '<div style="margin-top:8px;display:flex;gap:8px"><a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="flex:1;text-align:center;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.35);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;padding:6px;text-decoration:none">📞 ' + call.callbackNumber + '</a></div>' : '') +
   '</div>';
 
-  content = content.replace(/<\/div>$/, '') + '<button type="button" class="m-dd-edit" onclick="mEditCallInfo()">✎ Update location / callback</button></div>';
+  content = content.replace(/<\/div>$/, '') + '<div class="m-dd-edit-row"><button type="button" class="m-dd-edit" onclick="mEditCallInfo(\'loc\')">📍 Update location</button><button type="button" class="m-dd-edit" onclick="mEditCallInfo(\'cb\')">📞 Update callback</button></div></div>';
   content += '<div id="m-dd-callerloc"></div>';
 
   // ALS / BLS / PD banners
