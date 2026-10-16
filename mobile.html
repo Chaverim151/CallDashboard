@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.14"; window.M_BUILD = BUILD;
+  var BUILD = "4.15"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -456,6 +456,18 @@ select.m-disp-input option{background-color:#122040;color:#f4f6fa}
    posted half-filled; the outline clears the moment the field has a value. */
 #m-pg-dispatch-newcall .m-nc-need,
 #tpl-modal .m-nc-need{border-color:#e05555 !important;box-shadow:0 0 0 1px rgba(224,85,85,0.35)}
+/* New Call form — Basic look: black field titles; pick-one buttons clear with black text, the picked one blue with white text */
+html[data-theme="basic"] body #m-pg-dispatch-newcall .m-disp-label.m-disp-label,html[data-theme="basic"] body #m-pg-dispatch-newcall #m-nc-hw-q span{color:#1f2328 !important}
+html[data-theme="basic"] #m-pg-dispatch-newcall button.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt{background:transparent !important;color:#1f2328 !important;border-color:#c4cad3 !important;box-shadow:none !important;font-weight:600 !important}
+html[data-theme="basic"] #m-pg-dispatch-newcall button.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.on{background:#0b5cad !important;color:#ffffff !important;border-color:#0b5cad !important}
+html[data-theme="basic"] #m-pg-dispatch-newcall button.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt.m-nc-opt:disabled{opacity:0.4 !important}
+.m-nc-nat-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:60;max-height:260px;overflow-y:auto;background:var(--navy);border:1px solid var(--card-border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.25)}
+.m-nc-nat-item{padding:10px 12px;font-size:0.92rem;cursor:pointer;border-bottom:1px solid var(--card-border)}.m-nc-nat-item:last-child{border-bottom:0}
+.m-nc-nat-item.hl,.m-nc-nat-item:hover{background:rgba(122,184,245,0.15)}
+.m-nc-nat-item small{font-size:0.62rem;font-weight:700;color:#ff9090;border:1px solid rgba(255,144,144,0.5);border-radius:4px;padding:0 4px;margin-left:4px}
+html[data-theme="basic"] .m-nc-nat-list{background:#ffffff !important}
+html[data-theme="basic"] .m-nc-nat-item{color:#1f2328 !important}
+html[data-theme="basic"] .m-nc-nat-item.hl,html[data-theme="basic"] .m-nc-nat-item:hover{background:#e8f0fb !important}
 #tpl-modal .m-nc-need-group{border:1px solid #e05555;border-radius:9px;padding:6px;box-shadow:0 0 0 1px rgba(224,85,85,0.25)}
 /* New Call: the age and sex rows always keep their frame (transparent when answered), so the red "required" outline
    only changes colour — the form never changes height when you tap Adult / Male etc. (it used to jump) */
@@ -705,6 +717,7 @@ html[data-theme="basic"] .m-call-link{color:#167a3e !important}
 html[data-theme="basic"] select.m-disp-input,html[data-theme="basic"] .m-disp-input select{color-scheme:light !important;background-color:#ffffff !important}
 html[data-theme="basic"] select.m-disp-input option{background-color:#ffffff !important;color:#1f2328 !important}
 html[data-theme="basic"] .m-tk-type-chip.on{color:#8a5a00 !important}
+html[data-theme="basic"] .m-nc-nat-item small{color:#b42318 !important}
 html[data-theme="basic"] #m-pg-dispatch-newcall .m-disp-label,html[data-theme="basic"] #tpl-modal .m-disp-label{color:#1b407e !important}
 html[data-theme="basic"] #m-tile-done-bar button{background:#1d3f72 !important;color:#ffffff !important}
 html[data-theme="basic"] .m-call-street{color:#1f2328 !important}
@@ -2253,7 +2266,7 @@ function mRenderCalls(calls) {
     time += " · " + (mins < 60 ? mins + "m" : Math.floor(mins/60) + "h " + (mins%60) + "m");
   }
     var parts = [];
-    if (call.patientAgeNum) parts.push(call.patientAgeNum + " YO");
+    if (call.patientAgeNum) parts.push(hzAge(call));
     else if (call.patientAge === "pediatric") parts.push("Ped");
     else if (call.patientAge === "adult") parts.push("Adult");
     else if (call.patientAge === "uto") parts.push("UTO");
@@ -2429,7 +2442,7 @@ function mRenderDetail(call) {
   var zone = call.zone === "primary" ? "primary" : call.zone === "secondary" ? "secondary" : "outside";
   var zoneLabel = call.zone === "primary" ? "Standard Response" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
   var parts = [];
-  if (call.patientAgeNum) parts.push(call.patientAgeNum + " YO");
+  if (call.patientAgeNum) parts.push(hzAge(call));
   else if (call.patientAge === "pediatric") parts.push("Ped");
   else if (call.patientAge === "adult") parts.push("Adult");
   if (call.patientSex === "male") parts.push("M");
@@ -4523,7 +4536,7 @@ function mMakeCallFlagClass() {
     var addr = (rawA.indexOf("—") !== -1 ? rawA.split("—")[1] : rawA).split(",")[0].trim();
     var nature = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "") : "";
     var cm = nature.match(/\(CODE\s*(25|26|44|100)\)/i); if (cm) nature = "Code " + cm[1]; else nature = nature.split(" / ")[0].split(" (")[0];
-    var age = call.patientAgeNum ? call.patientAgeNum + "y" : call.patientAge === "pediatric" ? "Ped" : call.patientAge === "adult" ? "Adult" : "";
+    var age = call.patientAgeNum ? hzAge(call, true) : call.patientAge === "pediatric" ? "Ped" : call.patientAge === "adult" ? "Adult" : "";
     var sex = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
     var pt = [age, sex].filter(Boolean).join(" ");
     var units = (call.assignedUnits || []).length;
@@ -4867,7 +4880,7 @@ function mRenderDispatchList(calls) {
     var zoneColor = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
     var zoneLabel = call.zone === "primary" ? "Standard" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
     var nature = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "").split(" (")[0] : "";
-    var patient = [call.patientAgeNum ? call.patientAgeNum+"y" : (call.patientAge||""), call.patientSex==="male"?"M":call.patientSex==="female"?"F":""].filter(Boolean).join(" ");
+    var patient = [call.patientAgeNum ? hzAge(call, true) : (call.patientAge||""), call.patientSex==="male"?"M":call.patientSex==="female"?"F":""].filter(Boolean).join(" ");
     // Count the units actually on the crews; assignedUnits can drift if a unit is removed
   var crewUnits = [];
   (call.crews||[]).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__" && crewUnits.indexOf(cr[k]) === -1) crewUnits.push(cr[k]); }); });
@@ -5144,7 +5157,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
 function mPopulateCLNatureFilter() {
   var sel = document.getElementById("m-cl-nature");
   if (!sel || sel.options.length > 1) return;
-  sel.innerHTML = '<option value="">All Natures</option>' + M_CALL_NATURES.map(function(nn){ return '<option value="' + nn.value.replace(/"/g,"&quot;") + '">' + nn.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom</option>';
+  sel.innerHTML = '<option value="">All Natures</option>' + hzNatureSorted().map(function(nn){ return '<option value="' + nn.value.replace(/"/g,"&quot;") + '">' + mEscHtml(nn.text) + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom</option>';
 }
 function mClearCLFilters() {
   var today = new Date();
@@ -6132,7 +6145,7 @@ function mCallVars(call) {
   var fullA = rawA.indexOf(" — ") !== -1 ? rawA.split(" — ").slice(1).join(" — ") : rawA;
   var street = fullA.split(",").map(function(s){ return s.trim(); }).filter(function(s){ return s && !/^(USA|United States)$/i.test(s); }).slice(0, 3).join(", ");
   var sex = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
-  var patient = call.patientAgeNum ? (call.patientAgeNum + " YO" + sex)
+  var patient = call.patientAgeNum ? (hzAge(call) + sex)
               : (call.patientAge === "pediatric" ? ("Pediatric " + sex).trim()
               : call.patientAge === "adult" ? ("Adult " + sex).trim() : sex);
   // Units on the call, and whoever is driving the rig
@@ -6154,7 +6167,7 @@ function mCallVars(call) {
     driver: driver,
     rig: (call.crews && call.crews[0] && call.crews[0].rig) || "",
     ageLine: (function(){
-      var base = call.patientAgeNum ? (call.patientAgeNum + (call.patientAgeUnit ? " " + call.patientAgeUnit : ""))
+      var base = call.patientAgeNum ? (hzAge(call))
                : call.patientAge === "pediatric" ? "Pediatric"
                : call.patientAge === "adult" ? "Adult" : "";
       var s = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
@@ -6446,7 +6459,7 @@ var M_NC_DRAFT_KEY = "mNewCallDraft";
 var M_NC_DRAFT_FIELDS = ["m-nc-address","m-nc-lat","m-nc-lng","m-nc-mapslink","m-nc-apt","m-nc-nature","m-nc-nature-custom","m-nc-age-num","m-nc-callback","m-nc-accesscode","m-nc-notes"];
 var mNcDraftTimer = null, mNcPosted = false;   // mNcPosted: the call on the form was posted — never save it as a draft again
 function mNcDraftSnapshot() {
-  var d = { fields: {}, highway: !!mNcHighway, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", sex: mNcSex || "", savedAt: new Date().toISOString() };
+  var d = { fields: {}, highway: !!mNcHighway, zone: mNcZone || "", zoneArea: mNcZoneArea || "", age: mNcAge || "", uto: !!mNcUto, ageUnit: mNcAgeUnit || "years", sex: mNcSex || "", savedAt: new Date().toISOString() };
   M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el) d.fields[id] = el.value; });
   // the caller-location request too, so a phone that reloads the app (common after a phone call) reconnects
   if (typeof mLocReqToken !== "undefined" && mLocReqToken) d.loc = { token: mLocReqToken, tokensAll: (mLocReqTokensAll || []).slice(), callback: mLocReqCallback || "",
@@ -6485,7 +6498,8 @@ function mNcDraftLoad() {
 function mNcDraftRestore(d) {
   M_NC_DRAFT_FIELDS.forEach(function(id){ var el = document.getElementById(id); if (el && d.fields[id] !== undefined) el.value = d.fields[id]; });
   if (d.fields["m-nc-nature"] === "__custom__") { var w = document.getElementById("m-nc-nature-custom-wrap"); if (w) w.style.display = "block"; }
-  if (d.age) mSetNcAge(d.age);
+  mNcAgeUnit = d.ageUnit === "months" ? "months" : "years";
+  if (d.uto) { mNcUto = true; mNcAge = d.age || ""; mPaintNcAge(); } else { mNcUto = false; mNcAge = ""; mPaintNcAge(); }
   if (d.sex) { mNcSex = ""; mSetNcSex(d.sex); }
   if (d.zone) mSetNcZone(d.zone, false, d.zoneArea || "");
   mSetNcHighway(!!d.highway, false);
@@ -6890,18 +6904,19 @@ function mOpenNewCallForm() {
   document.getElementById("m-nc-notes").value = "";
   document.getElementById("m-nc-code-suggestion").style.display = "none";
   document.getElementById("m-nc-zone-banner").style.display = "none";
-  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mSetNcAge(""); mSetNcSex("");
+  mNcZone = ""; document.getElementById("m-nc-zone-banner").style.display = "none"; mNcAgeUnit = "years"; mSetNcAge(""); mSetNcSex("");
   var natSel = document.getElementById("m-nc-nature");
   if (!natSel.options.length) {
-    natSel.innerHTML = '<option value="">Select nature…</option>' + M_CALL_NATURES.map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + n.label + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
+    natSel.innerHTML = '<option value="">Select nature…</option>' + hzNatureSorted().map(function(n){ return '<option value="' + n.value.replace(/"/g,"&quot;") + '">' + mEscHtml(n.text) + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom…</option>';
     natSel.onchange = function() {
       var found = M_CALL_NATURES.find(function(n){ return n.value === natSel.value; });
       document.getElementById("m-nc-als-hint").style.display = (found && found.als) ? "block" : "none";
       document.getElementById("m-nc-als-hint-spacer").style.display = (found && found.als) ? "none" : "block";
       document.getElementById("m-nc-nature-custom-wrap").style.display = natSel.value === "__custom__" ? "block" : "none";
+      mNcNatureSync();
     };
   }
-  natSel.value = "";
+  natSel.value = ""; mNcNatureSync();
   document.getElementById("m-nc-nature-custom").value = "";
   document.getElementById("m-nc-nature-custom-wrap").style.display = "none";
   document.getElementById("m-nc-als-hint").style.display = "none";
@@ -6955,11 +6970,67 @@ function mNcValidateMarks() {
     var natVal = nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom")||{}).value || "").trim() : nat.value;
     nat.classList.toggle("m-nc-need", !natVal);
   }
-  if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !(typeof mNcAge !== "undefined" && mNcAge));
+  if (ageGroup) ageGroup.classList.toggle("m-nc-need-group", !mNcHasAge());
+  var natQ = document.getElementById("m-nc-nature-q"); if (natQ && nat) natQ.classList.toggle("m-nc-need", nat.classList.contains("m-nc-need"));
   // patient sex is required as well — its row gets the same outline
   var sexBtn = form.querySelector("[data-sex]");
   var sexRow = sexBtn ? sexBtn.parentElement : null;
   if (sexRow) sexRow.classList.toggle("m-nc-need-group", !(typeof mNcSex !== "undefined" && mNcSex));
+}
+
+// ── Call nature: type to search (any order of words), list A–Z without the code numbers ──
+// Patient age as text: "84 YO" / "6 MO" (short: "84y" / "6m"). Months only when the call says so.
+function hzAge(c, short) {
+  if (!c || !c.patientAgeNum) return "";
+  var mo = c.patientAgeUnit === "months";
+  return c.patientAgeNum + (short ? (mo ? "m" : "y") : (mo ? " MO" : " YO"));
+}
+function hzNatureLabel(t) { return String(t || "").replace(/^\s*\d+\s*[-–—.:)]\s*/, "").trim(); }
+function hzNatureSorted() {
+  return (typeof M_CALL_NATURES !== "undefined" ? M_CALL_NATURES : []).map(function(n) { return { value: n.value, text: hzNatureLabel(n.label || n.value), als: !!n.als }; })
+    .sort(function(a, b) { return a.text.localeCompare(b.text); });
+}
+var mNcNatItems = [], mNcNatSel = -1;
+function mNcNatureFilter(all) {
+  var q = document.getElementById("m-nc-nature-q"), box = document.getElementById("m-nc-nature-list"); if (!q || !box) return;
+  var sel = document.getElementById("m-nc-nature");
+  var cur = sel && sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text : "";
+  var words = (all && q.value === cur ? "" : q.value).toLowerCase().split(/\s+/).filter(Boolean);
+  mNcNatItems = hzNatureSorted().filter(function(n) { var t = n.text.toLowerCase(); return words.every(function(w) { return t.indexOf(w) !== -1; }); });
+  mNcNatItems.push({ value: "__custom__", text: "✏️ Other — type it in" + (words.length ? ': "' + q.value.trim() + '"' : "…") });
+  mNcNatSel = words.length ? 0 : -1;
+  box.innerHTML = mNcNatItems.map(function(n, i) {
+    return '<div role="option" class="m-nc-nat-item' + (i === mNcNatSel ? ' hl' : '') + (n.als ? ' als' : '') + '" onmousedown="event.preventDefault();mNcNaturePick(' + i + ')">' + mEscHtml(n.text) + (n.als ? ' <small>ALS</small>' : '') + '</div>';
+  }).join("");
+  box.style.display = "block"; q.setAttribute("aria-expanded", "true");
+}
+function mNcNatureKey(e) {
+  var box = document.getElementById("m-nc-nature-list"); if (!box || box.style.display === "none") { if (e.key === "ArrowDown") mNcNatureFilter(true); return; }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault(); mNcNatSel = Math.max(0, Math.min(mNcNatItems.length - 1, mNcNatSel + (e.key === "ArrowDown" ? 1 : -1)));
+    Array.prototype.forEach.call(box.children, function(c, i) { c.classList.toggle("hl", i === mNcNatSel); if (i === mNcNatSel && c.scrollIntoView) c.scrollIntoView({ block: "nearest" }); });
+  } else if (e.key === "Enter") { e.preventDefault(); if (mNcNatItems.length) mNcNaturePick(mNcNatSel < 0 ? 0 : mNcNatSel); }
+  else if (e.key === "Escape") { mNcNatureBlur(); }
+}
+function mNcNaturePick(i) {
+  var it = mNcNatItems[i]; if (!it) return;
+  var sel = document.getElementById("m-nc-nature"), q = document.getElementById("m-nc-nature-q");
+  var typed = q ? q.value.trim() : "";
+  sel.value = it.value;
+  if (sel.onchange) sel.onchange();
+  sel.dispatchEvent(new Event("change", { bubbles: true }));
+  if (it.value === "__custom__") {                       // carry what they typed into the custom box
+    var c = document.getElementById("m-nc-nature-custom");
+    if (c) { if (typed && !c.value) c.value = typed; setTimeout(function() { c.focus(); }, 30); }
+  }
+  mNcNatureSync(); mNcNatureClose();
+}
+function mNcNatureClose() { var box = document.getElementById("m-nc-nature-list"), q = document.getElementById("m-nc-nature-q"); if (box) box.style.display = "none"; if (q) q.setAttribute("aria-expanded", "false"); }
+function mNcNatureBlur() { mNcNatureClose(); mNcNatureSync(); }
+// The search box always shows the nature actually picked (or stays empty)
+function mNcNatureSync() {
+  var sel = document.getElementById("m-nc-nature"), q = document.getElementById("m-nc-nature-q"); if (!sel || !q) return;
+  q.value = sel.value === "__custom__" ? "Other (typed below)" : (sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text : "");
 }
 // Anything typed or picked anywhere on the form re-checks the marks, so an outline never lingers
 function mBindNcValidation() {
@@ -6969,15 +7040,38 @@ function mBindNcValidation() {
     form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
   });
 }
+// Age: a number in Years or Months — or UTO (unable to obtain), which then asks Pediatric or Adult.
+// (A typed age is NOT turned into Pediatric/Adult — only UTO asks for that.)
+var mNcAgeUnit = "years", mNcUto = false;
 function mSetNcAge(a) {
-  mNcAge = a;
+  if (a === "uto") { mNcUto = !mNcUto; mNcAge = ""; if (mNcUto) { var n = document.getElementById("m-nc-age-num"); if (n) n.value = ""; } }
+  else if (a === "pediatric" || a === "adult") { mNcUto = true; mNcAge = a; var n2 = document.getElementById("m-nc-age-num"); if (n2) n2.value = ""; }
+  else { mNcUto = false; mNcAge = ""; }
+  mPaintNcAge();
   setTimeout(mNcValidateMarks, 0);
-  document.querySelectorAll("#m-nc-age-toggle button").forEach(function(b) {
-    var isThis = b.getAttribute("data-age") === a;
-    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
-  });
+}
+function mSetNcAgeUnit(u) { mNcAgeUnit = u === "months" ? "months" : "years"; mPaintNcAge(); if (typeof mNcDraftSave === "function") mNcDraftSave(); }
+function mNcAgeTyped() {
+  var n = document.getElementById("m-nc-age-num");
+  if (n && n.value !== "" && mNcUto) { mNcUto = false; mNcAge = ""; }
+  mPaintNcAge();
+}
+function mNcHasAge() { var n = document.getElementById("m-nc-age-num"); return !!((n && String(n.value).trim() !== "") || (mNcUto && mNcAge)); }
+function mPaintNcAge() {
+  var pg = document.getElementById("m-pg-dispatch-newcall"); if (!pg) return;
+  pg.querySelectorAll("[data-ageunit]").forEach(function(b) { mNcPaintOpt(b, !mNcUto && b.getAttribute("data-ageunit") === mNcAgeUnit); b.disabled = mNcUto; });
+  pg.querySelectorAll("[data-age]").forEach(function(b) { mNcPaintOpt(b, mNcUto); });
+  pg.querySelectorAll("[data-utocat]").forEach(function(b) { mNcPaintOpt(b, mNcUto && b.getAttribute("data-utocat") === mNcAge); });
+  var row = document.getElementById("m-nc-uto-row"); if (row) row.style.display = mNcUto ? "flex" : "none";
+  var n = document.getElementById("m-nc-age-num"); if (n) { n.disabled = mNcUto; n.placeholder = mNcUto ? "UTO" : "Age"; }
+}
+// One look for every pick-one button on the New Call form (Basic look recolours .m-nc-opt / .on in CSS)
+function mNcPaintOpt(b, on) {
+  b.classList.toggle("on", !!on);
+  b.setAttribute("aria-pressed", on ? "true" : "false");
+  b.style.borderColor = on ? "#7ab8f5" : "var(--card-border)";
+  b.style.background = on ? "rgba(122,184,245,0.18)" : "rgba(255,255,255,0.04)";
+  b.style.color = on ? "#7ab8f5" : "var(--white)";
 }
 // ── "Is the location on a highway?" ── Yes: the Garden State Parkway button appears (it opens the exit / mile marker
 // picker when tapped — nothing pops up by itself) and the Apt / Suite field is hidden (there's no apartment on a highway). No: picker button hidden, Apt shown.
@@ -6985,13 +7079,7 @@ var mNcHighway = false;
 var M_HW_ROAD_RX = /\b(parkway|pkwy|turnpike|tpke|interstate|expressway|expy|freeway|highway|hwy)\b|\b(i|us|nj|rt|route)[\s-]?\d+\b|\bgsp\b/i;
 function mSetNcHighway(on, fromUser) {
   mNcHighway = !!on;
-  document.querySelectorAll("#m-pg-dispatch-newcall [data-hwq]").forEach(function(b) {
-    var isThis = (b.getAttribute("data-hwq") === "yes") === mNcHighway;
-    b.style.borderColor = isThis ? "#7ab8f5" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(122,184,245,0.18)" : "";
-    b.style.color = isThis ? "#7ab8f5" : "var(--gray)";
-    b.style.fontWeight = isThis ? "700" : "";
-  });
+  document.querySelectorAll("#m-pg-dispatch-newcall [data-hwq]").forEach(function(b) { mNcPaintOpt(b, (b.getAttribute("data-hwq") === "yes") === mNcHighway); });
   var hb = document.getElementById("m-nc-hw-btn"); if (hb) hb.style.display = mNcHighway ? "flex" : "none";
   var aw = document.getElementById("m-nc-apt-wrap"); if (aw) aw.style.display = mNcHighway ? "none" : "";
   if (mNcHighway) { var apt = document.getElementById("m-nc-apt"); if (apt) apt.value = ""; }
@@ -7007,12 +7095,7 @@ function mSetNcSex(s) {
   setTimeout(mNcValidateMarks, 0);
 }
 function mPaintNcSex() {
-  document.querySelectorAll("#m-pg-dispatch-newcall [data-sex]").forEach(function(b) {
-    var isThis = b.getAttribute("data-sex") === mNcSex;
-    b.style.borderColor = isThis ? "#e8a0ff" : "var(--card-border)";
-    b.style.background = isThis ? "rgba(232,160,255,0.15)" : "rgba(255,255,255,0.04)";
-    b.style.color = isThis ? "#e8a0ff" : "var(--white)";
-  });
+  document.querySelectorAll("#m-pg-dispatch-newcall [data-sex]").forEach(function(b) { mNcPaintOpt(b, b.getAttribute("data-sex") === mNcSex); });
 }
 var mNcAutocomplete = null;
 // ── Highway exits & mile markers in the new-call address box ─────────────────────────────────────
@@ -7583,8 +7666,10 @@ function mPostNewCallNow() {
     onHighway: !!mNcHighway,
     callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }],
     callNature: nature,
-    patientAge: mNcAge,
-    patientAgeNum: document.getElementById("m-nc-age-num").value.trim(),
+    patientAge: mNcUto ? mNcAge : "",          // only UTO asks Pediatric / Adult
+    patientAgeUto: !!mNcUto,
+    patientAgeNum: mNcUto ? "" : document.getElementById("m-nc-age-num").value.trim(),
+    patientAgeUnit: (!mNcUto && document.getElementById("m-nc-age-num").value.trim() && mNcAgeUnit === "months") ? "months" : "",
     patientSex: mNcSex,
     callbackNumber: document.getElementById("m-nc-callback").value.trim(),
     accessCode: document.getElementById("m-nc-accesscode").value.trim(),
@@ -7876,7 +7961,7 @@ function mRenderDispatchDetail(call) {
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
       '<span class="m-disp-zone" style="background:' + zoneColor + '33;color:' + zoneColor + ';border:1.5px solid ' + zoneColor + ';font-size:0.66rem">' + (call.zone === "primary" ? "🚑 Standard Response" : call.zone === "secondary" ? "🚑 Load a Rig" : "⚠ Outside Zone") + '</span>' +
       (natureLabel ? '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + natureLabel + '</span>' : '') +
-      (call.patientAge ? '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + call.patientAge + (call.patientAgeNum?" "+call.patientAgeNum+"y":"") + (call.patientSex?" "+(call.patientSex==="male"?"M":"F"):"") + '</span>' : '') +
+      ((call.patientAge || call.patientAgeNum) ? '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + [call.patientAgeNum ? hzAge(call) : "", call.patientAge ? (call.patientAgeUto ? "UTO " : "") + call.patientAge : "", call.patientSex ? (call.patientSex==="male"?"M":"F") : ""].filter(Boolean).join(" ") + '</span>' : '') +
     '</div>' +
     (call.dispatchNotes ? '<div style="margin-top:8px;font-size:0.78rem;color:var(--gray)">📝 ' + mEscHtml(call.dispatchNotes) + '</div>' : '') +
     (call.accessCode ? '<div style="margin-top:4px;font-size:0.78rem;color:var(--gray)">🔑 ' + mEscHtml(call.accessCode) + '</div>' : '') +
@@ -9716,7 +9801,7 @@ function mCloseAllSheets() {
       <span style="font-size:0.78rem;color:#ffd97a">📝 Restored your unfinished call <span id="m-nc-draft-when" style="color:var(--gray)"></span></span>
       <button type="button" onclick="mNcDiscardDraft()" style="background:none;border:1px solid rgba(255,144,144,0.5);border-radius:6px;color:#ff9090;font-size:0.7rem;font-weight:700;padding:5px 10px;cursor:pointer;white-space:nowrap">Start over</button>
     </div>
-    <div id="m-nc-hw-q" style="display:flex;align-items:center;gap:8px;margin:0 0 10px"><span style="flex:1;font-size:0.78rem;color:var(--gray)">🛣 Is the location on a highway?</span><button type="button" class="m-disp-btn" data-hwq="yes" onclick="mSetNcHighway(true, true)" style="min-width:64px">Yes</button><button type="button" class="m-disp-btn" data-hwq="no" onclick="mSetNcHighway(false, true)" style="min-width:64px">No</button></div>
+    <div id="m-nc-hw-q" style="display:flex;align-items:center;gap:8px;margin:0 0 10px"><span style="flex:1;font-size:0.78rem;color:var(--gray)">🛣 Is the location on a highway?</span><button type="button" class="m-disp-btn m-nc-opt" data-hwq="yes" onclick="mSetNcHighway(true, true)" style="min-width:64px">Yes</button><button type="button" class="m-disp-btn m-nc-opt" data-hwq="no" onclick="mSetNcHighway(false, true)" style="min-width:64px">No</button></div>
     <div class="m-disp-label">Location</div>
     <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcAddressEdited()" class="m-disp-input" style="padding-right:38px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><div id="m-nc-hw-list" role="listbox" aria-label="Highway locations" style="display:none"></div><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <button type="button" id="m-nc-hw-btn" onclick="mHwOpenPicker()" style="display:none;align-items:center;gap:8px;width:100%;justify-content:center;min-height:44px;margin:-2px 0 12px;background:rgba(122,184,245,0.10);border:1px solid rgba(122,184,245,0.45);border-radius:10px;color:#d6e8ff;font:inherit;font-weight:700;font-size:0.88rem;cursor:pointer">🛣 Garden State Parkway — exit or mile marker</button>
@@ -9738,20 +9823,29 @@ function mCloseAllSheets() {
     <div class="m-disp-label">Access Code</div>
     <div style="position:relative;margin-bottom:12px"><input type="text" id="m-nc-accesscode" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-accesscode')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <div class="m-disp-label">Call Nature</div>
-    <select id="m-nc-nature" class="m-disp-input" onchange="setTimeout(mNcValidateMarks,0)" style="margin-bottom:4px"></select>
+    <div style="position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-q" class="m-disp-input" placeholder="Type to search… (e.g. fall, cardiac)" autocomplete="off" autocorrect="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="m-nc-nature-list" style="margin:0;padding-right:34px" oninput="mNcNatureFilter()" onfocus="mNcNatureFilter(true)" onkeydown="mNcNatureKey(event)" onblur="setTimeout(mNcNatureBlur,160)"><span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--gray)">▾</span><div id="m-nc-nature-list" role="listbox" class="m-nc-nat-list" style="display:none"></div></div>
+    <select id="m-nc-nature" class="m-disp-input" onchange="setTimeout(mNcValidateMarks,0)" style="display:none" aria-hidden="true" tabindex="-1"></select>
     <div id="m-nc-nature-custom-wrap" style="display:none;position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-custom" class="m-disp-input" style="padding-right:38px;margin-top:6px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-nature-custom')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     <div id="m-nc-als-hint" style="display:none;font-size:0.68rem;color:#ff9090;margin-bottom:12px">🚨 ALS recommended by protocol for this nature</div>
     <div id="m-nc-als-hint-spacer" style="height:12px"></div>
     <div class="m-disp-label">Patient</div>
-    <div style="display:flex;gap:6px;margin-bottom:8px" id="m-nc-age-toggle">
-      <div style="position:relative;flex:1"><input type="number" id="m-nc-age-num" class="m-disp-input" aria-label="Age" placeholder="Age" oninput="this.nextElementSibling.style.display=this.value?'block':'none'" style="padding-left:10px;padding-right:30px;height:100%;text-align:left"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-age-num');this.style.display='none'" aria-label="Clear" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.7rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
-      <button type="button" class="m-disp-btn" data-age="pediatric" onclick="mSetNcAge('pediatric')" style="flex:1">Pediatric</button>
-      <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1">Adult</button>
-      <button type="button" class="m-disp-btn" data-age="uto" onclick="mSetNcAge('uto')" style="flex:1">UTO</button>
+    <div id="m-nc-age-toggle" style="margin-bottom:8px">
+      <div style="display:flex;gap:6px;align-items:stretch">
+        <input type="number" id="m-nc-age-num" class="m-disp-input" aria-label="Age" placeholder="Age" inputmode="numeric" min="0" max="130" oninput="mNcAgeTyped()" style="flex:1 1 72px;min-width:0;margin:0;text-align:center">
+        <div class="m-nc-seg" style="display:flex;flex:2 1 150px;min-width:0">
+          <button type="button" class="m-disp-btn m-nc-opt" data-ageunit="years" onclick="mSetNcAgeUnit('years')" style="flex:1;border-radius:8px 0 0 8px">Years</button>
+          <button type="button" class="m-disp-btn m-nc-opt" data-ageunit="months" onclick="mSetNcAgeUnit('months')" style="flex:1;border-radius:0 8px 8px 0;border-left:0">Months</button>
+        </div>
+        <button type="button" class="m-disp-btn m-nc-opt" data-age="uto" onclick="mSetNcAge('uto')" style="flex:0 0 64px">UTO</button>
+      </div>
+      <div id="m-nc-uto-row" style="display:none;gap:6px;margin-top:6px">
+        <button type="button" class="m-disp-btn m-nc-opt" data-utocat="pediatric" onclick="mSetNcAge('pediatric')" style="flex:1">Pediatric</button>
+        <button type="button" class="m-disp-btn m-nc-opt" data-utocat="adult" onclick="mSetNcAge('adult')" style="flex:1">Adult</button>
+      </div>
     </div>
     <div class="m-nc-sex-row" style="display:flex;gap:6px;margin-bottom:12px">
-      <button type="button" class="m-disp-btn" data-sex="male" onclick="mSetNcSex('male')" style="flex:1">♂ Male</button>
-      <button type="button" class="m-disp-btn" data-sex="female" onclick="mSetNcSex('female')" style="flex:1">♀ Female</button>
+      <button type="button" class="m-disp-btn m-nc-opt" data-sex="male" onclick="mSetNcSex('male')" style="flex:1">♂ Male</button>
+      <button type="button" class="m-disp-btn m-nc-opt" data-sex="female" onclick="mSetNcSex('female')" style="flex:1">♀ Female</button>
     </div>
 
 
