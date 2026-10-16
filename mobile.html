@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.34"; window.M_BUILD = BUILD;
+  var BUILD = "4.36"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -252,6 +252,16 @@ html[data-theme="basic"] .m-ec-note{color:#57606a !important}
 #m-ec-modal .m-ec-btns button{flex:1 !important;margin:0 !important;padding:11px !important;border-radius:8px !important}
 #m-ec-modal .m-ec-btns .m-ec-save{background:rgba(var(--gold-rgb),0.18) !important;border:1px solid rgba(var(--gold-rgb),0.55) !important;color:var(--gold) !important}
 html[data-theme="basic"] #m-ec-modal .m-ec-btns .m-ec-save{background:#0b5cad !important;border-color:#0b5cad !important;color:#ffffff !important}
+.m-own-txt{font-size:0.88rem;color:var(--white);line-height:1.45;margin:0 0 12px}
+.m-dd-ro-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(122,184,245,0.12);border:1px solid rgba(122,184,245,0.45);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:0.84rem;color:var(--white)}
+.m-dd-ro-bar .m-dd-ro-take{flex-shrink:0;background:rgba(var(--gold-rgb),0.18);border:1px solid rgba(var(--gold-rgb),0.55);color:var(--gold);border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer}
+.m-dd-ro button:not(.m-dd-ro-take),.m-dd-ro input,.m-dd-ro select,.m-dd-ro textarea,.m-dd-ro .m-time-cell,.m-dd-ro [onclick]:not(.m-dd-ro-take){pointer-events:none !important}
+.m-dd-ro button:not(.m-dd-ro-take),.m-dd-ro input,.m-dd-ro select,.m-dd-ro textarea{opacity:0.5}
+html[data-theme="basic"] .m-dd-ro-bar{background:#eaf2fb !important;border-color:#9cc3ea !important;color:#1f2328 !important}
+html[data-theme="basic"] .m-dd-ro-bar .m-dd-ro-take.m-dd-ro-take{background:#0b5cad !important;border-color:#0b5cad !important;color:#ffffff !important}
+html[data-theme="basic"] .m-own-txt{color:#1f2328 !important}
+.m-own-lock{font-size:0.7rem;font-weight:700;color:#ffc84a}
+html[data-theme="basic"] .m-own-lock{color:#8a5a00 !important}
 .m-dd-edit-cap{font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin:12px 0 5px}
 .m-dd-edit-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .m-dd-edit{background:none;border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-size:0.72rem;padding:4px 9px;cursor:pointer;margin-top:8px}
@@ -733,6 +743,7 @@ html[data-theme="basic"] .m-disp-input{background:#f3f4f6 !important}
 html[data-theme="basic"] .m-ec-card{box-shadow:0 1px 3px rgba(0,0,0,0.12) !important}
 html[data-theme="basic"] .m-ec-st.ok{color:#167a3e !important}
 html[data-theme="basic"] .m-ec-st.err{color:#b42318 !important}
+html[data-theme="basic"] .m-own-lock{color:#8a5a00 !important}
 html[data-theme="basic"] .m-disp-btn{background:#f8f9fa !important}
 html[data-theme="basic"] .m-disp-unit-box{background:#f8f9fa !important}
 html[data-theme="basic"] .m-drawer-item:active{background:#f3f4f6 !important}
@@ -4958,6 +4969,7 @@ function mRenderDispatchList(calls) {
         (call.testMode ? '<span style="font-size:0.6rem;font-weight:700;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.4);border-radius:4px;padding:1px 6px;color:#f0a500">🧪 TEST</span>' : '') +
         (elapsedTxt ? '<span style="color:' + (elapsedMin >= 30 ? "#ff9090" : "var(--gray)") + '">⏱ ' + elapsedTxt + '</span>' : '') +
         (destTxt ? '<span style="color:#7ab8f5">🏥 ' + mEscHtml(destTxt) + '</span>' : '') +
+        (!mIOwnCall(call) ? '<span class="m-own-lock" title="Another dispatcher is managing this call">🔒 ' + mEscHtml(mCallOwner(call).unit) + ' dispatching</span>' : '') +
         '<span style="margin-left:auto' + (unitCount ? '' : ';color:#ff9090') + '">' + (unitCount ? '👥 ' + unitCount : '⚠ No units') + '</span>' +
       '</div>' +
     '</div>';
@@ -6113,27 +6125,27 @@ function mGetFirstPhone(phone) {
 // (cross streets, access code…) never leave a blank line behind.
 var M_SMS_TEMPLATE_DEFAULTS = {
   assignment: "{zoneLine}\n{poi}\n{address}\nCALL TYPE: {natureUpper}\nCB: {callback}\nBLS: {units}\nDRIVER: {driver}\nAGE: {ageLine}\nACCESS CODE: {accessCode}\nNOTES: {notes}\n{mapsLink}\n\n{wazeLink}\n\n{org}\nDate: {dateTime}",
-  admin:      "📟 ADMIN CALL NOTIFICATION\n{zoneLine}\n{poi}\n{address}\nCALL TYPE: {natureUpper}\nCB: {callback}\nBLS: {units}\nDRIVER: {driver}\nAGE: {ageLine}\nACCESS CODE: {accessCode}\nNOTES: {notes}\n{mapsLink}\n\n{wazeLink}\n\n{org}\nDate: {dateTime}",
+  admin:      "NOTIFICATION GROUP\n{zoneLine}\n{poi}\n{address}\nCALL TYPE: {natureUpper}\nCB: {callback}\nBLS: {units}\nDRIVER: {driver}\nAGE: {ageLine}\nACCESS CODE: {accessCode}\nNOTES: {notes}\n{mapsLink}\n\n{wazeLink}\n\n{org}\nDate: {dateTime}",
   resource:   "{header}\n{address}\n{detail}\n{time}",
-  note:       "📝 CALL UPDATE\n{address}\n{note}\n{time}",
-  callback:   "📞 CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
+  note:       "CALL UPDATE\n{address}\n{note}\n{time}",
+  callback:   "CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
   rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}",
-  adminUpdate:"📟 ADMIN CALL NOTIFICATION\n{header}\n{address}\n{detail}",
+  adminUpdate:"NOTIFICATION GROUP\n{header}\n{address}\n{detail}",
   callerLocation:"{orgName} — tap to send us your location so the ambulance can find you:\n{link}",
-  accessCodeChange:"🔑 ACCESS CODE\n{address}\nCode: {accessCode}\n{time}",
-  addressChange:"📍 CALL LOCATION CHANGED\n{address}\nWas: {oldAddress}\n{mapsLink}\n\n{wazeLink}\n{time}",
-  locationUpdate:"📍 UPDATED LOCATION\n{address}\nCaller is now {callerPlace} (within {accuracy} m){moved}\nGoogle Maps: {callerMapsLink}\n\nWaze: {callerWazeLink}",
-  roadClosure:"🚧 ROAD CLOSURE\n{closure}\n{detail}\nDetour: {detour}\nUntil: {until}\n\n{linkLabel}: {closureLink}\n\nDetour route: {detourLink}\n{org}",
-  roadReopened:"✅ ROAD REOPENED\n{closure}\n{org}",
-  hospitalDivert:"🏥 HOSPITAL DIVERT\n{hospital} — {divertType}\n{detail}\nExpected until: {until}\n{org}",
-  offDivert:"✅ OFF DIVERT\n{hospital} is no longer on {divertTypeLower}.\n{org}",
+  accessCodeChange:"ACCESS CODE\n{address}\nCode: {accessCode}\n{time}",
+  addressChange:"CALL LOCATION CHANGED\n{address}\nWas: {oldAddress}\n{mapsLink}\n\n{wazeLink}\n{time}",
+  locationUpdate:"UPDATED LOCATION\n{address}\nCaller is now {callerPlace} (within {accuracy} m){moved}\nGoogle Maps: {callerMapsLink}\n\nWaze: {callerWazeLink}",
+  roadClosure:"ROAD CLOSURE\n{closure}\n{detail}\nDetour: {detour}\nUntil: {until}\n\n{linkLabel}: {closureLink}\n\nDetour route: {detourLink}\n{org}",
+  roadReopened:"ROAD REOPENED\n{closure}\n{org}",
+  hospitalDivert:"HOSPITAL DIVERT\n{hospital} — {divertType}\n{detail}\nExpected until: {until}\n{org}",
+  offDivert:"OFF DIVERT\n{hospital} is no longer on {divertTypeLower}.\n{org}",
   rigOut:"{rig} is out of service.\nReason: {reason}\nExpected back: {until}\n{org}",
   rigBack:"{rig} is back in service.\n{autoNote}\n{org}",
   ticketPriority:"{priorityIcon} {priority} service request\n{ticketTitle}\n{ticketUnit}\nFrom {from}\nOpen the {app} App → Service Helpdesk to view.",
   ticketNotice:"{title}\n{message}\nOpen the {app} App → Service Helpdesk to view.",
   passwordLink:"{orgName}: {action}{unitPart}:\n{link}\nThe link works once and expires in about an hour. If it expires, tap \"Forgot password?\" on the login screen.",
   codeVerify:"{orgName}: your verification code is {code}. It expires in 10 minutes. If you didn't ask for this, ignore this text.",
-  codeSubmitted:"🔑 Building code waiting for approval\n{building}\n{address}\nFrom {contact}\nOpen Admin → Codes & Locations to review.",
+  codeSubmitted:"Building code waiting for approval\n{building}\n{address}\nFrom {contact}\nOpen Admin → Codes & Locations to review.",
   codeApproved:"{orgName}: thank you — the access code for {building} ({address}) was approved and is now available to our responders.",
   codeRejected:"{orgName}: the access code for {building} ({address}) was not approved.\n{reason}\nPlease contact us if you have questions."
 };
@@ -6159,6 +6171,12 @@ function mCallerLocationText(link) {
   var t = mRenderTemplate(mTemplateFor("callerLocation"), { orgName: ORG.textName, link: link });
   return t.indexOf(link) === -1 ? t + "\n" + link : t;
 }
+// Texts go out with no emojis (they can show as boxes or "?" on some phones, and cost extra on SMS).
+// Applied to every outgoing text — built-in wording, admin-edited templates and headers alike.
+var HZ_EMOJI_RX = /(?:[\u{1F000}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE0E}\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}])+[ \t]?/gu;
+function hzSmsPlain(s) {
+  return String(s == null ? "" : s).replace(HZ_EMOJI_RX, "").split("\n").map(function(l) { return l.replace(/^[ \t]+|[ \t]+$/g, ""); }).join("\n");
+}
 // Admin ▸ Message Templates on/off boxes — appdata/smsTemplates._send[key] = { sms, push, admin }.
 // Anything not set is ON; only an explicit false turns that channel off for that message.
 function hzSendOn(key, ch) {
@@ -6180,6 +6198,7 @@ function hzPushTo(units, key, title, body, callId) {
 function hzPushStreet(call) { return String((typeof mSmsAddress === "function" ? mSmsAddress(call) : call.address) || "").split(",")[0]; }
 function mTemplateFor(key) {
   var t = mCleanTemplate(M_SMS_TEMPLATES && M_SMS_TEMPLATES[key]);
+  if (typeof t === "string") t = t.replace(/ADMIN CALL NOTIFICATION/g, "NOTIFICATION GROUP");   // renamed term
   return (typeof t === "string" && t.trim()) ? t : M_SMS_TEMPLATE_DEFAULTS[key];
 }
 // Fill {variables}; drop any line left with nothing but punctuation and labels.
@@ -6283,7 +6302,7 @@ function mCallVars(call) {
 }
 // Cross streets are worked out from the address on their own — there's nothing for a dispatcher to fill in.
 function mCallDetailsSMS(call, header) {
-  var key = (header && /ADMIN/.test(header)) ? "admin" : "assignment";
+  var key = (header && /NOTIFICATION GROUP|ADMIN/.test(header)) ? "admin" : "assignment";
   var out = mRenderTemplate(mTemplateFor(key), mCallVars(call));
   if (header && key === "assignment") out = out.replace(/^[^\n]*/, header);   // caller supplied its own header
   return out;
@@ -6348,7 +6367,7 @@ function mCanManageTickets() {
   if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.some(function(e){ return mTicketEntryApplies(e, mCurrentUserUnit, mCurrentUserRoles); });
   return (mCurrentUserRoles || []).includes("logistics");
 }
-// The admin group is copied on every call notification, under their own header
+// The notification group is copied on every call notification, under their own header
 function mPlainHeader(h) { return String(h || "").replace(/^[^A-Za-z0-9]+\s*/, ""); }
 function mAdminCopy(call, header, detail, key) {
   if (key && !hzSendOn(key, "admin")) return;   // Admin group box off for this message
@@ -6368,7 +6387,7 @@ function mNotifyAdminUnits(call) {
   var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !assigned[u]; });   // if they're on the call they get the assignment text instead
   if (!units.length) return;
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) {
-    if (phones.length) return mSendClickSendSMS(phones, mCallDetailsSMS(call, "📟 ADMIN CALL NOTIFICATION"));
+    if (phones.length) return mSendClickSendSMS(phones, mCallDetailsSMS(call, "NOTIFICATION GROUP"));
   }); });
 }
 // Text one unit the full call details the moment it's assigned
@@ -6381,7 +6400,7 @@ function mTextAssignedUnit(unitId, call) {
 function mLogKind(message) {
   var m = String(message || "").replace(/^\[TEST\]\s*/, "").replace(/^\[TEMPLATE TEST[^\]]*\]\s*/, "");
   var head = m.split("\n")[0].replace(/^[^A-Za-z0-9]+\s*/, "").trim();
-  if (/ADMIN CALL NOTIFICATION/i.test(m)) return "Admin call notification";
+  if (/NOTIFICATION GROUP|ADMIN CALL NOTIFICATION/i.test(m)) return "Notification group";
   if (/ROAD CLOSURE|ROAD REOPENED/i.test(m)) return "Road closure";
   if (/HOSPITAL DIVERT|OFF DIVERT/i.test(m)) return "Hospital divert";
   if (/UPDATED LOCATION/i.test(m)) return "Location update";
@@ -6477,7 +6496,7 @@ function mOneTimestamp(body) {
   }).join("\n");
 }
 function mSendClickSendSMS(toNumbers, message) {
-  message = mOneTimestamp(message);
+  message = mOneTimestamp(hzSmsPlain(message));
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
   if (!toNumbers.length || !message) return Promise.resolve();
   message = mStampMessage(message);
@@ -7945,6 +7964,7 @@ function mPostNewCallNow() {
     locationRequests: mLocReqTokensAll.slice(),
     createdAt: now.toISOString(),
     createdBy: ((mCurrentUserUnit||"") + " " + (mCurrentUserDisplayName||"")).trim(),
+    dispatcherUid: mCurrentUser ? mCurrentUser.uid : "", dispatcherUnit: mCurrentUserUnit || "", dispatcherSince: now.toISOString(),   // who manages the call
     updatedAt: now.toISOString()
   };
   db.collection("activeCalls").add(call).then(function(ref) {
@@ -7959,8 +7979,87 @@ function mPostNewCallNow() {
   });
 }
 
+// ══ ONE DISPATCHER PER CALL ══════════════════════════════════════════════════════════════════════════
+// call.dispatcherUid / dispatcherUnit = the dispatcher managing the call right now. Set when the call is
+// posted; a call posted before this existed is claimed by the first dispatcher who opens it. Anyone else
+// who opens the call is asked "Take over?":  Yes → the call moves to them (timeline: "MC-45 took over
+// dispatch from MC-23") and the previous dispatcher is closed out of it.  No → admins can look on read
+// only; everyone else is told only the on-call dispatcher may view an active call. Any dispatcher can
+// take a call back the same way.
+var mDdReadOnly = false;
+function mIsAdminUser() { return mCurrentRole === "admin" || (mCurrentUserRoles || []).some(function(r) { return String(r).toLowerCase() === "admin"; }); }
+function mCallOwner(call) { return call && call.dispatcherUid ? { uid: call.dispatcherUid, unit: call.dispatcherUnit || "Another dispatcher" } : null; }
+function mIOwnCall(call) { var o = mCallOwner(call); return !o || !!(mCurrentUser && o.uid === mCurrentUser.uid); }
+function mClaimCall(call, takeOver) {
+  if (!mCurrentUser) return Promise.resolve();
+  var me = mCurrentUserUnit || "Dispatcher", prev = mCallOwner(call), upd = { dispatcherUid: mCurrentUser.uid, dispatcherUnit: me, dispatcherSince: new Date().toISOString() };
+  if (takeOver && prev) upd.callEvents = mEvtUnion(mEvt(me + " took over dispatch from " + prev.unit, "🎧", "#7ab8f5", "dispatcher"));
+  return db.collection("activeCalls").doc(call.id).update(upd);
+}
+function mOwnerModal(html, buttons) {
+  var old = document.getElementById("m-own-modal"); if (old) old.remove();
+  var m = document.createElement("div"); m.id = "m-own-modal"; m.className = "m-ec-modal";
+  m.innerHTML = '<div class="m-ec-card">' + html + '<div class="m-ec-btns">' + buttons.map(function(b, i) {
+    return '<button type="button" class="m-disp-btn' + (b.primary ? ' m-ec-save' : '') + '" data-i="' + i + '">' + b.label + '</button>'; }).join("") + '</div></div>';
+  m.querySelectorAll("button[data-i]").forEach(function(btn) { btn.onclick = function() { m.remove(); var b = buttons[+btn.getAttribute("data-i")]; if (b.go) b.go(); }; });
+  (document.getElementById("pg-console") || document.body).appendChild(m);
+}
+function mAskTakeOver(call) {
+  var o = mCallOwner(call), where = mEscHtml((mPoiName(call.address) || mCleanAddress(call.address || "") || "this call").split(",")[0]);
+  mOwnerModal('<div class="m-ec-title">🎧 Take over this call?</div>' +
+    '<div class="m-own-txt"><b>' + mEscHtml(o.unit) + '</b> is dispatching <b>' + where + '</b>. Only one dispatcher can manage a call at a time.</div>' +
+    '<div class="m-own-txt">If you take over, ' + mEscHtml(o.unit) + ' is closed out of the call and it\'s noted in the timeline.</div>', [
+    { label: "No", go: function() {
+        if (mIsAdminUser()) { mOpenDispatchCallNow(call.id, true); return; }
+        mOwnerModal('<div class="m-ec-title">🔒 Restricted</div><div class="m-own-txt">Due to privacy restrictions, only the on-call dispatcher has permission to view an active call.</div>', [{ label: "OK", primary: true }]);
+      } },
+    { label: "Yes, take over", primary: true, go: function() {
+        mClaimCall(call, true).then(function() { mToast("🎧 You're now dispatching this call"); mOpenDispatchCallNow(call.id, false); })
+          .catch(function(e) { mToast("Couldn't take over: " + e.message, true); });
+      } }
+  ]);
+}
+// Read only (admin looking on) / closed out (someone else took over) — runs after every render of the call
+function mDdApplyAccess(call) {
+  var raw = mDispCallCache[call.id] || call, box = document.getElementById("m-dd-content"); if (!box) return;
+  if (!mIOwnCall(raw) && !mDdReadOnly) {
+    if (mIsAdminUser()) { mDdReadOnly = true; }   // an admin who lost the call stays on, read only
+    else {
+      var o = mCallOwner(raw);
+      mCloseDispatchDetail();
+      mOwnerModal('<div class="m-ec-title">🎧 Call taken over</div><div class="m-own-txt"><b>' + mEscHtml(o.unit) + '</b> took over this call. Only the on-call dispatcher can view or manage it — open the call again if you need to take it back.</div>', [{ label: "OK", primary: true }]);
+      return;
+    }
+  }
+  if (mDdReadOnly && mIOwnCall(raw)) mDdReadOnly = false;   // took it over from the read-only view
+  box.classList.toggle("m-dd-ro", mDdReadOnly);
+  var bar = document.getElementById("m-dd-ro-bar"); if (bar) bar.remove();
+  if (mDdReadOnly) {
+    var o2 = mCallOwner(raw);
+    bar = document.createElement("div"); bar.id = "m-dd-ro-bar"; bar.className = "m-dd-ro-bar";
+    bar.innerHTML = '<span>👁 Read only — <b>' + mEscHtml(o2 ? o2.unit : "another dispatcher") + '</b> is dispatching</span><button type="button" class="m-dd-ro-take" onclick="mDdTakeOverNow()">Take over</button>';
+    box.insertBefore(bar, box.firstChild);
+  }
+}
+function mDdTakeOverNow() {
+  var call = mDispCallCache[mDispSelectedCallId]; if (!call) return;
+  mClaimCall(call, true).then(function() { mDdReadOnly = false; mToast("🎧 You're now dispatching this call"); var c = mDispCallCache[call.id]; if (c) mRenderDispatchDetail(c); })
+    .catch(function(e) { mToast("Couldn't take over: " + e.message, true); });
+}
+window.mDdTakeOverNow = mDdTakeOverNow;
 // ── CALL DETAIL ──
+// Opening a call checks who's dispatching it first (see ONE DISPATCHER PER CALL above).
 function mOpenDispatchCall(callId) {
+  var go = function(call) {
+    if (!call) { mOpenDispatchCallNow(callId, false); return; }
+    if (mIOwnCall(call)) { if (!call.dispatcherUid) mClaimCall(call, false).catch(function() {}); mOpenDispatchCallNow(callId, false); return; }
+    mAskTakeOver(call);
+  };
+  db.collection("activeCalls").doc(callId).get().then(function(s) { go(s.exists ? Object.assign({ id: s.id }, s.data()) : null); })
+    .catch(function() { go(mDispCallCache[callId] || null); });
+}
+function mOpenDispatchCallNow(callId, readOnly) {
+  mDdReadOnly = !!readOnly;
   mDispSelectedCallId = callId;
   mGoTo("dispatch-detail");
   if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
@@ -7974,6 +8073,7 @@ function mOpenDispatchCall(callId) {
   }, function(e) { mToast("Call listener error: " + e.message, true); });
 }
 function mCloseDispatchDetail() {
+  mDdReadOnly = false;
   mDdLocStop();
   if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
   mDispSelectedCallId = null;
@@ -8292,6 +8392,7 @@ function mRenderDispatchDetail(call) {
   document.getElementById("m-dd-content").innerHTML = content;
   mDdLocSync(mDispCallCache[call.id] || call);   // the raw call: `call` here has been HTML-escaped for display
   mAutoScrollToNextStep();
+  mDdApplyAccess(call);
 }
 
 // ── CREW BLOCK (groups fixed + extra roles for one crew, shows rig header) ──
