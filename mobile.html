@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.12"; window.M_BUILD = BUILD;
+  var BUILD = "4.14"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -456,8 +456,11 @@ select.m-disp-input option{background-color:#122040;color:#f4f6fa}
    posted half-filled; the outline clears the moment the field has a value. */
 #m-pg-dispatch-newcall .m-nc-need,
 #tpl-modal .m-nc-need{border-color:#e05555 !important;box-shadow:0 0 0 1px rgba(224,85,85,0.35)}
-#m-pg-dispatch-newcall .m-nc-need-group,
 #tpl-modal .m-nc-need-group{border:1px solid #e05555;border-radius:9px;padding:6px;box-shadow:0 0 0 1px rgba(224,85,85,0.25)}
+/* New Call: the age and sex rows always keep their frame (transparent when answered), so the red "required" outline
+   only changes colour — the form never changes height when you tap Adult / Male etc. (it used to jump) */
+#m-pg-dispatch-newcall #m-nc-age-toggle,#m-pg-dispatch-newcall .m-nc-sex-row{border:1px solid transparent;border-radius:9px;padding:6px}
+#m-pg-dispatch-newcall #m-nc-age-toggle.m-nc-need-group,#m-pg-dispatch-newcall .m-nc-sex-row.m-nc-need-group{border-color:#e05555;box-shadow:0 0 0 1px rgba(224,85,85,0.25)}
 /* H) field titles brighter than the old grey */
 #m-pg-dispatch-newcall .m-disp-label,
 #tpl-modal .m-disp-label{color:#e8eef8;font-size:0.64rem;opacity:1}
@@ -1681,7 +1684,7 @@ function mSettingsRender() {
       '<div class="m-set-kv" style="border:0"><span>WhatsApp</span><input id="m-set-wa" class="m-disp-input m-set-in" type="tel" inputmode="tel" placeholder="Only if different from phone" value="' + mEscHtml(me.whatsapp || "") + '"><button class="m-set-mini" onclick="mSetSaveWa()">Save</button></div>') +
     // Every switch on one card, one line each
     mSetCard('⚙️ App',
-      line('🔔 Alerts', '<button class="m-set-mini" onclick="mSetTestAlert()">Test</button>' + sw(on, "mRequestPush();setTimeout(mSettingsRender,1500)", "Alerts")) +
+      line('🔔 Alerts', '<button class="m-set-mini" onclick="mSetTestAlert()">Test</button>' + sw(on, "mRequestPush();setTimeout(mSettingsRender,1500)", "Alerts"), '<span id="m-set-devs" style="color:var(--gray)"></span>') +
       (canTest ? line('🧪 Test Mode', sw(!!MSysTestingMode, "mToggleTestMode();setTimeout(mSettingsRender,900)", "Test Mode"), MSysTestingMode ? "ON — only you get what you trigger" : "") : '') +
       line('🗺️ Maps', '<span class="m-set-seg m-set-seg-s">' + [["google", "Google"], ["waze", "Waze"]].concat(hzIsApple() ? [["apple", "Apple"]] : []).map(function(o) {
         return '<label' + (map === o[0] ? ' class="on"' : '') + '><input type="radio" name="m-set-map" value="' + o[0] + '"' + (map === o[0] ? " checked" : "") + ' onchange="mSetMap(this.value)">' + o[1] + '</label>'; }).join("") + '</span>') +
@@ -1695,6 +1698,9 @@ function mSettingsRender() {
         '<div class="m-set-row2"><button class="m-disp-btn m-set-btn primary" onclick="mSetSaveTiles();mSetFlow.order=false;mSettingsRender()">💾 Save</button><button class="m-disp-btn m-set-btn" onclick="mSetDefaultTiles()">↺ Default</button><button class="m-disp-btn m-set-btn" onclick="mSetFlow.order=false;mSetFlow.tiles=null;mSettingsRender()">Cancel</button></div>' +
         '<div class="m-set-note">Picking a tile that\'s already in another spot swaps the two.</div>'));
   hzFitText('#m-set-content .m-set-kv b, #m-set-content .m-set-1l');
+  if (mCurrentUser) hzPushDeviceCount(mCurrentUser.uid).then(function(n) {   // where this member's alerts go
+    var d = document.getElementById("m-set-devs"); if (d) d.textContent = n ? "Rings on " + n + " device" + (n === 1 ? "" : "s") + (on ? " (incl. this phone)" : "") : "Not on any device yet";
+  });
   if (pwOpen) { var f0 = document.getElementById("m-set-pw0"); if (f0) f0.focus(); }
 }
 // Shrink long values (an email) until they fit on their one line
@@ -1821,6 +1827,76 @@ function mSetFaceOn() {
     soon();
   });
 })();
+
+// ══ PUSH ALERTS — ONE RECORD PER DEVICE (same block in index.html and mobile.html) ══
+// pushTokens/{uid}_{deviceId}: every phone / computer a member turns alerts on gets its own record, so all of them ring.
+// Signing out removes this device's record (and its token) so a signed-out device stops getting that member's calls.
+// "Off on this device" is remembered here, so signing back in doesn't switch alerts on again if the member turned them off.
+function hzDeviceId() {
+  var id = "";
+  try { id = localStorage.getItem("hzDeviceId") || ""; } catch (e) {}
+  if (!/^[A-Za-z0-9]{12,40}$/.test(id)) {
+    id = (typeof hzRandomToken === "function" ? hzRandomToken(12) : Math.random().toString(36).slice(2) + Date.now().toString(36)).replace(/[^A-Za-z0-9]/g, "").slice(0, 24);
+    try { localStorage.setItem("hzDeviceId", id); } catch (e) {}
+  }
+  return id;
+}
+function hzPushDocId(uid) { return uid + "_" + hzDeviceId(); }
+function hzAlertsOffHere(uid) { try { return localStorage.getItem("hzAlertsOff_" + uid) === "1"; } catch (e) { return false; } }
+function hzSetAlertsOffHere(uid, off) { try { if (off) localStorage.setItem("hzAlertsOff_" + uid, "1"); else localStorage.removeItem("hzAlertsOff_" + uid); } catch (e) {} }
+function hzDeviceLabel() {
+  var ua = navigator.userAgent || "";
+  var kind = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android phone" : /Macintosh/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows computer" : "Computer";
+  var app = /mobile\.html/.test(location.pathname) ? "app" : "website";
+  return kind + " · " + app;
+}
+// Save this device's token for the member; tidy the older one-per-member record if it was this same device.
+function hzPushSave(uid, unit, token) {
+  if (!uid || !token) return Promise.resolve();
+  hzSetAlertsOffHere(uid, false);
+  return db.collection("pushTokens").doc(hzPushDocId(uid)).set({
+    token: token, unit: unit || "", uid: uid, device: hzDeviceLabel(),
+    platform: /iPhone|iPad|iPod/.test(navigator.userAgent) ? "ios" : /Android/.test(navigator.userAgent) ? "android" : "web",
+    updatedAt: new Date().toISOString()
+  }).then(function() {
+    return db.collection("pushTokens").doc(uid).get().then(function(old) {
+      if (old.exists && old.data().token === token) return old.ref.delete();
+    }).catch(function() {});
+  });
+}
+// Remove this device's alerts: its record, and the token itself (so nothing already queued reaches it).
+function hzPushRemoveHere(uid, messaging, swReg) {
+  if (!uid) return Promise.resolve();
+  var jobs = [db.collection("pushTokens").doc(hzPushDocId(uid)).delete().catch(function() {})];
+  try {
+    var m = messaging || firebase.messaging();
+    var getTok = (swReg && typeof FCM_VAPID_KEY !== "undefined" && FCM_VAPID_KEY && typeof Notification !== "undefined" && Notification.permission === "granted")
+      ? m.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: swReg }) : Promise.resolve(null);
+    jobs.push(getTok.then(function(tok) {
+      // the older one-per-member record, if it was this device
+      var legacy = tok ? db.collection("pushTokens").doc(uid).get().then(function(old) { if (old.exists && old.data().token === tok) return old.ref.delete(); }).catch(function() {}) : null;
+      return Promise.resolve(legacy).then(function() { return m.deleteToken(); });
+    }).catch(function() {}));
+  } catch (e) {}
+  return Promise.all(jobs);
+}
+// Before signing out: remove this device — but never hold the sign-out up for more than ~1.5 s (no signal = sign out anyway).
+function hzPushSignOutCleanup(uid, messaging, swReg) {
+  return Promise.race([hzPushRemoveHere(uid, messaging, swReg), new Promise(function(r) { setTimeout(r, 1500); })]).catch(function() {});
+}
+// Does this device have alerts on for the member? (its own record exists)
+function hzPushOnHere(uid) {
+  if (!uid) return Promise.resolve(false);
+  return db.collection("pushTokens").doc(hzPushDocId(uid)).get().then(function(s) { return s.exists && !!s.data().token; }).catch(function() { return false; });
+}
+// How many devices the member gets alerts on (My Settings)
+function hzPushDeviceCount(uid) {
+  if (!uid) return Promise.resolve(0);
+  return db.collection("pushTokens").where("uid", "==", uid).get().then(function(snap) {
+    var t = {}; snap.forEach(function(d) { if (d.data().token) t[d.data().token] = 1; }); return Object.keys(t).length;
+  }).catch(function() { return 0; });
+}
+
 // ── TOAST ──
 function mToast(msg, isErr) {
   var t = document.getElementById("m-toast");
@@ -1881,7 +1957,10 @@ function mForgotPw() {
 
 function mSignOut() {
   if (mCallsListener) { mCallsListener(); mCallsListener = null; }
-  auth.signOut();
+  // This phone stops getting this member's alerts (waits at most ~1.5 s; with no signal it signs out anyway)
+  var uid = mCurrentUser && mCurrentUser.uid;
+  mToast("Signing out…");
+  hzPushSignOutCleanup(uid, mFCMMessaging, mSWReg).then(function() { auth.signOut(); });
 }
 
 function mSetNewPw() {
@@ -1951,13 +2030,14 @@ function mEnterHome() {
   mGoTo("home");
   mStartCallsListener();
 
-  // Check pushTokens doc to restore accurate alert state
+  // Alerts on THIS device? (its own record). Signed back in on a device that still allows notifications and wasn't
+  // switched off here → turn alerts back on quietly (also moves members off the old one-record-per-member setup).
   if (mCurrentUser) {
-    db.collection("pushTokens").doc(mCurrentUser.uid).get().then(function(snap) {
-      window._mAlertsDisabled = !snap.exists || !snap.data().token;
-      mUpdateAlertBtn();
-    }).catch(function() {
-      window._mAlertsDisabled = true;
+    var _puid = mCurrentUser.uid;
+    window._mAlertsDisabled = true;
+    hzPushOnHere(_puid).then(function(onHere) {
+      window._mAlertsDisabled = !onHere;
+      if (!onHere && ("Notification" in window) && Notification.permission === "granted" && !hzAlertsOffHere(_puid)) mRegisterFCMToken(true);
       mUpdateAlertBtn();
     });
   } else {
@@ -2001,24 +2081,14 @@ function mRequestPermissions() {
       mRequestLocation();
     });
   } else if (Notification.permission === "granted") {
-    // Already granted — ensure token is registered if not already
-    if (mCurrentUser) {
-      db.collection("pushTokens").doc(mCurrentUser.uid).get().then(function(snap) {
-        if (!snap.exists || !snap.data().token) {
-          mRegisterFCMToken();
-        } else {
-          window._mAlertsDisabled = false;
-          mUpdateAlertBtn();
-        }
-      }).catch(function() {});
-    }
+    // Already granted — mEnterHome makes sure this device is registered (unless alerts were switched off here)
     mRequestLocation();
   } else {
     mRequestLocation();
   }
 }
 
-function mRegisterFCMToken() {
+function mRegisterFCMToken(silent) {
   if (!FCM_VAPID_KEY || !mCurrentUser) return;
   navigator.serviceWorker.ready.then(function(reg) {
     mSWReg = reg;
@@ -2027,18 +2097,12 @@ function mRegisterFCMToken() {
       msg.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg })
         .then(function(token) {
           if (!token) return;
-          return db.collection("pushTokens").doc(mCurrentUser.uid).set({
-            token: token,
-            unit: mCurrentUserUnit || "",
-            uid: mCurrentUser.uid,
-            platform: /iPhone|iPad|iPod/.test(navigator.userAgent) ? "ios" : "android",
-            updatedAt: new Date().toISOString()
-          });
+          return hzPushSave(mCurrentUser.uid, mCurrentUserUnit, token);   // this device's own record
         })
         .then(function() {
           window._mAlertsDisabled = false;
           mUpdateAlertBtn();
-          mToast("🔔 Alerts enabled");
+          if (!silent) mToast("🔔 Alerts on for this phone");
         })
         .catch(function(e) { console.warn("FCM token error:", e.message); });
     } catch(e) { console.warn("FCM init error:", e.message); }
@@ -3525,14 +3589,13 @@ function mRequestPush() {
 
   // Toggle OFF — remove token from Firestore
   if (Notification.permission === "granted" && !window._mAlertsDisabled) {
-    db.collection("pushTokens").doc(mCurrentUser.uid).delete()
-      .then(function() {
-        try { var msg = mFCMMessaging || firebase.messaging(); msg.deleteToken().catch(function(){}); } catch(e) {}
-        window._mAlertsDisabled = true;
-        mToast("🔕 Alerts disabled");
-        mUpdateAlertBtn();
-      })
-      .catch(function(e) { mToast("Error: " + e.message, true); });
+    var _ouid = mCurrentUser.uid;
+    hzSetAlertsOffHere(_ouid, true);                        // stays off here, even after signing out and back in
+    hzPushRemoveHere(_ouid, mFCMMessaging, mSWReg).then(function() {
+      window._mAlertsDisabled = true;
+      mToast("🔕 Alerts off for this phone");
+      mUpdateAlertBtn();
+    });
     return;
   }
 
@@ -9686,7 +9749,7 @@ function mCloseAllSheets() {
       <button type="button" class="m-disp-btn" data-age="adult" onclick="mSetNcAge('adult')" style="flex:1">Adult</button>
       <button type="button" class="m-disp-btn" data-age="uto" onclick="mSetNcAge('uto')" style="flex:1">UTO</button>
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:12px">
+    <div class="m-nc-sex-row" style="display:flex;gap:6px;margin-bottom:12px">
       <button type="button" class="m-disp-btn" data-sex="male" onclick="mSetNcSex('male')" style="flex:1">♂ Male</button>
       <button type="button" class="m-disp-btn" data-sex="female" onclick="mSetNcSex('female')" style="flex:1">♀ Female</button>
     </div>
