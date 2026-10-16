@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.27"; window.M_BUILD = BUILD;
+  var BUILD = "4.28"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6987,8 +6987,11 @@ function mEditCallInfo(mode) {
   if (isCb || isCode) return;
   var inp = document.getElementById("m-ec-addr");
   inp.addEventListener("input", function() { mEcPlace = null; mEcSt("m-ec-addr-st", inp.value.trim() ? "Pick a suggestion — or Save and it's looked up." : ""); });
-  if (window.google && google.maps && google.maps.places) {
+  hzEnsurePlaces(function() {   // Google's address search may not be loaded yet (the phone loads it on first use)
+    if (!document.body.contains(inp) || !(window.google && google.maps && google.maps.places)) return;
+    var before = document.querySelectorAll(".pac-container").length;
     var ac = new google.maps.places.Autocomplete(inp, { componentRestrictions: { country: "us" } });
+    setTimeout(function() { var pcs = document.querySelectorAll(".pac-container"); if (pcs.length > before) pcs[pcs.length - 1].dataset.hzEc = "1"; }, 0);   // so it's removed with the box
     ac.addListener("place_changed", function() {
       var place = ac.getPlace(); if (!place || !place.geometry) return;
       var lat = place.geometry.location.lat(), lng = place.geometry.location.lng(), poi = mRealPoiName(place);
@@ -6999,19 +7002,45 @@ function mEditCallInfo(mode) {
         mEcSt("m-ec-addr-st", "✓ Found — the map pin moves here.", "ok");
       });
     });
+  });
+}
+// Load Google Maps + Places once (if no screen has yet), then run cb. Waits for a script another screen
+// already started instead of adding a second one.
+var hzPlacesQ = [];
+function hzEnsurePlaces(cb) {
+  if (window.google && google.maps && google.maps.places) { cb(); return; }
+  hzPlacesQ.push(cb);
+  if (hzPlacesQ.length > 1) return;
+  var flush = function() { var q = hzPlacesQ; hzPlacesQ = []; q.forEach(function(f) { try { f(); } catch (e) {} }); };
+  var loading = [].some.call(document.querySelectorAll("script[src*='maps.googleapis.com/maps/api/js']"), function() { return true; });
+  if (!loading) {
+    window.hzPlacesReady = flush;
+    var s = document.createElement("script"); s.id = "hz-places-script";
+    s.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=hzPlacesReady";
+    document.head.appendChild(s);
   }
+  var tries = 0, t = setInterval(function() {   // also covers a script someone else started
+    if (window.google && google.maps && google.maps.places) { clearInterval(t); if (hzPlacesQ.length) flush(); }
+    else if (++tries > 75) { clearInterval(t); hzPlacesQ = []; }
+  }, 200);
 }
 function mEcSt(id, t, kind) { var el = document.getElementById(id); if (!el) return; el.textContent = t || ""; el.className = "m-ec-st" + (kind ? " " + kind : ""); }
-function mEditCallClose() { var m = document.getElementById("m-ec-modal"); if (m) m.remove(); document.querySelectorAll(".pac-container").forEach(function(p) { p.style.display = "none"; }); }
+function mEditCallClose() {
+  var m = document.getElementById("m-ec-modal"); if (!m) return;
+  var inp = document.getElementById("m-ec-addr");
+  if (inp && window.google && google.maps && google.maps.event) google.maps.event.clearInstanceListeners(inp);
+  m.remove();
+  document.querySelectorAll(".pac-container").forEach(function(p) { if (p.dataset.hzEc) p.remove(); });
+}
 function mEcGeocode(text) {
-  return new Promise(function(resolve) {
+  return new Promise(function(ready) { if (window.google && google.maps && google.maps.Geocoder) return ready(); hzEnsurePlaces(ready); setTimeout(ready, 8000); }).then(function() { return new Promise(function(resolve) {
     if (!(window.google && google.maps && google.maps.Geocoder)) return resolve(null);
     new google.maps.Geocoder().geocode({ address: text, region: "us" }, function(r, st) {
       if (st !== "OK" || !r || !r[0]) return resolve(null);
       var g = r[0].geometry.location;
       resolve({ address: mCleanAddress(String(r[0].formatted_address || text).replace(/, USA$/, "")), lat: g.lat(), lng: g.lng() });
     });
-  });
+  }); });
 }
 function mEditCallSave() {
   var call = mDispCallCache[mDispSelectedCallId]; if (!call) return;
