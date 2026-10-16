@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.20"; window.M_BUILD = BUILD;
+  var BUILD = "4.21"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6112,6 +6112,19 @@ function hzSendOn(key, ch) {
   var s = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, k = s && s[key];
   return !(k && k[ch] === false);
 }
+// Push alert alongside a text (Message Templates ▸ 🔔 Push box). Written to pushNotifications; the
+// server checks the box again, keeps Test Mode to the sender, and rings every device of those units.
+function hzPushTo(units, key, title, body, callId) {
+  if (!hzSendOn(key, "push")) return;
+  var all = units === "all", list = all ? [] : (units || []).filter(function(u, i, a) { return u && a.indexOf(u) === i; });
+  if (!all && !list.length) return;
+  try {
+    db.collection("pushNotifications").add({ key: key, toAll: all, toUnits: list,
+      title: String(title || "").slice(0, 120), body: String(body || "").slice(0, 400), callId: callId || "",
+      fromUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() }).catch(function() {});
+  } catch (e) {}
+}
+function hzPushStreet(call) { return String((typeof mSmsAddress === "function" ? mSmsAddress(call) : call.address) || "").split(",")[0]; }
 function mTemplateFor(key) {
   var t = mCleanTemplate(M_SMS_TEMPLATES && M_SMS_TEMPLATES[key]);
   return (typeof t === "string" && t.trim()) ? t : M_SMS_TEMPLATE_DEFAULTS[key];
@@ -6292,6 +6305,7 @@ function mAdminCopy(call, header, detail, key) {
   if (!units.length) return;
   var body = mRenderTemplate(mTemplateFor("adminUpdate"), Object.assign(mCallVars(call), { header: mPlainHeader(header), address: mSmsAddress(call), detail: detail || "" }));
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
+  if (key) hzPushTo(units, key, "📟 " + mPlainHeader(header) + " — " + hzPushStreet(call), detail || "", call.id);
 }
 function mNotifyAdminUnits(call) {
   if (!hzSendOn("assignment", "admin")) return;   // Message Templates ▸ Unit assigned ▸ Admin group off
@@ -6358,6 +6372,8 @@ function mTextResourceToAssigned(call, header, detail) {
   var _body = mRenderTemplate(mTemplateFor("resource"), Object.assign(mCallVars(call), { header: header, detail: detail || "", address: mSmsAddress(call) }));
   if (hzSendOn("resource", "sms")) mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, _body); }); });
   mAdminCopy(call, header, detail, "resource");
+  if (!/^🚨 ALS DISPATCHED$/.test(header) && !/^(No ALS available|ALS cancelled)/.test(detail || ""))   // those three the server pushes from the call itself
+    hzPushTo(units, "resource", "🚨 Call Update — " + hzPushStreet(call), mPlainHeader(header) + (detail ? ": " + detail : ""), call.id);
 }
 // Text every assigned unit a new dispatcher note
 function mTextNoteToAssigned(call, noteText) {
@@ -6458,6 +6474,7 @@ function mPushCallbackSMS() {
     });
     if (!phones.length) { mToast("No phone numbers found", true); return; }
     mSendClickSendSMS(phones, msg);
+    hzPushTo(targetUnits, "callback", "📞 Callback — " + hzPushStreet(call), "Callback: " + (call.callbackNumber || ""), call.id);
     mToast("📱 Callback # pushed to " + targetUnits.join(", "));
   }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
@@ -7922,6 +7939,7 @@ function mDdPushLocation() {
       accuracy: String(acc), moved: moved !== null ? " — moved about " + mDdDist(moved) : "", callerMapsLink: maps, callerWazeLink: waze }));
     if (hzSendOn("locationUpdate", "sms")) mSmsEnqueue(function() { return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
     mAdminCopy(call, "📍 LOCATION UPDATE", noteText, "locationUpdate");
+    hzPushTo(units, "locationUpdate", "📍 Updated location — " + hzPushStreet(call), noteText, call.id);
     mToast("📍 New location sent to " + units.join(", "));
   }).catch(function(e) { mToast("Couldn't update the location: " + e.message, true); });
 }
@@ -8902,6 +8920,7 @@ function mTextRigDirections(unitId, call) {
     return mEnsureBaseCoords().then(function() {
       var body = mRenderTemplate(mTemplateFor("rigResponse"), mCallVars(call || {}));
       if (!body.trim()) return;
+      hzPushTo([unitId], "rigResponse", "🏠 Respond to the rig", body.split("\n")[0], (call || {}).id);
       return mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); });
     });
   });
