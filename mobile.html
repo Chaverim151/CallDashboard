@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.10"; window.M_BUILD = BUILD;
+  var BUILD = "4.11"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -726,7 +726,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
 </head>
 <body>
 <div id="m-app" style="height:100%;display:flex;flex-direction:column;overflow:hidden;position:relative;">
-<div id="m-test-global-banner" style="display:none;flex-shrink:0;background:#f0a500;color:#000;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;text-align:center;padding:5px 10px;padding-top:calc(5px + env(safe-area-inset-top) * 1.6);cursor:pointer;z-index:9990" onclick="mGoTo('dispatch')">🧪 TEST DISPATCH MODE — Calls logged as TEST records</div>
+<div id="m-test-global-banner" title="Turn Test Mode off in My Settings" style="display:none;flex-shrink:0;background:#f0a500;color:#000;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;text-align:center;padding:5px 10px;padding-top:calc(5px + env(safe-area-inset-top) * 1.6);cursor:pointer;z-index:9990" onclick="mGoTo('settings')">🧪 TEST DISPATCH MODE — Calls logged as TEST records</div>
 
 <!-- LOGIN -->
 <div class="page active" id="m-pg-login">
@@ -831,7 +831,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
           Active Calls
           <span class="m-count" id="m-calls-count">0</span>
         </div>
-        <div id="m-alert-toggle-wrap" onclick="mRequestPush()" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <div id="m-alert-toggle-wrap" onclick="mRequestPush()" style="display:none;align-items:center;gap:6px;cursor:pointer">
           <div id="m-alert-track" style="width:36px;height:20px;border-radius:10px;background:rgba(255,255,255,0.1);border:1px solid var(--card-border);position:relative;transition:all 0.25s;flex-shrink:0">
             <div id="m-alert-thumb" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--gray);transition:all 0.25s"></div>
           </div>
@@ -842,7 +842,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
     </div>
 
     <!-- Alerts toggle when no active calls -->
-    <div id="m-alerts-row" style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:10px">
+    <div id="m-alerts-row" style="display:none;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:10px">
       <span id="m-alert-label-2" style="font-size:0.65rem;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray)">Enable Alerts</span>
       <div id="m-alert-toggle-wrap-2" onclick="mRequestPush()" style="display:flex;align-items:center;cursor:pointer">
         <div id="m-alert-track-2" style="width:36px;height:20px;border-radius:10px;background:rgba(255,255,255,0.1);border:1px solid var(--card-border);position:relative;transition:all 0.25s">
@@ -1635,6 +1635,7 @@ function mSettingsRender() {
   var el = document.getElementById("m-set-content"); if (!el) return;
   var me = mMe || {}, roles = (mCurrentUserRoles || []).concat(mCurrentRole === "admin" ? ["admin"] : []);
   var on = Notification.permission === "granted" && !window._mAlertsDisabled;
+  var canTest = mCurrentRole === "admin" || (mCurrentUserRoles || []).some(function(r) { return /^(dispatcher|captain|chief)$/i.test(r); });
   var tiles = mSetFlow.tiles || mVisibleTiles(); mSetFlow.tiles = tiles;
   var opts = function(sel) { return tiles.map(function(t) { return '<option value="' + t.k + '"' + (t.k === sel ? " selected" : "") + '>' + mEscHtml(t.label) + '</option>'; }).join(""); };
   var map = mPrefs.mapApp || (function(){ try { return localStorage.getItem("hzMapApp") || "google"; } catch (e) { return "google"; } })();
@@ -1661,6 +1662,9 @@ function mSettingsRender() {
       '<div class="m-set-kv"><span>Phone</span><b title="' + mEscHtml(me.phone || "") + '">' + mEscHtml(me.phone || "—") + '</b>' + chg("phone") + '</div>' + flow("phone") +
       '<div class="m-set-kv"><span>Email</span><b title="' + mEscHtml(me.email || (mCurrentUser && mCurrentUser.email) || "") + '">' + mEscHtml(me.email || (mCurrentUser && mCurrentUser.email) || "—") + '</b>' + chg("email") + '</div>' + flow("email") +
       '<div class="m-set-kv" style="border:0"><span>WhatsApp</span><input id="m-set-wa" class="m-disp-input m-set-in" type="tel" inputmode="tel" placeholder="Only if different from phone" value="' + mEscHtml(me.whatsapp || "") + '"><button class="m-set-mini" onclick="mSetSaveWa()">Save</button></div>') +
+    (canTest ? mSetCard('🧪 Test Mode <span class="m-set-sub">' + (MSysTestingMode ? "ON" : "OFF") + '</span>',
+      '<div class="m-set-row2" style="margin-top:0"><button class="m-disp-btn m-set-btn' + (MSysTestingMode ? ' primary' : '') + '" onclick="mToggleTestMode();setTimeout(mSettingsRender,900)">' + (MSysTestingMode ? "Turn off — go live" : "Turn on") + '</button></div>' +
+      '<div class="m-set-note">While it\'s on, calls, texts and alerts you trigger go only to you.</div>') : '') +
     mSetCard('🔔 Alerts <span class="m-set-sub">' + (on ? "ON" : "OFF") + '</span>',
       '<div class="m-set-row2" style="margin-top:0"><button class="m-disp-btn m-set-btn' + (on ? '' : ' primary') + '" onclick="mRequestPush();setTimeout(mSettingsRender,1500)">' + (on ? "Turn off" : "Turn on") + '</button>' +
       '<button class="m-disp-btn m-set-btn" onclick="mSetTestAlert()">🔔 Test</button></div>') +
@@ -1969,7 +1973,7 @@ function mEnterHome() {
   var canDispatch = mCurrentRole==="admin"||roles.includes("dispatcher")||roles.includes("captain")||roles.includes("chief");
   var dispatchTile = document.getElementById("m-dispatch-tile");
   if (dispatchTile) dispatchTile.style.display = canDispatch ? "" : "none";
-  var homeTestRow = document.getElementById("m-home-test-row"); if (homeTestRow) homeTestRow.style.display = canDispatch ? "flex" : "none";
+  var homeTestRow = document.getElementById("m-home-test-row"); if (homeTestRow) homeTestRow.style.display = "none";   // Test Mode lives in My Settings now
   var callLogsTile = document.getElementById("m-calllogs-tile");
   if (callLogsTile) callLogsTile.style.display = canDispatch ? "" : "none";
   mApplyTilePrefs();
@@ -3566,7 +3570,7 @@ function mUpdateAlertBtn() {
   var callsVisible = document.getElementById("m-calls-section") &&
                      document.getElementById("m-calls-section").style.display !== "none";
   var row = document.getElementById("m-alerts-row");
-  if (row) row.style.display = callsVisible ? "none" : "flex";
+  if (row) row.style.display = "none";   // Alerts on/off lives in My Settings now
 }
 
 var M_COVERAGE_ZONES = [
@@ -9591,7 +9595,7 @@ function mCloseAllSheets() {
     </div>
     <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,var(--gold),#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
   </div>
-  <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 16px 0" onclick="mToggleTestMode()">
+  <div style="display:none;align-items:center;justify-content:flex-end;gap:8px;padding:8px 16px 0" onclick="mToggleTestMode()"><!-- moved to My Settings -->
     <span id="m-test-toggle-label" class="m-test-label" style="font-size:0.6rem;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray)">🧪 Test Mode</span>
     <div class="m-test-track" style="width:36px;height:20px;border-radius:10px;background:rgba(255,255,255,0.1);border:1px solid var(--card-border);position:relative;transition:all 0.25s;cursor:pointer">
       <div class="m-test-thumb" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--gray);transition:all 0.25s"></div>
