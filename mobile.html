@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.04"; window.M_BUILD = BUILD;
+  var BUILD = "4.06"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6897,7 +6897,7 @@ function mSetNcHighway(on, fromUser) {
   var aw = document.getElementById("m-nc-apt-wrap"); if (aw) aw.style.display = mNcHighway ? "none" : "";
   if (mNcHighway) { var apt = document.getElementById("m-nc-apt"); if (apt) apt.value = ""; }
   if (mNcHighway && fromUser) mHwOpenPicker();
-  if (!mNcHighway) { var hm = document.getElementById("hw-modal"); if (hm) hm.remove(); }
+  if (!mNcHighway) { var hm = document.getElementById("hw-modal"); if (hm) hm.remove(); if (typeof mHwClose === "function") mHwClose(); }
   if (fromUser && typeof mNcDraftSave === "function") mNcDraftSave();
 }
 // An address that is clearly a highway (picked from the Parkway list, or the caller is on one) → answer "Yes"
@@ -7037,6 +7037,7 @@ function mHwBind() {
   if (mHwBound) return; mHwBound = true;
   inp.addEventListener("input", function() {
     var q = inp.value;
+    if (!mNcHighway) { if (mHwItems.length) { mHwItems = []; mHwRenderList(); } return; }   // Parkway suggestions only when "on a highway" = Yes
     mHwLoad().then(function() { if (inp.value !== q) return; mHwItems = mHwSuggest(q); mHwRenderList(); });
   });
   // capture phase: runs before Google's own key handling, so Enter picks OUR highlighted item
@@ -9617,9 +9618,9 @@ function mCloseAllSheets() {
       <span style="font-size:0.78rem;color:#ffd97a">📝 Restored your unfinished call <span id="m-nc-draft-when" style="color:var(--gray)"></span></span>
       <button type="button" onclick="mNcDiscardDraft()" style="background:none;border:1px solid rgba(255,144,144,0.5);border-radius:6px;color:#ff9090;font-size:0.7rem;font-weight:700;padding:5px 10px;cursor:pointer;white-space:nowrap">Start over</button>
     </div>
+    <div id="m-nc-hw-q" style="display:flex;align-items:center;gap:8px;margin:0 0 10px"><span style="flex:1;font-size:0.78rem;color:var(--gray)">🛣 Is the location on a highway?</span><button type="button" class="m-disp-btn" data-hwq="yes" onclick="mSetNcHighway(true, true)" style="min-width:64px">Yes</button><button type="button" class="m-disp-btn" data-hwq="no" onclick="mSetNcHighway(false, true)" style="min-width:64px">No</button></div>
     <div class="m-disp-label">Location</div>
     <div style="position:relative;margin-bottom:10px"><input type="text" id="m-nc-address" oninput="mNcAddressEdited()" class="m-disp-input" style="padding-right:38px;" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><div id="m-nc-hw-list" role="listbox" aria-label="Highway locations" style="display:none"></div><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-address')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
-    <div id="m-nc-hw-q" style="display:flex;align-items:center;gap:8px;margin:-2px 0 10px"><span style="flex:1;font-size:0.78rem;color:var(--gray)">🛣 Is the location on a highway?</span><button type="button" class="m-disp-btn" data-hwq="yes" onclick="mSetNcHighway(true, true)" style="min-width:64px">Yes</button><button type="button" class="m-disp-btn" data-hwq="no" onclick="mSetNcHighway(false, true)" style="min-width:64px">No</button></div>
     <button type="button" id="m-nc-hw-btn" onclick="mHwOpenPicker()" style="display:none;align-items:center;gap:8px;width:100%;justify-content:center;min-height:44px;margin:-2px 0 12px;background:rgba(122,184,245,0.10);border:1px solid rgba(122,184,245,0.45);border-radius:10px;color:#d6e8ff;font:inherit;font-weight:700;font-size:0.88rem;cursor:pointer">🛣 Garden State Parkway — exit or mile marker</button>
     <input type="hidden" id="m-nc-lat"><input type="hidden" id="m-nc-lng"><input type="hidden" id="m-nc-mapslink">
     <div id="m-nc-apt-wrap"><div class="m-disp-label">Apt / Suite / Unit</div>
