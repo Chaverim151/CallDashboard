@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "3.97"; window.M_BUILD = BUILD;
+  var BUILD = "3.99"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6520,7 +6520,8 @@ function mUseCallerLocation(lat, lng, acc, coordsOnly) {
       var roadName = "";
       comp.forEach(function(x){ if (!roadName && x.types.indexOf("route") !== -1) roadName = x.long_name; });
       if (r && precise) {
-        inp.value = mCleanAddress(r.formatted_address.replace(/, USA$/, ""));
+        // A real building nearby — pick the CLOSEST one (Google's first answer can be a corner house on the cross street)
+        mUseClosestAddress(lat, lng, acc); return;
       } else if (roadName) {
         inp.value = roadName + " — " + coords;        // e.g. Garden State Pkwy — 40.512345, -74.398765
       } else {
@@ -6559,14 +6560,30 @@ function mUseClosestAddress(lat, lng, acc) {
   var approx = mLocLastData && mLocLastData.approxAddress ? mCleanAddress(String(mLocLastData.approxAddress).replace(/, USA$/, "")) : "";
   if (!(window.google && google.maps && google.maps.Geocoder)) { done(approx); return; }
   mLocBusy = true; mLocMsg = ""; mLocRender();
-  new google.maps.Geocoder().geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
-    var pick = null;
-    if (st === "OK" && res) {
-      // the nearest result that is a real address (a building, or at least a numbered spot on a street)
-      pick = res.filter(function(x) { var t = x.types || []; return t.indexOf("street_address") !== -1 || t.indexOf("premise") !== -1 || t.indexOf("subpremise") !== -1; })[0] ||
-             res.filter(function(x) { return (x.address_components || []).some(function(c) { return c.types.indexOf("street_number") !== -1; }); })[0] || null;
-    }
-    done(pick ? mCleanAddress(pick.formatted_address.replace(/, USA$/, "")) : approx);
+  // Two lookups can disagree (the caller's page names the spot from OpenStreetMap; Google may list a
+  // corner house on the cross street first). So: collect Google's street addresses around the point,
+  // add the address the caller's page shows ("Near"), and use whichever building is CLOSEST to the caller.
+  var gc = new google.maps.Geocoder(), cands = [];
+  var addCand = function(r, from) {
+    if (!r || !r.geometry || !r.geometry.location) return;
+    var hasNum = (r.address_components || []).some(function(c) { return c.types.indexOf("street_number") !== -1; });
+    if (!hasNum) return;
+    var d = mMetresBetween(lat, lng, r.geometry.location.lat(), r.geometry.location.lng());
+    var rooftop = r.geometry.location_type === "ROOFTOP";
+    cands.push({ addr: mCleanAddress(r.formatted_address.replace(/, USA$/, "")), d: d, score: d + (rooftop ? 0 : 25), from: from });
+  };
+  var finish = function() {
+    cands.sort(function(x, y) { return x.score - y.score; });
+    done(cands.length ? cands[0].addr : approx);
+  };
+  gc.geocode({ location: { lat: lat, lng: lng } }, function(res, st) {
+    if (st === "OK" && res) res.forEach(function(x) { addCand(x, "google"); });
+    var nearHasNum = /^\s*\d/.test(approx);
+    if (!nearHasNum) { finish(); return; }
+    gc.geocode({ address: approx, region: "us" }, function(r2, st2) {
+      if (st2 === "OK" && r2 && r2[0]) addCand(r2[0], "near");
+      finish();
+    });
   });
 }
 window.mUseClosestAddress = mUseClosestAddress;
@@ -6654,8 +6671,10 @@ function mShowNcZoneBanner(zone) {
   banner.style.display = "block";
   // Standard / Load a Rig: flash slowly so the response type isn't missed (Outside stays steady — it has the contact list)
   banner.classList.toggle("m-zone-flash", zone === "primary" || zone === "secondary");
-  banner.style.setProperty("--zc", zone === "primary" ? "rgba(76,175,128,0.55)" : zone === "secondary" ? "rgba(240,165,0,0.6)" : "transparent");
-  banner.style.background = bg; banner.style.border = "1px solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
+  var flashZone = zone === "primary" || zone === "secondary";
+  if (flashZone) border = "#4a90d9";   // Standard / Load a Rig: blue border, same fill
+  banner.style.setProperty("--zc", flashZone ? "rgba(74,144,217,0.6)" : "transparent");
+  banner.style.background = bg; banner.style.border = (flashZone ? "2px" : "1px") + " solid " + border; banner.style.borderRadius = "9px"; banner.style.padding = "10px 12px"; banner.style.marginBottom = "12px";
   banner.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:1.4rem">' + icon + '</span><div><div style="font-family:\'Oswald\',sans-serif;font-size:0.85rem;font-weight:700;color:' + color + '">' + label + '</div><div style="font-size:0.7rem;color:' + color + ';opacity:0.85">' + sub + '</div></div></div>' + extra;
 }
 // Required fields on a new call: address, nature, patient age. Red until answered.
