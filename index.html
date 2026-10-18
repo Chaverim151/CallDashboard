@@ -2140,7 +2140,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.54</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.55</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -17030,7 +17030,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.54";
+var DESKTOP_VERSION = "11.55";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -21646,7 +21646,12 @@ function mBuildCrewRigPanel(call, crewIdx) {
     return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetCrewRigStatus(' + crewIdx + ',\'' + next + '\')">' + label + '</button>';
   }
   var body = "";
-  if (!crew.rig) {
+  // RMA (11.55 / 4.47): the rig can be marked Back at Base from any point before transport — turned around
+  // on the way, still at base, on scene, or heading back
+  var RMA_BACK = ["", "picking_up_ambo", "onboard_rig", "ambo_responding", "on_scene_ambo", "rma_scene", "returning_base"];
+  if (crew.rig && (call.disposition || {}).type === "rma" && st.length && st.every(function(x){ return RMA_BACK.indexOf(x) !== -1; })) {
+    body = btn("Mark " + rig + " Back at Base", "back_at_base", "#7ab8f5", "blue");
+  } else if (!crew.rig) {
     body = '<div style="font-size:0.7rem;color:var(--gray)">Select the crew\'s rig above to begin the rig flow.</div>';
   } else if (mLoadRigBoarded(call, crewIdx) && st.length && st.every(function(x){ return M_LR_PRESCENE.indexOf(x) !== -1; })) {
     body = btn("Mark " + rig + " On Scene", "on_scene_ambo", "#7dedb5", "green");
@@ -21849,6 +21854,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Once a unit is onboard / the rig is responding, they're on the ambulance — no divert.
   var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) // A unit with the rig can still divert direct to the scene until the rig is marked on scene
     || (det.response === "rig" && M_LR_PRESCENE.indexOf(status) !== -1);
+  if ((call.disposition || {}).type === "rma") canDivert = false;   // RMA — nobody is still heading in
   if (canDivert) {
     var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
     if (det.response !== "rig") {                      // diverting TO a rig needs a rig to exist
@@ -21927,6 +21933,8 @@ function mNextStepButton(call, crewIdx, role, unit) {
   var status = det.status || "";
   var isDriver = mIsDriverRole(call, crewIdx, role);
   var crew = mCrewOf(call, crewIdx);
+  // RMA: the rig's own Back at Base button replaces the rig unit's "responding / on scene" steps
+  if (det.response === "rig" && crew.rig && (call.disposition || {}).type === "rma" && ["", "picking_up_ambo", "onboard_rig", "ambo_responding", "on_scene_ambo"].indexOf(status) !== -1) return "";
   function btn(label, next, color, flash) {
     return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetUnitStatus(' + crewIdx + ',\'' + role + '\',\'' + next + '\')">' + label + '</button>';
   }

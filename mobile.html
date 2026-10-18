@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.46"; window.M_BUILD = BUILD;
+  var BUILD = "4.47"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -8542,7 +8542,12 @@ function mBuildCrewRigPanel(call, crewIdx) {
     return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetCrewRigStatus(' + crewIdx + ',\'' + next + '\')">' + label + '</button>';
   }
   var body = "";
-  if (!crew.rig) {
+  // RMA (11.55 / 4.47): the rig can be marked Back at Base from any point before transport — turned around
+  // on the way, still at base, on scene, or heading back
+  var RMA_BACK = ["", "picking_up_ambo", "onboard_rig", "ambo_responding", "on_scene_ambo", "rma_scene", "returning_base"];
+  if (crew.rig && (call.disposition || {}).type === "rma" && st.length && st.every(function(x){ return RMA_BACK.indexOf(x) !== -1; })) {
+    body = btn("Mark " + rig + " Back at Base", "back_at_base", "#7ab8f5", "blue");
+  } else if (!crew.rig) {
     body = '<div style="font-size:0.7rem;color:var(--gray)">Select the crew\'s rig above to begin the rig flow.</div>';
   } else if (mLoadRigBoarded(call, crewIdx) && st.length && st.every(function(x){ return M_LR_PRESCENE.indexOf(x) !== -1; })) {
     body = btn("Mark " + rig + " On Scene", "on_scene_ambo", "#7dedb5", "green");
@@ -8748,6 +8753,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Once a unit is onboard / the rig is responding, they're on the ambulance — no divert.
   var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) // A unit with the rig can still divert direct to the scene until the rig is marked on scene
     || (det.response === "rig" && M_LR_PRESCENE.indexOf(status) !== -1);
+  if ((call.disposition || {}).type === "rma") canDivert = false;   // RMA — nobody is still heading in
   if (canDivert) {
     var toLabel = det.response === "rig" ? "🏃 Divert direct to scene" : "🏠 Divert to rig";
     if (det.response !== "rig") {                      // diverting TO a rig needs a rig to exist
@@ -8827,6 +8833,8 @@ function mNextStepButton(call, crewIdx, role, unit) {
   var status = det.status || "";
   var isDriver = mIsDriverRole(call, crewIdx, role);
   var crew = mCrewOf(call, crewIdx);
+  // RMA: the rig's own Back at Base button replaces the rig unit's "responding / on scene" steps
+  if (det.response === "rig" && crew.rig && (call.disposition || {}).type === "rma" && ["", "picking_up_ambo", "onboard_rig", "ambo_responding", "on_scene_ambo"].indexOf(status) !== -1) return "";
   function btn(label, next, color, flash) {
     return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetUnitStatus(' + crewIdx + ',\'' + role + '\',\'' + next + '\')">' + label + '</button>';
   }
