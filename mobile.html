@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.37"; window.M_BUILD = BUILD;
+  var BUILD = "4.40"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6158,7 +6158,7 @@ var M_SMS_TEMPLATE_DEFAULTS = {
   note:       "CALL UPDATE\n{address}\n{note}\n{time}",
   callback:   "CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
   rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}",
-  adminUpdate:"NOTIFICATION GROUP\n{header}\n{address}\n{detail}",
+  adminUpdate:"NOTIFICATION GROUP\n{header}\n{address}\n{detail}\nBLS: {units}",
   callerLocation:"{orgName} — tap to send us your location so the ambulance can find you:\n{link}",
   accessCodeChange:"ACCESS CODE\n{address}\nCode: {accessCode}\n{time}",
   addressChange:"CALL LOCATION CHANGED\n{address}\nWas: {oldAddress}\n{mapsLink}\n\n{wazeLink}\n{time}",
@@ -6403,9 +6403,31 @@ function mAdminCopy(call, header, detail, key) {
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
   var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call already got it
   if (!units.length) return;
-  var body = mRenderTemplate(mTemplateFor("adminUpdate"), Object.assign(mCallVars(call), { header: mPlainHeader(header), address: mSmsAddress(call), detail: detail || "" }));
+  // Only the "unit assigned" copy lists the units on the call so far ({units}); the rig is added once a
+  // unit is responding to / with it. Every other copy leaves that line out. A template saved before this
+  // didn't have the line, so it's added to the end for the unit-assigned copy.
+  var isAssign = key === "assignment";
+  var tpl = mTemplateFor("adminUpdate");
+  if (isAssign && tpl.indexOf("{units}") === -1) tpl = tpl.replace(/\s+$/, "") + "\nBLS: {units}";
+  var body = mRenderTemplate(tpl, Object.assign(mCallVars(call), { header: mPlainHeader(header), address: mSmsAddress(call), detail: detail || "", units: isAssign ? mGroupUnits(call) : "" }));
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
   if (key) hzPushTo(units, key, "📟 " + mPlainHeader(header) + " — " + hzPushStreet(call), detail || "", call.id);
+}
+// Units for the notification group: every unit on the crews, plus a crew's rig only once one of its
+// units is responding to the rig or riding it.
+function mGroupUnits(call) {
+  var out = [], ud = call.unitDetails || {}, RIG = ["picking_up_ambo", "ambo_responding", "onboard_rig"];
+  (call.crews || []).forEach(function(cr, ci) {
+    var onRig = false;
+    Object.keys(cr || {}).forEach(function(k) {
+      if (k === "rig" || !cr[k] || cr[k] === "__added__") return;
+      if (out.indexOf(cr[k]) === -1) out.push(cr[k]);
+      var d = ud[ci + "_" + k] || {};
+      if (d.response === "rig" || RIG.indexOf(d.status) !== -1) onRig = true;
+    });
+    if (cr && cr.rig && onRig && out.indexOf(cr.rig) === -1) out.push(cr.rig);
+  });
+  return out.join(", ");
 }
 function mNotifyAdminUnits(call) {
   if (!hzSendOn("assignment", "admin")) return;   // Message Templates ▸ Unit assigned ▸ Admin group off
@@ -8089,7 +8111,7 @@ function mOpenDispatchCall(callId) {
 }
 function mOpenDispatchCallNow(callId, readOnly) {
   mDdReadOnly = !!readOnly;
-  if (mDdOpenFor !== callId) { mDdOpen = { resources: false, timeline: false }; mDdOpenFor = callId; }
+  mDdOpen = { resources: false, timeline: false }; mDdOpenFor = callId;   // collapsed every time a call is opened
   mDispSelectedCallId = callId;
   mGoTo("dispatch-detail");
   if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
