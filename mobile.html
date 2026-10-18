@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.40"; window.M_BUILD = BUILD;
+  var BUILD = "4.42"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -531,6 +531,11 @@ html[data-theme="basic"] body #m-pg-dispatch-detail button.m-dd-edit,
 html[data-theme="basic"] body #m-pg-dispatch-detail button:is([style^="color:#7ab8f5"],[style*=";color:#7ab8f5"],[style^="color:#e8a0ff"],[style*=";color:#e8a0ff"],[style^="color:var(--gray)"],[style*=";color:var(--gray)"],[style^="color:var(--gold)"],[style*=";color:var(--gold)"]):not([class*="m-pulse"]):not(.m-flash):not(.m-pick-on){background:transparent !important;color:#1f2328 !important;border:1px solid #d0d7de !important;box-shadow:none !important}
 html[data-theme="basic"] body #m-pg-dispatch-detail button.m-pick-on.m-pick-on{background:#0b5cad !important;color:#ffffff !important;border:1px solid #0b5cad !important;box-shadow:none !important}
 html[data-theme="basic"] body #m-pg-dispatch-detail .m-disp-label.m-disp-label{color:#1f2328 !important}
+/* 11.50 / 4.42 — Additional Resources buttons (Request ALS / BLS / PD, On Scene, Cancel): Basic look like every other plain button */
+html[data-theme="basic"] body #m-pg-dispatch-detail button.m-res-btn.m-res-btn.m-res-btn.m-res-btn{background:transparent !important;color:#1f2328 !important;border:1px solid #d0d7de !important;box-shadow:none !important}
+html[data-theme="basic"] body #m-pg-dispatch-detail button.m-divert-btn.m-divert-btn.m-divert-btn.m-divert-btn{background:transparent !important;color:#1f2328 !important;border:1px solid #d0d7de !important;box-shadow:none !important}
+/* Field titles bigger and bolder (11.50 / 4.42) */
+body .m-disp-label.m-disp-label{font-size:0.74rem !important;font-weight:700 !important;letter-spacing:0.05em !important}
 /* Basic look — every button on the New Call form: clear with black text; a picked choice is blue with white text */
 html[data-theme="basic"] body #m-pg-dispatch-newcall #m-nc-loc-btn,
 html[data-theme="basic"] body #m-pg-dispatch-newcall #m-nc-hw-btn,
@@ -7973,7 +7978,7 @@ function mPostNewCallNow() {
     if (!mNcZone) {
       var _b0 = document.getElementById("m-nc-post-btn"); if (_b0) { _b0.disabled = false; _b0.textContent = "🚑 Dispatch Call"; }
       mToast("Pick the address from the suggestions so the response area can be worked out", true);
-      var _a0 = document.getElementById("m-nc-address"); if (_a0) { _a0.classList.add("m-nc-need"); _a0.focus(); }
+      var _a0 = document.getElementById("m-nc-address"); if (_a0) { _a0.classList.add("m-nc-need"); try { _a0.focus({ preventScroll: true }); } catch (e) {} }
       return;
     }
   }
@@ -8047,12 +8052,12 @@ function mClaimCall(call, takeOver) {
   if (takeOver && prev) upd.callEvents = mEvtUnion(mEvt(me + " took over dispatch from " + prev.unit, "🎧", "#7ab8f5", "dispatcher"));
   return db.collection("activeCalls").doc(call.id).update(upd);
 }
-function mOwnerModal(html, buttons) {
+function mOwnerModal(html, buttons) {   // button: { label, primary, go(), check(modal) → false keeps it open }
   var old = document.getElementById("m-own-modal"); if (old) old.remove();
   var m = document.createElement("div"); m.id = "m-own-modal"; m.className = "m-ec-modal";
   m.innerHTML = '<div class="m-ec-card">' + html + '<div class="m-ec-btns">' + buttons.map(function(b, i) {
     return '<button type="button" class="m-disp-btn' + (b.primary ? ' m-ec-save' : '') + '" data-i="' + i + '">' + b.label + '</button>'; }).join("") + '</div></div>';
-  m.querySelectorAll("button[data-i]").forEach(function(btn) { btn.onclick = function() { m.remove(); var b = buttons[+btn.getAttribute("data-i")]; if (b.go) b.go(); }; });
+  m.querySelectorAll("button[data-i]").forEach(function(btn) { btn.onclick = function() { var b = buttons[+btn.getAttribute("data-i")]; if (b.check && b.check(m) === false) return; m.remove(); if (b.go) b.go(); }; });
   (document.getElementById("pg-console") || document.body).appendChild(m);
 }
 function mAskTakeOver(call) {
@@ -8592,8 +8597,8 @@ function mBuildCrewBlock(call, crew, crewIdx) {
   } else if (crew.rig) {
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;background:rgba(255,200,74,0.08);border:1px solid rgba(255,200,74,0.3);border-radius:6px;padding:5px 9px">' +
       '<span style="font-family:\'Oswald\',sans-serif;font-size:0.75rem;font-weight:700;color:#ffc84a">🚑 ' + mEscHtml(crew.rig) + '</span>' +
-      '<button onclick="mOpenAssignSheet(' + crewIdx + ',\'__crew__\',\'rig\')" style="background:none;border:1px solid rgba(255,200,74,0.35);border-radius:4px;color:#ffc84a;font-size:0.6rem;cursor:pointer;padding:1px 6px">✎ change</button>' +
-    '</div>';
+    '</div>' +
+      '<button class="m-disp-btn m-divert-btn" style="width:100%;border-color:rgba(255,200,74,0.4);color:#ffc84a;margin:-2px 0 8px" onclick="mOpenAssignSheet(' + crewIdx + ',\'__crew__\',\'rig\')">↔ Divert to Alternate Vehicle</button>';
   }
 
   // Slot labels don't presume a response — each unit chooses Scene or Rig. Once a unit is on the
@@ -9086,6 +9091,7 @@ function mDoAssign(unitId) {
       if (dupe) { mToast(unitId + " is already assigned elsewhere on this call", true); return; }
     }
     if (mAssignSheetMode === "rig") {
+      var prevRig = crews[crewIdx].rig || "";   // set = diverting to an alternate vehicle
       crews[crewIdx].rig = unitId;   // one ambulance per crew — set once at crew level
       var ud = call.unitDetails || {};
       if (role && role !== "__crew__") ud[mUdKey(crewIdx, role)] = Object.assign({}, ud[mUdKey(crewIdx, role)]||{}, { pickedAmbo: unitId, pickedAmboIsERV: false });
@@ -9106,7 +9112,7 @@ function mDoAssign(unitId) {
           if (det.response === "rig" && ["", "picking_up_ambo", "onboard_rig"].indexOf(det.status || "") !== -1) ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
         });
       }
-      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("Rig " + unitId + " selected for Crew " + (crewIdx+1) + (divert ? " — diverting from " + divert.address + ", responding to scene" : ""), "🚑", "#ffc84a", "assign")) });
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt((prevRig && prevRig !== unitId ? "Crew " + (crewIdx+1) + " diverted from " + prevRig + " to alternate vehicle " + unitId : "Rig " + unitId + " selected for Crew " + (crewIdx+1)) + (divert ? " — diverting from " + divert.address + ", responding to scene" : ""), "🚑", "#ffc84a", "assign")) });
     } else {
       crews[crewIdx][role] = unitId;
       var assignedUnits = [];
@@ -9141,9 +9147,10 @@ function mRemoveUnitSlot(crewIdx, role) {
     // keep the unit in assignedUnits only if it still holds another slot on this call
     var stillAssigned = crews.some(function(cr){ return Object.keys(cr||{}).some(function(k){ return k!=="rig" && cr[k]===removedUnit; }); });
     var assignedUnits = stillAssigned ? (call.assignedUnits||[]) : (call.assignedUnits||[]).filter(function(u){ return u !== removedUnit; });
-    var notes = call.callNotes || [];
-    if (removedUnit && removedUnit !== "__added__") notes.push({ text: removedUnit + " removed from call", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch" });
-    return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assignedUnits, callNotes: notes, updatedAt: new Date().toISOString() });
+    var upd = { crews: crews, unitDetails: ud, assignedUnits: assignedUnits, updatedAt: new Date().toISOString() };
+    // logged in the timeline only — not as a note (11.49 / 4.41)
+    if (removedUnit && removedUnit !== "__added__") upd.callEvents = mEvtUnion(mEvt(removedUnit + " removed from call", "✕", "var(--gray)", "event"));
+    return db.collection("activeCalls").doc(callId).update(upd);
   }).then(function(){ mToast("Unit removed"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mAddExtraRole(crewIdx, base) {
@@ -9468,10 +9475,10 @@ function mBuildAlsBanner(call) {
       '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (isNoALS?"var(--gray)":"#ff9090") + ';font-weight:700;margin-bottom:2px">' + (isNoALS?"⚠ No ALS Available":"🚨 ALS Active") + '</div>' +
       (!isNoALS ? '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + '</div>' + etaLine : '') +
       (!isNoALS ? '<div style="display:flex;gap:6px;margin-top:8px">' +
-          (!call.alsOnScene ? '<button class="m-disp-btn" style="flex:1;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">✓ On Scene</button>' : '') +
-          '<button class="m-disp-btn" style="flex:1;border-color:rgba(255,144,144,0.35);color:#ff9090" onclick="mOpenCancelAlsSheet()">✕ Cancel ALS</button>' +
+          (!call.alsOnScene ? '<button class="m-disp-btn m-res-btn" style="flex:1;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">✓ On Scene</button>' : '') +
+          '<button class="m-disp-btn m-res-btn" style="flex:1;border-color:rgba(255,144,144,0.35);color:#ff9090" onclick="mOpenCancelAlsSheet()">✕ Cancel ALS</button>' +
         '</div>' : '') +
-      (isNoALS ? '<button class="m-disp-btn" style="width:100%;margin-top:8px;border-color:rgba(224,85,85,0.4);color:#ff9090" onclick="mOpenALSSheet()">Request ALS</button>' : '') +
+      (isNoALS ? '<button class="m-disp-btn m-res-btn" style="width:100%;margin-top:8px;border-color:rgba(224,85,85,0.4);color:#ff9090" onclick="mOpenALSSheet()">Request ALS</button>' : '') +
       (call.alsOnScene ? '<div style="margin-top:6px;font-size:0.68rem;color:#7dedb5;text-align:center">✓ ALS On Scene' + (call.alsOnSceneAt?' · '+call.alsOnSceneAt:'') + '</div>' : '') +
     '</div>';
   }
@@ -9481,12 +9488,12 @@ function mBuildAlsBanner(call) {
   (call.crews || []).forEach(function(cr) { Object.keys(cr||{}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__") assignedCount++; }); });
   var flashNow = isRecommended && assignedCount >= 3;
   return '<div style="background:' + (isRecommended?'rgba(224,85,85,0.12)':'transparent') + ';border:' + (isRecommended?'2px solid rgba(224,85,85,0.7)':'1px solid rgba(224,85,85,0.45)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px' + (flashNow?';animation:als-flash 0.9s ease-in-out infinite':'') + '">' +
-    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + 'Dispatch ALS' + '</div>' +
+    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + 'ALS' + '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sug.prov + '</span>' +
       '<a href="tel:' + sug.phone + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + sug.display + '</a>' +
     '</div>' +
-    '<button class="m-disp-btn" style="width:100%;border-color:rgba(224,85,85,0.5);color:#ff9090;background:rgba(224,85,85,' + (isRecommended?'0.2':'0.1') + ')" onclick="mOpenALSSheet()">Activate ALS</button>' +
+    '<button class="m-disp-btn m-res-btn" style="width:100%;border-color:rgba(224,85,85,0.5);color:#ff9090;background:rgba(224,85,85,' + (isRecommended?'0.2':'0.1') + ')" onclick="mOpenALSSheet()">Request ALS</button>' +
   '</div>';
 }
 function mOpenALSSheet() {
@@ -9581,7 +9588,7 @@ function mBuildBlsBanner(call) {
     return '<div style="background:rgba(232,160,255,0.08);border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
       '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:2px">🚑 BLS Mutual Aid Active</div>' +
       '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.blsProvider||"") + (call.blsEta?" · ETA "+call.blsEta+"min":"") + '</div></div>' +
-      '<button onclick="mCancelBLS()" style="background:none;border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:rgba(255,255,255,0.4);font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:4px 8px;cursor:pointer;flex-shrink:0">✕ Cancel</button>' +
+      '<button class="m-res-btn" onclick="mCancelBLS()" style="background:none;border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:rgba(255,255,255,0.4);font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:4px 8px;cursor:pointer;flex-shrink:0">✕ Cancel</button>' +
     '</div>';
   }
   return '<div style="background:transparent;border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
@@ -9589,7 +9596,7 @@ function mBuildBlsBanner(call) {
     (!sugName ? '<div style="font-size:0.7rem;color:var(--gray);margin-bottom:6px">No mutual-aid provider on file for this town — enter one below.</div>' : '') +
     (sugName ? '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sugName + '</span>' +
       (sugPhoneDigits ? '<a href="tel:' + sugPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + sugPhone + '</a>' : '') + '</div>' : '') +
-    '<button class="m-disp-btn" style="width:100%;border-color:rgba(232,160,255,0.35);color:#e8a0ff;background:rgba(232,160,255,0.1)" onclick="mOpenBLSSheet()">Request BLS</button>' +
+    '<button class="m-disp-btn m-res-btn" style="width:100%;border-color:rgba(232,160,255,0.35);color:#e8a0ff;background:rgba(232,160,255,0.1)" onclick="mOpenBLSSheet()">Request BLS</button>' +
   '</div>';
 }
 function mOpenBLSSheet() {
@@ -9631,12 +9638,12 @@ function mBuildPdBanner(call) {
     '</div>';
   }
   return '<div style="background:transparent;border:1px solid rgba(74,144,217,0.45);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
-    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:6px">Dispatch PD</div>' +
+    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:6px">PD</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + mEscHtml(pdLabel) + (hit ? '' : ' <span style="font-size:0.66rem;font-weight:400;color:var(--gray)">— no PD number on file for this town</span>') + '</span>' +
       (pdPhoneDigits ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + mEscHtml(pdPhone) + '</a>' : '') +
     '</div>' +
-    '<button class="m-disp-btn" style="width:100%;border-color:rgba(74,144,217,0.5);color:#7ab8f5;background:rgba(74,144,217,0.1)" onclick="mActivatePD()">Dispatch PD</button>' +
+    '<button class="m-disp-btn m-res-btn" style="width:100%;border-color:rgba(74,144,217,0.5);color:#7ab8f5;background:rgba(74,144,217,0.1)" onclick="mActivatePD()">Request PD</button>' +
   '</div>';
 }
 function mActivatePD() {
@@ -9664,7 +9671,7 @@ function mSetDispositionRMA() {
       });
     }
     return db.collection("activeCalls").doc(callId).update(update).then(function() {
-      if (newType === "rma") [400, 900, 1600].forEach(function(ms) { setTimeout(function() { var f = document.getElementById("m-rma-by"); if (f && document.activeElement !== f && !f.value) { f.focus(); f.scrollIntoView({ block: "center", behavior: "smooth" }); } }, ms); });
+      /* no auto-scroll / auto-focus to the RMA fields (11.50 / 4.42) */
     });
   }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -10005,14 +10012,42 @@ function mBuildDispTimeline(call) {
 }
 
 // ── COMPLETE / CANCEL ──
+// Rigs that left base on this call and haven't been marked Back at Base
+function mRigsNotHome(call) {
+  var moving = ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base"], out = [];
+  (call.crews || []).forEach(function(cr, ci) {
+    if (!cr || !cr.rig) return;
+    if (mCrewRigUnits(call, ci).some(function(u){ return moving.indexOf(u.status) !== -1; })) out.push(cr.rig);
+  });
+  return out;
+}
 function mCompleteCall() {
   var _mm = document.getElementById("m-dd-menu"); if (_mm) _mm.style.display = "none";
+  var callNow = mDispCallCache[mDispSelectedCallId] || {};
+  var away = mRigsNotHome(callNow);
+  if (away.length) {
+    mOwnerModal('<div class="m-ec-title">⚠️ Warning</div>' +
+      '<div class="m-own-txt">You are trying to close an active call without marking <b>' + mEscHtml(away.join(", ")) + '</b> back at base. Please explain (for example: rig reassigned to an alternate call while already mobile).</div>' +
+      '<textarea id="m-rignothome-why" class="m-disp-input" rows="3" placeholder="Explanation (required)" style="resize:vertical;font-family:inherit;font-size:0.9rem"></textarea>', [
+      { label: "Cancel" },
+      { label: "Close Call", primary: true,
+        check: function(m) { var t = m.querySelector("#m-rignothome-why"); if (!t.value.trim()) { mToast("Enter an explanation", true); t.classList.add("m-nc-need"); t.focus(); return false; } mRigNotHomeWhy = t.value.trim(); },
+        go: function() { mCompleteCallGo(away, mRigNotHomeWhy); } }
+    ]);
+    return;
+  }
   if (!confirm("Mark this call as complete?")) return;
+  mCompleteCallGo();
+}
+var mRigNotHomeWhy = "";
+function mCompleteCallGo(away, why) {
   var callId = mDispSelectedCallId;
   db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
     var d = snap.exists ? snap.data() : {};
     var completedBy = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim() || mCurrentUserUnit || "";
-    return db.collection("activeCalls").doc(callId).set({ status: "complete", completedAt: new Date().toISOString(), completedBy: completedBy }, { merge: true });
+    var upd = { status: "complete", completedAt: new Date().toISOString(), completedBy: completedBy };
+    if (why) upd.callEvents = mEvtUnion(mEvt("Closed without " + away.join(", ") + " back at base — " + why, "⚠️", "#ffc84a", "event"));
+    return db.collection("activeCalls").doc(callId).set(upd, { merge: true });
   }).then(function() { mToast("✓ Call complete"); mCloseDispatchDetail(); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 // ── CANCEL CALL (reason picker, mirrors desktop exactly) ──
@@ -10080,6 +10115,7 @@ document.addEventListener("click", function(e) {
   if (btn.closest("#m-dd-content") || btn.closest(".m-disp-sheet")) mAutoScrollArmed = true;
 }, true);
 function mAutoScrollToNextStep() {
+  return;   // 11.50 / 4.42: no auto-scroll at all on the call screen — the view stays where the dispatcher left it
   if (!mAutoScrollArmed) return;
   mAutoScrollArmed = false;
   var active = document.activeElement;
@@ -10365,7 +10401,7 @@ function mCloseAllSheets() {
 
 <div class="m-disp-sheet" id="m-sheet-als">
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
-  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:14px">🚨 Activate ALS</div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:14px">🚨 Request ALS</div>
   <div class="m-disp-label">ALS Provider</div>
   <input type="text" id="m-als-provider" class="m-disp-input" placeholder="e.g. Med-Central, JFK ALS…" style="margin-bottom:10px" oninput="mAlsPromptCheck()">
   <div class="m-disp-label" id="m-als-unit-prompt">ALS Unit</div>
@@ -10378,7 +10414,7 @@ function mCloseAllSheets() {
 
 <div class="m-disp-sheet" id="m-sheet-bls">
   <div style="width:36px;height:4px;background:var(--card-border);border-radius:2px;margin:0 auto 14px"></div>
-  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#a78bfa;margin-bottom:14px">🔵 BLS Mutual Aid</div>
+  <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#a78bfa;margin-bottom:14px">🔵 Request BLS</div>
   <div class="m-disp-label">Provider</div>
   <input type="text" id="m-bls-provider" class="m-disp-input" placeholder="Mutual aid agency…" style="margin-bottom:10px">
   <div class="m-disp-label">BLS Unit</div>
