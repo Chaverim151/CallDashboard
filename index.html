@@ -2140,7 +2140,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.59</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.60</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2540,6 +2540,22 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
         </p>
         <button class="submit-btn" id="force-reset-all-btn" onclick="forceResetAllPasswords()" style="background:#e05555;color:#fff">🔒 Force Password Reset for All Users</button>
         <div class="form-msg" id="force-reset-all-msg"></div>
+      </div>
+    </div>
+
+    <div class="admin-section" data-admin-tab="security" id="adm-tile-access">
+      <div class="admin-section-title">🧩 Home Screen Tiles by Role</div>
+      <div class="add-user-form" style="max-width:none">
+        <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">
+          Tick which roles see each tile on the home screen (phone and computer). A member sees a tile if <b>any</b> of their roles is ticked.
+          Admins always see every tile. Protocol Search has its own setting in the Protocol Search tab.
+        </p>
+        <div id="tile-access-grid" style="overflow-x:auto"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+          <button class="submit-btn" onclick="hzTileGridSave()">✓ Save</button>
+          <button class="edit-mode-btn" onclick="hzTileGridReset()">↺ Back to the built-in rules</button>
+        </div>
+        <div class="form-msg" id="tile-access-msg"></div>
       </div>
     </div>
 
@@ -4216,6 +4232,7 @@ function setAdminTab(tab) {
   try { localStorage.setItem("adminTab", tab); } catch (e) {}
   var sc = document.querySelector("#pg-admin .inner-scroll"); if (sc) sc.scrollTop = 0;
   if (tab === "protocols" && typeof renderDispatchSettings === "function") renderDispatchSettings();
+  if (tab === "security" && typeof hzTileGridLoad === "function") hzTileGridLoad();
   if (tab === "imagetrend" && typeof itrLoad === "function") itrLoad();
   if (tab === "codes" && typeof renderCodesEditor === "function") renderCodesEditor();
   if (tab === "fleet" && typeof loadVehicleStatusPanel === "function") loadVehicleStatusPanel();
@@ -4525,6 +4542,97 @@ auth.onAuthStateChanged(function(user) {
 // from a normal login or right after completing a forced password change.
 // Keeping this in one place means tile visibility rules never drift out of
 // sync between the two entry paths.
+// ── Home tiles by role (11.60 / 4.53) — Admin ▸ Security ▸ Home Screen Tiles by Role (appdata/tileAccess).
+// A tile with saved roles shows only to members who have one of those roles; admins always see every tile.
+// Tiles with nothing saved keep the built-in rules (hzTileDefault mirrors them for the admin grid).
+var HZ_TILES = [
+  { k: "rma", l: "RMA Hotline" }, { k: "codes", l: "Access Codes" }, { k: "epcr", l: "ePCR" }, { k: "shifts", l: "Night Shifts" },
+  { k: "contacts", l: "Contacts" }, { k: "maps", l: "Dispatch Console" }, { k: "education", l: "Education" }, { k: "portal", l: "MC Portal" },
+  { k: "service", l: "Service Helpdesk" }, { k: "calllogs", l: "Call Logs" }, { k: "guide", l: "User Guide" }, { k: "edispatches", l: "eScheduler" },
+  { k: "diverts", l: "Hospital Diverts" }, { k: "hospital", l: "Hospitals" }, { k: "buildings", l: "Buildings" }, { k: "shuls", l: "Shuls" }, { k: "storage", l: "Storage Room" }
+];
+var HZ_TILE_ACCESS = null;   // { sec: [roles] } once loaded
+function hzTileDefault(sec, role) {
+  role = String(role || "").toLowerCase();
+  if (["rma", "epcr", "portal", "hospital", "storage"].indexOf(sec) !== -1) return role !== "dispatcher";
+  if (sec === "maps" || sec === "calllogs") return ["dispatcher", "captain", "chief"].indexOf(role) !== -1;
+  if (sec === "education") return ["responder", "captain", "chief", "observer"].indexOf(role) !== -1;
+  if (sec === "edispatches" || sec === "diverts") return role === "dispatcher";
+  return true;
+}
+function hzApplyTileAccess(isAdmin, roles) {
+  if (isAdmin || !HZ_TILE_ACCESS) return;
+  var mine = (roles || []).map(function(r) { return String(r).toLowerCase(); });
+  Object.keys(HZ_TILE_ACCESS).forEach(function(sec) {
+    var allowed = HZ_TILE_ACCESS[sec]; if (!Array.isArray(allowed)) return;
+    var ok = allowed.some(function(r) { return mine.indexOf(String(r).toLowerCase()) !== -1; });
+    document.querySelectorAll('.m-tile[data-sec="' + sec + '"], .big-btn[data-sec="' + sec + '"]').forEach(function(t) { t.style.display = ok ? "" : "none"; });
+  });
+}
+function hzLoadTileAccess(isAdmin, roles) {
+  if (isAdmin) return;
+  db.collection("appdata").doc("tileAccess").get().then(function(s) {
+    var t = s.exists && s.data().tiles;
+    HZ_TILE_ACCESS = (t && typeof t === "object" && Object.keys(t).length) ? t : null;
+    hzApplyTileAccess(isAdmin, roles);
+  }).catch(function() {});
+}
+// ── Admin ▸ Security ▸ Home Screen Tiles by Role ──
+var HZ_TILE_GRID = null;   // { sec: [roles] } being edited
+function hzTileGridRoles() {
+  var set = {}; ["responder", "dispatcher", "driver", "logistics", "observer", "captain", "chief"].forEach(function(r) { set[r] = true; });
+  (allUsersCache || []).forEach(function(u) { (u.roles || []).forEach(function(r) { r = String(r || "").toLowerCase().trim(); if (r && r !== "admin") set[r] = true; }); });
+  Object.keys(HZ_TILE_GRID || {}).forEach(function(k) { (HZ_TILE_GRID[k] || []).forEach(function(r) { set[String(r).toLowerCase()] = true; }); });
+  return Object.keys(set);
+}
+function hzTileGridLoad() {
+  var box = document.getElementById("tile-access-grid"); if (!box) return;
+  box.innerHTML = '<div style="color:var(--gray);font-size:0.8rem">Loading…</div>';
+  db.collection("appdata").doc("tileAccess").get().then(function(snap) {
+    var saved = (snap.exists && snap.data().tiles) || {};
+    HZ_TILE_GRID = {};
+    var roles = (function() { HZ_TILE_GRID = saved; return hzTileGridRoles(); })();
+    HZ_TILE_GRID = {};
+    HZ_TILES.forEach(function(t) {
+      HZ_TILE_GRID[t.k] = Array.isArray(saved[t.k]) ? saved[t.k].map(function(r) { return String(r).toLowerCase(); })
+        : roles.filter(function(r) { return hzTileDefault(t.k, r); });
+    });
+    hzTileGridRender();
+  }).catch(function(e) { box.innerHTML = '<div style="color:#ff9090">Couldn\'t load: ' + orgEsc(e.message) + '</div>'; });
+}
+function hzTileGridRender() {
+  var box = document.getElementById("tile-access-grid"); if (!box || !HZ_TILE_GRID) return;
+  var roles = hzTileGridRoles();
+  var cap = function(r) { return r.charAt(0).toUpperCase() + r.slice(1); };
+  box.innerHTML = '<table class="tile-acc-table" style="border-collapse:collapse;font-size:0.8rem;min-width:100%">' +
+    '<thead><tr><th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--card-border)">Tile</th>' +
+    roles.map(function(r) { return '<th style="padding:6px 8px;border-bottom:1px solid var(--card-border);text-align:center;white-space:nowrap">' + orgEsc(cap(r)) + '</th>'; }).join("") + '</tr></thead><tbody>' +
+    HZ_TILES.map(function(t) {
+      var on = HZ_TILE_GRID[t.k] || [];
+      return '<tr><td style="padding:6px 10px;border-bottom:1px solid var(--card-border);white-space:nowrap;font-weight:600">' + orgEsc(t.l) + '</td>' +
+        roles.map(function(r) {
+          return '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid var(--card-border)"><input type="checkbox" style="width:17px;height:17px;cursor:pointer" ' +
+            (on.indexOf(r) !== -1 ? "checked " : "") + 'onchange="hzTileGridTick(\'' + t.k + '\',\'' + orgEsc(r).replace(/'/g, "") + '\',this.checked)" aria-label="' + orgEsc(t.l + " – " + r) + '"></td>';
+        }).join("") + '</tr>';
+    }).join("") + '</tbody></table>';
+}
+function hzTileGridTick(sec, role, on) {
+  var a = HZ_TILE_GRID[sec] = (HZ_TILE_GRID[sec] || []).filter(function(r) { return r !== role; });
+  if (on) a.push(role);
+}
+function hzTileGridSave() {
+  var msg = document.getElementById("tile-access-msg");
+  db.collection("appdata").doc("tileAccess").set({ tiles: HZ_TILE_GRID, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" })
+    .then(function() { msg.className = "form-msg success"; msg.textContent = "✓ Saved — members see the change next time they open the app."; })
+    .catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
+}
+function hzTileGridReset() {
+  if (!confirm("Go back to the built-in rules for every tile?")) return;
+  var msg = document.getElementById("tile-access-msg");
+  db.collection("appdata").doc("tileAccess").set({ tiles: {}, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" })
+    .then(function() { msg.className = "form-msg success"; msg.textContent = "✓ Back to the built-in rules."; hzTileGridLoad(); })
+    .catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
+}
 function enterHomeScreen() {
   // Loaded here, not only when the console opens: the Service Requests page needs the unit
   // directory for @mention suggestions, and the settings for who handles tickets.
@@ -4595,6 +4703,8 @@ function enterHomeScreen() {
     if (section) { section.style.display = "flex"; section.style.flexDirection = "column"; }
     if (pill && isDispatcher) pill.style.display = "block";
   }
+  hzApplyTileAccess(currentRole === "admin", currentUserRoles);   // admin's role / tile grid overrides the rules above
+  hzLoadTileAccess(currentRole === "admin", currentUserRoles);
   hzApplyTilePrefs();
 }
 
@@ -4981,7 +5091,8 @@ function createActiveCall(lat, lng, address, crossStreet, zone, mapsLink, placeN
       status: "active",
       testMode: SYS_TESTING_MODE ? true : false,
       testModeUnit: SYS_TESTING_MODE ? (currentUserUnit||"") : "",
-      createdBy: createdBy,
+      createdBy: createdBy, createdByUid: currentUser ? currentUser.uid : "",
+      dispatcherUids: currentUser ? [currentUser.uid] : [], dispatcherUnits: currentUserUnit ? [currentUserUnit] : [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
@@ -10368,6 +10479,7 @@ function loadCallLogs() {
   clPopulateNature();
 
   function processLogs(logs) {
+    if (hzLogsOwnOnly(currentRole === "admin", currentUserRoles)) logs = logs.filter(function(l) { return hzIsMyCall(l, currentUser && currentUser.uid, currentUserUnit); });
     if (nature === "__custom__") logs = logs.filter(function(l) { return l.callNature && !M_CALL_NATURES.some(function(nn){ return nn.value === l.callNature; }); });
     else if (nature) logs = logs.filter(function(l) { return l.callNature === nature; });
     if (q) logs = logs.filter(function(l) { return hzCallLogMatches(l, q); });
@@ -17028,7 +17140,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.59";
+var DESKTOP_VERSION = "11.60";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -19081,6 +19193,7 @@ function mLoadCallLogs() {
   function process(snap) {
     var logs = [];
     snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
+    if (hzLogsOwnOnly(mCurrentRole === "admin", mCurrentUserRoles)) logs = logs.filter(function(l) { return hzIsMyCall(l, mCurrentUser && mCurrentUser.uid, mCurrentUserUnit); });
     if (from) logs = logs.filter(function(l) { return (l.createdAt||"") >= from + "T00:00:00.000Z"; });
     if (to)   logs = logs.filter(function(l) { return (l.createdAt||"") <= to   + "T23:59:59.999Z"; });
     if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
@@ -19522,10 +19635,18 @@ function hzPushTo(units, key, title, body, callId) {
   if (!hzSendOn(key, "push")) return;
   var all = units === "all", list = all ? [] : (units || []).filter(function(u, i, a) { return u && a.indexOf(u) === i; });
   if (!all && !list.length) return;
+  // Test Mode (11.60 / 4.53): only the tester gets the push — when I'm in Test Mode, or the call is a test call
+  var meTesting = (typeof MSysTestingMode !== "undefined" && MSysTestingMode) || (typeof SYS_TESTING_MODE !== "undefined" && SYS_TESTING_MODE);
+  var tc = callId && typeof mDispCallCache !== "undefined" ? mDispCallCache[callId] : null;
+  if (meTesting || (tc && tc.testMode)) {
+    var tester = meTesting ? (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || (typeof currentUserUnit !== "undefined" && currentUserUnit) : tc.testModeUnit;
+    if (!tester) return;
+    all = false; list = [tester];   // the server adds "[TEST]" to the title
+  }
   try {
     db.collection("pushNotifications").add({ key: key, toAll: all, toUnits: list,
       title: String(title || "").slice(0, 120), body: String(body || "").slice(0, 400), callId: callId || "",
-      fromUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: new Date().toISOString() }).catch(function() {});
+      fromUid: (typeof mCurrentUser !== "undefined" && mCurrentUser ? mCurrentUser.uid : (typeof currentUser !== "undefined" && currentUser ? currentUser.uid : "")), createdAt: new Date().toISOString() }).catch(function() {});
   } catch (e) {}
 }
 function hzPushStreet(call) { return String((typeof mSmsAddress === "function" ? mSmsAddress(call) : call.address) || "").split(",")[0]; }
@@ -21156,6 +21277,7 @@ function mPostNewCallNow() {
     createdAt: now.toISOString(),
     createdBy: ((mCurrentUserUnit||"") + " " + (mCurrentUserDisplayName||"")).trim(),
     dispatcherUid: mCurrentUser ? mCurrentUser.uid : "", dispatcherUnit: mCurrentUserUnit || "", dispatcherSince: now.toISOString(),   // who manages the call
+    dispatcherUids: mCurrentUser ? [mCurrentUser.uid] : [], dispatcherUnits: mCurrentUserUnit ? [mCurrentUserUnit] : [],   // everyone who ever dispatched it (Call Logs)
     updatedAt: now.toISOString()
   };
   db.collection("activeCalls").add(call).then(function(ref) {
@@ -21179,12 +21301,28 @@ function mPostNewCallNow() {
 // take a call back the same way.
 var mDdReadOnly = false;
 function mIsAdminUser() { return mCurrentRole === "admin" || (mCurrentUserRoles || []).some(function(r) { return String(r).toLowerCase() === "admin"; }); }
+// Call Logs (11.60 / 4.53): a dispatcher — who isn't an admin, captain or chief — only sees calls they posted or took over
+function hzLogsOwnOnly(isAdmin, roles) {
+  roles = (roles || []).map(function(r) { return String(r).toLowerCase(); });
+  return !isAdmin && roles.indexOf("dispatcher") !== -1 && roles.indexOf("captain") === -1 && roles.indexOf("chief") === -1;
+}
+function hzIsMyCall(l, uid, unit) {
+  if (!l) return false;
+  if (uid && ((l.dispatcherUids || []).indexOf(uid) !== -1 || l.dispatcherUid === uid || l.createdByUid === uid)) return true;
+  if (!unit) return false;
+  if ((l.dispatcherUnits || []).indexOf(unit) !== -1 || l.dispatcherUnit === unit) return true;
+  var cb = String(l.createdBy || "").trim();
+  if (cb === unit || cb.indexOf(unit + " ") === 0) return true;               // older calls: "MC-710 Dina Stern"
+  return (l.callEvents || []).some(function(e) { return e && typeof e.text === "string" && e.text.indexOf(unit + " took over dispatch") === 0; });
+}
 function mCallOwner(call) { return call && call.dispatcherUid ? { uid: call.dispatcherUid, unit: call.dispatcherUnit || "Another dispatcher" } : null; }
 function mIOwnCall(call) { var o = mCallOwner(call); return !o || !!(mCurrentUser && o.uid === mCurrentUser.uid); }
 function mClaimCall(call, takeOver) {
   if (!mCurrentUser) return Promise.resolve();
   var me = mCurrentUserUnit || "Dispatcher", prev = mCallOwner(call), upd = { dispatcherUid: mCurrentUser.uid, dispatcherUnit: me, dispatcherSince: new Date().toISOString() };
   if (takeOver && prev) upd.callEvents = mEvtUnion(mEvt(me + " took over dispatch from " + prev.unit, "🎧", "#7ab8f5", "dispatcher"));
+  upd.dispatcherUids = firebase.firestore.FieldValue.arrayUnion(mCurrentUser.uid);   // Call Logs: dispatchers see the calls they handled
+  if (mCurrentUserUnit) upd.dispatcherUnits = firebase.firestore.FieldValue.arrayUnion(mCurrentUserUnit);
   return db.collection("activeCalls").doc(call.id).update(upd);
 }
 function mOwnerModal(html, buttons) {   // button: { label, primary, go(), check(modal) → false keeps it open }
