@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.51"; window.M_BUILD = BUILD;
+  var BUILD = "4.52"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10125,16 +10125,20 @@ function mSelectCancelReason(pill, reason) {
   pill.style.borderColor = "rgba(255,144,144,0.6)"; pill.style.background = "rgba(255,144,144,0.15)"; pill.style.color = "#ff9090";
   mCancelReasonSelected = reason;
   var otherInp = document.getElementById("m-cancel-other-input");
-  if (reason === "Other") { otherInp.style.display = "block"; otherInp.focus(); } else { otherInp.style.display = "none"; otherInp.value = ""; }
+  // Some reasons need a detail (required): why the caller cancelled / who advised there was no patient
+  var ask = M_CANCEL_DETAIL[reason];
+  if (ask) { otherInp.placeholder = ask; otherInp.value = ""; otherInp.style.display = "block"; otherInp.focus(); } else { otherInp.style.display = "none"; otherInp.value = ""; }
   document.getElementById("m-cancel-confirm-btn").style.opacity = "1";
   document.getElementById("m-cancel-confirm-btn").disabled = false;
 }
+var M_CANCEL_DETAIL = { "Caller called back to cancel": "Why did the caller cancel?", "No patient found": "Which unit / agency advised?" };
 function mConfirmCancelCall() {
   var reason = mCancelReasonSelected;
-  if (reason === "Other") {
-    var otherVal = document.getElementById("m-cancel-other-input").value.trim();
-    if (!otherVal) { mToast("Please describe the reason", true); return; }
-    reason = otherVal;
+  if (M_CANCEL_DETAIL[reason]) {
+    var detailEl = document.getElementById("m-cancel-other-input"), detail = detailEl.value.trim();
+    if (!detail) { mToast(reason === "No patient found" ? "Enter which unit / agency advised" : "Enter why the caller cancelled", true); detailEl.style.borderColor = "#e05555"; detailEl.focus(); return; }
+    detailEl.style.borderColor = "";
+    reason = reason + " — " + (reason === "No patient found" ? "advised by " : "") + detail;
   }
   if (!reason) { mToast("Select a reason", true); return; }
   var extraNote = document.getElementById("m-cancel-call-note").value.trim();
@@ -10522,16 +10526,14 @@ function mCloseAllSheets() {
   <div style="font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;color:#ff9090;margin-bottom:14px">✕ Cancel Call</div>
   <div class="m-disp-label">Reason for Cancellation</div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Caller Cancelled')">Caller Cancelled</button>
-    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'PD On Scene')">PD On Scene</button>
-    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'No Patient Found')">No Patient Found</button>
-    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Duplicate Call')">Duplicate Call</button>
-    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Patient Refused Response')">Patient Refused Response</button>
-    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Other')">Other</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Caller called back to cancel')">Caller Called Back to Cancel</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'No patient found')">No Patient Found</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Call created in error')">Call Created in Error</button>
+    <button type="button" class="m-disp-btn m-cancel-reason-pill" onclick="mSelectCancelReason(this,'Test call')">Test Call</button>
   </div>
   <input type="text" id="m-cancel-other-input" class="m-disp-input" placeholder="Describe reason…" style="display:none;margin-bottom:12px">
   <div class="m-disp-label">Additional Notes <span style="color:var(--gray);text-transform:none;letter-spacing:0">(optional)</span></div>
-  <textarea id="m-cancel-call-note" class="m-disp-input" rows="2" placeholder="Any additional details…" style="margin-bottom:12px;resize:vertical"></textarea>
+  <textarea id="m-cancel-call-note" class="m-disp-input" rows="2" placeholder="Any additional details…" style="margin-bottom:12px;resize:vertical;font-family:inherit"></textarea>
   <div style="background:rgba(255,144,144,0.06);border:1px solid rgba(255,144,144,0.2);border-radius:7px;padding:9px 12px;margin-bottom:14px;font-size:0.72rem;color:var(--gray);line-height:1.5">This will mark the call cancelled and clear all responding units. The call will be saved to logs.</div>
   <button id="m-cancel-confirm-btn" disabled onclick="mConfirmCancelCall()" style="width:100%;background:rgba(255,144,144,0.15);border:1px solid rgba(255,144,144,0.4);border-radius:9px;color:#ff9090;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:12px;cursor:pointer;opacity:0.4">Confirm Cancel</button>
 </div>
