@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.47"; window.M_BUILD = BUILD;
+  var BUILD = "4.48"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1913,10 +1913,15 @@ function mSetChangePw() {
   }).catch(function(e) { mToast(e.message, true); });
 }
 function mSetFaceOn() {
+  // Check the password first, then the biometric prompt starts from its own tap (iPhone blocks it otherwise)
   mSetReauth().then(function(pw) {
     mPendingPasskeyCreds = { unit: mCurrentUserUnit, email: firebase.auth().currentUser.email, pw: pw };
-    return mEnablePasskey();
-  }).then(function() { mSetFlow.pw = null; mSettingsRender(); }).catch(function(e) { mToast(e.message, true); });
+    var face = mBiometricName();
+    mOwnerModal('<div class="m-ec-title">Password confirmed</div><div class="m-own-txt">Tap <b>Continue</b>, then confirm with ' + mEscHtml(face) + ' when your phone asks.</div>', [
+      { label: "Cancel", go: function() { mPendingPasskeyCreds = null; } },
+      { label: "Continue", primary: true, go: function() { mEnablePasskey(); } }
+    ]);
+  }).catch(function(e) { mToast(e.message, true); });
 }
 
 
@@ -4234,10 +4239,13 @@ function mMaybeOfferPasskey() {
   }).catch(function(){});
 }
 function mDismissPasskeyOffer() { mCloseAllSheets(); mPendingPasskeyCreds = null; }
+// iPhone (and some Android phones) only allow a Face ID / fingerprint prompt straight from a tap. Each
+// biometric prompt below therefore starts from its own button tap — never after a network call or an earlier
+// prompt (that used to fail silently as "Cancelled"). 11.56 / 4.48
 async function mEnablePasskey() {
   var creds = mPendingPasskeyCreds;
   if (!creds) { mToast("Sign in with your password first", true); return; }
-  if (!mPasskeySupported()) { mToast("Passkeys aren't supported on this device or browser", true); return; }
+  if (!mPasskeySupported()) { mToast("This phone or browser can't do " + mBiometricName() + " sign-in. On iPhone use Safari; on Android use Chrome.", true); return; }
   try {
     var salt = crypto.getRandomValues(new Uint8Array(32));
     var cred = await navigator.credentials.create({ publicKey: {
@@ -4246,28 +4254,52 @@ async function mEnablePasskey() {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
-      timeout: 60000,
+      timeout: 120000,
       extensions: { prf: { eval: { first: salt } } }
     }});
     var ext = cred.getClientExtensionResults ? cred.getClientExtensionResults() : {};
     var prfOut = ext.prf && ext.prf.results && ext.prf.results.first;
-    if (!prfOut) {
-      if (!(ext.prf && ext.prf.enabled)) throw new Error("This device's passkey can't protect a sign-in (no PRF support). Update iOS/Android and try again.");
-      var a = await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, allowCredentials: [{ type: "public-key", id: cred.rawId }], userVerification: "required", timeout: 60000, extensions: { prf: { eval: { first: salt } } } } });
-      var ext2 = a.getClientExtensionResults(); prfOut = ext2.prf && ext2.prf.results && ext2.prf.results.first;
-      if (!prfOut) throw new Error("Biometric key could not be derived on this device.");
-    }
-    var key = await mAesKeyFromPrf(prfOut);
-    var iv = crypto.getRandomValues(new Uint8Array(12));
-    var ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, new TextEncoder().encode(creds.pw));
-    localStorage.setItem(M_PK_KEY, JSON.stringify({ credId: mB64u(cred.rawId), unit: creds.unit, email: creds.email, salt: mB64u(salt.buffer), iv: mB64u(iv.buffer), ct: mB64u(ct), createdAt: new Date().toISOString() }));
-    mPendingPasskeyCreds = null;
-    mCloseAllSheets(); mRefreshPasskeyUI();
-    mToast("✓ " + mBiometricName() + " sign-in enabled on this device");
-  } catch (e) {
-    if (e && e.name === "NotAllowedError") { mToast("Cancelled"); return; }
-    mToast("Couldn't enable: " + ((e && e.message) || e), true);
-  }
+    if (prfOut) { await mPkSave(creds, cred.rawId, salt, prfOut); return; }
+    if (!(ext.prf && ext.prf.enabled)) throw new Error("NOPRF");
+    // The phone made the key but needs one more scan to unlock it — that scan has to come from a new tap
+    mCloseAllSheets();
+    mOwnerModal('<div class="m-ec-title">One more step</div><div class="m-own-txt">Tap <b>Finish</b> and confirm with ' + mEscHtml(mBiometricName()) + ' one more time.</div>', [
+      { label: "Cancel", go: function() { mPendingPasskeyCreds = null; } },
+      { label: "Finish", primary: true, go: function() { mPkFinish(creds, cred.rawId, salt); } }
+    ]);
+  } catch (e) { mPkErr(e); }
+}
+async function mPkFinish(creds, rawId, salt) {
+  try {
+    var a = await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, allowCredentials: [{ type: "public-key", id: rawId }], userVerification: "required", timeout: 120000, extensions: { prf: { eval: { first: salt } } } } });
+    var ext2 = a.getClientExtensionResults(); var prfOut = ext2.prf && ext2.prf.results && ext2.prf.results.first;
+    if (!prfOut) throw new Error("NOPRF");
+    await mPkSave(creds, rawId, salt, prfOut);
+  } catch (e) { mPkErr(e); }
+}
+async function mPkSave(creds, rawId, salt, prfOut) {
+  var key = await mAesKeyFromPrf(prfOut);
+  var iv = crypto.getRandomValues(new Uint8Array(12));
+  var ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, new TextEncoder().encode(creds.pw));
+  localStorage.setItem(M_PK_KEY, JSON.stringify({ credId: mB64u(rawId), unit: creds.unit, email: creds.email, salt: mB64u(salt.buffer), iv: mB64u(iv.buffer), ct: mB64u(ct), createdAt: new Date().toISOString() }));
+  mPendingPasskeyCreds = null;
+  mCloseAllSheets(); mRefreshPasskeyUI();
+  try { if (mSetFlow) { mSetFlow.pw = null; mSettingsRender(); } } catch (e) {}
+  mToast("✓ " + mBiometricName() + " sign-in turned on for this phone");
+}
+// Plain-language reasons instead of the browser's error text
+function mPkErr(e) {
+  var n = (e && e.name) || "", m = (e && e.message) || String(e || "");
+  var face = mBiometricName();
+  var msg =
+    m === "NOPRF" ? "This phone saved the key somewhere that can't protect a sign-in. iPhone: update to iOS 18 or newer and use iCloud Keychain. Android: set Google Password Manager as the passkey service (Settings ▸ Passwords) and update Chrome." :
+    n === "NotAllowedError" ? face + " was cancelled or timed out. Try again and complete the scan when it pops up." :
+    n === "InvalidStateError" ? "This phone already has a key for this app. Remove the old one (Settings ▸ Passwords) and try again." :
+    n === "SecurityError" ? "Open the app from its normal web address (not a saved copy) and try again." :
+    n === "NotSupportedError" ? "This phone or browser can't do " + face + " sign-in. On iPhone use Safari; on Android use Chrome." :
+    "Couldn't turn on " + face + ": " + m;
+  msg = msg.charAt(0).toUpperCase() + msg.slice(1);
+  mOwnerModal('<div class="m-ec-title">' + mEscHtml(face) + ' not turned on</div><div class="m-own-txt">' + mEscHtml(msg) + '</div>', [{ label: "OK", primary: true }]);
 }
 async function mSignInWithPasskey() {
   var s = mPasskeyStored(); if (!s) { mRefreshPasskeyUI(); return; }
