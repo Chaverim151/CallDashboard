@@ -11,7 +11,7 @@
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.49"; window.M_BUILD = BUILD;
+  var BUILD = "4.50"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1169,7 +1169,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
     <input type="date" id="m-cl-to" class="m-disp-input" style="flex:1;min-width:120px">
     <select id="m-cl-zone" class="m-disp-input" style="flex:1;min-width:100px">
       <option value="">All Zones</option>
-      <option value="primary">Standard</option>
+      <option value="primary">Local Response</option>
       <option value="secondary">Load a Rig</option>
       <option value="outside">Outside Zone</option>
     </select>
@@ -2367,7 +2367,7 @@ function mRenderCalls(calls) {
 
   list.innerHTML = calls.map(function(call) {
     var zone = call.zone === "primary" ? "primary" : call.zone === "secondary" ? "secondary" : "outside";
-    var zoneLabel = call.zone === "primary" ? "Standard" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
+    var zoneLabel = call.zone === "primary" ? "Local Response" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
     var time = call.createdAt ? new Date(call.createdAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}) : "";
   if (call.createdAt) {   // how long it's been running matters more than when it came in
     var mins = Math.max(0, Math.round((Date.now() - new Date(call.createdAt).getTime()) / 60000));
@@ -2449,9 +2449,9 @@ function mRenderCalls(calls) {
     // Top row: zone pill + time + street view thumbnail
     var topRow = '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;gap:10px">' +
       '<div style="flex:1;min-width:0">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-          '<span class="m-zone-pill ' + zone + '">' + zoneLabel + '</span>' +
-          '<span style="font-size:0.65rem;color:var(--gray)">' + time + '</span>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 8px;margin-bottom:6px">' +
+          '<span class="m-zone-pill ' + zone + '" style="white-space:nowrap">' + zoneLabel + '</span>' +
+          '<span style="font-size:0.65rem;color:var(--gray);white-space:nowrap">' + time + '</span>' +
         '</div>' +
         (mPoiName(call.address)
           ? '<div class="m-call-addr">' + mEscHtml(mPoiName(call.address)) + '</div>' +
@@ -2548,7 +2548,7 @@ function mRenderDetail(call) {
 
   // Zone + nature row
   var zone = call.zone === "primary" ? "primary" : call.zone === "secondary" ? "secondary" : "outside";
-  var zoneLabel = call.zone === "primary" ? "Standard Response" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
+  var zoneLabel = call.zone === "primary" ? "Local Response" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
   var parts = [];
   if (call.patientAgeNum) parts.push(hzAge(call));
   else if (call.patientAge === "pediatric") parts.push("Ped");
@@ -4293,7 +4293,9 @@ function mPkErr(e) {
   var face = mBiometricName();
   var msg =
     m === "NOPRF" ? "This phone saved the key somewhere that can't protect a sign-in. iPhone: update to iOS 18 or newer and use iCloud Keychain. Android: set Google Password Manager as the passkey service (Settings ▸ Passwords) and update Chrome." :
-    n === "NotAllowedError" ? face + " was cancelled or timed out. Try again and complete the scan when it pops up." :
+    n === "NotAllowedError" ? (/iPhone|iPad|iPod/.test(navigator.userAgent || "")
+        ? "Face ID didn't finish. If your iPhone said \u201cChoose how to manage your passkeys\u201d, passkeys are turned off on this iPhone: open Settings \u25b8 General \u25b8 AutoFill & Passwords, turn on AutoFill Passwords and Passkeys, tick Passwords, then come back and try again. Otherwise just try again and complete the scan."
+        : face + " didn't finish. If no fingerprint / face prompt appeared, open your phone's Settings \u25b8 Passwords (or Google \u25b8 Autofill) and make Google Password Manager the passkey service, then try again. Otherwise just try again and complete the scan.") :
     n === "InvalidStateError" ? "This phone already has a key for this app. Remove the old one (Settings ▸ Passwords) and try again." :
     n === "SecurityError" ? "Open the app from its normal web address (not a saved copy) and try again." :
     n === "NotSupportedError" ? "This phone or browser can't do " + face + " sign-in. On iPhone use Safari; on Android use Chrome." :
@@ -5014,7 +5016,7 @@ function mRenderDispatchList(calls) {
   if (!calls.length) { el.innerHTML = '<div style="text-align:center;color:var(--gray);padding:40px 20px;font-size:0.85rem">No active calls</div>'; return; }
   el.innerHTML = calls.map(function(call) {
     var zoneColor = call.zone === "primary" ? "#7dedb5" : call.zone === "secondary" ? "#ffc84a" : "#ff9090";
-    var zoneLabel = call.zone === "primary" ? "Standard" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
+    var zoneLabel = call.zone === "primary" ? "Local Response" : call.zone === "secondary" ? "Load a Rig" : "Outside Zone";
     var nature = call.callNature ? call.callNature.replace(/^\d+\s*-\s*/, "").split(" (")[0] : "";
     var patient = [call.patientAgeNum ? hzAge(call, true) : (call.patientAge||""), call.patientSex==="male"?"M":call.patientSex==="female"?"F":""].filter(Boolean).join(" ");
     // Count the units actually on the crews; assignedUnits can drift if a unit is removed
@@ -5243,7 +5245,7 @@ function hzCallLogMatches(l, q) {
   return q.split(/\s+/).every(function(w) { return hay.indexOf(w) !== -1; });   // every word must appear
 }
 function hzExportCallLogsXlsx(logs, filterLines) {
-  var zoneName = function(z) { return z === "primary" ? "Standard" : z === "secondary" ? "Load a Rig" : z === "outside" ? "Outside Zone" : (z || ""); };
+  var zoneName = function(z) { return z === "primary" ? "Local Response" : z === "secondary" ? "Load a Rig" : z === "outside" ? "Outside Zone" : (z || ""); };
   var natureName = function(v) { var m = (typeof M_CALL_NATURES !== "undefined" ? M_CALL_NATURES : []).filter(function(n) { return n.value === v; })[0]; return m ? m.label : (v || ""); };
   var statusName = function(s) { var m = (typeof M_STATUS_LOG !== "undefined" && M_STATUS_LOG[s]) || null; return m ? m.text : (s || ""); };
   var asDate = function(iso) { var d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d : null; };
@@ -7313,7 +7315,7 @@ function mShowNcZoneBanner(zone) {
   var icon, label, sub, bg, border, color, extra;
   extra = "";
   var areaLabel = mZoneAreaLabel(mNcZoneArea);
-  if (zone === "primary") { icon="🚑"; label="STANDARD RESPONSE"; sub="MC Primary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
+  if (zone === "primary") { icon="🚑"; label="LOCAL RESPONSE"; sub="MC Primary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
   else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
   else {
     icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
@@ -7947,7 +7949,7 @@ function mPostNewCall() {
       mPostNewCall();
     }).catch(function() {
       if (pbtn) { pbtn.disabled = false; pbtn.textContent = "🚑 Dispatch Call"; }
-      if (!confirm("Couldn't verify this address's location, so the response zone can't be detected.\n\nPost anyway as STANDARD RESPONSE?")) return;
+      if (!confirm("Couldn't verify this address's location, so the response zone can't be detected.\n\nPost anyway as LOCAL RESPONSE?")) return;
       mNcZone = "primary"; mPostNewCallNow();
     });
     return;
@@ -8005,7 +8007,7 @@ function mPostNewCallNow() {
   mPostAddrResolved = false;
   var address = mCleanAddress(document.getElementById("m-nc-address").value.trim());
   // The response type decides whether a rig is loaded and who is toned out. If the address was
-  // never resolved to coordinates the zone is unknown, and guessing "Standard Response" could send
+  // never resolved to coordinates the zone is unknown, and guessing "Local Response" could send
   // a crew the wrong way — so stop and say so instead.
   var _lat0 = parseFloat(document.getElementById("m-nc-lat").value) || null;
   var _lng0 = parseFloat(document.getElementById("m-nc-lng").value) || null;
@@ -8420,7 +8422,7 @@ function mRenderDispatchDetail(call) {
     (call.apt ? '<div style="display:inline-block;font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--gold);background:rgba(var(--gold-rgb),0.12);border:1px solid rgba(var(--gold-rgb),0.4);border-radius:6px;padding:3px 9px;margin-bottom:8px;margin-right:6px">🚪 ' + mEscHtml(call.apt) + '</div>' : '') +
     (call.patientName ? '<div style="display:inline-block;font-size:0.8rem;font-weight:600;color:var(--white);background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:3px 9px;margin-bottom:8px">🧑 ' + mEscHtml(call.patientName) + '</div>' : '') +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-      '<span class="m-disp-zone" style="background:' + zoneColor + '33;color:' + zoneColor + ';border:1.5px solid ' + zoneColor + ';font-size:0.66rem">' + (call.zone === "primary" ? "🚑 Standard Response" : call.zone === "secondary" ? "🚑 Load a Rig" : "⚠ Outside Zone") + '</span>' +
+      '<span class="m-disp-zone" style="background:' + zoneColor + '33;color:' + zoneColor + ';border:1.5px solid ' + zoneColor + ';font-size:0.66rem">' + (call.zone === "primary" ? "🚑 Local Response" : call.zone === "secondary" ? "🚑 Load a Rig" : "⚠ Outside Zone") + '</span>' +
       (natureLabel ? '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + natureLabel + '</span>' : '') +
       ((call.patientAge || call.patientAgeNum) ? '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + [call.patientAgeNum ? hzAge(call) : "", call.patientAge ? (call.patientAgeUto ? "UTO " : "") + call.patientAge : "", call.patientSex ? (call.patientSex==="male"?"M":"F") : ""].filter(Boolean).join(" ") + '</span>' : '') +
     '</div>' +
