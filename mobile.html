@@ -5,13 +5,15 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <script>
+function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notification.permission)||"unsupported";}catch(e){return "unsupported";}}  /* iPhone browser tabs / in-app browsers have no Notification at all */
+
 // ── BUILD VERSION GUARD (self-updating) ──
 // The old approach compared the URL to a version baked into THIS file — but a cached stale copy
 // always agrees with its own number, so it never knew it was stale. This version asks the SERVER
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.54"; window.M_BUILD = BUILD;
+  var BUILD = "4.55"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1798,7 +1800,7 @@ function mVisibleTiles() {
 function mSettingsRender() {
   var el = document.getElementById("m-set-content"); if (!el) return;
   var me = mMe || {}, roles = (mCurrentUserRoles || []).concat(mCurrentRole === "admin" ? ["admin"] : []);
-  var on = Notification.permission === "granted" && !window._mAlertsDisabled;
+  var on = hzNotifPerm() === "granted" && !window._mAlertsDisabled;
   var canTest = mCurrentRole === "admin" || (mCurrentUserRoles || []).some(function(r) { return /^(dispatcher|captain|chief)$/i.test(r); });
   var tiles = mSetFlow.tiles || mVisibleTiles(); mSetFlow.tiles = tiles;
   var opts = function(sel) { return tiles.map(function(t) { return '<option value="' + t.k + '"' + (t.k === sel ? " selected" : "") + '>' + mEscHtml(t.label) + '</option>'; }).join(""); };
@@ -2027,7 +2029,7 @@ function hzPushRemoveHere(uid, messaging, swReg) {
   var jobs = [db.collection("pushTokens").doc(hzPushDocId(uid)).delete().catch(function() {})];
   try {
     var m = messaging || firebase.messaging();
-    var getTok = (swReg && typeof FCM_VAPID_KEY !== "undefined" && FCM_VAPID_KEY && typeof Notification !== "undefined" && Notification.permission === "granted")
+    var getTok = (swReg && typeof FCM_VAPID_KEY !== "undefined" && FCM_VAPID_KEY && typeof Notification !== "undefined" && hzNotifPerm() === "granted")
       ? m.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: swReg }) : Promise.resolve(null);
     jobs.push(getTok.then(function(tok) {
       // the older one-per-member record, if it was this device
@@ -2194,14 +2196,14 @@ function mEnterHome() {
     window._mAlertsDisabled = true;
     hzPushOnHere(_puid).then(function(onHere) {
       window._mAlertsDisabled = !onHere;
-      if (!onHere && ("Notification" in window) && Notification.permission === "granted" && !hzAlertsOffHere(_puid)) mRegisterFCMToken(true);
+      if (!onHere && ("Notification" in window) && hzNotifPerm() === "granted" && !hzAlertsOffHere(_puid)) mRegisterFCMToken(true);
       mUpdateAlertBtn();
     });
   } else {
     mUpdateAlertBtn();
   }
 
-  if (Notification.permission === "granted" && !window._mAlertsDisabled) setTimeout(mSendTokenToSW, 1000);
+  if (hzNotifPerm() === "granted" && !window._mAlertsDisabled) setTimeout(mSendTokenToSW, 1000);
 
   // Request permissions on first login
   setTimeout(mRequestPermissions, 800);
@@ -2231,7 +2233,7 @@ function mEnterHome() {
 }
 
 function mRequestPermissions() {
-  if ("Notification" in window && Notification.permission === "default") {
+  if ("Notification" in window && hzNotifPerm() === "default") {
     Notification.requestPermission().then(function(p) {
       if (p === "granted") {
         // Auto-register FCM token on first grant
@@ -2239,7 +2241,7 @@ function mRequestPermissions() {
       }
       mRequestLocation();
     });
-  } else if (Notification.permission === "granted") {
+  } else if (hzNotifPerm() === "granted") {
     // Already granted — mEnterHome makes sure this device is registered (unless alerts were switched off here)
     mRequestLocation();
   } else {
@@ -3744,11 +3746,11 @@ function mSendTokenToSW() {
 }
 
 function mRequestPush() {
-  if (!("Notification" in window)) { mToast("Notifications not supported on this browser", true); return; }
+  if (!("Notification" in window)) { mToast(/iPhone|iPad|iPod/.test(navigator.userAgent || "") ? "On iPhone, push notifications only work from the Home Screen app: in Safari tap Share ▸ Add to Home Screen, then open it from there" : "Notifications not supported on this browser", true); return; }
   if (!mCurrentUser) { mToast("Not signed in", true); return; }
 
   // Toggle OFF — remove token from Firestore
-  if (Notification.permission === "granted" && !window._mAlertsDisabled) {
+  if (hzNotifPerm() === "granted" && !window._mAlertsDisabled) {
     var _ouid = mCurrentUser.uid;
     hzSetAlertsOffHere(_ouid, true);                        // stays off here, even after signing out and back in
     hzPushRemoveHere(_ouid, mFCMMessaging, mSWReg).then(function() {
@@ -3762,7 +3764,7 @@ function mRequestPush() {
   // Toggle ON
   if (!FCM_VAPID_KEY) { mToast("Push not configured", true); return; }
 
-  if (Notification.permission === "granted") {
+  if (hzNotifPerm() === "granted") {
     // Permission already granted — just re-register token
     mRegisterFCMToken();
   } else {
@@ -3775,7 +3777,7 @@ function mRequestPush() {
 }
 
 function mUpdateAlertBtn() {
-  var on = Notification.permission === "granted" && !window._mAlertsDisabled;
+  var on = hzNotifPerm() === "granted" && !window._mAlertsDisabled;
   var color = on ? "#7dedb5" : "var(--gray)";
   var trackBg = on ? "rgba(125,237,181,0.3)" : "rgba(255,255,255,0.1)";
   var trackBorder = on ? "rgba(125,237,181,0.5)" : "var(--card-border)";
