@@ -8,6 +8,7 @@
 <script>
 function hzTitleList(){var t=null;try{t=JSON.parse(localStorage.getItem("hzTitles")||"null");}catch(e){}if(typeof HZ_TITLES!=="undefined"&&HZ_TITLES)t=HZ_TITLES;return Array.isArray(t)&&t.length?t:["captain","chief","backup","observer"];}
 function hzWithTitles(roles){roles=(roles||[]).slice();var low=roles.map(function(r){return String(r).toLowerCase();}),t=hzTitleList();if(low.indexOf("responder")===-1&&low.some(function(r){return t.indexOf(r)!==-1;}))roles.push("responder");return roles;}  /* 11.65: a title (Captain, Chief…) has Responder access */
+function hzIsLeader(u){var r=((u&&u.roles)||[]).map(function(x){return String(x).toLowerCase();});return r.indexOf("captain")!==-1||r.indexOf("chief")!==-1;}  /* contacts: captains & chiefs shown in red */
 function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notification.permission)||"unsupported";}catch(e){return "unsupported";}}  /* iPhone browser tabs / in-app browsers have no Notification at all */
 
 // Auto-redirect mobile devices to mobile.html
@@ -360,6 +361,15 @@ select{color-scheme:dark}
 .lr-in{align-self:flex-start;background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.4);color:var(--white);border-bottom-left-radius:3px}
 .lr-meta{font-size:0.66rem;color:var(--gray);margin-bottom:9px}
 .admin-section[data-admin-tab]{display:none}
+/* Contacts: captains & chiefs in red (11.74) */
+.contact-card.hz-leader .contact-name,.contact-card.hz-leader .contact-unit{color:#ff6b6b !important}
+.contact-card.hz-leader{border-color:rgba(224,85,85,0.45) !important}
+.contact-role-badge.leader{background:rgba(224,85,85,0.15) !important;border:1px solid rgba(224,85,85,0.5) !important;color:#ff6b6b !important}
+html[data-theme="basic"] .contact-card.hz-leader .contact-name,html[data-theme="basic"] .contact-card.hz-leader .contact-unit,html[data-theme="basic"] .contact-role-badge.leader{color:#c62828 !important}
+html[data-theme="basic"] .contact-role-badge.leader{background:#fdecec !important;border-color:#f1aeae !important}
+.hz-leader .hz-ct-name,.hz-leader .hz-ct-roles{color:#ff6b6b !important}
+html[data-theme="basic"] .hz-leader .hz-ct-name,html[data-theme="basic"] .hz-leader .hz-ct-roles{color:#c62828 !important}
+
 #hz-del-modal button#hz-del-ok.hz{}
 html body #hz-del-modal button#hz-del-ok{background:#e05555 !important;border-color:#e05555 !important;color:#ffffff !important}
 html[data-theme="basic"] #hz-del-modal .hz-del-card{background:#ffffff !important;border-color:#d0d7de !important}
@@ -2168,7 +2178,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.73</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.74</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7123,14 +7133,14 @@ function renderContacts(list) {
     var initials = ((u.firstName || "")[0] || "?").toUpperCase() + ((u.lastName || "")[0] || "").toUpperCase();
     var roleBadges = "";
     (u.roles || []).filter(function(r) { return r !== "admin"; }).forEach(function(r) {
-      roleBadges += '<span class="contact-role-badge role-badge ' + (STANDARD_ROLES.includes(r) ? r : "custom") + '">' + r + '</span>';
+      roleBadges += '<span class="contact-role-badge role-badge ' + (/^(captain|chief)$/i.test(r) ? "leader" : STANDARD_ROLES.includes(r) ? r : "custom") + '">' + r + '</span>';
     });
     var actions = phone
       ? '<a class="ca-btn call" href="tel:' + phone + '">📞</a>' +
         '<a class="ca-btn sms" href="sms:' + phone + '">💬</a>' +
         '<a class="ca-btn wa" href="https://wa.me/' + (function(){ var w = String(u.whatsapp || "").replace(/\D/g, ""); if (w.length === 10) w = "1" + w; return w.length === 11 ? w : "1" + phone; })() + '" target="_blank"><svg width="18" height="18" viewBox="0 0 24 24" fill="#25d366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg></a>'
       : '<span style="color:var(--gray);font-size:0.72rem">No phone</span>';
-    html += '<div class="contact-card" style="animation-delay:' + (i * 25) + 'ms">' +
+    html += '<div class="contact-card' + (hzIsLeader(u) ? ' hz-leader' : '') + '" style="animation-delay:' + (i * 25) + 'ms">' +
       '<div class="contact-avatar">' + initials + '</div>' +
       '<div class="contact-info">' +
         '<div class="contact-name">' + escapeHtml((u.firstName || "") + " " + (u.lastName || "")) + '</div>' +
@@ -17449,7 +17459,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.73";
+var DESKTOP_VERSION = "11.74";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -17766,8 +17776,8 @@ function mLoadContacts() {
       var u = d.data();
       var name = ((u.firstName||"") + " " + (u.lastName||"")).trim();
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06)">' +
-        '<div><div style="font-family:Oswald,sans-serif;font-size:0.82rem;font-weight:700;color:var(--white)">' + mEscHtml(u.unit||"") + (name ? " — " + mEscHtml(name) : "") + '</div>' +
-        '<div style="font-size:0.68rem;color:var(--gray)">' + mEscHtml((u.roles||[]).join(", ")) + '</div></div>' +
+        '<div' + (hzIsLeader(u) ? ' class="hz-leader"' : '') + '><div class="hz-ct-name" style="font-family:Oswald,sans-serif;font-size:0.82rem;font-weight:700;color:var(--white)">' + mEscHtml(u.unit||"") + (name ? " — " + mEscHtml(name) : "") + '</div>' +
+        '<div class="hz-ct-roles" style="font-size:0.68rem;color:var(--gray)">' + mEscHtml((u.roles||[]).join(", ")) + '</div></div>' +
         (function() {
           if (!u.phone) return "";
           var digits = String(u.phone).split(/[\/|]/)[0].replace(/\D/g, "");

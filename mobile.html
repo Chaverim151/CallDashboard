@@ -7,6 +7,7 @@
 <script>
 function hzTitleList(){var t=null;try{t=JSON.parse(localStorage.getItem("hzTitles")||"null");}catch(e){}if(typeof HZ_TITLES!=="undefined"&&HZ_TITLES)t=HZ_TITLES;return Array.isArray(t)&&t.length?t:["captain","chief","backup","observer"];}
 function hzWithTitles(roles){roles=(roles||[]).slice();var low=roles.map(function(r){return String(r).toLowerCase();}),t=hzTitleList();if(low.indexOf("responder")===-1&&low.some(function(r){return t.indexOf(r)!==-1;}))roles.push("responder");return roles;}  /* 11.65: a title (Captain, Chief…) has Responder access */
+function hzIsLeader(u){var r=((u&&u.roles)||[]).map(function(x){return String(x).toLowerCase();});return r.indexOf("captain")!==-1||r.indexOf("chief")!==-1;}  /* contacts: captains & chiefs shown in red */
 function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notification.permission)||"unsupported";}catch(e){return "unsupported";}}  /* iPhone browser tabs / in-app browsers have no Notification at all */
 
 // ── BUILD VERSION GUARD (self-updating) ──
@@ -15,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.60"; window.M_BUILD = BUILD;
+  var BUILD = "4.61"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -450,6 +451,8 @@ body.m-test-on .m-subpage-header{padding-top:15px}
 .m-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--accent,var(--gold));z-index:2}
 .m-tile[data-sec="rma"],.m-tile[data-sec="codes"],.m-tile[data-sec="hospital"],.m-tile[data-sec="epcr"],.m-tile[data-sec="buildings"]{--accent:#8b7cef}
 .m-tile[data-sec="shifts"],.m-tile[data-sec="shuls"],.m-tile[data-sec="storage"],.m-tile[data-sec="portal"],.m-tile[data-sec="maps"],.m-tile[data-sec="edispatches"],.m-tile[data-sec="diverts"]{--accent:#4a90d9}
+.hz-leader .hz-ct-name,.hz-leader .hz-ct-roles{color:#ff6b6b !important}
+html[data-theme="basic"] .hz-leader .hz-ct-name,html[data-theme="basic"] .hz-leader .hz-ct-roles{color:#c62828 !important}
 .m-tile[data-sec="service"],.m-tile[data-sec="contacts"],.m-tile[data-sec="regional"]{--accent:#4caf80}
 .hz-reg-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card-bg,rgba(255,255,255,0.04));border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;margin-bottom:8px;flex-wrap:wrap}
 .hz-reg-txt{min-width:0;flex:1 1 180px}
@@ -2872,8 +2875,8 @@ function mLoadContacts() {
       var u = d.data();
       var name = ((u.firstName||"") + " " + (u.lastName||"")).trim();
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06)">' +
-        '<div><div style="font-family:Oswald,sans-serif;font-size:0.82rem;font-weight:700;color:var(--white)">' + mEscHtml(u.unit||"") + (name ? " — " + mEscHtml(name) : "") + '</div>' +
-        '<div style="font-size:0.68rem;color:var(--gray)">' + mEscHtml((u.roles||[]).join(", ")) + '</div></div>' +
+        '<div' + (hzIsLeader(u) ? ' class="hz-leader"' : '') + '><div class="hz-ct-name" style="font-family:Oswald,sans-serif;font-size:0.82rem;font-weight:700;color:var(--white)">' + mEscHtml(u.unit||"") + (name ? " — " + mEscHtml(name) : "") + '</div>' +
+        '<div class="hz-ct-roles" style="font-size:0.68rem;color:var(--gray)">' + mEscHtml((u.roles||[]).join(", ")) + '</div></div>' +
         (function() {
           if (!u.phone) return "";
           var digits = String(u.phone).split(/[\/|]/)[0].replace(/\D/g, "");
