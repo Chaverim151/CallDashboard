@@ -15,7 +15,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.58"; window.M_BUILD = BUILD;
+  var BUILD = "4.60"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1640,6 +1640,14 @@ function hzRegionalHtml(q) {
       '<div class="hz-reg-phones">' + r.phones.map(function(p) { return '<a class="hz-reg-call" href="tel:' + p.replace(/\D/g, "") + '">📞 ' + esc(p) + '</a>'; }).join("") + '</div></div>';
   }).join("");
 }
+var HZ_REGIONAL_DEFAULT = HZ_REGIONAL.map(function(r) { return { area: r.area, sub: r.sub || "", phones: r.phones.slice() }; });
+function hzRegionalOpen(listId) {   // the list an admin saved (Admin ▸ Protocols & Dispatch ▸ Regional Hatzolah), else the built-in one
+  hzRegionalRender(listId, "");
+  db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
+    var r = s.exists && s.data().regional;
+    if (Array.isArray(r) && r.length) { HZ_REGIONAL = r; var box = document.getElementById(listId); var q = box && box.parentElement.querySelector("input"); hzRegionalRender(listId, q ? q.value : ""); }
+  }).catch(function() {});
+}
 function hzRegionalRender(listId, q) { var el = document.getElementById(listId); if (el) el.innerHTML = hzRegionalHtml(q); }
 function mTileKey(el) {
   return el.id || el.getAttribute("href") || (el.getAttribute("onclick") || "").replace(/\W+/g, "") || (el.textContent || "").trim().slice(0, 20);
@@ -1808,7 +1816,7 @@ function mGoTo(page) {
   if (page === "shifts") mLoadShifts();
   if (page === "storage") mLoadStorage();
   if (page === "contacts") mLoadContacts();
-  if (page === "regional") hzRegionalRender("m-reg-list", "");
+  if (page === "regional") hzRegionalOpen("m-reg-list");
   if (page === "hospital") mLoadHospital();
   if (page === "education") mInitEducation();
   if (page === "calllogs") { mPopulateCLNatureFilter(); mLoadCallLogs(); }
@@ -8607,6 +8615,8 @@ function mRenderDispatchDetail(call) {
   } else if (call.disposition.type === 'transport' && call.disposition.hospital) {
     content += '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px;font-size:0.78rem;color:#7ab8f5">🏥 ' + call.disposition.hospital + '</div>';
   }
+  // "Mark <rig> Back at Base" lives here, right under the disposition (one panel per crew that's at that step)
+  (call.crews || []).forEach(function(cr, ci) { var p = mBuildCrewRigPanel(call, ci); if (p.indexOf("'back_at_base')") !== -1) content += p; });
   content += '</div>';
 
   // Additional resources — under the disposition
@@ -8819,7 +8829,8 @@ function mBuildCrewBlock(call, crew, crewIdx) {
     var label = k.indexOf("supervisor")===0||k.indexOf("sup_")===0 ? "Supervisor" : k.indexOf("observer")===0 ? "Observer" : "Responder";
     html += mBuildUnitBox(call, crewIdx, k, label);
   });
-  html += mBuildCrewRigPanel(call, crewIdx);
+  var _rp = mBuildCrewRigPanel(call, crewIdx);
+  if (_rp.indexOf("'back_at_base')") === -1) html += _rp;   // a "Mark rig Back at Base" step is shown under Call Disposition instead (11.73 / 4.60)
   html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
     '<button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">Add Responder</button>' +
     '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.3);color:#e8a0ff" onclick="mAddExtraRole(' + crewIdx + ',\'supervisor\')">Add Supervisor</button>' +
