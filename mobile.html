@@ -5,6 +5,8 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <script>
+function hzTitleList(){var t=null;try{t=JSON.parse(localStorage.getItem("hzTitles")||"null");}catch(e){}if(typeof HZ_TITLES!=="undefined"&&HZ_TITLES)t=HZ_TITLES;return Array.isArray(t)&&t.length?t:["captain","chief","backup","observer"];}
+function hzWithTitles(roles){roles=(roles||[]).slice();var low=roles.map(function(r){return String(r).toLowerCase();}),t=hzTitleList();if(low.indexOf("responder")===-1&&low.some(function(r){return t.indexOf(r)!==-1;}))roles.push("responder");return roles;}  /* 11.65: a title (Captain, Chief…) has Responder access */
 function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notification.permission)||"unsupported";}catch(e){return "unsupported";}}  /* iPhone browser tabs / in-app browsers have no Notification at all */
 
 // ── BUILD VERSION GUARD (self-updating) ──
@@ -13,7 +15,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.55"; window.M_BUILD = BUILD;
+  var BUILD = "4.57"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -122,16 +124,16 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 @keyframes als-flash{0%,100%{background:rgba(224,85,85,0.15)}50%{background:rgba(224,85,85,0.35)}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes mZoneFlash{0%,100%{opacity:1;box-shadow:0 0 0 0 var(--zc,transparent)}50%{opacity:0.5;box-shadow:0 0 16px 2px var(--zc,transparent)}}
-.m-zone-flash{animation:mZoneFlash 1.6s ease-in-out infinite}
+.m-zone-flash{animation:mZoneFlash 1.6s steps(10) infinite}
 @media (prefers-reduced-motion:reduce){.m-zone-flash{animation:none}}
 @keyframes mFlashRed{0%,100%{background-color:rgba(224,85,85,0.55);border-color:#ff9090;color:#fff;box-shadow:0 0 10px rgba(224,85,85,0.7)}50%{background-color:rgba(224,85,85,0.08);border-color:rgba(255,144,144,0.35);color:#ff9090;box-shadow:0 0 0 rgba(224,85,85,0)}}
 @keyframes mPulseGreen{0%,100%{box-shadow:0 0 0 0 rgba(125,237,181,0.6)}50%{box-shadow:0 0 0 6px rgba(125,237,181,0)}}
 @keyframes mPulseBlue{0%,100%{box-shadow:0 0 0 0 rgba(122,184,245,0.6)}50%{box-shadow:0 0 0 6px rgba(122,184,245,0)}}
 @keyframes mPulseGold{0%,100%{box-shadow:0 0 0 0 rgba(var(--gold-rgb),0.6)}50%{box-shadow:0 0 0 6px rgba(var(--gold-rgb),0)}}
-.m-flash{animation:mFlashRed 1s ease-in-out infinite !important;}
-.m-pulse-green{animation:mPulseGreen 1.4s ease-in-out infinite !important;}
-.m-pulse-blue{animation:mPulseBlue 1.4s ease-in-out infinite !important;}
-.m-pulse-gold{animation:mPulseGold 1.4s ease-in-out infinite !important;}
+.m-flash{animation:mFlashRed 1s steps(8) infinite !important;}
+.m-pulse-green{animation:mPulseGreen 1.4s steps(10) infinite !important;}
+.m-pulse-blue{animation:mPulseBlue 1.4s steps(10) infinite !important;}
+.m-pulse-gold{animation:mPulseGold 1.4s steps(10) infinite !important;}
 /* Dispatcher dashboard */
 .m-dash-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;padding:16px 14px;margin-bottom:10px;color:var(--white);cursor:pointer;font:inherit;min-height:74px}
 .m-dash-row:active{transform:scale(0.99)}
@@ -1557,9 +1559,9 @@ var HZ_TILES = [
 var HZ_TILE_ACCESS = null;   // { sec: [roles] } once loaded
 function hzTileDefault(sec, role) {
   role = String(role || "").toLowerCase();
-  if (role === "backup") role = "responder";
+  if (hzTitleList().indexOf(role) !== -1) role = "responder";   // titles have Responder access
   if (["rma", "epcr", "portal", "hospital", "storage"].indexOf(sec) !== -1) return role !== "dispatcher";
-  if (sec === "maps" || sec === "calllogs") return ["dispatcher", "captain", "chief"].indexOf(role) !== -1;
+  if (sec === "maps" || sec === "calllogs") return role === "dispatcher";   // Captain / Chief are titles now (11.65)
   if (sec === "education") return ["responder", "captain", "chief", "observer"].indexOf(role) !== -1;
   if (sec === "edispatches" || sec === "diverts") return role === "dispatcher";
   return true;
@@ -1801,7 +1803,7 @@ function mSettingsRender() {
   var el = document.getElementById("m-set-content"); if (!el) return;
   var me = mMe || {}, roles = (mCurrentUserRoles || []).concat(mCurrentRole === "admin" ? ["admin"] : []);
   var on = hzNotifPerm() === "granted" && !window._mAlertsDisabled;
-  var canTest = mCurrentRole === "admin" || (mCurrentUserRoles || []).some(function(r) { return /^(dispatcher|captain|chief)$/i.test(r); });
+  var canTest = mCurrentRole === "admin" || (mCurrentUserRoles || []).some(function(r) { return /^dispatcher$/i.test(r); });
   var tiles = mSetFlow.tiles || mVisibleTiles(); mSetFlow.tiles = tiles;
   var opts = function(sel) { return tiles.map(function(t) { return '<option value="' + t.k + '"' + (t.k === sel ? " selected" : "") + '>' + mEscHtml(t.label) + '</option>'; }).join(""); };
   var map = mPrefs.mapApp || (function(){ try { return localStorage.getItem("hzMapApp") || "google"; } catch (e) { return "google"; } })();
@@ -1979,7 +1981,10 @@ function mSetFaceOn() {
   }
   function soon() { if (!queued) { queued = true; requestAnimationFrame(check); } }
   document.addEventListener("DOMContentLoaded", function() {
-    new MutationObserver(soon).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+    // ignore the ticking clock and toasts — re-measuring every page once a second slowed phones down (11.63 / 4.56)
+    var quiet = function(n) { n = n && n.nodeType === 1 ? n : n && n.parentElement; return !!(n && n.closest && n.closest("#m-clock, #m-toast, .m-toast, #m-als-eta-live, #m-nc-loc-age")); };
+    new MutationObserver(function(recs) { for (var i = 0; i < recs.length; i++) { if (!quiet(recs[i].target)) { soon(); return; } } })
+      .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
     window.addEventListener("resize", soon);
     document.addEventListener("load", soon, true);                     // pictures finishing loading change heights too
     document.addEventListener("transitionend", soon, true);
@@ -2148,7 +2153,8 @@ auth.onAuthStateChanged(function(user) {
       var d = snap.exists ? snap.data() : {};
       if (!snap.exists && user.email !== SUPER_ADMIN) { auth.signOut(); return; }
       mCurrentRole = d.role || "responder";
-      mCurrentUserRoles = d.roles || [];
+      mCurrentUserRoles = hzWithTitles(d.roles || []);
+      try { db.collection("appdata").doc("roles").get().then(function(rs) { var t = rs.exists && rs.data().titles; if (Array.isArray(t) && t.length) { try { localStorage.setItem("hzTitles", JSON.stringify(t)); } catch (e) {} } }).catch(function() {}); } catch (e) {}
       mCurrentUserUnit = d.unit || "";
       mCurrentUserDisplayName = ((d.firstName||"") + " " + (d.lastName||"")).trim();
       mMe = d; mPrefs = d.prefs || {};
@@ -2216,7 +2222,7 @@ function mEnterHome() {
   if (eduTile) eduTile.style.display = canEdu ? "" : "none";
 
   // Show Dispatch tile for dispatcher-capable roles
-  var canDispatch = mCurrentRole==="admin"||roles.includes("dispatcher")||roles.includes("captain")||roles.includes("chief");
+  var canDispatch = mCurrentRole==="admin"||roles.includes("dispatcher");
   var dispatchTile = document.getElementById("m-dispatch-tile");
   if (dispatchTile) dispatchTile.style.display = canDispatch ? "" : "none";
   var homeTestRow = document.getElementById("m-home-test-row"); if (homeTestRow) homeTestRow.style.display = "none";   // Test Mode lives in My Settings now
@@ -2532,7 +2538,7 @@ function mGuideRoles() {
 function mOpenGuide() { var r = mGuideRoles(); location.href = "guide.html?roles=" + r.join(",") + "&role=" + r[r.length - 1] + "&from=app&v=" + (window.M_BUILD || "") + "&t=" + Date.now(); }
 function mCanDispatch() {
   var roles = (mCurrentUserRoles || []).map(function(r){ return String(r).toLowerCase(); });
-  return mCurrentRole === "admin" || roles.indexOf("dispatcher") !== -1 || roles.indexOf("captain") !== -1 || roles.indexOf("chief") !== -1;
+  return mCurrentRole === "admin" || roles.indexOf("dispatcher") !== -1;   // Captain / Chief are titles (Responder access) since 11.65
 }
 // Open this call in the dispatch console from a call card
 function mManageCallFromCard(callId) {
@@ -2869,8 +2875,7 @@ function mEduApplyAdminUI() {
 }
 function mInitEducation() {
   var roles = (mCurrentUserRoles||[]).map(function(r){ return r.toLowerCase(); });
-  mEduIsAdmin = mCurrentRole === "admin" || mCurrentRole === "captain" || mCurrentRole === "chief" ||
-                roles.includes("admin") || roles.includes("captain") || roles.includes("chief");
+  mEduIsAdmin = mCurrentRole === "admin" || roles.includes("admin");   // Captain / Chief are titles since 11.65
   mSetEduTab("upcoming");
 }
 
@@ -2940,7 +2945,7 @@ function mLoadEduContent() {
 function mRenderCME(el) {
   var year = new Date().getFullYear();
   var isAdmin = mEduIsAdmin || mCurrentRole === "admin" ||
-    (mCurrentUserRoles||[]).map(function(r){return r.toLowerCase();}).some(function(r){ return r === "admin" || r === "captain" || r === "chief"; });
+    (mCurrentUserRoles||[]).map(function(r){return r.toLowerCase();}).some(function(r){ return r === "admin"; });
   if (isAdmin) {
     // Admin sees field-member roster (no pure dispatchers/logistics)
     db.collection("users").get().then(function(snap) {
@@ -2948,7 +2953,7 @@ function mRenderCME(el) {
       snap.forEach(function(d){
         var m=d.data(); if(!m.unit) return;
         var roles=(m.roles||[]).map(function(r){return r.toLowerCase();});
-        var isField=roles.includes("responder")||roles.includes("captain")||roles.includes("chief")||roles.includes("observer")||m.role==="admin";
+        var isField=roles.includes("responder")||roles.includes("captain")||roles.includes("chief")||roles.includes("observer")||roles.includes("backup")||m.role==="admin";
         if(!isField) return;
         members.push(Object.assign({uid:d.id},m));
       });
@@ -3259,7 +3264,7 @@ function mRenderCMEAdmin(el) {
     snap.forEach(function(d) {
       var m = d.data(); if (!m.unit) return;
       var roles = (m.roles||[]).map(function(r){ return String(r).toLowerCase(); });
-      var isField = roles.includes("responder") || roles.includes("captain") || roles.includes("chief") || roles.includes("observer") || m.role === "admin";
+      var isField = roles.includes("responder") || roles.includes("captain") || roles.includes("chief") || roles.includes("observer") || roles.includes("backup") || m.role === "admin";
       if (!isField) return; // pure dispatchers / logistics don't accrue CE
       members.push(Object.assign({ uid: d.id }, m));
     });
@@ -4382,7 +4387,7 @@ document.addEventListener("DOMContentLoaded", function() { try { mRefreshPasskey
 // ── UNIT DIRECTORY (for @mentions: everyone with a unit number) ──
 var mUnitDirectory = [];
 function mLoadUnitDirectory() {
-  db.collection("users").get().then(function(snap) {
+  hzUsersSnap().then(function(snap) {
     var list = [];
     snap.forEach(function(d) { var u = d.data(); if (u.unit) list.push({ unit: u.unit, name: ((u.firstName||"") + " " + (u.lastName||"")).trim() }); });
     list.sort(function(a,b){ return a.unit.localeCompare(b.unit, undefined, {numeric:true}); });
@@ -4506,7 +4511,7 @@ function mIs7xxUnit(unit) {
   return !!(m && parseInt(m[1], 10) >= 700 && parseInt(m[1], 10) <= 799);
 }
 function mLoadAllResponders() {
-  return db.collection("users").get().then(function(snap) {
+  return hzUsersSnap().then(function(snap) {
     var list = [];
     snap.forEach(function(d) {
       var u = d.data(); if (!u.unit) return;
@@ -4679,7 +4684,7 @@ function mEscHtml(s) { return String(s||"").replace(/&(?!(?:amp|lt|gt|quot|#\d+)
 // Patient name is PHI: responders only see it on calls they're assigned to (dispatchers always see it)
 function mCanSeePatientName(call) {
   var roles = (mCurrentUserRoles || []).map(function(r){ return String(r).toLowerCase(); });
-  if (mCurrentRole === "admin" || roles.includes("dispatcher") || roles.includes("captain") || roles.includes("chief")) return true;
+  if (mCurrentRole === "admin" || roles.includes("dispatcher")) return true;
   var me = mCurrentUserUnit; if (!me) return false;
   if ((call.assignedUnits || []).indexOf(me) !== -1) return true;
   return (call.crews || []).some(function(cr) { return Object.keys(cr || {}).some(function(k) { return k !== "rig" && cr[k] === me; }); });
@@ -5156,7 +5161,7 @@ function mLoadCallLogs() {
   var unit = (document.getElementById("m-cl-unit").value||"").trim().toUpperCase();
   var q = ((document.getElementById("m-cl-q") || {}).value || "").trim();
   var exp = document.getElementById("m-cl-export");
-  if (exp) exp.style.display = (mCurrentRole === "admin" || (mCurrentUserRoles||[]).some(function(r){ return /^(captain|chief)$/i.test(r); })) ? "" : "none";
+  if (exp) exp.style.display = (mCurrentRole === "admin") ? "" : "none";
   function process(logs) {
     if (hzLogsOwnOnly(mCurrentRole === "admin", mCurrentUserRoles)) logs = logs.filter(function(l) { return hzIsMyCall(l, mCurrentUser && mCurrentUser.uid, mCurrentUserUnit); });
     if (q) logs = logs.filter(function(l) { return hzCallLogMatches(l, q); });
@@ -6434,19 +6439,32 @@ function mCallDetailsSMS(call, header) {
 }
 // Who gets SMS: chiefs, captains, responders, observers and admins.
 // Logistics-only and dispatcher-only accounts are skipped.
-var M_SMS_ROLES = ["responder", "captain", "chief", "observer", "admin"];
+var M_SMS_ROLES = ["responder", "captain", "chief", "observer", "backup", "admin"];   // responders + every title
 function mSmsEligible(u) {
   if (!u) return false;
   if (String(u.role || "").toLowerCase() === "admin") return true;          // account-level admin
   var roles = (u.roles || []).map(function(r){ return String(r).toLowerCase(); }).filter(Boolean);
-  if (roles.length) return roles.some(function(r){ return M_SMS_ROLES.indexOf(r) !== -1; });
+  if (roles.length) return roles.some(function(r){ return M_SMS_ROLES.indexOf(r) !== -1 || hzTitleList().indexOf(r) !== -1; });   // any title counts as a responder
   // No duty roles recorded: fall back to the account type so plain members aren't silently dropped
   return String(u.role || "").toLowerCase() === "responder";
+}
+// One shared read of the member list, reused for 60 s (11.63 / 4.56). Before, every text sent (assign a unit,
+// a note, a resource) re-downloaded every member, and opening the app downloaded them twice.
+var HZ_USERS_CACHE = null;
+function hzUsersSnap() {
+  if (HZ_USERS_CACHE && Date.now() - HZ_USERS_CACHE.at < 60000) return HZ_USERS_CACHE.p;
+  var p = db.collection("users").get().then(function(snap) {
+    var docs = []; snap.forEach(function(d) { docs.push(d); });
+    return { docs: docs, size: docs.length, empty: !docs.length, forEach: function(fn) { docs.forEach(fn); } };
+  });
+  HZ_USERS_CACHE = { at: Date.now(), p: p };
+  p.catch(function() { HZ_USERS_CACHE = null; });
+  return p;
 }
 function mPhonesForUnits(units) {
   var want = {}; (units || []).forEach(function(u){ if (u) want[u] = true; });
   if (!Object.keys(want).length) return Promise.resolve([]);
-  return db.collection("users").get().then(function(snap) {
+  return hzUsersSnap().then(function(snap) {
     var phones = [];
     snap.forEach(function(d) { var u = d.data(); if (u.unit && want[u.unit] && mSmsEligible(u)) { var p = mGetFirstPhone(u.phone); if (p) { mPhoneUnitMap[p] = u.unit; phones.push(p); } } });
     return phones;
@@ -8140,7 +8158,7 @@ function mIsAdminUser() { return mCurrentRole === "admin" || (mCurrentUserRoles 
 // Call Logs (11.60 / 4.53): a dispatcher — who isn't an admin, captain or chief — only sees calls they posted or took over
 function hzLogsOwnOnly(isAdmin, roles) {
   roles = (roles || []).map(function(r) { return String(r).toLowerCase(); });
-  return !isAdmin && roles.indexOf("dispatcher") !== -1 && roles.indexOf("captain") === -1 && roles.indexOf("chief") === -1;
+  return !isAdmin && roles.indexOf("dispatcher") !== -1;
 }
 function hzIsMyCall(l, uid, unit) {
   if (!l) return false;
@@ -9610,7 +9628,7 @@ function mBuildAlsBanner(call) {
   var assignedCount = 0;
   (call.crews || []).forEach(function(cr) { Object.keys(cr||{}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__") assignedCount++; }); });
   var flashNow = isRecommended && assignedCount >= 3;
-  return '<div class="m-res-card" style="background:' + (isRecommended?'rgba(224,85,85,0.12)':'transparent') + ';border:' + (isRecommended?'2px solid rgba(224,85,85,0.7)':'1px solid rgba(224,85,85,0.45)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px' + (flashNow?';animation:als-flash 0.9s ease-in-out infinite':'') + '">' +
+  return '<div class="m-res-card" style="background:' + (isRecommended?'rgba(224,85,85,0.12)':'transparent') + ';border:' + (isRecommended?'2px solid rgba(224,85,85,0.7)':'1px solid rgba(224,85,85,0.45)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px' + (flashNow?';animation:als-flash 0.9s steps(6) infinite':'') + '">' +
     '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + 'ALS' + '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sug.prov + '</span>' +
