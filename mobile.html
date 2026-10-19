@@ -15,7 +15,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.57"; window.M_BUILD = BUILD;
+  var BUILD = "4.58"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -450,7 +450,19 @@ body.m-test-on .m-subpage-header{padding-top:15px}
 .m-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--accent,var(--gold));z-index:2}
 .m-tile[data-sec="rma"],.m-tile[data-sec="codes"],.m-tile[data-sec="hospital"],.m-tile[data-sec="epcr"],.m-tile[data-sec="buildings"]{--accent:#8b7cef}
 .m-tile[data-sec="shifts"],.m-tile[data-sec="shuls"],.m-tile[data-sec="storage"],.m-tile[data-sec="portal"],.m-tile[data-sec="maps"],.m-tile[data-sec="edispatches"],.m-tile[data-sec="diverts"]{--accent:#4a90d9}
-.m-tile[data-sec="service"],.m-tile[data-sec="contacts"]{--accent:#4caf80}
+.m-tile[data-sec="service"],.m-tile[data-sec="contacts"],.m-tile[data-sec="regional"]{--accent:#4caf80}
+.hz-reg-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card-bg,rgba(255,255,255,0.04));border:1px solid var(--card-border);border-radius:10px;padding:12px 14px;margin-bottom:8px;flex-wrap:wrap}
+.hz-reg-txt{min-width:0;flex:1 1 180px}
+.hz-reg-area{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:var(--white)}
+.hz-reg-sub{font-size:0.78rem;color:var(--gray);margin-top:2px;line-height:1.35}
+.hz-reg-phones{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.hz-reg-call{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.45);border-radius:8px;padding:8px 12px;color:#7dedb5;font-family:'Oswald',sans-serif;font-weight:700;font-size:0.9rem;text-decoration:none;white-space:nowrap}
+.hz-reg-empty{color:var(--gray);font-size:0.85rem;padding:16px 0;text-align:center}
+.hz-reg-note{font-size:0.78rem;color:var(--gray);margin:0 0 10px;line-height:1.45}
+html[data-theme="basic"] .hz-reg-card{background:#ffffff !important;border-color:#d0d7de !important}
+html[data-theme="basic"] .hz-reg-area{color:#1f2328 !important}
+html[data-theme="basic"] .hz-reg-call{background:#eaf7ef !important;border-color:#9fd8b5 !important;color:#1a7f37 !important}
+
 .m-tile-inner{position:relative;z-index:1;padding:18px 12px 14px;width:100%;text-align:center;}
 .m-tile-icon{font-size:2rem;display:block;margin-bottom:10px;line-height:1;}
 .m-tile-label{font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;
@@ -811,6 +823,7 @@ html[data-theme="basic"] .m-pill.disp-transport{color:#0b5cad !important}
 html[data-theme="basic"] .m-pill.disp-rma{color:#167a3e !important}
 html[data-theme="basic"] .m-notes-section{border-top:1px solid #d8dde3 !important}
 html[data-theme="basic"] .m-card-actions{border-top:1px solid #d8dde3 !important}
+html[data-theme="basic"] .hz-reg-call{color:#167a3e !important}
 html[data-theme="basic"] .m-back-btn{background:#f8f9fa !important}
 html[data-theme="basic"] .m-modal{background:#ffffff !important}
 html[data-theme="basic"] .m-modal-header{border-bottom:1px solid #d8dde3 !important}
@@ -1012,6 +1025,13 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
           <span class="m-tile-icon">🌙</span>
           <span class="m-tile-label">Night Shifts</span>
           <span class="m-tile-sub">Unit assignments</span>
+        </div>
+      </button>
+      <button class="m-tile" data-sec="regional" onclick="mGoTo('regional')">
+        <div class="m-tile-inner">
+          <span class="m-tile-icon">☎️</span>
+          <span class="m-tile-label">Regional Hatzolah</span>
+          <span class="m-tile-sub">Other areas' dispatch</span>
         </div>
       </button>
       <button class="m-tile" data-sec="contacts" onclick="mGoTo('contacts')">
@@ -1287,6 +1307,17 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
   <div class="m-scroll" id="m-tk-detail-content"></div>
 </div>
 
+<div class="page" id="m-pg-regional">
+  <div class="m-subpage-header">
+    <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
+    <span class="m-page-title">Regional Hatzolah</span>
+  </div>
+  <div class="m-scroll">
+    <p class="hz-reg-note">Hatzolah dispatch numbers for other areas. Tap a number to call.</p>
+    <input type="search" class="m-disp-input" placeholder="Search town or area…" oninput="hzRegionalRender('m-reg-list', this.value)" style="margin-bottom:10px;width:100%;box-sizing:border-box">
+    <div id="m-reg-list"></div>
+  </div>
+</div>
 <div class="page" id="m-pg-contacts">
   <div class="m-subpage-header">
     <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
@@ -1552,7 +1583,7 @@ function paiShowEntry(elId, isAdminUser, rolesLower) {
 // Tiles with nothing saved keep the built-in rules (hzTileDefault mirrors them for the admin grid).
 var HZ_TILES = [
   { k: "rma", l: "RMA Hotline" }, { k: "codes", l: "Access Codes" }, { k: "epcr", l: "ePCR" }, { k: "shifts", l: "Night Shifts" },
-  { k: "contacts", l: "Contacts" }, { k: "maps", l: "Dispatch Console" }, { k: "education", l: "Education" }, { k: "portal", l: "MC Portal" },
+  { k: "contacts", l: "Contacts" }, { k: "regional", l: "Regional Hatzolah" }, { k: "maps", l: "Dispatch Console" }, { k: "education", l: "Education" }, { k: "portal", l: "MC Portal" },
   { k: "service", l: "Service Helpdesk" }, { k: "calllogs", l: "Call Logs" }, { k: "guide", l: "User Guide" }, { k: "edispatches", l: "eScheduler" },
   { k: "diverts", l: "Hospital Diverts" }, { k: "hospital", l: "Hospitals" }, { k: "buildings", l: "Buildings" }, { k: "shuls", l: "Shuls" }, { k: "storage", l: "Storage Room" }
 ];
@@ -1583,6 +1614,33 @@ function hzLoadTileAccess(isAdmin, roles) {
     hzApplyTileAccess(isAdmin, roles);
   }).catch(function() {});
 }
+// ── Regional Hatzolah directory (11.68 / 4.58) ──
+var HZ_REGIONAL = [
+  { area: "NYC", sub: "5 Boroughs + Catskills", phones: ["718-230-1000", "718-387-1750"] },
+  { area: "Monsey / Rockland County", phones: ["845-425-1600"] },
+  { area: "Kiryas Yoel / Monroe NY", phones: ["845-783-1212"] },
+  { area: "Lakewood / Central Jersey", sub: "Toms River, Manchester, etc.", phones: ["732-370-3600"] },
+  { area: "Jersey Shore", sub: "Deal area", phones: ["732-531-9988"] },
+  { area: "Union County", sub: "Elizabeth, Hillside, Roselle, etc.", phones: ["908-659-9550"] },
+  { area: "Linden", phones: ["908-800-9200"] },
+  { area: "Passaic / Clifton", sub: "Also covers American Dream Mall", phones: ["973-472-1002"] },
+  { area: "MetroWest", sub: "Livingston, West Orange, Morristown, etc.", phones: ["973-604-4000"] },
+  { area: "Bergen County", sub: "Teaneck, Bergenfield, Englewood, Fair Lawn, etc. — or the NYC numbers", phones: ["201-367-2222"] },
+  { area: "Hudson County", sub: "Union City / Hoboken area", phones: ["201-422-9000"] },
+  { area: "Newark / Essex County", phones: ["973-905-4100"] },
+  { area: "NJ Statewide", phones: ["201-613-1111"] }
+];
+function hzRegionalHtml(q) {
+  q = String(q || "").toLowerCase().trim();
+  var esc = function(t) { return String(t || "").replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var rows = HZ_REGIONAL.filter(function(r) { return !q || (r.area + " " + (r.sub || "") + " " + r.phones.join(" ")).toLowerCase().indexOf(q) !== -1; });
+  if (!rows.length) return '<div class="hz-reg-empty">No region matches “' + esc(q) + '”.</div>';
+  return rows.map(function(r) {
+    return '<div class="hz-reg-card"><div class="hz-reg-txt"><div class="hz-reg-area">' + esc(r.area) + '</div>' + (r.sub ? '<div class="hz-reg-sub">' + esc(r.sub) + '</div>' : '') + '</div>' +
+      '<div class="hz-reg-phones">' + r.phones.map(function(p) { return '<a class="hz-reg-call" href="tel:' + p.replace(/\D/g, "") + '">📞 ' + esc(p) + '</a>'; }).join("") + '</div></div>';
+  }).join("");
+}
+function hzRegionalRender(listId, q) { var el = document.getElementById(listId); if (el) el.innerHTML = hzRegionalHtml(q); }
 function mTileKey(el) {
   return el.id || el.getAttribute("href") || (el.getAttribute("onclick") || "").replace(/\W+/g, "") || (el.textContent || "").trim().slice(0, 20);
 }
@@ -1750,6 +1808,7 @@ function mGoTo(page) {
   if (page === "shifts") mLoadShifts();
   if (page === "storage") mLoadStorage();
   if (page === "contacts") mLoadContacts();
+  if (page === "regional") hzRegionalRender("m-reg-list", "");
   if (page === "hospital") mLoadHospital();
   if (page === "education") mInitEducation();
   if (page === "calllogs") { mPopulateCLNatureFilter(); mLoadCallLogs(); }
