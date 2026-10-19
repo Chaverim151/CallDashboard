@@ -360,6 +360,11 @@ select{color-scheme:dark}
 .lr-in{align-self:flex-start;background:rgba(122,184,245,0.14);border:1px solid rgba(122,184,245,0.4);color:var(--white);border-bottom-left-radius:3px}
 .lr-meta{font-size:0.66rem;color:var(--gray);margin-bottom:9px}
 .admin-section[data-admin-tab]{display:none}
+#hz-del-modal button#hz-del-ok.hz{}
+html body #hz-del-modal button#hz-del-ok{background:#e05555 !important;border-color:#e05555 !important;color:#ffffff !important}
+html[data-theme="basic"] #hz-del-modal .hz-del-card{background:#ffffff !important;border-color:#d0d7de !important}
+html[data-theme="basic"] #hz-del-modal .hz-del-txt{color:#1f2328 !important}
+html[data-theme="basic"] #hz-del-modal #hz-del-word{background:#f6f8fa !important;color:#1f2328 !important;border-color:#d0d7de !important}
 button.hz-saving{opacity:0.75;cursor:progress}
 button.hz-saved.hz-saved{background:#2e9e5b !important;border-color:#2e9e5b !important;color:#fff !important}
 button.hz-savefail.hz-savefail{background:#e05555 !important;border-color:#e05555 !important;color:#fff !important}
@@ -2163,7 +2168,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.71</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.72</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -10905,13 +10910,34 @@ window.clCheckChanged = function() {
 };
 
 // Mass delete selected records
+// Delete confirmation for call logs (11.72): says how many, and the word DELETE has to be typed
+function hzConfirmDelete(n, go) {
+  var old = document.getElementById("hz-del-modal"); if (old) old.remove();
+  var m = document.createElement("div"); m.id = "hz-del-modal";
+  m.style.cssText = "position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:16px";
+  var what = n === 1 ? "this call log" : "these " + n + " call logs";
+  m.innerHTML = '<div class="hz-del-card" role="dialog" aria-modal="true" style="background:var(--navy,#0f1f3a);border:1px solid var(--card-border);border-radius:12px;padding:20px;width:100%;max-width:420px;box-sizing:border-box">' +
+    '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#ff9090;margin-bottom:10px">🗑 Delete call log' + (n === 1 ? '' : 's') + '</div>' +
+    '<div class="hz-del-txt" style="font-size:0.9rem;line-height:1.5;color:var(--white);margin-bottom:12px">Are you sure you wish to delete ' + what + '? This can\'t be undone.<br><br>Type <b>DELETE</b> to confirm.</div>' +
+    '<input id="hz-del-word" type="text" autocomplete="off" placeholder="Type DELETE" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,0.06);color:var(--white);font-family:inherit;font-size:0.95rem;margin-bottom:14px">' +
+    '<div style="display:flex;gap:8px"><button type="button" id="hz-del-cancel" class="edit-mode-btn" style="flex:1;padding:10px">Cancel</button>' +
+    '<button type="button" id="hz-del-ok" disabled style="flex:1;padding:10px;border-radius:8px;border:1px solid #e05555;background:#e05555;color:#fff;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;cursor:pointer;opacity:0.4">Delete</button></div></div>';
+  document.body.appendChild(m);
+  var inp = m.querySelector("#hz-del-word"), ok = m.querySelector("#hz-del-ok");
+  var check = function() { var y = inp.value.trim().toLowerCase() === "delete"; ok.disabled = !y; ok.style.opacity = y ? "1" : "0.4"; return y; };
+  inp.addEventListener("input", check);
+  inp.addEventListener("keydown", function(e) { if (e.key === "Enter" && check()) ok.click(); if (e.key === "Escape") m.remove(); });
+  m.querySelector("#hz-del-cancel").onclick = function() { m.remove(); };
+  m.addEventListener("mousedown", function(e) { if (e.target === m) m.remove(); });
+  ok.onclick = function() { if (!check()) return; m.remove(); go(); };
+  setTimeout(function() { inp.focus(); }, 30);
+}
 window.deleteSelectedLogs = function() {
   var checked = document.querySelectorAll(".cl-row-check:checked");
   if (!checked.length) return;
   if (currentRole !== "admin") { showToast("Admin access required", true); return; }
-  if (!confirm("Permanently delete " + checked.length + " call record" + (checked.length > 1 ? "s" : "") + "? This cannot be undone.")) return;
-
   var ids = Array.from(checked).map(function(cb) { return cb.dataset.id; });
+  hzConfirmDelete(ids.length, function() {
   logAuditAccess("call_records_mass_delete_" + ids.length, ids.join(","));
 
   var batch = db.batch();
@@ -10924,6 +10950,7 @@ window.deleteSelectedLogs = function() {
     loadCallLogs();
   }).catch(function(e) {
     showToast("Error: " + e.message, true);
+  });
   });
 };
 
@@ -10956,16 +10983,17 @@ window.openCLDetail = openCLDetail;
 window.deleteCLRecord = function() {
   if (!clCurrentCallId) return;
   if (currentRole !== "admin") { showToast("Admin access required", true); return; }
-  if (!confirm("Permanently delete this call record? This cannot be undone.")) return;
+  var delId = clCurrentCallId;
+  hzConfirmDelete(1, function() {
+  logAuditAccess("call_record_delete", delId);
 
-  logAuditAccess("call_record_delete", clCurrentCallId);
-
-  db.collection("activeCalls").doc(clCurrentCallId).delete().then(function() {
+  db.collection("activeCalls").doc(delId).delete().then(function() {
     showToast("Call record deleted");
     closeCLDetail();
     loadCallLogs();
   }).catch(function(e) {
     showToast("Error: " + e.message, true);
+  });
   });
 };
 
@@ -17421,7 +17449,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.71";
+var DESKTOP_VERSION = "11.72";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
