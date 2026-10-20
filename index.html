@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="hz-version" content="12.05">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2246,7 +2247,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.04</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.05</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -17962,7 +17963,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.04";
+var DESKTOP_VERSION = "12.05";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -24716,5 +24717,48 @@ function mAlsPromptCheck() {
 <div id="proto-overlay" style="display:none;position:fixed;inset:0;z-index:10000;background:#0a1628">   <!-- above the testing-mode bar (9990) -->
   <iframe id="proto-frame" title="Protocols" style="width:100%;height:100%;border:0;display:block"></iframe>
 </div>
+<script>
+// ── "Not the latest version" banner (12.05 / 4.76) ─────────────────────────────────────────────
+// Every few minutes, and whenever the app comes back on screen, ask the SERVER which version is
+// current (a small no-cache request for the start of this same file). If it's newer than what's
+// running, show a bar across the top: tap it to update. Nothing reloads on its own.
+(function () {
+  var isPhone = /mobile\.html/.test(location.pathname);
+  var mine = isPhone ? (window.M_BUILD || "") : ((document.querySelector('meta[name="hz-version"]') || {}).content || "");
+  var rx = isPhone ? /var BUILD = "([\d.]+)"/ : /<meta name="hz-version" content="([\d.]+)"/;
+  var newer = function (a, b) { a = String(a).split(".").map(Number); b = String(b).split(".").map(Number); for (var i = 0; i < Math.max(a.length, b.length); i++) { var x = a[i] || 0, y = b[i] || 0; if (x !== y) return x > y; } return false; };
+  var last = 0, shown = null;
+  function show(v) {
+    if (shown === v) return; shown = v;
+    var b = document.getElementById("hz-upd-banner");
+    if (!b) {
+      b = document.createElement("button"); b.type = "button"; b.id = "hz-upd-banner";
+      b.style.cssText = "display:block;width:100%;border:none;margin:0;cursor:pointer;background:#0b5cad;color:#fff;font:700 0.82rem/1.3 Arial,sans-serif;letter-spacing:0.02em;padding:10px 14px;text-align:center;z-index:9995;position:" + (isPhone ? "relative;flex-shrink:0" : "sticky;top:0;left:0;right:0");
+      b.onclick = function () {
+        b.textContent = "Updating…";
+        var p = new URLSearchParams(location.search); p.set("v", shown); p.set("t", String(Date.now()));
+        location.replace(location.pathname + "?" + p.toString() + location.hash);
+      };
+      var host = isPhone ? document.getElementById("m-app") : document.body;
+      if (host) host.insertBefore(b, host.firstChild);
+    }
+    b.textContent = "⬆️ You're not running the latest version (v" + v + "). Tap here to update.";
+  }
+  function check(force) {
+    if (!mine || (!force && Date.now() - last < 60000)) return;
+    last = Date.now();
+    try {
+      fetch(location.pathname + "?_=" + Date.now(), { cache: "no-store", headers: { "Range": "bytes=0-4095" } })
+        .then(function (r) { return r.text(); })
+        .then(function (txt) { var m = txt.match(rx); if (m && newer(m[1], mine)) show(m[1]); })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  var start = function () { setTimeout(function () { check(true); }, 20000); setInterval(function () { check(true); }, 5 * 60 * 1000); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) check(false); });
+  window.hzCheckForUpdate = function () { check(true); };
+})();
+</script>
 </body>
 </html>

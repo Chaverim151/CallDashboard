@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.75"; window.M_BUILD = BUILD;
+  var BUILD = "4.76"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -11045,5 +11045,48 @@ function mCloseAllSheets() {
 </div>
 
 </div><!-- #m-app -->
+<script>
+// ── "Not the latest version" banner (12.05 / 4.76) ─────────────────────────────────────────────
+// Every few minutes, and whenever the app comes back on screen, ask the SERVER which version is
+// current (a small no-cache request for the start of this same file). If it's newer than what's
+// running, show a bar across the top: tap it to update. Nothing reloads on its own.
+(function () {
+  var isPhone = /mobile\.html/.test(location.pathname);
+  var mine = isPhone ? (window.M_BUILD || "") : ((document.querySelector('meta[name="hz-version"]') || {}).content || "");
+  var rx = isPhone ? /var BUILD = "([\d.]+)"/ : /<meta name="hz-version" content="([\d.]+)"/;
+  var newer = function (a, b) { a = String(a).split(".").map(Number); b = String(b).split(".").map(Number); for (var i = 0; i < Math.max(a.length, b.length); i++) { var x = a[i] || 0, y = b[i] || 0; if (x !== y) return x > y; } return false; };
+  var last = 0, shown = null;
+  function show(v) {
+    if (shown === v) return; shown = v;
+    var b = document.getElementById("hz-upd-banner");
+    if (!b) {
+      b = document.createElement("button"); b.type = "button"; b.id = "hz-upd-banner";
+      b.style.cssText = "display:block;width:100%;border:none;margin:0;cursor:pointer;background:#0b5cad;color:#fff;font:700 0.82rem/1.3 Arial,sans-serif;letter-spacing:0.02em;padding:10px 14px;text-align:center;z-index:9995;position:" + (isPhone ? "relative;flex-shrink:0" : "sticky;top:0;left:0;right:0");
+      b.onclick = function () {
+        b.textContent = "Updating…";
+        var p = new URLSearchParams(location.search); p.set("v", shown); p.set("t", String(Date.now()));
+        location.replace(location.pathname + "?" + p.toString() + location.hash);
+      };
+      var host = isPhone ? document.getElementById("m-app") : document.body;
+      if (host) host.insertBefore(b, host.firstChild);
+    }
+    b.textContent = "⬆️ You're not running the latest version (v" + v + "). Tap here to update.";
+  }
+  function check(force) {
+    if (!mine || (!force && Date.now() - last < 60000)) return;
+    last = Date.now();
+    try {
+      fetch(location.pathname + "?_=" + Date.now(), { cache: "no-store", headers: { "Range": "bytes=0-4095" } })
+        .then(function (r) { return r.text(); })
+        .then(function (txt) { var m = txt.match(rx); if (m && newer(m[1], mine)) show(m[1]); })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  var start = function () { setTimeout(function () { check(true); }, 20000); setInterval(function () { check(true); }, 5 * 60 * 1000); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) check(false); });
+  window.hzCheckForUpdate = function () { check(true); };
+})();
+</script>
 </body>
 </html>
