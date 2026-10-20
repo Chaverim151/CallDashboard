@@ -369,6 +369,13 @@ html[data-theme="basic"] button.hz-danger-btn.hz-danger-btn.hz-danger-btn.hz-dan
 /* Users ▸ "Reset Password" pill — blue, between Edit and Remove (11.92) */
 .pw-row-btn{background:rgba(74,144,217,0.12) !important;border-color:rgba(74,144,217,0.4) !important;color:#7ab8f5 !important}
 html[data-theme="basic"] button.pw-row-btn.pw-row-btn.pw-row-btn{background:#e8f0fb !important;border:1px solid #9bb8de !important;color:#0b5cad !important}
+/* Admin ▸ Users: role badges in even columns (11.95) */
+.roles-checkboxes{display:grid !important;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:8px}
+.roles-checkboxes .role-check{margin:0 !important;min-height:34px;box-sizing:border-box}
+.role-check input[type=checkbox]{margin:0 !important;flex-shrink:0;align-self:center;position:static !important}
+.add-user-form label.role-check{display:flex !important;align-items:center !important;gap:8px;margin:0 !important;text-transform:none !important;letter-spacing:0 !important;font-size:0.8rem !important;font-family:inherit}
+.ur-roles{display:grid;grid-template-columns:repeat(auto-fill,112px);gap:6px;align-items:center;min-width:240px}
+.ur-badge{display:block !important;width:112px;box-sizing:border-box;text-align:center;padding:3px 6px !important;font-size:0.66rem !important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Contacts: captains & chiefs in red (11.74) */
 .contact-card.hz-leader .contact-name,.contact-card.hz-leader .contact-unit{color:#ff6b6b !important}
 .contact-card.hz-leader{border-color:rgba(224,85,85,0.45) !important}
@@ -2193,7 +2200,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.94</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.95</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -6404,12 +6411,23 @@ function loadUsers() {
   });
 }
 
-function userRow(u) {
-  var roleBadges = "";
-  if (u.role === "admin") roleBadges += '<span class="role-badge admin" style="margin-right:4px">System Admin</span>';
-  (u.roles || []).filter(function(r) { return r !== "admin"; }).forEach(function(r) {
-    roleBadges += '<span class="role-badge ' + (STANDARD_ROLES.includes(r) ? r : "custom") + '">' + r + '</span> ';
+// Admin ▸ Users: role badges in one fixed order and one width, so they line up in neat columns (11.95):
+// Responder, Dispatcher, Driver, Logistics, any other roles, then titles (Captain, Chief…), System Admin last.
+function hzUserRoleBadges(u) {
+  var order = ["responder", "dispatcher", "driver", "logistics"];
+  var titles = (typeof hzTitleList === "function" ? hzTitleList() : []).map(function(t) { return String(t).toLowerCase(); });
+  var rs = (u.roles || []).map(function(r) { return String(r).toLowerCase(); }).filter(function(r, i, a) { return r && r !== "admin" && a.indexOf(r) === i; });
+  var rank = function(r) { var i = order.indexOf(r); if (i !== -1) return i; var t = titles.indexOf(r); return t !== -1 ? 200 + t : 100; };
+  rs.sort(function(a, b) { return rank(a) - rank(b) || a.localeCompare(b); });
+  var html = rs.map(function(r) {
+    var cls = STANDARD_ROLES.includes(r) ? r : r === "chief" ? "captain" : "custom";
+    return '<span class="role-badge ur-badge ' + cls + '" title="' + escapeHtml(r) + '">' + escapeHtml(r) + '</span>';
   });
+  if (u.role === "admin") html.push('<span class="role-badge ur-badge admin">System Admin</span>');
+  return '<div class="ur-roles">' + html.join("") + '</div>';
+}
+function userRow(u) {
+  var roleBadges = hzUserRoleBadges(u);
   var actions = '<button class="edit-row-btn" onclick="openEdit(\'' + u.uid + '\')">Edit</button>' +
     ' <button class="edit-row-btn pw-row-btn" title="Email a password reset link" onclick="adminSendPwLink(\'' + u.uid + '\', this)">Reset Password</button>';
   if (u.email !== SUPER_ADMIN) actions += ' <button class="del-btn" onclick="deleteUser(\'' + u.uid + '\',\'' + u.email + '\')">Remove</button>';
@@ -6430,11 +6448,7 @@ function renderUsersTable(rows) {
   var html = "";
   rows.forEach(function(u) {
     var initials = ((u.firstName || "")[0] || "?").toUpperCase() + ((u.lastName || "")[0] || "").toUpperCase();
-    var roleBadges = "";
-    if (u.role === "admin") roleBadges += '<span class="role-badge admin" style="font-size:0.65rem">System Admin</span>';
-    (u.roles || []).filter(function(r) { return r !== "admin"; }).forEach(function(r) {
-      roleBadges += '<span class="role-badge ' + (STANDARD_ROLES.includes(r) ? r : "custom") + '" style="font-size:0.65rem">' + r + '</span>';
-    });
+    var roleBadges = hzUserRoleBadges(u);
     var removeBtn = u.email !== SUPER_ADMIN ? '<button class="del-btn" style="margin-top:10px;padding:6px 14px;font-size:0.72rem;width:100%" onclick="deleteUser(\'' + u.uid + '\',\'' + u.email + '\')">Remove User</button>' : "";
     html += '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px 16px;">' +
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
@@ -17676,7 +17690,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.94";
+var DESKTOP_VERSION = "11.95";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
