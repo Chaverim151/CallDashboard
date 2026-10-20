@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.72"; window.M_BUILD = BUILD;
+  var BUILD = "4.74"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2135,8 +2135,82 @@ function hzPushRemoveHere(uid, messaging, swReg) {
 }
 // Before signing out: remove this device — but never hold the sign-out up for more than ~1.5 s (no signal = sign out anyway).
 function hzPushSignOutCleanup(uid, messaging, swReg) {
-  return Promise.race([hzPushRemoveHere(uid, messaging, swReg), new Promise(function(r) { setTimeout(r, 1500); })]).catch(function() {});
+  return Promise.race([Promise.all([hzPushRemoveHere(uid, messaging, swReg), hzDevForget(uid)]), new Promise(function(r) { setTimeout(r, 1500); })]).catch(function() {});
 }
+// ── Signed-in devices (11.99 / 4.73) ── each phone / computer a member is signed in on keeps a small record in
+// users/{uid}/devices/{deviceId}: what it is and when it was last used. Admin ▸ Users shows the count and can sign a
+// member out of one device (forceSignOut on that record) or everywhere (users/{uid}.signOutAllAt + the server cancels
+// their saved sign-in). The record is removed when the member signs out.
+var HZ_DEV_UNSUBS = [], HZ_DEV_SEEN = 0, HZ_DEV_FORCED = false, HZ_DEV_UID = null;
+function hzDevRef(uid) { return db.collection("users").doc(uid).collection("devices").doc(hzDeviceId()); }
+function hzDevInfo() {
+  var ua = navigator.userAgent || "";
+  var kind = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "iPad" : /Android/.test(ua) ? "Android" : /Macintosh/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /CrOS/.test(ua) ? "Chromebook" : "Computer";
+  var br = /Edg\//.test(ua) ? "Edge" : /CriOS|Chrome\//.test(ua) ? "Chrome" : /FxiOS|Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "Browser";
+  var standalone = false; try { standalone = !!(navigator.standalone || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)); } catch (e) {}
+  var phoneApp = /mobile\.html/.test(location.pathname);
+  return { kind: kind, browser: br, app: phoneApp ? "phone" : "computer", standalone: standalone,
+           label: kind + " · " + (standalone ? "Home Screen app" : br) + (phoneApp ? "" : " (computer version)") };
+}
+function hzDevTouch(uid, first) {
+  if (!uid || HZ_DEV_FORCED) return;
+  var now = Date.now(); if (!first && now - HZ_DEV_SEEN < 10 * 60 * 1000) return;
+  HZ_DEV_SEEN = now;
+  var d = hzDevInfo(), rec = { label: d.label, kind: d.kind, browser: d.browser, app: d.app, standalone: d.standalone, lastSeen: new Date(now).toISOString() };
+  try { if (typeof hzRemembered === "function") rec.remembered = !!hzRemembered(); } catch (e) {}
+  var ref = hzDevRef(uid);
+  (first ? ref.get().then(function(s) { if (!s.exists) rec.firstSeen = rec.lastSeen; }).catch(function() {}) : Promise.resolve())
+    .then(function() { return ref.set(rec, { merge: true }); }).catch(function() {});
+}
+// Device limit (12.00 / 4.74): Admin ▸ Security ▸ Devices (appdata/deviceLimit.max, default 2; 0 = no limit).
+// A NEW device (no record yet) is refused when the member is already on that many active devices.
+// System admins are never limited.
+var HZ_DEV_MAX_DEFAULT = 2;
+function hzDevLimitCheck(uid, exempt) {
+  var ref = hzDevRef(uid);
+  return ref.get().then(function(s) {
+    if (s.exists || exempt) return { ok: true };
+    return Promise.all([
+      db.collection("appdata").doc("deviceLimit").get().then(function(d) { var m = d.exists ? Number(d.data().max) : NaN; return isFinite(m) && m >= 0 ? m : HZ_DEV_MAX_DEFAULT; }).catch(function() { return HZ_DEV_MAX_DEFAULT; }),
+      db.collection("users").doc(uid).collection("devices").get()
+    ]).then(function(r) {
+      var max = r[0], n = 0, me = hzDeviceId();
+      r[1].forEach(function(d) { var x = d.data(); if (d.id !== me && !x.forceSignOut && (!x.lastSeen || Date.now() - Date.parse(x.lastSeen) < 30 * 864e5)) n++; });
+      return { ok: !max || n < max, max: max, count: n };
+    });
+  }).catch(function() { return { ok: true }; });   // can't check (offline) → don't lock anyone out
+}
+function hzDevBlockedMsg(r) {
+  return "You're already signed in on " + r.count + " device" + (r.count === 1 ? "" : "s") + " (the limit is " + r.max + "). Sign out on one of them first, or ask an admin to sign you out of one.";
+}
+function hzDevStart(uid, onForced) {
+  hzDevStop(); if (!uid || typeof db === "undefined") return;
+  HZ_DEV_FORCED = false; HZ_DEV_UID = uid;
+  // "Sign out everywhere" applies to sessions that began before it — judged by when THIS device signed in
+  // (the sign-in time inside its own login token), so signing in again afterwards works normally.
+  var since = Date.now(), authUser = auth.currentUser;
+  var sinceReady = authUser && authUser.getIdTokenResult ? authUser.getIdTokenResult().then(function(r) { var t = Date.parse(r && r.authTime); if (t) since = t; }).catch(function() {}) : Promise.resolve();
+  var forced = function(why) {
+    if (HZ_DEV_FORCED) return; HZ_DEV_FORCED = true;
+    try { onForced(why); } catch (e) {}
+  };
+  hzDevTouch(uid, true);
+  try {
+    HZ_DEV_UNSUBS.push(hzDevRef(uid).onSnapshot(function(s) { if (s.exists && s.data().forceSignOut === true) forced("device"); }, function() {}));
+    HZ_DEV_UNSUBS.push(db.collection("users").doc(uid).onSnapshot(function(s) {
+      var t = s.exists && s.data().signOutAllAt; if (t) sinceReady.then(function() { if (Date.parse(t) > since) forced("all"); });
+    }, function() {}));
+  } catch (e) {}
+}
+function hzDevStop() { HZ_DEV_UNSUBS.forEach(function(u) { try { u(); } catch (e) {} }); HZ_DEV_UNSUBS = []; }
+document.addEventListener("visibilitychange", function() { if (!document.hidden && HZ_DEV_UID && HZ_DEV_UNSUBS.length) hzDevTouch(HZ_DEV_UID, false); });
+// Signing out removes this device from the member's list (best effort — never holds up the sign-out)
+function hzDevForget(uid) {
+  hzDevStop();
+  if (!uid || typeof db === "undefined") return Promise.resolve();
+  return hzDevRef(uid).delete().catch(function() {});
+}
+
 // Does this device have alerts on for the member? (its own record exists)
 function hzPushOnHere(uid) {
   if (!uid) return Promise.resolve(false);
@@ -2260,6 +2334,17 @@ function mLoadMyProfile(user, attempt) {
       mLoadDispatchSettings();
       mApplyTestModeState(d.sysTestingMode === true); // personal setting, default OFF
       mMaybeOfferPasskey();
+      hzDevLimitCheck(user.uid, mCurrentRole === "admin" || user.email === SUPER_ADMIN).then(function(lim) {
+        if (!lim.ok) {
+          var why = hzDevBlockedMsg(lim);
+          auth.signOut().then(function() { setTimeout(function() { var e = document.getElementById("m-err"); if (e) { e.textContent = why; e.classList.add("show"); } }, 80); });
+          return;
+        }
+        hzDevStart(user.uid, function(why) {
+          mToast(why === "all" ? "You were signed out on all devices by an admin" : "This phone was signed out by an admin", true);
+          setTimeout(function() { mSignOut(); }, 1200);
+        });
+      });
   }).catch(function(e) {
     var code = (e && e.code) || "";
     if (code === "permission-denied" && attempt >= 3) { mToast("Your account no longer has access. Please sign in again.", true); auth.signOut(); return; }
@@ -2278,6 +2363,7 @@ auth.onAuthStateChanged(function(user) {
     mCurrentUser = user;
     mLoadMyProfile(user, 0);
   } else {
+    hzDevStop();
     mCurrentUser = null;
     mCurrentUserUnit = "";
     mPendingPasskeyCreds = null;
