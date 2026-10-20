@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.74"; window.M_BUILD = BUILD;
+  var BUILD = "4.75"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2166,15 +2166,16 @@ function hzDevTouch(uid, first) {
 // A NEW device (no record yet) is refused when the member is already on that many active devices.
 // System admins are never limited.
 var HZ_DEV_MAX_DEFAULT = 2;
-function hzDevLimitCheck(uid, exempt) {
+function hzDevLimitCheck(uid, exempt, personalMax) {
   var ref = hzDevRef(uid);
+  var own = (typeof personalMax === "number" && isFinite(personalMax) && personalMax >= 0) ? personalMax : null;   // this member's own limit (Edit User ▸ Max devices)
   return ref.get().then(function(s) {
     if (s.exists || exempt) return { ok: true };
     return Promise.all([
       db.collection("appdata").doc("deviceLimit").get().then(function(d) { var m = d.exists ? Number(d.data().max) : NaN; return isFinite(m) && m >= 0 ? m : HZ_DEV_MAX_DEFAULT; }).catch(function() { return HZ_DEV_MAX_DEFAULT; }),
       db.collection("users").doc(uid).collection("devices").get()
     ]).then(function(r) {
-      var max = r[0], n = 0, me = hzDeviceId();
+      var max = own !== null ? own : r[0], n = 0, me = hzDeviceId();
       r[1].forEach(function(d) { var x = d.data(); if (d.id !== me && !x.forceSignOut && (!x.lastSeen || Date.now() - Date.parse(x.lastSeen) < 30 * 864e5)) n++; });
       return { ok: !max || n < max, max: max, count: n };
     });
@@ -2334,7 +2335,7 @@ function mLoadMyProfile(user, attempt) {
       mLoadDispatchSettings();
       mApplyTestModeState(d.sysTestingMode === true); // personal setting, default OFF
       mMaybeOfferPasskey();
-      hzDevLimitCheck(user.uid, mCurrentRole === "admin" || user.email === SUPER_ADMIN).then(function(lim) {
+      hzDevLimitCheck(user.uid, mCurrentRole === "admin" || user.email === SUPER_ADMIN, d.maxDevices).then(function(lim) {
         if (!lim.ok) {
           var why = hzDevBlockedMsg(lim);
           auth.signOut().then(function() { setTimeout(function() { var e = document.getElementById("m-err"); if (e) { e.textContent = why; e.classList.add("show"); } }, 80); });
