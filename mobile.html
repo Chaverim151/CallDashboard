@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.62"; window.M_BUILD = BUILD;
+  var BUILD = "4.63"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -414,6 +414,13 @@ body.m-test-on .m-subpage-header{padding-top:15px}
 .m-call-addr{font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;
   color:var(--white);line-height:1.3;margin:6px 0 2px;}
 .m-call-cross{font-size:0.75rem;color:var(--gray);margin-bottom:6px;}
+.m-ct-pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.m-ct-pills::-webkit-scrollbar{display:none}
+.m-ct-pill{flex-shrink:0;font-family:'Oswald',sans-serif;font-size:0.74rem;font-weight:600;letter-spacing:.5px;padding:7px 13px;border-radius:999px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.05);color:var(--gray);cursor:pointer;white-space:nowrap}
+.m-ct-pill.on{background:rgba(var(--gold-rgb),0.18);border-color:var(--gold);color:var(--gold);font-weight:700}
+.m-ct-pill small{opacity:.7;font-weight:400;margin-left:3px}
+html[data-theme="basic"] button.m-ct-pill.m-ct-pill.m-ct-pill{background:#ffffff !important;border-color:#c9d3e0 !important;color:#33415c !important}
+html[data-theme="basic"] button.m-ct-pill.m-ct-pill.m-ct-pill.on{background:#e6edf7 !important;border-color:#1d3f72 !important;color:#1d3f72 !important;box-shadow:inset 0 0 0 1px #1d3f72 !important}
 .m-pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;}
 .m-pill{font-family:'Oswald',sans-serif;font-size:0.7rem;font-weight:700;
   letter-spacing:0.06em;text-transform:uppercase;padding:4px 10px;border-radius:20px;border:1px solid;white-space:nowrap;}
@@ -820,6 +827,7 @@ html[data-theme="basic"] .m-section-title{color:#b42318 !important}
 html[data-theme="basic"] .m-zone-pill.primary{color:#167a3e !important}
 html[data-theme="basic"] .m-zone-pill.secondary{color:#8a5a00 !important}
 html[data-theme="basic"] .m-zone-pill.outside{color:#b42318 !important}
+html[data-theme="basic"] .m-ct-pill{border:1px solid #d8dde3 !important;background:#f8f9fa !important}
 html[data-theme="basic"] .m-pill.unit{color:#0b5cad !important}
 html[data-theme="basic"] .m-pill.als{color:#b42318 !important}
 html[data-theme="basic"] .m-pill.disp-transport{color:#0b5cad !important}
@@ -1335,8 +1343,10 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
     <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
     <span class="m-page-title">Contacts</span>
   </div>
-  <div class="m-scroll" id="m-contacts-content">
-    <div style="color:var(--gray);font-size:0.82rem">Loading...</div>
+  <div class="m-scroll">
+    <input type="search" id="m-ct-q" class="m-disp-input" placeholder="Search name, unit or phone…" oninput="mRenderContacts()" autocomplete="off" style="margin-bottom:10px;width:100%;box-sizing:border-box">
+    <div id="m-ct-pills" class="m-ct-pills"></div>
+    <div id="m-contacts-content"><div style="color:var(--gray);font-size:0.82rem">Loading...</div></div>
   </div>
 </div>
 
@@ -2894,12 +2904,48 @@ function mLoadShifts() {
 }
 
 
+// Contacts: search bar + role/title filter pills (4.63, same idea as the computer's Contacts page)
+var mContacts = [], mContactsFilter = "all";
 function mLoadContacts() {
+  var q = document.getElementById("m-ct-q"); if (q) q.value = "";
+  mContactsFilter = "all";
   db.collection("users").orderBy("unit").get().then(function(snap) {
-    var el = document.getElementById("m-contacts-content");
-    if (snap.empty) { el.innerHTML = '<div style="color:var(--gray)">No contacts found.</div>'; return; }
-    el.innerHTML = snap.docs.map(function(d) {
-      var u = d.data();
+    mContacts = snap.docs.map(function(d) { return d.data(); });
+    mRenderContacts();
+  }).catch(function(e) { document.getElementById("m-contacts-content").innerHTML = '<div style="color:var(--gray)">Couldn\'t load contacts: ' + mEscHtml(e.message || e) + '</div>'; });
+}
+function mCtRoles(u) { return (u.roles || []).map(function(r) { return String(r).toLowerCase(); }); }
+function mCtLabel(r) { return String(r).replace(/[-_]/g, " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); }); }
+function mCtMatches(u, f) {
+  if (f === "all") return true;
+  var rs = mCtRoles(u);
+  if (f === "responder") { var t = hzTitleList().map(function(x) { return String(x).toLowerCase(); }); return rs.some(function(r) { return r === "responder" || t.indexOf(r) !== -1; }); }
+  return rs.indexOf(f) !== -1;
+}
+function mSetContactsFilter(f) { mContactsFilter = f; mRenderContacts(); }
+function mRenderContacts() {
+  var el = document.getElementById("m-contacts-content"); if (!el) return;
+  // Pills: All, Responder, Dispatcher, then every other role in use, then titles (Captain, Chief…)
+  var titles = hzTitleList().map(function(x) { return String(x).toLowerCase(); });
+  var seen = {}; mContacts.forEach(function(u) { mCtRoles(u).forEach(function(r) { if (r && r !== "admin") seen[r] = 1; }); });
+  var roles = ["responder", "dispatcher"].concat(Object.keys(seen).filter(function(r) { return r !== "responder" && r !== "dispatcher" && titles.indexOf(r) === -1; }).sort());
+  var keys = ["all"].concat(roles, titles.filter(function(t) { return seen[t]; }));
+  if (keys.indexOf(mContactsFilter) === -1) mContactsFilter = "all";
+  var pills = document.getElementById("m-ct-pills");
+  if (pills) pills.innerHTML = keys.map(function(k) {
+    var n = mContacts.filter(function(u) { return mCtMatches(u, k); }).length;
+    return '<button type="button" class="m-ct-pill' + (k === mContactsFilter ? " on" : "") + '" onclick="mSetContactsFilter(\'' + mEscHtml(k).replace(/'/g, "") + '\')">' + (k === "all" ? "All" : mEscHtml(mCtLabel(k))) + '<small>' + n + '</small></button>';
+  }).join("");
+  var q = ((document.getElementById("m-ct-q") || {}).value || "").trim().toLowerCase(), qd = q.replace(/\D/g, "");
+  var list = mContacts.filter(function(u) {
+    if (!mCtMatches(u, mContactsFilter)) return false;
+    if (!q) return true;
+    var name = ((u.firstName || "") + " " + (u.lastName || "")).toLowerCase();
+    return name.indexOf(q) !== -1 || String(u.unit || "").toLowerCase().indexOf(q) !== -1 ||
+      (qd.length >= 3 && String(u.phone || "").replace(/\D/g, "").indexOf(qd) !== -1);
+  });
+  if (!list.length) { el.innerHTML = '<div style="color:var(--gray);padding:20px 0;text-align:center">No contacts found.</div>'; return; }
+  el.innerHTML = list.map(function(u) {
       var name = ((u.firstName||"") + " " + (u.lastName||"")).trim();
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06)">' +
         '<div' + (hzIsLeader(u) ? ' class="hz-leader"' : '') + '><div class="hz-ct-name" style="font-family:Oswald,sans-serif;font-size:0.82rem;font-weight:700;color:var(--white)">' + mEscHtml(u.unit||"") + (name ? " — " + mEscHtml(name) : "") + '</div>' +
@@ -2919,7 +2965,6 @@ function mLoadContacts() {
         })() +
       '</div>';
     }).join("");
-  });
 }
 
 // ── TONE ──
