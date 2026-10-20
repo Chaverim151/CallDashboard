@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.61"; window.M_BUILD = BUILD;
+  var BUILD = "4.62"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -826,6 +826,7 @@ html[data-theme="basic"] .m-pill.disp-transport{color:#0b5cad !important}
 html[data-theme="basic"] .m-pill.disp-rma{color:#167a3e !important}
 html[data-theme="basic"] .m-notes-section{border-top:1px solid #d8dde3 !important}
 html[data-theme="basic"] .m-card-actions{border-top:1px solid #d8dde3 !important}
+html[data-theme="basic"] .hz-leader .hz-ct-name,html[data-theme="basic"] .hz-leader .hz-ct-roles{color:#b42318 !important}
 html[data-theme="basic"] .hz-reg-call{color:#167a3e !important}
 html[data-theme="basic"] .m-back-btn{background:#f8f9fa !important}
 html[data-theme="basic"] .m-modal{background:#ffffff !important}
@@ -876,8 +877,16 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
 <div id="m-app" style="height:100%;display:flex;flex-direction:column;overflow:hidden;position:relative;">
 <div id="m-test-global-banner" title="Turn Test Mode off in My Settings" style="display:none;flex-shrink:0;background:#f0a500;color:#000;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;text-align:center;padding:5px 10px;padding-top:calc(5px + env(safe-area-inset-top) * 1.6);cursor:pointer;z-index:9990" onclick="mGoTo('settings')">🧪 TEST DISPATCH MODE — Calls logged as TEST records</div>
 
+<!-- STARTUP — shown while the saved sign-in is restored, so people don't see the login form and think they were logged out -->
+<div class="page active" id="m-pg-boot">
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:40px 20px;color:var(--text-muted,#888);font-family:'Oswald',sans-serif;letter-spacing:1px;">
+    <img data-org-logo src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="" style="width:110px;height:auto;opacity:.9;">
+    <div id="m-boot-msg">Signing in…</div>
+  </div>
+</div>
+
 <!-- LOGIN -->
-<div class="page active" id="m-pg-login">
+<div class="page" id="m-pg-login">
   <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:40px 20px;position:relative;z-index:1;">
     <div class="m-login-box">
       <div class="m-login-logo">
@@ -2215,11 +2224,13 @@ function mSetNewPw() {
   .catch(function(e) { err.textContent = e.message; });
 }
 
-// ── AUTH STATE ──
-auth.onAuthStateChanged(function(user) {
-  if (user) {
-    mCurrentUser = user;
-    db.collection("users").doc(user.uid).get().then(function(snap) {
+// Reads the signed-in person's profile. A failed read (phone just woke up, no signal yet, slow network)
+// used to SIGN THEM OUT — that was the "phone logs me out" problem. Now it keeps the sign-in and retries.
+var mProfileRetry = null;
+function mLoadMyProfile(user, attempt) {
+  clearTimeout(mProfileRetry);
+  if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+  db.collection("users").doc(user.uid).get().then(function(snap) {
       var d = snap.exists ? snap.data() : {};
       if (!snap.exists && user.email !== SUPER_ADMIN) { auth.signOut(); return; }
       mCurrentRole = d.role || "responder";
@@ -2239,7 +2250,23 @@ auth.onAuthStateChanged(function(user) {
       mLoadDispatchSettings();
       mApplyTestModeState(d.sysTestingMode === true); // personal setting, default OFF
       mMaybeOfferPasskey();
-    }).catch(function(e) { mToast("Error: " + e.message, true); auth.signOut(); });
+  }).catch(function(e) {
+    var code = (e && e.code) || "";
+    if (code === "permission-denied" && attempt >= 3) { mToast("Your account no longer has access. Please sign in again.", true); auth.signOut(); return; }
+    var m = document.getElementById("m-boot-msg"); if (m) m.textContent = "Connecting… (no signal yet)";
+    if (!document.querySelector(".page.active") || document.getElementById("m-pg-login").classList.contains("active")) mGoTo("boot");
+    mProfileRetry = setTimeout(function() { mLoadMyProfile(user, attempt + 1); }, Math.min(15000, 2000 * (attempt + 1)));
+  });
+}
+
+// When signal comes back, try again straight away instead of waiting for the next retry.
+window.addEventListener("online", function() { if (mProfileRetry && auth.currentUser) mLoadMyProfile(auth.currentUser, 1); });
+
+// ── AUTH STATE ──
+auth.onAuthStateChanged(function(user) {
+  if (user) {
+    mCurrentUser = user;
+    mLoadMyProfile(user, 0);
   } else {
     mCurrentUser = null;
     mCurrentUserUnit = "";
