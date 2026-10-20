@@ -2178,7 +2178,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.74</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.75</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -9645,8 +9645,8 @@ var TPL_SEND_CH = {
   offDivert:     { sms: "Text every unit", push: "Push notification to every unit" },
   rigOut:        { sms: "Text every unit", push: "Push notification to every unit" },
   rigBack:       { sms: "Text every unit", push: "Push notification to every unit" },
-  ticketPriority:{ sms: "Text", push: "Push notification (urgent / high requests)" },
-  ticketNotice:  { push: "Push notification (other service requests)", sms: "Text members without push notifications" },
+  ticketPriority:{ sms: "Text", push: "Push notification (urgent / high requests)", email: "Email the people it goes to" },
+  ticketNotice:  { push: "Push notification (other service requests)", sms: "Text members without push notifications", email: "Email the people it goes to" },
   codeSubmitted: { push: "Push notification to admins", sms: "Text admins without push notifications" },
   codeApproved:  { sms: "Text the business", push: false },
   codeRejected:  { sms: "Text the business", push: false }
@@ -9659,6 +9659,7 @@ var TPL_SEND_NOTE = {
   codeVerify: "Always sent — businesses need it to confirm their phone. (Text only.)"
 };
 function tplSendIsOn(which, ch) {
+  if (ch === "email") { var s0 = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, k0 = s0 && s0[which]; return !!(k0 && k0.email === true); }   // email is off until ticked
   if ((which === "rigOut" || which === "rigBack") && ch === "sms") return (fleetAlertCfg || {})[which === "rigOut" ? "oosSms" : "backSms"] !== false;
   return hzSendOn(which, ch);
 }
@@ -9667,14 +9668,14 @@ function tplSendIsOn(which, ch) {
 function renderTemplateSend() {
   var el = document.getElementById("tpl-send"); if (!el) return;
   var sel = document.getElementById("tpl-which"); if (!sel) return;
-  var cur = tplWhich(), cols = ["sms", "push", "admin"];
-  var head = '<tr><th>Message</th><th>💬 Text</th><th>🔔 Push notification</th><th>📟 Notification group</th></tr>';
+  var cur = tplWhich(), cols = ["sms", "push", "email", "admin"];
+  var head = '<tr><th>Message</th><th>💬 Text</th><th>🔔 Push notification</th><th>✉️ Email</th><th>📟 Notification group</th></tr>';
   var rows = [].map.call(sel.querySelectorAll("optgroup"), function(g) {
-    var out = '<tr class="tpl-st-grp"><td colspan="4">' + escapeHtml(g.label) + '</td></tr>';
+    var out = '<tr class="tpl-st-grp"><td colspan="5">' + escapeHtml(g.label) + '</td></tr>';
     [].forEach.call(g.querySelectorAll("option"), function(o) {
       var k = o.value, chs = TPL_SEND_CH[k], note = TPL_SEND_NOTE[k];
       out += '<tr class="' + (k === cur ? 'cur' : '') + '"><td><a href="javascript:void(0)" onclick="tplPick(\'' + k + '\')">' + escapeHtml(o.textContent) + '</a></td>';
-      if (!chs) out += '<td colspan="3" class="tpl-st-note">' + escapeHtml(note || "") + '</td>';
+      if (!chs) out += '<td colspan="4" class="tpl-st-note">' + escapeHtml(note || "") + '</td>';
       else cols.forEach(function(ch) {
         if (chs[ch] === false) { out += '<td class="tpl-st-na" title="Goes to people outside the app">Not app users</td>'; return; }
         if (!chs[ch]) { out += '<td class="tpl-st-na">—</td>'; return; }
@@ -17459,7 +17460,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.74";
+var DESKTOP_VERSION = "11.75";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
