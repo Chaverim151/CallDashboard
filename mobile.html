@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.76"; window.M_BUILD = BUILD;
+  var BUILD = "4.77"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2143,6 +2143,43 @@ function hzPushSignOutCleanup(uid, messaging, swReg) {
 // their saved sign-in). The record is removed when the member signs out.
 var HZ_DEV_UNSUBS = [], HZ_DEV_SEEN = 0, HZ_DEV_FORCED = false, HZ_DEV_UID = null;
 function hzDevRef(uid) { return db.collection("users").doc(uid).collection("devices").doc(hzDeviceId()); }
+// Detailed device description for Admin ▸ Users ▸ Devices (12.08 / 4.77) — the same kind of details the IT ticket
+// collects: model, OS + version, browser + version, screen. iPhones don't reveal their exact model to websites, so
+// the model is worked out from the screen size (one size can match a few models — all are listed).
+var HZ_IPHONE_SIZES = {
+  "320x568": "iPhone SE (1st gen) / 5s", "375x667": "iPhone SE (2nd/3rd gen) / 6 / 7 / 8", "414x736": "iPhone 6 / 7 / 8 Plus",
+  "375x812": "iPhone X / XS / 11 Pro / 12 mini / 13 mini", "414x896@2": "iPhone XR / 11", "414x896@3": "iPhone XS Max / 11 Pro Max",
+  "360x780": "iPhone 12 mini / 13 mini", "390x844": "iPhone 12 / 12 Pro / 13 / 13 Pro / 14 / 16e", "428x926": "iPhone 12 Pro Max / 13 Pro Max / 14 Plus",
+  "393x852": "iPhone 14 Pro / 15 / 15 Pro / 16", "430x932": "iPhone 14 Pro Max / 15 Plus / 15 Pro Max / 16 Plus",
+  "402x874": "iPhone 16 Pro / 17 / 17 Pro", "440x956": "iPhone 16 Pro Max / 17 Pro Max", "420x912": "iPhone Air"
+};
+function hzDevDetails() {
+  var ua = navigator.userAgent || "", m, d = { model: "", os: "", osVersion: "", browserVer: "" };
+  var sw = Math.min(screen.width || 0, screen.height || 0), sh = Math.max(screen.width || 0, screen.height || 0), dpr = Math.round(window.devicePixelRatio || 1);
+  d.screen = /iPhone|iPad|Android/.test(ua) ? sw + "×" + sh : (screen.width || 0) + "×" + (screen.height || 0); d.dpr = dpr;
+  if ((m = ua.match(/iPhone OS (\d+[_\.]\d+(?:[_\.]\d+)?)/))) { d.os = "iOS"; d.osVersion = m[1].replace(/_/g, "."); d.model = HZ_IPHONE_SIZES[sw + "x" + sh + "@" + dpr] || HZ_IPHONE_SIZES[sw + "x" + sh] || "iPhone"; }
+  else if ((m = ua.match(/iPad; CPU OS (\d+[_\.]\d+)/)) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) { d.os = "iPadOS"; d.osVersion = m ? m[1].replace(/_/g, ".") : ""; d.model = "iPad"; }
+  else if ((m = ua.match(/Android (\d+(?:\.\d+)*)/))) { d.os = "Android"; d.osVersion = m[1]; var mm = ua.match(/Android [^;)]*;\s*([^;)]+?)(?:\s+Build|\))/); if (mm && !/^K$/.test(mm[1])) d.model = mm[1].trim(); }
+  else if ((m = ua.match(/Windows NT (\d+\.\d+)/))) { d.os = "Windows"; d.osVersion = ({ "10.0": "10 / 11", "6.3": "8.1", "6.2": "8", "6.1": "7" })[m[1]] || m[1]; d.model = "Windows PC"; }
+  else if ((m = ua.match(/Mac OS X (\d+[_\.]\d+(?:[_\.]\d+)?)/))) { d.os = "macOS"; d.osVersion = m[1].replace(/_/g, "."); d.model = "Mac"; }
+  else if (/CrOS/.test(ua)) { d.os = "ChromeOS"; d.model = "Chromebook"; }
+  if ((m = ua.match(/(?:Edg|EdgiOS|EdgA)\/(\d+(?:\.\d+)?)/))) d.browserVer = "Edge " + m[1];
+  else if ((m = ua.match(/CriOS\/(\d+(?:\.\d+)?)/)) || (m = ua.match(/Chrome\/(\d+(?:\.\d+)?)/))) d.browserVer = "Chrome " + m[1];
+  else if ((m = ua.match(/FxiOS\/(\d+(?:\.\d+)?)/)) || (m = ua.match(/Firefox\/(\d+(?:\.\d+)?)/))) d.browserVer = "Firefox " + m[1];
+  else if ((m = ua.match(/Version\/(\d+(?:\.\d+)?)[^ ]* (?:Mobile\/\S+ )?Safari/))) d.browserVer = "Safari " + m[1];
+  // Chrome / Edge can tell us more exactly: the real phone model and the true Windows / Android version
+  var uad = navigator.userAgentData;
+  if (!uad || !uad.getHighEntropyValues) return Promise.resolve(d);
+  return uad.getHighEntropyValues(["model", "platformVersion", "fullVersionList"]).then(function(h) {
+    if (h.model) d.model = h.model;
+    if (d.os === "Windows" && h.platformVersion) d.osVersion = parseInt(h.platformVersion, 10) >= 13 ? "11" : "10";
+    else if (d.os === "Android" && h.platformVersion) d.osVersion = h.platformVersion;
+    else if (d.os === "macOS" && h.platformVersion) d.osVersion = h.platformVersion;
+    var fv = (h.fullVersionList || []).filter(function(b) { return /Chrome|Edge|Opera|Brave/i.test(b.brand) && !/Chromium/i.test(b.brand); })[0];
+    if (fv) d.browserVer = fv.brand.replace("Google ", "").replace("Microsoft ", "") + " " + fv.version.split(".").slice(0, 2).join(".");
+    return d;
+  }).catch(function() { return d; });
+}
 function hzDevInfo() {
   var ua = navigator.userAgent || "";
   var kind = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? "iPad" : /Android/.test(ua) ? "Android" : /Macintosh/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /CrOS/.test(ua) ? "Chromebook" : "Computer";
@@ -2159,7 +2196,9 @@ function hzDevTouch(uid, first) {
   var d = hzDevInfo(), rec = { label: d.label, kind: d.kind, browser: d.browser, app: d.app, standalone: d.standalone, lastSeen: new Date(now).toISOString() };
   try { if (typeof hzRemembered === "function") rec.remembered = !!hzRemembered(); } catch (e) {}
   var ref = hzDevRef(uid);
-  (first ? ref.get().then(function(s) { if (!s.exists) rec.firstSeen = rec.lastSeen; }).catch(function() {}) : Promise.resolve())
+  (first ? Promise.all([ref.get().then(function(s) { if (!s.exists) rec.firstSeen = rec.lastSeen; }).catch(function() {}),
+                        hzDevDetails().then(function(x) { ["model", "os", "osVersion", "browserVer", "screen", "dpr"].forEach(function(k) { if (x[k] !== undefined && x[k] !== "") rec[k] = x[k]; }); }).catch(function() {})])
+         : Promise.resolve())
     .then(function() { return ref.set(rec, { merge: true }); }).catch(function() {});
 }
 // Device limit (12.00 / 4.74): Admin ▸ Security ▸ Devices (appdata/deviceLimit.max, default 2; 0 = no limit).
