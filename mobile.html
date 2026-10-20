@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.65"; window.M_BUILD = BUILD;
+  var BUILD = "4.66"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4193,12 +4193,15 @@ function mPointInPolygon(point, polygon) {
   return inside;
 }
 // Which coverage area a point falls in, and what that area is called, so the form can name it
-// The box around every coverage polygon (primary + secondary) — used to put local suggestions first
+// The box around the PRIMARY coverage area — Google's dropdown ranks places inside it first, then by
+// closeness, so the Secondary area (which surrounds it) comes next and far-away places last. 11.82 / 4.66
 function mCoverageBounds() {
   try {
     if (!window.google || !google.maps || !google.maps.LatLngBounds) return null;
+    var zones = (M_COVERAGE_ZONES || []).filter(function(z) { return !/secondary/i.test(z.name || ""); });
+    if (!zones.length) zones = M_COVERAGE_ZONES || [];
     var b = new google.maps.LatLngBounds(), n = 0;
-    (M_COVERAGE_ZONES || []).forEach(function(z) { (z.points || []).forEach(function(p) { if (p && isFinite(p.lat) && isFinite(p.lng)) { b.extend(p); n++; } }); });
+    zones.forEach(function(z) { (z.points || []).forEach(function(p) { if (p && isFinite(p.lat) && isFinite(p.lng)) { b.extend(p); n++; } }); });
     return n ? b : null;
   } catch (e) { return null; }
 }
@@ -8058,8 +8061,8 @@ function mBestStreetAddress(place, lat, lng) {
 window.mBindNcAutocomplete = function() {
   if (mNcAutocomplete || !window.google || !google.maps.places) return;
   var input = document.getElementById("m-nc-address");
-  // Suggestions inside the coverage area come first (Google ranks places inside "bounds" higher; outside
-  // places still appear, below). 11.81 / 4.65
+  // Primary-area suggestions first, then nearby (Secondary), then the rest — Google ranks places inside
+  // "bounds" higher and still shows everything else below. 11.82 / 4.66
   mNcAutocomplete = new google.maps.places.Autocomplete(input, { componentRestrictions: { country: "us" }, bounds: mCoverageBounds() || undefined, strictBounds: false });
   input.addEventListener("blur", function() { setTimeout(function(){ if (!document.getElementById("m-nc-lat").value && input.value.trim()) mResolveTypedAddress(input.value.trim()); }, 400); });
   mNcAutocomplete.addListener("place_changed", function() {

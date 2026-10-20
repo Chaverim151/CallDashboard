@@ -2184,7 +2184,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.81</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.82</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -17541,7 +17541,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.81";
+var DESKTOP_VERSION = "11.82";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -18941,12 +18941,15 @@ function mPointInPolygon(point, polygon) {
   return inside;
 }
 // Which coverage area a point falls in, and what that area is called, so the form can name it
-// The box around every coverage polygon (primary + secondary) — used to put local suggestions first
+// The box around the PRIMARY coverage area — Google's dropdown ranks places inside it first, then by
+// closeness, so the Secondary area (which surrounds it) comes next and far-away places last. 11.82 / 4.66
 function mCoverageBounds() {
   try {
     if (!window.google || !google.maps || !google.maps.LatLngBounds) return null;
+    var zones = (M_COVERAGE_ZONES || []).filter(function(z) { return !/secondary/i.test(z.name || ""); });
+    if (!zones.length) zones = M_COVERAGE_ZONES || [];
     var b = new google.maps.LatLngBounds(), n = 0;
-    (M_COVERAGE_ZONES || []).forEach(function(z) { (z.points || []).forEach(function(p) { if (p && isFinite(p.lat) && isFinite(p.lng)) { b.extend(p); n++; } }); });
+    zones.forEach(function(z) { (z.points || []).forEach(function(p) { if (p && isFinite(p.lat) && isFinite(p.lng)) { b.extend(p); n++; } }); });
     return n ? b : null;
   } catch (e) { return null; }
 }
@@ -23656,8 +23659,8 @@ function mBestStreetAddress(place, lat, lng) {
 var mBindNcAutocomplete = function() {
   if (mNcAutocomplete || !window.google || !google.maps.places) return;
   var input = document.getElementById("m-nc-address");
-  // Suggestions inside the coverage area come first (Google ranks places inside "bounds" higher; outside
-  // places still appear, below). 11.81 / 4.65
+  // Primary-area suggestions first, then nearby (Secondary), then the rest — Google ranks places inside
+  // "bounds" higher and still shows everything else below. 11.82 / 4.66
   mNcAutocomplete = new google.maps.places.Autocomplete(input, { componentRestrictions: { country: "us" }, bounds: mCoverageBounds() || undefined, strictBounds: false });
   input.addEventListener("blur", function() { setTimeout(function(){ if (!document.getElementById("m-nc-lat").value && input.value.trim()) mResolveTypedAddress(input.value.trim()); }, 400); });
   mNcAutocomplete.addListener("place_changed", function() {
