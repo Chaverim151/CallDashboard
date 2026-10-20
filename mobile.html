@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.79"; window.M_BUILD = BUILD;
+  var BUILD = "4.80"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -640,6 +640,21 @@ body.m-tile-dragging{overscroll-behavior:none}
 /* Age box: no number spinners (they covered the digits next to the clear ✕) */
 #m-nc-age-num{-moz-appearance:textfield;appearance:textfield}
 #m-nc-age-num::-webkit-inner-spin-button,#m-nc-age-num::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+/* Phone Call Logs cards (4.80 / 12.12) */
+.m-cl-card{padding:11px 13px !important}
+.m-cl-r{display:flex;align-items:center;gap:8px;min-width:0}
+.m-cl-r + .m-cl-r{margin-top:4px}
+.m-cl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.m-cl-addr{flex:1;min-width:0;font-family:'Oswald',sans-serif;font-size:0.92rem;font-weight:700;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-cl-when{flex-shrink:0;font-size:0.7rem;color:var(--gray);white-space:nowrap}
+.m-cl-sub{flex:1;min-width:0;font-size:0.74rem;color:var(--gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:16px}
+.m-cl-test{flex-shrink:0;font-size:0.58rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.5);border-radius:4px;padding:0 5px;color:#b07400}
+.m-cl-units{flex:1;min-width:0;font-size:0.76rem;font-weight:600;color:#7ab8f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:16px}
+html[data-theme="basic"] .m-cl-units{color:#0b5cad !important}
+.m-cl-als{flex-shrink:0;font-size:0.66rem;font-weight:700;color:#ff9090}
+html[data-theme="basic"] .m-cl-als{color:#b42318 !important}
+.m-cl-disp{flex-shrink:0;font-family:'Oswald',sans-serif;font-size:0.74rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.m-cl-hosp{font-family:inherit;text-transform:none;letter-spacing:0;font-weight:400;color:var(--gray)}
 </style>
 <!--HZ-BASIC-START-->
 <script>/* App look for EVERYONE — set by an admin in Admin ▸ Organization (appdata/org.uiTheme):
@@ -859,6 +874,8 @@ html[data-theme="basic"] #m-tile-done-bar button{background:#1d3f72 !important;c
 html[data-theme="basic"] .m-call-street{color:#1f2328 !important}
 html[data-theme="basic"] .pac-container{background:#ffffff !important;box-shadow:0 1px 3px rgba(0,0,0,0.12) !important}
 html[data-theme="basic"] .pac-item{border-top:1px solid #d8dde3!important !important;background:#ffffff !important}
+html[data-theme="basic"] .m-cl-units{color:#0b5cad !important}
+html[data-theme="basic"] .m-cl-als{color:#b42318 !important}
 /* injected by scripts */
 html[data-theme="basic"] #m-nc-loc-status .lc{background:#f8f9fa !important}
 html[data-theme="basic"] #m-nc-loc-status .lc-good{color:#167a3e !important}
@@ -5644,18 +5661,27 @@ function mRenderCallLogs(logs) {
   logs = (logs || []).map(mSanitizeCall);
   var el = document.getElementById("m-cl-list");
   if (!logs.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">No call records found.</div>'; return; }
+  // 4.80 / 12.12: every card has the same three lines — where & when · what · who & outcome — each kept to one line
   el.innerHTML = logs.map(function(l) {
     var zoneColor = l.zone === "primary" ? "#7dedb5" : l.zone === "secondary" ? "#ffc84a" : "#ff9090";
     var nature = l.callNature ? l.callNature.replace(/^\d+\s*-\s*/, "").split(" (")[0] : "";
-    var date = l.createdAt ? new Date(l.createdAt).toLocaleDateString() : "—";
-    var dispText = l.status === "cancelled" ? "Cancelled" : (l.disposition && l.disposition.type === "transport" ? "Transport" : l.disposition && l.disposition.type === "rma" ? "RMA" : "—");
-    return '<div class="m-disp-card" onclick="mOpenCallLogDetail(\'' + l.id + '\')">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-        '<span class="m-disp-zone" style="background:' + zoneColor + '22;color:' + zoneColor + ';border:1px solid ' + zoneColor + '55">' + (nature||"—") + '</span>' +
-        '<span style="font-size:0.68rem;color:var(--gray)">' + date + '</span>' +
-      '</div>' +
-      '<div style="font-family:\'Oswald\',sans-serif;font-size:0.9rem;font-weight:700;color:var(--white)">' + (l.address||"Unknown").split(",")[0] + (l.testMode ? '<span class="hz-test-pill" style="display:inline-block;font-size:0.6rem;font-weight:700;letter-spacing:0.05em;background:rgba(240,165,0,0.15);border:1px solid rgba(240,165,0,0.5);border-radius:4px;padding:1px 6px;color:#b07400;margin-left:6px;vertical-align:middle">🧪 TEST CALL</span>' : '') + '</div>' +
-      '<div style="font-size:0.72rem;color:var(--gray);margin-top:2px">' + (l.assignedUnits||[]).join(", ") + ' · ' + dispText + '</div>' +
+    var dt = l.createdAt ? new Date(l.createdAt) : null;
+    var when = dt ? dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " · " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "—";
+    var parts = (l.address || "Unknown").split(","), street = parts[0], town = (parts[1] || "").trim();
+    var who = [];
+    if (l.patientAgeNum) who.push(typeof hzAge === "function" ? hzAge(l) : l.patientAgeNum + " YO");
+    if (l.patientSex === "male") who.push("M"); else if (l.patientSex === "female") who.push("F");
+    var line2 = [town, nature, who.join(" ")].filter(Boolean).join(" · ");
+    var units = (l.assignedUnits || []).map(function(u) { return String(u).toUpperCase().replace(/^([A-Z]+)(\d)/, "$1-$2"); });
+    var d = l.status === "cancelled" ? ["Cancelled", "var(--gray)"] : l.disposition && l.disposition.type === "transport" ? ["Transport", "#7ab8f5"] : l.disposition && l.disposition.type === "rma" ? ["RMA", "#7dedb5"] : ["Open", "var(--gray)"];
+    var hosp = l.disposition && l.disposition.type === "transport" && l.disposition.hospital ? " → " + l.disposition.hospital : "";
+    return '<div class="m-disp-card m-cl-card" onclick="mOpenCallLogDetail(\'' + l.id + '\')">' +
+      '<div class="m-cl-r"><span class="m-cl-dot" style="background:' + zoneColor + '"></span><span class="m-cl-addr">' + mEscHtml(street) + '</span><span class="m-cl-when">' + mEscHtml(when) + '</span></div>' +
+      '<div class="m-cl-r"><span class="m-cl-sub">' + mEscHtml(line2 || "—") + '</span>' + (l.testMode ? '<span class="hz-test-pill m-cl-test">🧪 Test</span>' : '') + '</div>' +
+      '<div class="m-cl-r"><span class="m-cl-units">' + (units.length ? mEscHtml(units.join(", ")) : '<span style="color:var(--gray)">No units</span>') + '</span>' +
+        (l.alsActivated ? '<span class="m-cl-als">ALS</span>' : '') +
+        '<span class="m-cl-disp" style="color:' + d[1] + '">' + d[0] + '</span></div>' +
+      (hosp ? '<div class="m-cl-r"><span class="m-cl-sub">🏥 ' + mEscHtml(hosp.replace(/^ → /, "")) + '</span></div>' : '') +
     '</div>';
   }).join("");
 }
