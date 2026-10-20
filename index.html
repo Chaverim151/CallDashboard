@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.19">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.23">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2329,7 +2329,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.19</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.23</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -11469,7 +11469,7 @@ function renderCallLogs(logs, statsEl, listEl) {
     });
     var rigs = (log.crews||[]).map(function(c) { return c && c.rig; }).filter(Boolean);
     var times = log.times || {};
-    var t1 = times.dispatched || "", tRest = [times.first_on_scene, times.enroute, times.at_hospital].filter(Boolean).join(" → ");
+    var t1 = times.dispatched || "", tRest = [times.first_on_scene, times.enroute, times.home].filter(Boolean).join(" → ");
     var tDone = log.completedAt ? new Date(log.completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
     var disp = (log.disposition||{}).type || "";
     var dispColor = disp === "transport" ? "#7ab8f5" : disp === "rma" ? "#7dedb5" : "var(--gray)";
@@ -11606,6 +11606,8 @@ function openCLDetail(callId) {
     renderCLDetail(log, body);
     if (log.testMode) body.insertAdjacentHTML("afterbegin", '<div class="hz-test-banner" style="background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.5);border-radius:8px;padding:8px 12px;margin-bottom:12px;color:#b07400;font-weight:700;font-size:0.8rem">🧪 Test call — posted in Test Mode (not a real call)</div>');
     clLoadConversation(log);
+    // Call Timeline (12.21) — the same collapsible event log the phone shows, right under Times; starts collapsed
+    window.clCurrentLog = log; mDdOpen.timeline = false; clRenderTimeline();
   }).catch(function(e) {
     body.innerHTML = '<div style="color:#ff9090">Error: ' + e.message + '</div>';
   });
@@ -11664,6 +11666,13 @@ function clLoadConversation(log) {
     }).join("");
   });
 }
+function clRenderTimeline() {
+  var tw = document.getElementById("cl-tl-wrap"); if (!tw || !window.clCurrentLog) return;
+  var html = "";
+  try { html = mBuildDispTimeline(mSanitizeCall(window.clCurrentLog)); } catch (e) { console.warn("Call timeline:", e); }
+  tw.innerHTML = html || '<div style="font-size:0.78rem;color:var(--gray);border:1px solid var(--card-border);border-radius:10px;padding:10px 12px">⚡ Call Timeline — no events were recorded for this call</div>';
+  var first = tw.firstElementChild; if (first && first.style) first.style.marginTop = "0";
+}
 function renderCLDetail(log, body) {
   var dt = log.createdAt ? new Date(log.createdAt) : null;
   var dateStr = dt ? dt.toLocaleDateString("en-US", {weekday:"long", month:"long", day:"numeric", year:"numeric"}) : "—";
@@ -11711,15 +11720,16 @@ function renderCLDetail(log, body) {
 
     // Times
     '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:12px">' +
-      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Timeline</div>' +
+      '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Times</div>' +
       '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">' +
-        [["dispatched","Dispatched"],["first_on_scene","On Scene"],["enroute","En Route"],["at_hospital","Hospital"],["completed","Completed"]].map(function(t) {
+        [["dispatched","Dispatched"],["first_on_scene","On Scene"],["enroute","En Route"],["home","Back at Base"],["completed","Completed"]].map(function(t) {
           return '<div><div style="font-size:0.55rem;color:var(--gray);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">' + t[1] + '</div>' +
             '<div style="font-family:\'Oswald\',sans-serif;font-size:0.95rem;font-weight:700;color:' + (times[t[0]]?"var(--white)":"var(--gray)") + '">' + (times[t[0]]||"—") + '</div></div>';
         }).join("") +
       '</div>' +
     '</div>' +
 
+    '<div id="cl-tl-wrap" style="margin:-4px 0 12px"></div>' +
     // ALS
     (log.alsActivated ? '<div style="background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.35);border-radius:10px;padding:12px;margin-bottom:12px">' +
       '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090;margin-bottom:6px">ALS Activated</div>' +
@@ -11933,7 +11943,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
     if (disp.type === "transport") nT++; if (disp.type === "rma") nR++; if (l.alsActivated) nAls++;
     calls.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", l.apt || "", zoneName(l.zone), l.zoneArea || "", natureName(l.callNature),
       l.patientAgeNum ? Number(l.patientAgeNum) || l.patientAgeNum : (l.patientAge || ""), l.patientSex || "", unitList.join(", "), rigs.join(", "),
-      t.dispatched || "", t.first_on_scene || "", t.enroute || "", t.at_hospital || "", t.cleared || "", t.home || "",
+      t.dispatched || "", t.first_on_scene || "", t.enroute || "", t.cleared || "", t.home || "",
       disp.type === "rma" ? "RMA" : disp.type === "transport" ? "Transport" : (disp.type || ""), hosp, disp.rmaBy || "",
       l.alsActivated ? "Yes" : "No", l.alsProvider || "", l.alsUnit || "", l.blsActivated ? "Yes" : "No", l.pdActivated ? "Yes" : "No",
       l.dispatchNotes || "", (l.callNotes || []).filter(Boolean).map(function(n) { return (n.time ? n.time + " " : "") + (n.by ? n.by + ": " : "") + (n.text || ""); }).join("\n"),
@@ -11945,7 +11955,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
   var sheets = [
     { name: "Calls", cols: [{ h: "Date", w: 12, t: "d" }, { h: "Time", w: 7 }, { h: "Address", w: 38 }, { h: "Apt", w: 7 }, { h: "Zone", w: 12 }, { h: "Area", w: 14 }, { h: "Nature", w: 24 },
       { h: "Age", w: 6, t: "n" }, { h: "Sex", w: 7 }, { h: "Units", w: 22 }, { h: "Rigs", w: 10 }, { h: "Dispatched", w: 10 }, { h: "On Scene", w: 9 }, { h: "En Route", w: 9 },
-      { h: "At Hospital", w: 10 }, { h: "Cleared", w: 9 }, { h: "Home", w: 8 }, { h: "Disposition", w: 11 }, { h: "Hospital", w: 26 }, { h: "RMA Approved By", w: 14 },
+      { h: "Cleared", w: 9 }, { h: "Back at Base", w: 11 }, { h: "Disposition", w: 11 }, { h: "Hospital", w: 26 }, { h: "RMA Approved By", w: 14 },
       { h: "ALS", w: 6 }, { h: "ALS Provider", w: 16 }, { h: "ALS Unit", w: 10 }, { h: "BLS Mutual Aid", w: 9 }, { h: "PD", w: 6 },
       { h: "Dispatch Notes", w: 40, t: "w" }, { h: "Call Notes", w: 50, t: "w" }, { h: "Created By", w: 18 }, { h: "Completed By", w: 18 }, { h: "Completed At", w: 16, t: "dt" }, { h: "Test Call", w: 8 }, { h: "Call ID", w: 22 }], rows: calls },
     { name: "Units", cols: [{ h: "Date", w: 12, t: "d" }, { h: "Time", w: 7 }, { h: "Address", w: 38 }, { h: "Nature", w: 24 }, { h: "Crew", w: 8 }, { h: "Rig", w: 9 },
@@ -18194,7 +18204,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.19";
+var DESKTOP_VERSION = "12.23";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -20356,7 +20366,7 @@ function mOpenCallLogDetail(id, keepPlace) {
     (l.testMode ? '<div class="hz-test-banner" style="background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.5);border-radius:8px;padding:8px 12px;margin-bottom:12px;color:#b07400;font-weight:700;font-size:0.8rem">🧪 Test call — posted in Test Mode (not a real call)</div>' : '') +
     '<div class="m-cld-head"><div class="m-cld-addr">' + E(l.address || "Unknown") + (l.apt ? ' <span style="color:var(--gold);font-size:0.85rem">· ' + E(l.apt) + '</span>' : '') + '</div><div class="m-cld-k" style="font-size:0.74rem;text-transform:none;letter-spacing:0">' + E(dateStr) + '</div></div>' +
     '<div class="m-cld-grid">' + info("Zone", zone) + info("Disposition", dispTxt) + '<div style="grid-column:1/-1">' + info("Nature", natureTxt) + '</div>' + (l.callback ? info("Callback", l.callback) : '') + '</div>' +
-    box("Times", '<div class="m-cld-times">' + [["dispatched","Dispatched"],["first_on_scene","On Scene"],["enroute","En Route"],["at_hospital","Hospital"],["home","Back at Base"],["completed","Completed"]].map(function(t) {
+    box("Times", '<div class="m-cld-times">' + [["dispatched","Dispatched"],["first_on_scene","On Scene"],["enroute","En Route"],["home","Back at Base"],["completed","Completed"]].map(function(t) {
       return '<div><div class="m-cld-k">' + t[1] + '</div><div class="m-cld-t' + (times[t[0]] ? '' : ' off') + '">' + E(times[t[0]] || "—") + '</div></div>'; }).join("") + '</div>') +
     (l.alsActivated ? box("ALS Activated", '<div class="m-cld-v" style="font-weight:400">' + E([l.alsProvider ? "Provider: " + l.alsProvider : "", l.alsUnit ? "Unit: " + l.alsUnit : "", l.alsEta ? "ETA: " + l.alsEta + " min" : ""].filter(Boolean).join(" · ") || "Yes") + '</div>', "als") : '') +
     (l.accessCode ? box("Access Code", '<div class="m-cld-t">' + E(l.accessCode) + '</div>', "code") : '') +
@@ -24660,6 +24670,9 @@ function mDdSecHead(key, label, sub) {
 }
 function mDdToggleSec(key, forceOpen) {
   mDdOpen[key] = forceOpen ? true : !mDdOpen[key];
+  // Computer ▸ Call Logs ▸ Call Record popup: redraw just its timeline
+  var ov = document.getElementById("cl-detail-overlay"), tw = document.getElementById("cl-tl-wrap");
+  if (ov && ov.style.display === "flex" && tw && window.clCurrentLog) { clRenderTimeline(); return; }
   // Call Logs ▸ call record uses the same collapsible Call Timeline — redraw that page, staying where you are
   var lp = document.getElementById("m-pg-calllog-detail");
   if (lp && lp.classList.contains("active") && mClDetailId) {
@@ -25067,6 +25080,11 @@ function mAlsPromptCheck() {
   var start = function () { setTimeout(function () { check(true); }, 5000); setInterval(function () { if (!document.hidden) check(true); }, 60 * 1000); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
   document.addEventListener("visibilitychange", function () { if (!document.hidden) check(false); });
+  // 4.87 / 12.20: every tap also checks (at most once every 15 s) — iPhones pause timers in Home Screen apps,
+  // so waiting for the 1-minute timer alone could mean nothing shows until the phone locks and unlocks.
+  document.addEventListener("pointerdown", function () { check(false); }, { passive: true, capture: true });
+  window.addEventListener("focus", function () { check(false); });
+  window.addEventListener("pageshow", function () { check(false); });
   window.hzCheckForUpdate = function () { check(true); };
 })();
 </script>
