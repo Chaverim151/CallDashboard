@@ -2184,7 +2184,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.82</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.83</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -17541,7 +17541,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.82";
+var DESKTOP_VERSION = "11.83";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -23656,7 +23656,65 @@ function mBestStreetAddress(place, lat, lng) {
     });
   });
 }
+// ── Address suggestions: Primary area first, then Secondary, then the rest of NJ, then other states (11.83 / 4.67).
+//    Google's own dropdown is kept; its rows are re-ordered as they appear. Each row's town is placed on the map
+//    once (Google geocoder, remembered on this device) and checked against the coverage areas you've drawn. ──
+var HZ_TOWN_LL = (function() { try { return JSON.parse(localStorage.getItem("hzTownLL") || "{}"); } catch (e) { return {}; } })();
+var HZ_TOWN_PENDING = {};
+function hzPacTown(item) {
+  var txt = item.textContent || "", q = item.querySelector(".pac-item-query");
+  var rest = q ? txt.slice(txt.indexOf(q.textContent) + q.textContent.length) : txt;
+  var parts = rest.split(",").map(function(x) { return x.trim(); }).filter(Boolean);
+  if (parts.length && /^usa$|^united states$/i.test(parts[parts.length - 1])) parts.pop();
+  var state = parts.length >= 2 ? parts[parts.length - 1] : "";
+  var town = parts.length >= 2 ? parts[parts.length - 2] : (parts[0] || "");
+  return { town: town, state: state, key: (town + ", " + state).toLowerCase() };
+}
+function hzPacRank(t) {
+  var ll = HZ_TOWN_LL[t.key];
+  if (ll && typeof mDetectZoneInfo === "function") {
+    var z = mDetectZoneInfo(ll[0], ll[1]);
+    if (z && z.type === "primary") return 0;
+    if (z && z.type === "secondary") return 1;
+  }
+  if (/^(nj|new jersey)$/i.test(t.state)) return 2;
+  return t.state ? 3 : 2;
+}
+function hzPacLookup(t, then) {
+  if (!t.town || HZ_TOWN_LL[t.key] || HZ_TOWN_PENDING[t.key] || !window.google || !google.maps || !google.maps.Geocoder) return;
+  HZ_TOWN_PENDING[t.key] = 1;
+  new google.maps.Geocoder().geocode({ address: t.town + ", " + t.state }, function(res, st) {
+    if (st === "OK" && res && res[0]) {
+      var l = res[0].geometry.location; HZ_TOWN_LL[t.key] = [l.lat(), l.lng()];
+      try { localStorage.setItem("hzTownLL", JSON.stringify(HZ_TOWN_LL)); } catch (e) {}
+      then();
+    }
+  });
+}
+function hzPacSort(box) {
+  var items = [].slice.call(box.querySelectorAll(":scope > .pac-item"));
+  if (items.length < 2) return;
+  var rows = items.map(function(el, i) { var t = hzPacTown(el); return { el: el, t: t, i: i }; });
+  rows.forEach(function(r) { hzPacLookup(r.t, function() { hzPacSort(box); }); });
+  rows.forEach(function(r) { r.r = hzPacRank(r.t); });
+  var sorted = rows.slice().sort(function(a, b) { return a.r - b.r || a.i - b.i; });
+  if (sorted.every(function(r, i) { return r.el === items[i]; })) return;   // already in order — nothing to move
+  var anchor = items[items.length - 1].nextSibling;   // keeps "powered by Google" at the bottom
+  sorted.forEach(function(r) { box.insertBefore(r.el, anchor); });
+}
+function hzPacWatch() {
+  if (window.__hzPacWatch) return; window.__hzPacWatch = 1;
+  var hook = function(box) {
+    if (box.__hzPac) return; box.__hzPac = 1;
+    new MutationObserver(function() { hzPacSort(box); }).observe(box, { childList: true });
+  };
+  // Google's own dropdowns carry "pac-logo"; our hand-built one on the old console is left alone
+  var scan = function() { [].forEach.call(document.querySelectorAll(".pac-container.pac-logo"), hook); };
+  scan();
+  new MutationObserver(scan).observe(document.body, { childList: true });
+}
 var mBindNcAutocomplete = function() {
+  try { hzPacWatch(); } catch (e) {}
   if (mNcAutocomplete || !window.google || !google.maps.places) return;
   var input = document.getElementById("m-nc-address");
   // Primary-area suggestions first, then nearby (Secondary), then the rest — Google ranks places inside

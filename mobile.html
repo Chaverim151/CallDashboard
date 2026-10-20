@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.66"; window.M_BUILD = BUILD;
+  var BUILD = "4.67"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -8058,7 +8058,65 @@ function mBestStreetAddress(place, lat, lng) {
     });
   });
 }
+// ── Address suggestions: Primary area first, then Secondary, then the rest of NJ, then other states (11.83 / 4.67).
+//    Google's own dropdown is kept; its rows are re-ordered as they appear. Each row's town is placed on the map
+//    once (Google geocoder, remembered on this device) and checked against the coverage areas you've drawn. ──
+var HZ_TOWN_LL = (function() { try { return JSON.parse(localStorage.getItem("hzTownLL") || "{}"); } catch (e) { return {}; } })();
+var HZ_TOWN_PENDING = {};
+function hzPacTown(item) {
+  var txt = item.textContent || "", q = item.querySelector(".pac-item-query");
+  var rest = q ? txt.slice(txt.indexOf(q.textContent) + q.textContent.length) : txt;
+  var parts = rest.split(",").map(function(x) { return x.trim(); }).filter(Boolean);
+  if (parts.length && /^usa$|^united states$/i.test(parts[parts.length - 1])) parts.pop();
+  var state = parts.length >= 2 ? parts[parts.length - 1] : "";
+  var town = parts.length >= 2 ? parts[parts.length - 2] : (parts[0] || "");
+  return { town: town, state: state, key: (town + ", " + state).toLowerCase() };
+}
+function hzPacRank(t) {
+  var ll = HZ_TOWN_LL[t.key];
+  if (ll && typeof mDetectZoneInfo === "function") {
+    var z = mDetectZoneInfo(ll[0], ll[1]);
+    if (z && z.type === "primary") return 0;
+    if (z && z.type === "secondary") return 1;
+  }
+  if (/^(nj|new jersey)$/i.test(t.state)) return 2;
+  return t.state ? 3 : 2;
+}
+function hzPacLookup(t, then) {
+  if (!t.town || HZ_TOWN_LL[t.key] || HZ_TOWN_PENDING[t.key] || !window.google || !google.maps || !google.maps.Geocoder) return;
+  HZ_TOWN_PENDING[t.key] = 1;
+  new google.maps.Geocoder().geocode({ address: t.town + ", " + t.state }, function(res, st) {
+    if (st === "OK" && res && res[0]) {
+      var l = res[0].geometry.location; HZ_TOWN_LL[t.key] = [l.lat(), l.lng()];
+      try { localStorage.setItem("hzTownLL", JSON.stringify(HZ_TOWN_LL)); } catch (e) {}
+      then();
+    }
+  });
+}
+function hzPacSort(box) {
+  var items = [].slice.call(box.querySelectorAll(":scope > .pac-item"));
+  if (items.length < 2) return;
+  var rows = items.map(function(el, i) { var t = hzPacTown(el); return { el: el, t: t, i: i }; });
+  rows.forEach(function(r) { hzPacLookup(r.t, function() { hzPacSort(box); }); });
+  rows.forEach(function(r) { r.r = hzPacRank(r.t); });
+  var sorted = rows.slice().sort(function(a, b) { return a.r - b.r || a.i - b.i; });
+  if (sorted.every(function(r, i) { return r.el === items[i]; })) return;   // already in order — nothing to move
+  var anchor = items[items.length - 1].nextSibling;   // keeps "powered by Google" at the bottom
+  sorted.forEach(function(r) { box.insertBefore(r.el, anchor); });
+}
+function hzPacWatch() {
+  if (window.__hzPacWatch) return; window.__hzPacWatch = 1;
+  var hook = function(box) {
+    if (box.__hzPac) return; box.__hzPac = 1;
+    new MutationObserver(function() { hzPacSort(box); }).observe(box, { childList: true });
+  };
+  // Google's own dropdowns carry "pac-logo"; our hand-built one on the old console is left alone
+  var scan = function() { [].forEach.call(document.querySelectorAll(".pac-container.pac-logo"), hook); };
+  scan();
+  new MutationObserver(scan).observe(document.body, { childList: true });
+}
 window.mBindNcAutocomplete = function() {
+  try { hzPacWatch(); } catch (e) {}
   if (mNcAutocomplete || !window.google || !google.maps.places) return;
   var input = document.getElementById("m-nc-address");
   // Primary-area suggestions first, then nearby (Secondary), then the rest — Google ranks places inside
