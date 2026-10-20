@@ -16,7 +16,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.64"; window.M_BUILD = BUILD;
+  var BUILD = "4.65"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4193,6 +4193,15 @@ function mPointInPolygon(point, polygon) {
   return inside;
 }
 // Which coverage area a point falls in, and what that area is called, so the form can name it
+// The box around every coverage polygon (primary + secondary) — used to put local suggestions first
+function mCoverageBounds() {
+  try {
+    if (!window.google || !google.maps || !google.maps.LatLngBounds) return null;
+    var b = new google.maps.LatLngBounds(), n = 0;
+    (M_COVERAGE_ZONES || []).forEach(function(z) { (z.points || []).forEach(function(p) { if (p && isFinite(p.lat) && isFinite(p.lng)) { b.extend(p); n++; } }); });
+    return n ? b : null;
+  } catch (e) { return null; }
+}
 function mDetectZoneInfo(lat, lng) {
   if (!lat || !lng) return null;
   var pt = { lat: lat, lng: lng };
@@ -8049,7 +8058,9 @@ function mBestStreetAddress(place, lat, lng) {
 window.mBindNcAutocomplete = function() {
   if (mNcAutocomplete || !window.google || !google.maps.places) return;
   var input = document.getElementById("m-nc-address");
-  mNcAutocomplete = new google.maps.places.Autocomplete(input, { componentRestrictions: { country: "us" } });
+  // Suggestions inside the coverage area come first (Google ranks places inside "bounds" higher; outside
+  // places still appear, below). 11.81 / 4.65
+  mNcAutocomplete = new google.maps.places.Autocomplete(input, { componentRestrictions: { country: "us" }, bounds: mCoverageBounds() || undefined, strictBounds: false });
   input.addEventListener("blur", function() { setTimeout(function(){ if (!document.getElementById("m-nc-lat").value && input.value.trim()) mResolveTypedAddress(input.value.trim()); }, 400); });
   mNcAutocomplete.addListener("place_changed", function() {
     var place = mNcAutocomplete.getPlace();
@@ -9718,7 +9729,7 @@ function mLoadDispatchSettings() {
     }
     if (Array.isArray(ds.zones) && ds.zones.length) {
       var zs = ds.zones.map(function(z){ return { name: (z.type === "primary" ? "MC Primary Response Area" : "Secondary Response Area") + (z.name ? " — " + z.name : ""), points: (z.points||[]).map(function(p){ return { lat:+p.lat, lng:+p.lng }; }) }; }).filter(function(z){ return z.points.length >= 3; });
-      if (zs.length) M_COVERAGE_ZONES = zs;
+      if (zs.length) { M_COVERAGE_ZONES = zs; try { if (mNcAutocomplete && mCoverageBounds()) mNcAutocomplete.setBounds(mCoverageBounds()); } catch (e) {} }
     }
   }).catch(function(){});
 }
