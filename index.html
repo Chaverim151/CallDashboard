@@ -2178,7 +2178,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.75</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v11.76</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2668,7 +2668,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
           </optgroup>
           <optgroup label="Service requests">
           <option value="ticketPriority">🔴 Urgent / high-priority service request</option>
-          <option value="ticketNotice">🔧 Service request notice (members without app notifications)</option>
+          <option value="ticketNotice">🔧 Service request updates (accepted, started, completed, comments)</option>
           </optgroup>
           <optgroup label="Accounts">
           <option value="passwordLink">🔑 Set / reset password link</option>
@@ -9646,11 +9646,17 @@ var TPL_SEND_CH = {
   rigOut:        { sms: "Text every unit", push: "Push notification to every unit" },
   rigBack:       { sms: "Text every unit", push: "Push notification to every unit" },
   ticketPriority:{ sms: "Text", push: "Push notification (urgent / high requests)", email: "Email the people it goes to" },
-  ticketNotice:  { push: "Push notification (other service requests)", sms: "Text members without push notifications", email: "Email the people it goes to" },
+  ticketNotice:  { push: "Push notification (other service requests)", sms: "Text members without push notifications", email: "Email updates — accepted, started, completed, comments, tags" },
   codeSubmitted: { push: "Push notification to admins", sms: "Text admins without push notifications" },
   codeApproved:  { sms: "Text the business", push: false },
   codeRejected:  { sms: "Text the business", push: false }
 };
+// Email-only rows (no wording to edit): a new request, by type — shown under "Service requests" (11.76)
+var TPL_SEND_EXTRA = [
+  { k: "ticketNewGeneral", l: "🆕 New service request (general)" },
+  { k: "ticketNewIt",      l: "🆕 New IT request" },
+  { k: "ticketNewRestock", l: "🆕 New restock request" }
+];
 var TPL_SEND_NOTE = {
   admin: "Sent or not from the \u201cNotification group\u201d box on 🚑 Unit assigned.",
   adminUpdate: "Sent or not from the \u201cNotification group\u201d box on each message — as a text, plus a push notification when that message's Push box is on.",
@@ -9684,6 +9690,12 @@ function renderTemplateSend() {
                'onchange="setTemplateSend(\'' + k + '\',\'' + ch + '\',this.checked)"><span>' + (on ? 'On' : 'Off') + '</span></label></td>';
       });
       out += '</tr>';
+    });
+    if (/service request/i.test(g.label)) TPL_SEND_EXTRA.forEach(function(x) {   // email on a new request, per type
+      var on = tplSendIsOn(x.k, "email");
+      out += '<tr><td>' + escapeHtml(x.l) + '</td><td class="tpl-st-na">—</td><td class="tpl-st-na">—</td>' +
+        '<td><label class="tpl-st-box' + (on ? '' : ' off') + '" title="Email the people who get new requests of this type"><input type="checkbox" ' + (on ? 'checked ' : '') +
+        'onchange="setTemplateSend(\'' + x.k + '\',\'email\',this.checked)"><span>' + (on ? 'On' : 'Off') + '</span></label></td><td class="tpl-st-na">—</td></tr>';
     });
     return out;
   }).join("");
@@ -17460,7 +17472,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "11.75";
+var DESKTOP_VERSION = "11.76";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
