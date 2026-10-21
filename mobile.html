@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.19"; window.M_BUILD = BUILD;
+  var BUILD = "5.20"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2229,10 +2229,19 @@ function mSetSaveWa() {
     .catch(function(e) { mToast("Couldn't save: " + e.message, true); });
 }
 function mSetTestAlert() {
-  try { mPlayTone(false); } catch (e) {}
-  mRelay("testMyAlert", {}).then(function(r) {
-    mToast(r && r.sent ? "✓ Test push notification sent — check your notifications" : "No device is set up for push notifications yet — turn push notifications on first", !(r && r.sent));
-  }).catch(function(e) { mToast(e.message, true); });
+  var go = function(again) {
+    mRelay("testMyAlert", {}).then(function(r) {
+      r = r || {};
+      if (r.sent) { mToast("✓ Test sent to " + r.sent + " device" + (r.sent === 1 ? "" : "s") + " — it should pop up in a moment"); return; }
+      if (r.dead && !again && mCurrentUser && mSWReg) {   // this phone's registration had stopped working: renew it, try once more
+        mToast("Renewing this phone's push registration…");
+        hzPushRefresh(mCurrentUser.uid, mCurrentUserUnit, mFCMMessaging, mSWReg, true).then(function() { go(true); });
+        return;
+      }
+      mToast(r.devices ? "Push registration expired — switch Push Notifications off and on again" : "No device is set up for push notifications yet — turn push notifications on first", true);
+    }).catch(function(e) { mToast(e.message, true); });
+  };
+  go(false);
 }
 function mSetMap(v) {
   try { localStorage.setItem("hzMapApp", v); } catch (e) {}
@@ -2458,6 +2467,10 @@ function hzDevStart(uid, onForced) {
 }
 function hzDevStop() { HZ_DEV_UNSUBS.forEach(function(u) { try { u(); } catch (e) {} }); HZ_DEV_UNSUBS = []; }
 document.addEventListener("visibilitychange", function() { if (!document.hidden && HZ_DEV_UID && HZ_DEV_UNSUBS.length) hzDevTouch(HZ_DEV_UID, false); });
+document.addEventListener("visibilitychange", function() {   // push registration still good? (at most every 10 minutes)
+  if (document.hidden || typeof mCurrentUser === "undefined" || !mCurrentUser || window._mAlertsDisabled || !mSWReg) return;
+  hzPushRefresh(mCurrentUser.uid, mCurrentUserUnit, mFCMMessaging, mSWReg, false);
+});
 // Signing out removes this device from the member's list (best effort — never holds up the sign-out)
 function hzDevForget(uid) {
   hzDevStop();
@@ -2469,6 +2482,24 @@ function hzDevForget(uid) {
 function hzPushOnHere(uid) {
   if (!uid) return Promise.resolve(false);
   return db.collection("pushTokens").doc(hzPushDocId(uid)).get().then(function(s) { return s.exists && !!s.data().token; }).catch(function() { return false; });
+}
+// Keep this device's push registration current (12.62 / 5.20): when the app opens or comes back on screen, ask
+// Firebase for this device's current token and save it if it changed (or its record is gone). Before, a registration
+// that had stopped working (a rotated token, or an iPhone that cancelled it) still showed "On" and nothing arrived.
+var HZ_PUSH_REFRESH_AT = 0;
+function hzPushRefresh(uid, unit, messaging, swReg, force) {
+  if (!uid || !swReg || !FCM_VAPID_KEY || hzNotifPerm() !== "granted" || hzAlertsOffHere(uid)) return Promise.resolve(false);
+  if (!force && Date.now() - HZ_PUSH_REFRESH_AT < 10 * 60 * 1000) return Promise.resolve(false);
+  HZ_PUSH_REFRESH_AT = Date.now();
+  var msg; try { msg = messaging || firebase.messaging(); } catch (e) { return Promise.resolve(false); }
+  return msg.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: swReg }).then(function(token) {
+    if (!token) return false;
+    return db.collection("pushTokens").doc(hzPushDocId(uid)).get().then(function(s) {
+      var d = s.exists ? s.data() : null;
+      if (d && d.token === token && (d.unit || "") === (unit || "")) return false;
+      return hzPushSave(uid, unit, token).then(function() { return true; });
+    });
+  }).catch(function(e) { console.warn("Push refresh:", e && e.message); return false; });
 }
 // How many devices the member gets alerts on (My Settings)
 function hzPushDeviceCount(uid) {
@@ -2650,6 +2681,7 @@ function mEnterHome() {
     hzPushOnHere(_puid).then(function(onHere) {
       window._mAlertsDisabled = !onHere;
       if (!onHere && ("Notification" in window) && hzNotifPerm() === "granted" && !hzAlertsOffHere(_puid)) mRegisterFCMToken(true);
+      else if (onHere && ("serviceWorker" in navigator)) navigator.serviceWorker.ready.then(function(reg) { hzPushRefresh(_puid, mCurrentUserUnit, mFCMMessaging, reg, true); });
       mUpdateAlertBtn();
     });
   } else {
@@ -4219,6 +4251,7 @@ function getDistanceMeters(lat1, lng1, lat2, lng2) {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/CallDashboard/sw.js").then(function(reg) {
     mSWReg = reg;
+    try { reg.update().catch(function() {}); } catch (e) {}   // pick up a new sw.js without waiting
     // Initialize FCM messaging with this SW registration
     try {
       mFCMMessaging = firebase.messaging();
@@ -7282,7 +7315,8 @@ function mPushCallbackSMS() {
   var targetUnits = onSceneUnits.length ? onSceneUnits : (call.assignedUnits || []);
   if (!targetUnits.length) { mToast("No units assigned", true); return; }
   var addr = (call.address||"").split(",")[0];
-  if (!hzSendOn("callback", "sms")) { mToast("Callback texts are turned off (Admin ▸ Message Templates)", true); return; }
+  hzPushTo(targetUnits, "callback", "📞 Callback — " + hzPushStreet(call), "Callback: " + (call.callbackNumber || ""), call.id);   // its own 🔔 box (12.62)
+  if (!hzSendOn("callback", "sms")) { mToast(hzSendOn("callback", "push") ? "🔔 Callback # pushed to " + targetUnits.join(", ") + " (texts are off)" : "Callback texts and pushes are turned off (Admin ▸ Message Templates)", !hzSendOn("callback", "push")); return; }
   var msg = mRenderTemplate(mTemplateFor("callback"), Object.assign(mCallVars(call), { address: mSmsAddress(call), callback: call.callbackNumber }));
   db.collection("users").get().then(function(snap) {
     var phones = [];
@@ -7292,7 +7326,6 @@ function mPushCallbackSMS() {
     });
     if (!phones.length) { mToast("No phone numbers found", true); return; }
     mSendClickSendSMS(phones, msg);
-    hzPushTo(targetUnits, "callback", "📞 Callback — " + hzPushStreet(call), "Callback: " + (call.callbackNumber || ""), call.id);
     mToast("📱 Callback # pushed to " + targetUnits.join(", "));
   }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
@@ -10112,12 +10145,14 @@ function mRemoveCrew(crewIdx) {
 }
 // A unit sent to collect the rig gets the base address and directions to it.
 function mTextRigDirections(unitId, call) {
-  if (!hzSendOn("rigResponse", "sms")) return;
+  var smsOn = hzSendOn("rigResponse", "sms");
+  if (!smsOn && !hzSendOn("rigResponse", "push")) return;   // the push follows its own box (12.62)
   mSmsEnqueue(function() {
     return mEnsureBaseCoords().then(function() {
       var body = mRenderTemplate(mTemplateFor("rigResponse"), mCallVars(call || {}));
       if (!body.trim()) return;
       hzPushTo([unitId], "rigResponse", "🏠 Respond to the rig", body.split("\n")[0], (call || {}).id);
+      if (!smsOn) return;
       return mPhonesForUnits([unitId]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); });
     });
   });
