@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.09"; window.M_BUILD = BUILD;
+  var BUILD = "5.11"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1540,6 +1540,13 @@ function hzDispatcherLine(call) {
   var e = function(x) { return String(x || "").replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var n = hzDispatcherName(u);
   return '<div class="hz-disp-line" style="font-size:0.74rem;color:var(--gray);margin-top:4px">\ud83c\udfa7 Dispatcher: <span style="white-space:nowrap"><b style="color:var(--white)">' + e(u) + '</b>' + (n ? ' \u00b7 ' + e(n) : '') + '</span></div>';
+}
+/* Night shifts run past midnight: until 6 AM (shift 23:00–06:00) it's still the PREVIOUS evening's shift (Tuesday night at 1:51 AM Wednesday) (12.47 / 5.10) */
+var HZ_NIGHT_ENDS_HOUR = 6;   // night shift is 23:00–06:00
+function hzTonightName(now) {
+  var d = now ? new Date(now) : new Date();
+  if (d.getHours() < HZ_NIGHT_ENDS_HOUR) d.setDate(d.getDate() - 1);
+  return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getDay()];
 }
 function hzLindenInk() { return "#5fe0d2"; }   /* same light purple in both looks; the Basic look darkens the TEXT only (CSS below), like the other zone colours */
 function hzZoneBg(z, a) { var c = z === "primary" ? "76,175,128" : z === "secondary" ? "240,165,0" : z === "transfer" ? "32,190,175" : "224,85,85"; return "rgba(" + c + "," + (a || 0.15) + ")"; }
@@ -3170,7 +3177,7 @@ function mLoadShifts() {
     var shifts = (snap.exists && snap.data().shifts) || [];
     if (!shifts.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No shifts on file.</div>'; return; }
     // Same shape desktop writes: [{ day: "Sunday", units: ["MC-17","MC-18", …] }, …] — keep desktop's order (no sorting)
-    var todayName = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()];
+    var todayName = hzTonightName();   // after midnight it is still last night's shift
     el.innerHTML = shifts.map(function(s) {
       var day = s.day || s.date || "";
       var isToday = day && todayName && day.toLowerCase().indexOf(todayName.toLowerCase()) === 0;
