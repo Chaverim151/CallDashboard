@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.15"; window.M_BUILD = BUILD;
+  var BUILD = "5.16"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1571,6 +1571,14 @@ function hzClDispText(l) {
   var trs = (d.transports || []).filter(function(t) { return t && t.hospital; });
   if (d.type === "transport" && trs.length > 1) return "TRANSPORT → " + trs.map(function(t) { return (t.rig ? t.rig + " → " : "") + t.hospital; }).join("; ");
   return d.type ? d.type.toUpperCase() + (d.hospital ? " → " + d.hospital : "") + (d.type === "rma" && d.rmaBy ? " (approved by " + d.rmaBy + ")" : "") : "—";
+}
+/* Call Logs dates the app filled in itself roll forward with the clock: the app stays open for days, and a "To" date
+   from the day the page was first opened was hiding every newer call (12.57 / 5.16). Dates the user picked are left alone. */
+function hzClFreshDates(fromId, toId) {
+  var f = document.getElementById(fromId), t = document.getElementById(toId); if (!f || !t) return;
+  var today = new Date().toLocaleDateString("en-CA"), d = new Date(); d.setDate(d.getDate() - 30); var monthAgo = d.toLocaleDateString("en-CA");
+  if (!t.value || t.value === t.dataset.auto) { t.value = today; t.dataset.auto = today; }
+  if (!f.value || f.value === f.dataset.auto) { f.value = monthAgo; f.dataset.auto = monthAgo; }
 }
 function hzLindenInk() { return "#5fe0d2"; }   /* same light purple in both looks; the Basic look darkens the TEXT only (CSS below), like the other zone colours */
 function hzZoneBg(z, a) { var c = z === "primary" ? "76,175,128" : z === "secondary" ? "240,165,0" : z === "transfer" ? "32,190,175" : "224,85,85"; return "rgba(" + c + "," + (a || 0.15) + ")"; }
@@ -5627,9 +5635,7 @@ function mLoadStorage() {
 var mAllCallLogs = [];
 function mLoadCallLogs() {
   // From / To always filled in (last 30 days) so the boxes never show "mm/dd/yyyy"
-  (function() { var f = document.getElementById("m-cl-from"), t = document.getElementById("m-cl-to"); if (!f || !t) return;
-    if (!t.value) t.value = new Date().toLocaleDateString("en-CA");
-    if (!f.value) { var d = new Date(); d.setDate(d.getDate() - 30); f.value = d.toLocaleDateString("en-CA"); } })();
+  hzClFreshDates("m-cl-from", "m-cl-to");   // filled-in dates follow today (12.57 / 5.16)
   var el = document.getElementById("m-cl-list");
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading...</div>';
   var from = document.getElementById("m-cl-from").value;
@@ -5828,6 +5834,7 @@ function mClearCLFilters() {
   var from = new Date(); from.setDate(today.getDate() - 30);
   document.getElementById("m-cl-from").value = from.toLocaleDateString("en-CA");
   document.getElementById("m-cl-to").value = today.toLocaleDateString("en-CA");
+  document.getElementById("m-cl-from").dataset.auto = document.getElementById("m-cl-from").value; document.getElementById("m-cl-to").dataset.auto = document.getElementById("m-cl-to").value;
   document.getElementById("m-cl-zone").value = "";
   document.getElementById("m-cl-disp").value = "";
   document.getElementById("m-cl-nature").value = "";

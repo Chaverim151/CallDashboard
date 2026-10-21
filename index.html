@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.56">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.57">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2361,7 +2361,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.56</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.57</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3763,6 +3763,14 @@ function hzClDispText(l) {
   var trs = (d.transports || []).filter(function(t) { return t && t.hospital; });
   if (d.type === "transport" && trs.length > 1) return "TRANSPORT → " + trs.map(function(t) { return (t.rig ? t.rig + " → " : "") + t.hospital; }).join("; ");
   return d.type ? d.type.toUpperCase() + (d.hospital ? " → " + d.hospital : "") + (d.type === "rma" && d.rmaBy ? " (approved by " + d.rmaBy + ")" : "") : "—";
+}
+/* Call Logs dates the app filled in itself roll forward with the clock: the app stays open for days, and a "To" date
+   from the day the page was first opened was hiding every newer call (12.57 / 5.16). Dates the user picked are left alone. */
+function hzClFreshDates(fromId, toId) {
+  var f = document.getElementById(fromId), t = document.getElementById(toId); if (!f || !t) return;
+  var today = new Date().toLocaleDateString("en-CA"), d = new Date(); d.setDate(d.getDate() - 30); var monthAgo = d.toLocaleDateString("en-CA");
+  if (!t.value || t.value === t.dataset.auto) { t.value = today; t.dataset.auto = today; }
+  if (!f.value || f.value === f.dataset.auto) { f.value = monthAgo; f.dataset.auto = monthAgo; }
 }
 function hzLindenInk() { return "#5fe0d2"; }   /* same light purple in both looks; the Basic look darkens the TEXT only (CSS below), like the other zone colours */
 function hzZoneBg(z, a) { var c = z === "primary" ? "76,175,128" : z === "secondary" ? "240,165,0" : z === "transfer" ? "32,190,175" : "224,85,85"; return "rgba(" + c + "," + (a || 0.15) + ")"; }
@@ -11523,6 +11531,8 @@ function initCallLogs() {
   var from = new Date(); from.setDate(today.getDate() - 30);
   document.getElementById("cl-from").value = from.toLocaleDateString("en-CA");
   document.getElementById("cl-to").value = today.toLocaleDateString("en-CA");
+  document.getElementById("cl-from").dataset.auto = document.getElementById("cl-from").value;
+  document.getElementById("cl-to").dataset.auto = document.getElementById("cl-to").value;
 
   // Show export button for captains/admins
   var canExport = currentRole === "admin";
@@ -11542,6 +11552,7 @@ function loadCallLogs() {
   if (!listEl) return;
   listEl.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0">Loading...</div>';
 
+  hzClFreshDates("cl-from", "cl-to");   // filled-in dates follow today (12.57)
   var from = document.getElementById("cl-from").value;
   var to = document.getElementById("cl-to").value;
   var zone = document.getElementById("cl-zone").value;
@@ -11587,6 +11598,7 @@ function clearCLFilters() {
   var from = new Date(); from.setDate(today.getDate() - 30);
   document.getElementById("cl-from").value = from.toLocaleDateString("en-CA");
   document.getElementById("cl-to").value = today.toLocaleDateString("en-CA");
+  document.getElementById("cl-from").dataset.auto = document.getElementById("cl-from").value; document.getElementById("cl-to").dataset.auto = document.getElementById("cl-to").value;
   document.getElementById("cl-zone").value = "";
   document.getElementById("cl-disp").value = "";
   document.getElementById("cl-unit").value = "";
@@ -18406,7 +18418,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.56";
+var DESKTOP_VERSION = "12.57";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
