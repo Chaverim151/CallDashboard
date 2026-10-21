@@ -233,7 +233,54 @@ function send(pos, done) {
   }, { merge: true }).then(function() { lastSentAt = Date.now(); });
 }
 
+// ── Location permission (blocked → "Allow location"; once allowed → back to "Share my location") ──
+var needAllow = false;
+var IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+var DEFAULT_MSG = msg.innerHTML;
+// A site that was BLOCKED can't bring the browser's popup back by itself — these are the steps to unblock it
+function unblockSteps() {
+  return IS_IOS
+    ? '<div style="text-align:left;margin-top:10px;font-size:0.9rem;line-height:1.5"><b>Easiest:</b> reload this page, tap <b>Share my location</b> and choose <b>Allow</b> — iPhone asks again after a reload.<br><b>Or:</b> tap <b>aA</b> in the address bar → <b>Website Settings</b> → <b>Location</b> → <b>Allow</b>. If it\'s already on, open iPhone <b>Settings → Privacy &amp; Security → Location Services</b> and turn it on for Safari.</div>'
+    : '<div style="text-align:left;margin-top:10px;font-size:0.9rem;line-height:1.5"><b>To allow it:</b> tap the <b>icon left of the web address</b> → <b>Permissions</b> → <b>Location</b> → <b>Allow</b>. Then come back here.</div>';
+}
+function showAllowState(hardBlocked) {
+  needAllow = true; sentAny = false;
+  head.textContent = "Allow location";
+  msg.innerHTML = 'Location is turned off for this page. Tap <b>Allow location</b> and choose <b>Allow</b>.' + (hardBlocked ? unblockSteps() : '') +
+    '<div style="margin-top:10px">Or just tell the dispatcher your address.</div>';
+  btn.disabled = false; btn.textContent = "📍 Allow location";
+}
+function showReady() {   // permission is allowed — back to the normal button
+  needAllow = false;
+  head.textContent = "Share your location";
+  msg.innerHTML = 'Location is allowed. Tap <b>Share my location</b> to send it to the dispatcher.';
+  btn.disabled = false; btn.textContent = "📍 Share my location";
+}
+function permState() {
+  try { if (navigator.permissions && navigator.permissions.query) return navigator.permissions.query({ name: "geolocation" }).then(function(p) { return p; }); } catch (e) {}
+  return Promise.resolve(null);
+}
+// Watch for the permission changing (the caller allowed it in the popup, or in the browser settings)
+permState().then(function(p) {
+  if (p && "onchange" in p) p.onchange = function() { if (p.state === "granted" && needAllow) showReady(); };
+}).catch(function() {});
+document.addEventListener("visibilitychange", function() {   // back from the browser / phone settings
+  if (document.visibilityState !== "visible" || !needAllow) return;
+  permState().then(function(p) { if (p && p.state === "granted") showReady(); }).catch(function() {});
+});
+// "Allow location": ask the browser — this shows its popup whenever the browser still can
+function requestAllow() {
+  btn.disabled = true; btn.textContent = "Waiting for permission…";
+  navigator.geolocation.getCurrentPosition(function() { showReady(); }, function(err) {
+    if (err.code === 1) {
+      // Still blocked: the browser didn't (or couldn't) ask. Show how to unblock it.
+      permState().then(function(p) { showAllowState(!p || p.state === "denied"); }).catch(function() { showAllowState(true); });
+    } else showReady();   // permission is fine; the fix itself just didn't come — sharing will keep trying
+  }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
+}
+
 btn.addEventListener("click", function() {
+  if (needAllow) { requestAllow(); return; }
   if (!navigator.geolocation) {
     head.textContent = "Not supported";
     msg.innerHTML = 'This phone can\'t share its location. Please tell the dispatcher your address.';
@@ -264,10 +311,13 @@ btn.addEventListener("click", function() {
     });
   }, function(err) {
     if (sentAny) return;
-    head.textContent = err.code === 1 ? "Permission needed" : "Couldn't get a location";
-    msg.innerHTML = err.code === 1
-      ? 'Location is blocked for this browser. Please tell the dispatcher your address.'
-      : 'Please tell the dispatcher your address.';
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (err.code === 1) {   // no permission → "Allow location"
+      permState().then(function(p) { showAllowState(!!p && p.state === "denied"); }).catch(function() { showAllowState(false); });
+      return;
+    }
+    head.textContent = "Couldn't get a location";
+    msg.innerHTML = 'Make sure <b>Location</b> is turned on in your phone\'s settings, then try again. Or just tell the dispatcher your address.';
     btn.disabled = false; btn.textContent = "📍 Try again";
   }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
 
