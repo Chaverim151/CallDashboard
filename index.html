@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.50">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.51">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -198,6 +198,10 @@ html[data-theme="basic"] .hz-reg-call{background:#eaf7ef !important;border-color
 .panel{background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:22px 24px;animation:fadeUp 0.4s ease both;}
 .panel h3{font-family:'Oswald',sans-serif;font-size:0.88rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--card-border);}
 .s-row{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.86rem;}
+/* Night Shifts on desktop = the phone's cards (12.51) */
+.dk-shift-card{background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:12px;padding:14px;margin-bottom:10px;}
+.dk-shift-name{font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;color:var(--white);margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;}
+html[data-theme="basic"] .dk-shift-card{background:#f8f9fa !important}
 .s-row:last-child{border-bottom:none;}
 .s-day{font-family:'Oswald',sans-serif;font-weight:600;color:#7ab8f5;min-width:110px;font-size:0.86rem;}
 .s-units{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
@@ -1798,6 +1802,7 @@ html[data-theme="basic"] .big-btn:hover{box-shadow:0 1px 3px rgba(0,0,0,0.12) !i
 html[data-theme="basic"] .search-wrap input{background:#f8f9fa !important}
 html[data-theme="basic"] .card:hover{background:#f3f4f6 !important;box-shadow:0 1px 3px rgba(0,0,0,0.12) !important}
 html[data-theme="basic"] .s-row{border-bottom:1px solid #d8dde3 !important}
+html[data-theme="basic"] .dk-shift-card{background:#f8f9fa !important}
 html[data-theme="basic"] .s-day{color:#0b5cad !important}
 html[data-theme="basic"] .ds-grid input,html[data-theme="basic"] .ds-grid select{background:#f3f4f6 !important}
 html[data-theme="basic"] .ds-grid textarea{background:#f3f4f6 !important}
@@ -2265,7 +2270,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
   <div class="inner-topbar"><button class="back-btn" onclick="goHome()">← Home</button><div class="page-title">🌙 Night Shifts</div></div>
   <div class="inner-scroll"><div class="inner-content">
     <div id="admin-bar-shifts"></div>
-    <div class="panel" style="max-width:520px"><h3>Night Shift Unit Schedule</h3><div id="shifts-list"></div></div>
+    <div style="max-width:520px"><div id="shifts-list"></div></div>
   </div></div>
 </div>
 
@@ -2356,7 +2361,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.50</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.51</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7395,29 +7400,28 @@ function mkCard(item, i, sec) {
 window.renderCards = function(sec, items) {
   document.getElementById("g-" + sec).innerHTML = (items || []).map(function(it, i) { return mkCard(it, i, sec); }).join("");
 };
-window.renderShifts = function() {
+window.renderShifts = function() {   // same cards as the phone's Night Shifts page (12.51); edited only in Admin ▸ Night Shifts
   var el = document.getElementById("shifts-list"); if (!el) return;
-  var editing = false;   // shifts are edited only in Admin ▸ Night Shifts
-  var html = "";
-  window.LIVE_SHIFTS.forEach(function(s, si) {
-    var _tn = hzTonightName(), _isT = s.day && String(s.day).toLowerCase().indexOf(_tn.toLowerCase()) === 0;
-    html += '<div class="s-row" style="flex-direction:column;align-items:flex-start;gap:6px' + (_isT ? ';background:rgba(var(--gold-rgb),0.08);margin:0 -12px;padding:8px 12px;border-radius:6px' : '') + '"><span class="s-day">' + s.day + (_isT ? ' <span style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);border:1px solid rgba(var(--gold-rgb),0.5);border-radius:5px;padding:2px 7px;margin-left:6px;font-family:Oswald,sans-serif;font-weight:700">Currently on call</span>' : '') + '</span><span class="s-units">';
-    s.units.forEach(function(u, ui) {
-      if (editing) {
-        html += '<span style="display:inline-flex;align-items:center;gap:3px"><input class="shift-unit-inp" data-si="' + si + '" data-ui="' + ui + '" value="' + u + '"><button class="rm-unit-btn" onclick="window.removeUnit(' + si + ',' + ui + ')">✕</button></span>';
-      } else {
-        html += '<span class="unit-bubble">' + u + '</span>';
-      }
-    });
-    if (editing) {
-      html += '<span style="display:inline-flex;align-items:center;gap:4px"><input class="shift-add-inp" placeholder="+ MC-##" id="add-' + si + '" style="margin-left:4px" onkeydown="if(event.key===\'Enter\'){window.addUnit(' + si + ');}"><button class="card-save-btn" style="padding:5px 10px;font-size:0.72rem" onclick="window.addUnit(' + si + ')">+</button></span>';
-    }
-    html += '</span>';
-    if (editing) html += '<button class="card-save-btn" style="margin-top:6px" onclick="window.collectAndSaveShifts()">💾 Save All</button>';
-    html += '</div>';
-  });
-  el.innerHTML = html;
+  var shifts = window.LIVE_SHIFTS || [];
+  if (!shifts.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No shifts on file.</div>'; return; }
+  var tonight = hzTonightName();
+  el.innerHTML = shifts.map(function(s) {
+    var day = s.day || s.date || "";
+    var isNow = day && day.toLowerCase().indexOf(tonight.toLowerCase()) === 0;
+    var units = (s.units || []).map(function(u) { return (u && typeof u === "object") ? (u.unit || u.name || "") : String(u || ""); }).filter(Boolean);
+    return '<div class="dk-shift-card"' + (isNow ? ' style="border-color:rgba(var(--gold-rgb),0.6)"' : '') + '>' +
+      '<div class="dk-shift-name">' + escapeHtml(day) +
+        (isNow ? '<span style="font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);border:1px solid rgba(var(--gold-rgb),0.5);border-radius:5px;padding:2px 7px;font-family:Oswald,sans-serif;font-weight:700">Currently on call</span>' : '') +
+      '</div>' +
+      (units.length
+        ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' + units.map(function(u) {
+            return '<span style="font-family:Oswald,sans-serif;font-size:0.78rem;font-weight:700;color:#7ab8f5;background:rgba(122,184,245,0.12);border:1px solid rgba(122,184,245,0.35);border-radius:6px;padding:4px 10px">' + escapeHtml(u) + '</span>';
+          }).join("") + '</div>'
+        : '<div style="font-size:0.72rem;color:var(--gray);margin-top:6px">No units assigned</div>') +
+    '</div>';
+  }).join("");
 };
+
 window.collectAndSaveShifts = function() {
   document.querySelectorAll(".shift-unit-inp").forEach(function(inp) {
     var si = parseInt(inp.dataset.si), ui = parseInt(inp.dataset.ui);
@@ -18367,7 +18371,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.50";
+var DESKTOP_VERSION = "12.51";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
