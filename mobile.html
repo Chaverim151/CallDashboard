@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.20"; window.M_BUILD = BUILD;
+  var BUILD = "5.21"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2019,7 +2019,59 @@ function mInitTileReorder() {
   }, true);
 }
 document.addEventListener("DOMContentLoaded", function(){ setTimeout(mInitTileReorder, 300); });
+// ── System Back key (5.21) ──────────────────────────────────────────────────────────────────────────
+// Screens inside the app used to change without telling the phone, so Android's Back key (or a back swipe)
+// closed the app from any of them — only tiles that open a separate page (Protocol Search, User Guide, ePCR…)
+// went back properly. Every screen is now recorded: Back goes to the previous screen, closes an open pop-up
+// first, and leaves the app only from the home screen. The on-screen ← Back buttons stay in step.
+var mNav = { stack: [], restoring: false, skipPop: 0 };
+var M_NAV_SKIP = { boot: 1, login: 1, "force-pw": 1 };
+function mNavKey(page) { return page === "dispatch" && mDispViewCur && mDispViewCur !== "dash" ? "dispatch|" + mDispViewCur : page; }
+function mNavState() { return { hzPg: mNav.stack[mNav.stack.length - 1], hzI: mNav.stack.length - 1 }; }
+function mNavRecord(key) {
+  var st = mNav.stack, cur = st[st.length - 1];
+  if (cur === key) return;
+  if (!st.length || key === "home") {                       // home: unwind to the first entry
+    var n = st.length - 1;
+    mNav.stack = ["home"];
+    if (n > 0) { mNav.skipPop++; history.go(-n); } else history.replaceState(mNavState(), "");
+    if (key !== "home") { mNav.stack.push(key); history.pushState(mNavState(), ""); }   // (only when nothing was recorded yet)
+    return;
+  }
+  if (st.length >= 2 && st[st.length - 2] === key) { st.pop(); mNav.skipPop++; history.back(); return; }   // an on-screen ← Back
+  if (cur === "dispatch-newcall" && key === "dispatch-detail") { st[st.length - 1] = key; history.replaceState(mNavState(), ""); return; }   // a posted call replaces its form
+  st.push(key); history.pushState(mNavState(), "");
+}
+function mNavCloseOverlay() {
+  if (document.querySelector(".m-disp-sheet.show")) { mCloseAllSheets(); return true; }
+  var om = document.getElementById("m-own-modal") || document.getElementById("m-ec-modal"); if (om) { om.remove(); return true; }
+  var dm = document.getElementById("m-detail-modal"); if (dm && dm.classList.contains("open")) { mCloseDetail(); return true; }
+  var db2 = document.getElementById("m-disp-drawer-backdrop"); if (db2 && db2.style.display === "block") { mCloseDispDrawer(); return true; }
+  return false;
+}
+function mNavShow(key) {
+  mNav.restoring = true;
+  try {
+    var leavingCall = document.getElementById("m-pg-dispatch-detail") && document.getElementById("m-pg-dispatch-detail").classList.contains("active") && key !== "dispatch-detail";
+    if (leavingCall) mCloseDispatchDetail();                  // stop listening to the call, as the ← Back button does
+    if (key === "dispatch-detail" && !mDispSelectedCallId) key = "dispatch";
+    if (key.indexOf("dispatch|") === 0 || key === "dispatch") { mGoTo("dispatch"); mDispView(key === "dispatch" ? "dash" : key.split("|")[1]); }
+    else mGoTo(key);
+  } finally { mNav.restoring = false; }
+}
+window.addEventListener("popstate", function(e) {
+  if (mNav.skipPop > 0) { mNav.skipPop--; return; }
+  if (!mNav.stack.length) return;                             // signed out
+  if (mNavCloseOverlay()) { history.pushState(mNavState(), ""); return; }   // Back closes the pop-up and stays here
+  var st = e.state || {}, i = typeof st.hzI === "number" ? st.hzI : 0;
+  mNav.stack = mNav.stack.slice(0, i + 1);
+  if (!mNav.stack.length) mNav.stack = ["home"];
+  if (st.hzPg) mNav.stack[mNav.stack.length - 1] = st.hzPg;
+  mNavShow(mNav.stack[mNav.stack.length - 1]);
+});
 function mGoTo(page) {
+  if (M_NAV_SKIP[page]) mNav.stack = [];
+  else if (!mNav.restoring) mNavRecord(mNavKey(page));
   if (page === "service-new" && typeof mBindTicketFormMentions === "function") setTimeout(mBindTicketFormMentions, 60);
   // Stop QR scanner if navigating away
   if (page !== "scanner" && mQRScanner) {
@@ -5333,6 +5385,7 @@ var mDispViewCur = (document.getElementById("desk-console-left") ? "calls" : "da
 var rigHistOpen = {}, rigHistHtml = {};
 function mDispView(v) {
   mDispViewCur = v;
+  if (!mNav.restoring && document.getElementById("m-pg-dispatch") && document.getElementById("m-pg-dispatch").classList.contains("active")) mNavRecord(mNavKey("dispatch"));
   var desk = !!document.getElementById("desk-console-left");
   var show = function(id, on) { var e = document.getElementById(id); if (e) e.style.display = on ? "" : "none"; };
   show("m-disp-dash", v === "dash"); show("m-disp-calls-view", v === "calls"); show("m-disp-rigs-view", v === "rigs");
