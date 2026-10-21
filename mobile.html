@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.16"; window.M_BUILD = BUILD;
+  var BUILD = "5.17"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1156,6 +1156,13 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
           <span class="m-tile-sub">Manage active calls</span>
         </div>
       </button>
+      <button class="m-tile" data-sec="newcall" id="m-newcall-tile" onclick="mOpenDispatch();mOpenNewCallForm()" style="display:none">
+        <div class="m-tile-inner">
+          <span class="m-tile-icon">🚨</span>
+          <span class="m-tile-label">New Call</span>
+          <span class="m-tile-sub">Open the New Call form</span>
+        </div>
+      </button>
       <a class="m-tile" data-sec="protocols" id="m-protocolai-tile" href="protocols.html" onclick="this.href='protocols.html?v=' + (window.M_BUILD||'') + '&t=' + Date.now()" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">📘</span>
@@ -2072,6 +2079,22 @@ function mSetPrefs(key, val) {
   var up = {}; up["prefs." + key] = val;
   return db.collection("users").doc(mCurrentUser.uid).update(up);
 }
+// Optional New Call tile (12.58 / 5.17): off by default; each dispatcher turns it on in My Settings ▸ Home screen
+function mCanDispatchNow() { var r = (mCurrentUserRoles || []).map(function(x) { return String(x).toLowerCase(); }); return mCurrentRole === "admin" || r.indexOf("dispatcher") !== -1; }
+function mNewCallTileOn() { return (mPrefs.optTiles || []).indexOf("newcall") !== -1; }
+function mApplyNewCallTile() { var t = document.getElementById("m-newcall-tile"); if (t) t.style.display = (mCanDispatchNow() && mNewCallTileOn()) ? "" : "none"; }
+function mToggleNewCallTile() {
+  if (!mCurrentUser || !mCanDispatchNow()) return;
+  var on = !mNewCallTileOn(), list = (mPrefs.optTiles || []).filter(function(k) { return k !== "newcall"; });
+  if (on) list.push("newcall");
+  var saves = [mSetPrefs("optTiles", list)];
+  var order = mPrefs.tilesPhone;   // a saved order that predates the tile: put it right after Dispatch Console
+  if (on && Array.isArray(order) && order.length && order.indexOf("newcall") === -1) {
+    order = order.slice(); var at = order.indexOf("maps"); order.splice(at === -1 ? order.length : at + 1, 0, "newcall"); saves.push(mSaveTilePrefs(order));
+  }
+  mApplyNewCallTile(); mApplyTilePrefs(); mSetFlow.tiles = null; mSettingsRender();
+  Promise.all(saves).then(function() { mToast(on ? "✓ New Call tile added to your home screen" : "New Call tile removed"); }).catch(function(e) { mToast("Couldn't save: " + e.message, true); });
+}
 function mSetCard(title, body) { return '<div class="m-set-card"><div class="m-set-h">' + title + '</div>' + body + '</div>'; }
 function mVisibleTiles() {
   var g = document.getElementById("m-home-grid"); if (!g) return [];
@@ -2127,6 +2150,7 @@ function mSettingsRender() {
       line('🔒 Password', pwOpen ? '' : '<button class="m-set-mini" onclick="mSetFlow.pw=\'pw\';mSettingsRender()">Change</button>') + pwPanel) +
     // Home screen order: the mini grid shows the order; the numbered dropdowns open only when changing it
     mSetCard('🔢 Home screen order <span class="m-set-sub">' + (mSetFlow.order ? '' : '<button class="m-set-mini" onclick="mSetFlow.order=true;mSettingsRender()">✎ Change</button>') + '</span>',
+      (mCanDispatchNow() ? line('🚨 New Call tile', sw(mNewCallTileOn(), "mToggleNewCallTile()", "New Call tile"), 'Opens the New Call form') : '') +
       mSetPreview(tiles) +
       (!mSetFlow.order ? '' :
         '<div class="m-set-slots">' + tiles.map(function(t, i) { return '<div class="m-set-slot"><span class="m-set-num">' + (i + 1) + '</span><select class="m-disp-input" onchange="mSetSlot(' + i + ',this.value)">' + opts(t.k) + '</select></div>'; }).join("") + '</div>' +
@@ -2651,6 +2675,7 @@ function mEnterHome() {
   var homeTestRow = document.getElementById("m-home-test-row"); if (homeTestRow) homeTestRow.style.display = "none";   // Test Mode lives in My Settings now
   var callLogsTile = document.getElementById("m-calllogs-tile");
   if (callLogsTile) callLogsTile.style.display = canDispatch ? "" : "none";
+  mApplyNewCallTile();
   mApplyTilePrefs();
   // Same rules as the computer: eScheduler and Hospital Diverts are dispatcher tools (and admins');
   // a dispatcher-only account (no responder / captain / chief role) doesn't get the field tiles.
