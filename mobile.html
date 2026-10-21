@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.12"; window.M_BUILD = BUILD;
+  var BUILD = "5.13"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1548,6 +1548,13 @@ function hzTonightName(now) {
   if (d.getHours() < HZ_NIGHT_ENDS_HOUR) d.setDate(d.getDate() - 1);
   return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getDay()];
 }
+/* Test Mode is for members with a role beyond plain Responder (admin, dispatcher, driver, logistics…). Titles (Captain, Chief…)
+   are names only, so a responder with just a title doesn't get it either (12.54 / 5.13) */
+function hzCanTestMode(role, roles) {
+  if (String(role || "").toLowerCase() === "admin") return true;
+  var t = (typeof hzTitleList === "function" ? hzTitleList() : []) || [];
+  return (roles || []).some(function(r) { r = String(r || "").toLowerCase(); return r && r !== "responder" && t.indexOf(r) === -1; });
+}
 function hzLindenInk() { return "#5fe0d2"; }   /* same light purple in both looks; the Basic look darkens the TEXT only (CSS below), like the other zone colours */
 function hzZoneBg(z, a) { var c = z === "primary" ? "76,175,128" : z === "secondary" ? "240,165,0" : z === "transfer" ? "32,190,175" : "224,85,85"; return "rgba(" + c + "," + (a || 0.15) + ")"; }
 function hzZonePrefix(t) { return t === "primary" ? "MC Primary Response Area" : t === "transfer" ? "Linden Transfer Area" : "Secondary Response Area"; }
@@ -2050,7 +2057,7 @@ function mSettingsRender() {
   var el = document.getElementById("m-set-content"); if (!el) return;
   var me = mMe || {}, roles = (mCurrentUserRoles || []).concat(mCurrentRole === "admin" ? ["admin"] : []);
   var on = hzNotifPerm() === "granted" && !window._mAlertsDisabled;
-  var canTest = mCurrentRole === "admin" || (mCurrentUserRoles || []).some(function(r) { return /^dispatcher$/i.test(r); });
+  var canTest = hzCanTestMode(mCurrentRole, mCurrentUserRoles);
   var tiles = mSetFlow.tiles || mVisibleTiles(); mSetFlow.tiles = tiles;
   var opts = function(sel) { return tiles.map(function(t) { return '<option value="' + t.k + '"' + (t.k === sel ? " selected" : "") + '>' + mEscHtml(t.label) + '</option>'; }).join(""); };
   var map = mPrefs.mapApp || (function(){ try { return localStorage.getItem("hzMapApp") || "google"; } catch (e) { return "google"; } })();
@@ -2530,7 +2537,7 @@ function mLoadMyProfile(user, attempt) {
       mLoadSmsTemplates();
       mLoadUnitDirectory();
       mLoadDispatchSettings();
-      mApplyTestModeState(d.sysTestingMode === true); // personal setting, default OFF
+      mApplyTestModeState(d.sysTestingMode === true && hzCanTestMode(d.role, mCurrentUserRoles)); // personal setting, default OFF; plain responders never
       mMaybeOfferPasskey();
       hzDevLimitCheck(user.uid, mCurrentRole === "admin" || user.email === SUPER_ADMIN, d.maxDevices).then(function(lim) {
         if (!lim.ok) {
@@ -5567,6 +5574,7 @@ function mApplyTestModeState(on) {
 function mToggleTestMode() {
   var next = !MSysTestingMode;
   if (!mCurrentUser) return;
+  if (next && !hzCanTestMode(mCurrentRole, mCurrentUserRoles)) { mToast("Test Mode is for dispatchers, drivers and other roles — not available for responders", true); return; }
   var label = document.getElementById("m-test-toggle-label"); if (label) label.textContent = "🧪 " + (next ? "Turning on…" : "Turning off…");
   var sub0 = document.getElementById("m-home-test-sub"); if (sub0) sub0.textContent = next ? "Turning on…" : "Turning off…";
   db.collection("users").doc(mCurrentUser.uid).set({ sysTestingMode: next }, { merge: true }).then(function() {
