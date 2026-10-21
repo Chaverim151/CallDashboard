@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.23"; window.M_BUILD = BUILD;
+  var BUILD = "5.24"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -419,6 +419,7 @@ body.m-upd-on #m-test-global-banner{padding-top:5px !important}
 .m-zone-pill.outside{background:rgba(224,85,85,0.15);border-color:rgba(224,85,85,0.4);color:#ff9090;}
 .m-zone-pill.transfer{background:rgba(32,190,175,0.15);border-color:rgba(32,190,175,0.45);color:#5fe0d2;}
 html[data-theme="basic"] [style*="color:#5fe0d2"]:not([style*="background-color:#5fe0d2"]),html[data-theme="basic"] [style*="color: #5fe0d2"]:not([style*="background-color: #5fe0d2"]),html[data-theme="basic"] [style*="color: rgb(95, 224, 210)"]:not([style*="background-color: rgb(95, 224, 210)"]){color:#0f7a70 !important}
+html[data-theme="basic"] [style*="color:#ffd47a"]:not([style*="background-color:#ffd47a"]){color:#8a5a00 !important}   /* 💡 feature request note (12.65 / 5.24) */
 html[data-theme="basic"] .m-zone-pill.transfer{color:#0f7a70 !important}
 .m-call-addr{font-family:'Oswald',sans-serif;font-size:1rem;font-weight:700;
   color:var(--white);line-height:1.3;margin:6px 0 2px;}
@@ -1370,10 +1371,11 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
   </div>
   <div class="m-scroll">
     <div class="m-disp-label">Request Type</div>
-    <div style="display:flex;gap:6px;margin-bottom:12px" id="m-tk-type-chips">
-      <button type="button" class="m-disp-btn m-tk-type-chip on" data-type="general" onclick="mTkPickType('general')" style="flex:1">🔧 Service Request</button>
-      <button type="button" class="m-disp-btn m-tk-type-chip" data-type="restock" onclick="mTkPickType('restock')" style="flex:1">📦 Restock</button>
-      <button type="button" class="m-disp-btn m-tk-type-chip" data-type="it" onclick="mTkPickType('it')" style="flex:1">💻 IT / App Issue</button>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px" id="m-tk-type-chips">
+      <button type="button" class="m-disp-btn m-tk-type-chip on" data-type="general" onclick="mTkPickType('general')" style="flex:1 1 calc(50% - 6px)">🔧 Service Request</button>
+      <button type="button" class="m-disp-btn m-tk-type-chip" data-type="restock" onclick="mTkPickType('restock')" style="flex:1 1 calc(50% - 6px)">📦 Restock</button>
+      <button type="button" class="m-disp-btn m-tk-type-chip" data-type="it" onclick="mTkPickType('it')" style="flex:1 1 calc(50% - 6px)">💻 IT / App Issue</button>
+      <button type="button" class="m-disp-btn m-tk-type-chip" data-type="feature" onclick="mTkPickType('feature')" style="flex:1 1 calc(50% - 6px)">💡 Feature Request</button>
     </div>
     <div id="m-tk-restock-fields" class="rs-box" style="display:none"></div>
     <div id="m-tk-it-fields" style="display:none;background:rgba(122,184,245,0.07);border:1px solid rgba(122,184,245,0.3);border-radius:9px;padding:10px 12px;margin-bottom:12px">
@@ -1390,6 +1392,9 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
         <div style="flex:1"><div class="m-disp-label">App Version</div><input type="text" id="m-tk-app-version" class="m-disp-input" readonly></div>
         <div style="flex:1"><div class="m-disp-label">Where it happened</div><input type="text" id="m-tk-page" class="m-disp-input" placeholder="e.g. New Call form"></div>
       </div>
+    </div>
+    <div id="m-tk-ft-fields" style="display:none;background:rgba(255,200,74,0.07);border:1px solid rgba(255,200,74,0.35);border-radius:9px;padding:10px 12px;margin-bottom:12px">
+      <div style="font-size:0.74rem;color:#ffd47a;line-height:1.45">💡 Ideas for the app go straight to <span class="tk-it-recipients">the developer</span>. Say what you'd like it to do and why — a screenshot or sketch helps.</div>
     </div>
     <div id="m-tk-loc-wrap">
     <div class="m-disp-label">Location / Unit</div>
@@ -6094,7 +6099,7 @@ function mOpenCallLogDetail(id, keepPlace) {
 // ── SERVICE REQUESTS (TICKETS) ──
 var mAllTickets = [];
 var mTicketStatusFilter = "open";   // opens on Open requests
-var M_CAT_ICONS = { general: "📋", it: "💻", restock: "📦" };
+var M_CAT_ICONS = { general: "📋", it: "💻", restock: "📦", feature: "💡" };
 var M_PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 // Ticket stages: open → accepted → in-progress → resolved (shown as "Completed")
 var M_TICKET_STAGES = [
@@ -6292,8 +6297,10 @@ function mTkPickType(t) {
   if (loc) loc.style.display = t === "general" ? "block" : "none";   // IT: the device fields cover it · Restock: the rig is picked below
   var rs = document.getElementById("m-tk-restock-fields"); if (rs) { rs.style.display = t === "restock" ? "" : "none"; if (t === "restock" && !rs.dataset.ready) { rs.dataset.ready = "1"; rsInit("m-tk", "m-tk-restock-fields"); } }
   var tw = document.getElementById("m-tk-title-wrap"); if (tw) tw.style.display = t === "restock" ? "none" : "";   // a restock request is titled from its items
-  var dl = document.getElementById("m-tk-details-label"); if (dl) dl.textContent = t === "restock" ? "Notes (optional)" : "Description";
-  var pl = document.getElementById("m-tk-photo-label"); if (pl) pl.textContent = t === "it" ? "Screenshots / screen recording" : "Photos";
+  var dl = document.getElementById("m-tk-details-label"); if (dl) dl.textContent = t === "restock" ? "Notes (optional)" : t === "feature" ? "What should the app do, and why?" : "Description";
+  var ft = document.getElementById("m-tk-ft-fields"); if (ft) ft.style.display = t === "feature" ? "block" : "none";   // 💡 feature request (12.65 / 5.24): goes to the IT list, like an IT ticket
+  var ti = document.getElementById("m-tk-title"); if (ti) ti.placeholder = t === "feature" ? "Your idea in a few words…" : "Brief description of the issue…";
+  var pl = document.getElementById("m-tk-photo-label"); if (pl) pl.textContent = t === "it" ? "Screenshots / screen recording" : t === "feature" ? "Screenshots / sketches" : "Photos";
   var pb = document.getElementById("m-tk-photo-btn-label"); if (pb) pb.textContent = t === "it" ? "🎥 Add screenshots or a screen recording" : "📷 Take / choose photos";
   if (t === "it") {
     var d = mDetectDevice();
@@ -6649,7 +6656,7 @@ function mSubmitTicket() {
                  browser: (document.getElementById("m-tk-browser")||{}).value || dd.browser, appVersion: (document.getElementById("m-tk-app-version")||{}).value || "",
                  page: (document.getElementById("m-tk-page")||{}).value || "", screen: dd.screen, installed: dd.installed, userAgent: dd.userAgent };
     }
-    return mNextTicketNumber().then(function(num) { return db.collection("tickets").add({ number: num || null, title: title, details: details, category: isIT ? "it" : rs ? "restock" : "general", itInfo: itInfo, restockItems: rs ? rs.items : null, restockList: rs ? rs.list : null, notifyOnly: isIT ? M_IT_TICKET_UNITS.slice() : null, unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: mCurrentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
+    return mNextTicketNumber().then(function(num) { return db.collection("tickets").add({ number: num || null, title: title, details: details, category: isIT ? "it" : mTkType === "feature" ? "feature" : rs ? "restock" : "general", itInfo: itInfo, restockItems: rs ? rs.items : null, restockList: rs ? rs.list : null, notifyOnly: isIT ? M_IT_TICKET_UNITS.slice() : null, unit: unit, priority: priority, status: "open", submittedBy: submittedBy, submittedByUid: mCurrentUser.uid, acceptToken: acceptToken, createdAt: new Date().toISOString() }).then(function(ref) {
       // notifications (push + SMS fallback) are sent server-side by the onTicketCreated Cloud Function
       if (mPendingTicketFiles.length) {
         mToast("Uploading photos…");
@@ -6657,7 +6664,7 @@ function mSubmitTicket() {
       }
     }); });
   }).then(function() {
-    msg.style.color = "#7dedb5"; msg.textContent = rs ? "✓ Restock request sent!" : "✓ Service Request submitted!";
+    msg.style.color = "#7dedb5"; msg.textContent = rs ? "✓ Restock request sent!" : mTkType === "feature" ? "✓ Feature request sent — thank you!" : "✓ Service Request submitted!";
     if (rs) { rsReset("m-tk"); var rsb = document.getElementById("m-tk-restock-fields"); if (rsb) { delete rsb.dataset.ready; rsb.innerHTML = ""; } mTkPickType("general"); }
     ["m-tk-title","m-tk-details","m-tk-unit"].forEach(function(id) { document.getElementById(id).value = ""; });
     document.getElementById("m-tk-priority").value = "medium";
@@ -6739,6 +6746,7 @@ function mRenderTicketDetail(id, t) {
     }
     document.getElementById("m-tk-detail-content").innerHTML =
       '<div style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:12px">' +
+        (t.category === "feature" ? '<div style="display:inline-block;font-size:0.6rem;background:rgba(255,200,74,0.15);border:1px solid rgba(255,200,74,0.45);color:#ffd47a;border-radius:4px;padding:2px 8px;letter-spacing:0.06em;margin-bottom:8px">💡 FEATURE REQUEST</div>' : '') +
         (t.category === "it" ? '<div style="display:inline-block;font-size:0.6rem;background:rgba(122,184,245,0.15);border:1px solid rgba(122,184,245,0.45);color:#9fc8f0;border-radius:4px;padding:2px 8px;letter-spacing:0.06em;margin-bottom:8px">💻 IT / APP ISSUE</div>' : '') +
         '<div style="font-family:\'Oswald\',sans-serif;font-size:1.05rem;font-weight:700;color:var(--white);line-height:1.3;margin-bottom:8px">' + mEscHtml(t.title || "Service Request") + '</div>' +
         '<div style="font-size:0.85rem;color:var(--white);margin-bottom:4px"><span style="color:var(--gray)">Priority:</span> ' + (t.priority||"—") + '</div>' +
