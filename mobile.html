@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.07"; window.M_BUILD = BUILD;
+  var BUILD = "5.09"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2815,11 +2815,11 @@ function mRenderCalls(calls) {
 
     var crews = call.crews || [];
     var unitDetails = call.unitDetails || {};
-    var unitPills = "";
+    var unitPills = "", rigPills = "";
     try {
       crews.forEach(function(crew, ci) {
         if (!crew) return;
-        if (crew.rig) unitPills += '<span class="m-pill plain">🚑 ' + mEscHtml(crew.rig) + '</span>';   // the crew's rig first (5.07)
+        if (crew.rig) rigPills += '<span class="m-pill plain">🚑 ' + mEscHtml(crew.rig) + '</span>';   // rigs get their own row (5.08)
         Object.keys(crew).sort(function(a, b) { var o = ["primary","backup","rigUnit"]; var ia = o.indexOf(a), ib = o.indexOf(b); ia = ia < 0 ? 9 : ia; ib = ib < 0 ? 9 : ib; return ia - ib || a.localeCompare(b, undefined, { numeric: true }); }).forEach(function(role) {   // Unit 1, Unit 2, Unit 3, then extras
           if (role === "rig") return;
           var val = crew[role]; if (!val || val === "__added__") return;
@@ -2896,8 +2896,13 @@ function mRenderCalls(calls) {
       topRow +
       (function() {   // mini table: label | pills, rows only when there's something to show
         var row = function(k, v) { return v ? '<div class="m-ct-k">' + k + '</div><div class="m-ct-v">' + v + '</div>' : ""; };
+        var resPills = alsPill +
+          (call.blsActivated ? '<span class="m-pill" style="background:rgba(167,139,250,0.15);border-color:rgba(167,139,250,0.45);color:#a78bfa">BLS: ' + mEscHtml(call.blsProvider || "Active") + '</span>' : '') +
+          (call.pdActivated ? '<span class="m-pill" style="background:rgba(74,144,217,0.15);border-color:rgba(74,144,217,0.4);color:#7ab8f5">PD</span>' : '');
+        // Patient · Units · Rig · Additional Resources · Times · Status (5.08)
         var rows = row("Patient", patientPill + naturePill) + row("Units", unitPills || '<span class="m-pill time">None yet</span>') +
-                   row("Times", timePills) + row("Status", (call.testMode ? '<span class="m-pill" style="background:rgba(240,165,0,0.15);border-color:rgba(240,165,0,0.45);color:#f0a500">🧪 Test</span>' : '') + alsPill + dispPill);
+                   row("Rig", rigPills) + row("Resources", resPills) +
+                   row("Times", timePills) + row("Status", (call.testMode ? '<span class="m-pill" style="background:rgba(240,165,0,0.15);border-color:rgba(240,165,0,0.45);color:#f0a500">🧪 Test</span>' : '') + dispPill);
         return rows ? '<div class="m-ct">' + rows + '</div>' : "";
       })() +
       notesHtml + actions +
@@ -7908,7 +7913,7 @@ function mShowNcZoneBanner(zone) {
   if (zone === "primary") { icon="🚑"; label="LOCAL RESPONSE"; sub="MC Primary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(76,175,128,0.12)"; border="rgba(76,175,128,0.4)"; color="#7dedb5"; }
   else if (zone === "secondary") { icon="🚑"; label="LOAD AN AMBULANCE"; sub="Secondary Response Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(240,165,0,0.15)"; border="rgba(240,165,0,0.5)"; color="#ffc84a"; }
   else if (zone === "transfer") { icon="💠"; label="STABILIZE · LINDEN RIG"; sub="Linden Transfer Area" + (areaLabel ? " · " + areaLabel : ""); bg="rgba(32,190,175,0.13)"; border="rgba(32,190,175,0.5)"; color=hzLindenInk();
-    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(32,190,175,0.3);font-size:0.75rem;line-height:1.4;color:var(--white)"><b>1.</b> Send our units direct to stabilize (no MC rig).<br><b>2.</b> Call Linden Hatzolah for the rig.</div><div style="margin-top:8px">' + hzLindenBtn("width:100%;box-sizing:border-box") + '</div>'; }
+    extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(32,190,175,0.3);font-size:0.75rem;line-height:1.4;color:var(--white)">Request a local unit, then transfer the call to Linden Hatzolah.</div><div style="margin-top:8px">' + hzLindenBtn("width:100%;box-sizing:border-box") + '</div>'; }
   else {
     icon="🔴"; label="Outside Coverage Area"; sub="Outside service zone"; bg="rgba(224,85,85,0.12)"; border="rgba(224,85,85,0.4)"; color="#ff9090";
     extra = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(224,85,85,0.25);font-size:0.75rem;color:#ffb3b3">This location is outside the MC coverage area.' + (M_OUTSIDE_CONTACTS.length ? ' <b>Call a coordinator, in this order:</b>' : '') + '</div>' +
@@ -9110,7 +9115,7 @@ function mRenderDispatchDetail(call) {
   // Linden transfer area (12.28 / 4.91): the protocol + a one-tap call to Linden Hatzolah, right above the units
   if (call.zone === "transfer") content += '<div style="background:rgba(32,190,175,0.12);border:1px solid rgba(32,190,175,0.4);border-radius:10px;padding:10px 12px;margin:12px 0 4px">' +
     '<div style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:' + hzLindenInk() + ';margin-bottom:4px">💠 Stabilize · Linden rig</div>' +
-    '<div style="font-size:0.78rem;line-height:1.45;color:var(--white)"><b>1.</b> Send our units direct to the scene to stabilize — no MC rig.<br><b>2.</b> Call Linden Hatzolah for the rig and transport.</div>' +
+    '<div style="font-size:0.78rem;line-height:1.45;color:var(--white)">Request a local unit, then transfer the call to Linden Hatzolah.</div>' +
     '<div style="margin-top:8px">' + hzLindenBtn("width:100%;box-sizing:border-box") + '</div></div>';
   content += '<div id="m-dd-anchor-units" style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin:14px 0 8px">👥 Units</div>';
   (call.crews||[]).forEach(function(crew, ci) {
