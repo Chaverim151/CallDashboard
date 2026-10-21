@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.54">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.55">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2361,7 +2361,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.54</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.55</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -11540,7 +11540,7 @@ function loadCallLogs() {
     else if (nature) logs = logs.filter(function(l) { return l.callNature === nature; });
     if (q) logs = logs.filter(function(l) { return hzCallLogMatches(l, q); });
     if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
-    if (disp) logs = logs.filter(function(l) { return (l.disposition||{}).type === disp; });
+    if (disp) logs = logs.filter(function(l) { return disp === "cancelled" ? l.status === "cancelled" : (l.disposition||{}).type === disp && l.status !== "cancelled"; });
     if (unit) logs = logs.filter(function(l) {
       return (l.crews||[]).some(function(crew){ return Object.values(crew||{}).includes(unit); }) || (l.assignedUnits||[]).includes(unit);
     });
@@ -11637,7 +11637,7 @@ function renderCallLogs(logs, statsEl, listEl) {
     var times = log.times || {};
     var t1 = times.dispatched || "", tRest = [times.first_on_scene, times.enroute, times.home].filter(Boolean).join(" → ");
     var tDone = log.completedAt ? new Date(log.completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-    var disp = (log.disposition||{}).type || "";
+    var disp = log.status === "cancelled" ? "cancelled" : ((log.disposition||{}).type || "");
     var dispColor = disp === "transport" ? "#7ab8f5" : disp === "rma" ? "#7dedb5" : HZ_LINDEN_DISP[disp] ? "#5fe0d2" : "var(--gray)";
     var dispHosp = disp === "transport" && (log.disposition||{}).hospital ? "→ " + log.disposition.hospital : "";
     var zoneColor = hzZoneColor(log.zone);
@@ -11881,7 +11881,7 @@ function renderCLDetail(log, body) {
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
       clInfoCell("Zone", zone) +
       clInfoCell("Nature", (function(){var p=[];if(log.patientAgeNum)p.push(hzAge(log));else if(log.patientAge)p.push(log.patientAge);if(log.patientSex==="male")p.push("M");else if(log.patientSex==="female")p.push("F");if(log.callNature)p.push(log.callNature.replace(/^\d+\s*-\s*/,""));return p.join(" · ")||"—";})()) +
-      clInfoCell("Disposition", HZ_LINDEN_DISP[disp.type] ? HZ_LINDEN_DISP[disp.type] : disp.type ? disp.type.toUpperCase() + (disp.hospital?" → "+disp.hospital:"") : "—") +
+      clInfoCell("Disposition", log.status === "cancelled" ? "CANCELLED" + (log.cancelReason ? " — " + log.cancelReason : "") : HZ_LINDEN_DISP[disp.type] ? HZ_LINDEN_DISP[disp.type] : disp.type ? disp.type.toUpperCase() + (disp.hospital?" → "+disp.hospital:"") : "—") +
     '</div>' +
 
     // Times
@@ -12063,11 +12063,12 @@ function hzFetchCallLogs(from, to) {
     snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
     return logs.filter(function(l) { var c = l.createdAt || ""; return (!fromISO || c >= fromISO) && (!toISO || c <= toISO); });
   };
-  var q = db.collection("activeCalls").where("status", "==", "complete");
+  // Completed AND cancelled calls (12.55 / 5.14 — cancelled calls never reached the logs before)
+  var q = db.collection("activeCalls").where("status", "in", ["complete", "cancelled"]);
   if (fromISO) q = q.where("createdAt", ">=", fromISO);
   if (toISO) q = q.where("createdAt", "<=", toISO);
   return q.orderBy("createdAt", "desc").limit(5000).get().then(keep)
-    .catch(function() { return db.collection("activeCalls").where("status", "==", "complete").get().then(keep); });
+    .catch(function() { return db.collection("activeCalls").where("status", "in", ["complete", "cancelled"]).get().then(keep); });
 }
 // Free-text search across a call: address, nature, units, rigs, hospital, notes, who created it, call ID…
 function hzCallLogText(l) {
@@ -12110,7 +12111,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
     calls.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", l.apt || "", zoneName(l.zone), l.zoneArea || "", natureName(l.callNature),
       l.patientAgeNum ? Number(l.patientAgeNum) || l.patientAgeNum : (l.patientAge || ""), l.patientSex || "", unitList.join(", "), rigs.join(", "),
       t.dispatched || "", t.first_on_scene || "", t.enroute || "", t.cleared || "", t.home || "",
-      hzDispName(disp.type), hosp, disp.rmaBy || "",
+      (l.status === "cancelled" ? "Cancelled" + (l.cancelReason ? " — " + l.cancelReason : "") : hzDispName(disp.type)), hosp, disp.rmaBy || "",
       l.alsActivated ? "Yes" : "No", l.alsProvider || "", l.alsUnit || "", l.blsActivated ? "Yes" : "No", l.pdActivated ? "Yes" : "No",
       l.dispatchNotes || "", (l.callNotes || []).filter(Boolean).map(function(n) { return (n.time ? n.time + " " : "") + (n.by ? n.by + ": " : "") + (n.text || ""); }).join("\n"),
       l.createdBy || "", l.completedBy || "", asDate(l.completedAt), l.testMode ? "Yes" : "", l.id]);
@@ -18382,7 +18383,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.54";
+var DESKTOP_VERSION = "12.55";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -20454,7 +20455,7 @@ function mLoadCallLogs() {
     if (from) logs = logs.filter(function(l) { return (l.createdAt||"") >= from + "T00:00:00.000Z"; });
     if (to)   logs = logs.filter(function(l) { return (l.createdAt||"") <= to   + "T23:59:59.999Z"; });
     if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
-    if (disp) logs = logs.filter(function(l) { return (l.disposition||{}).type === disp; });
+    if (disp) logs = logs.filter(function(l) { return disp === "cancelled" ? l.status === "cancelled" : (l.disposition||{}).type === disp && l.status !== "cancelled"; });
     if (nature === "__custom__") logs = logs.filter(function(l) { return l.callNature && !M_CALL_NATURES.some(function(nn){ return nn.value === l.callNature; }); });
     else if (nature) logs = logs.filter(function(l) { return l.callNature === nature; });
     if (unit) logs = logs.filter(function(l) {

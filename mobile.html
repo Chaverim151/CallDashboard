@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.13"; window.M_BUILD = BUILD;
+  var BUILD = "5.14"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -5628,7 +5628,7 @@ function mLoadCallLogs() {
     if (hzLogsOwnOnly(mCurrentRole === "admin", mCurrentUserRoles)) logs = logs.filter(function(l) { return hzIsMyCall(l, mCurrentUser && mCurrentUser.uid, mCurrentUserUnit); });
     if (q) logs = logs.filter(function(l) { return hzCallLogMatches(l, q); });
     if (zone) logs = logs.filter(function(l) { return l.zone === zone; });
-    if (disp) logs = logs.filter(function(l) { return (l.disposition||{}).type === disp; });
+    if (disp) logs = logs.filter(function(l) { return disp === "cancelled" ? l.status === "cancelled" : (l.disposition||{}).type === disp && l.status !== "cancelled"; });
     if (nature === "__custom__") logs = logs.filter(function(l) { return l.callNature && !M_CALL_NATURES.some(function(nn){ return nn.value === l.callNature; }); });
     else if (nature) logs = logs.filter(function(l) { return l.callNature === nature; });
     if (unit) logs = logs.filter(function(l) {
@@ -5732,11 +5732,12 @@ function hzFetchCallLogs(from, to) {
     snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
     return logs.filter(function(l) { var c = l.createdAt || ""; return (!fromISO || c >= fromISO) && (!toISO || c <= toISO); });
   };
-  var q = db.collection("activeCalls").where("status", "==", "complete");
+  // Completed AND cancelled calls (12.55 / 5.14 — cancelled calls never reached the logs before)
+  var q = db.collection("activeCalls").where("status", "in", ["complete", "cancelled"]);
   if (fromISO) q = q.where("createdAt", ">=", fromISO);
   if (toISO) q = q.where("createdAt", "<=", toISO);
   return q.orderBy("createdAt", "desc").limit(5000).get().then(keep)
-    .catch(function() { return db.collection("activeCalls").where("status", "==", "complete").get().then(keep); });
+    .catch(function() { return db.collection("activeCalls").where("status", "in", ["complete", "cancelled"]).get().then(keep); });
 }
 // Free-text search across a call: address, nature, units, rigs, hospital, notes, who created it, call ID…
 function hzCallLogText(l) {
@@ -5779,7 +5780,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
     calls.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", l.apt || "", zoneName(l.zone), l.zoneArea || "", natureName(l.callNature),
       l.patientAgeNum ? Number(l.patientAgeNum) || l.patientAgeNum : (l.patientAge || ""), l.patientSex || "", unitList.join(", "), rigs.join(", "),
       t.dispatched || "", t.first_on_scene || "", t.enroute || "", t.cleared || "", t.home || "",
-      hzDispName(disp.type), hosp, disp.rmaBy || "",
+      (l.status === "cancelled" ? "Cancelled" + (l.cancelReason ? " — " + l.cancelReason : "") : hzDispName(disp.type)), hosp, disp.rmaBy || "",
       l.alsActivated ? "Yes" : "No", l.alsProvider || "", l.alsUnit || "", l.blsActivated ? "Yes" : "No", l.pdActivated ? "Yes" : "No",
       l.dispatchNotes || "", (l.callNotes || []).filter(Boolean).map(function(n) { return (n.time ? n.time + " " : "") + (n.by ? n.by + ": " : "") + (n.text || ""); }).join("\n"),
       l.createdBy || "", l.completedBy || "", asDate(l.completedAt), l.testMode ? "Yes" : "", l.id]);
