@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "4.95"; window.M_BUILD = BUILD;
+  var BUILD = "4.97"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -439,6 +439,7 @@ html[data-theme="basic"] button.m-ct-pill.m-ct-pill.m-ct-pill.on{background:#e6e
 .m-pill.als{background:rgba(224,85,85,0.2);border-color:rgba(224,85,85,0.5);color:#ff9090;}
 .m-pill.disp-transport{background:rgba(74,144,217,0.15);border-color:rgba(74,144,217,0.4);color:#7ab8f5;}
 .m-pill.disp-rma{background:rgba(76,175,128,0.15);border-color:rgba(76,175,128,0.4);color:#7dedb5;}
+.m-pill.disp-linden{background:rgba(150,100,230,0.15);border-color:rgba(150,100,230,0.45);color:#c9a6ff;}
 .m-times{font-size:0.68rem;color:var(--gray);margin-bottom:6px;display:flex;gap:10px;flex-wrap:wrap;}
 .m-notes-section{margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);}
 .m-notes-label{font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:4px;}
@@ -900,6 +901,7 @@ html[data-theme="basic"] .m-pill.unit{color:#0b5cad !important}
 html[data-theme="basic"] .m-pill.als{color:#b42318 !important}
 html[data-theme="basic"] .m-pill.disp-transport{color:#0b5cad !important}
 html[data-theme="basic"] .m-pill.disp-rma{color:#167a3e !important}
+html[data-theme="basic"] .m-pill.disp-linden{color:#3c0099 !important}
 html[data-theme="basic"] .m-notes-section{border-top:1px solid #d8dde3 !important}
 html[data-theme="basic"] .m-card-actions{border-top:1px solid #d8dde3 !important}
 html[data-theme="basic"] .hz-leader .hz-ct-name,html[data-theme="basic"] .hz-leader .hz-ct-roles{color:#b42318 !important}
@@ -1297,6 +1299,8 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <option value="">All outcomes</option>
       <option value="transport">Transport</option>
       <option value="rma">RMA</option>
+      <option value="linden_noresp">No responders → Linden</option>
+      <option value="linden_stabilized">Stabilized → Linden</option>
       <option value="cancelled">Cancelled</option>
     </select></label>
     <label class="m-cl-f m-cl-wide"><span>Nature</span><select id="m-cl-nature" class="m-disp-input"><option value="">All Natures</option></select></label>
@@ -1502,6 +1506,12 @@ var HZ_TRANSFER_ZONES = [
 ];
 function hzZoneLabel(z) { return z === "primary" ? "Local Response" : z === "secondary" ? "Load a Rig" : z === "transfer" ? "Stabilize \u00b7 Linden Rig" : z === "outside" ? "Outside Zone" : (z || ""); }
 function hzZoneColor(z) { return z === "primary" ? "#7dedb5" : z === "secondary" ? "#ffc84a" : z === "transfer" ? hzLindenInk() : "#ff9090"; }
+/* Linden-area call dispositions (12.34 / 4.97) — only offered on Linden transfer calls (zone "transfer"),
+   in place of Transport. RMA stays. */
+var HZ_LINDEN_DISP = { linden_noresp: "No first responders available — transferred to Linden", linden_stabilized: "Stabilized by MC — transported by Linden" };
+var HZ_LINDEN_DISP_SHORT = { linden_noresp: "No responders → Linden", linden_stabilized: "Stabilized → Linden" };
+function hzDispName(t) { t = t || ""; return HZ_LINDEN_DISP[t] || (t === "rma" ? "RMA" : t === "transport" ? "Transport" : t === "cancelled" ? "Cancelled" : t); }
+function hzDispShort(t) { return HZ_LINDEN_DISP_SHORT[t] || hzDispName(t); }
 function hzLindenInk() { return "#c9a6ff"; }   /* same light purple in both looks; the Basic look darkens the TEXT only (CSS below), like the other zone colours */
 function hzZoneBg(z, a) { var c = z === "primary" ? "76,175,128" : z === "secondary" ? "240,165,0" : z === "transfer" ? "150,100,230" : "224,85,85"; return "rgba(" + c + "," + (a || 0.15) + ")"; }
 function hzZonePrefix(t) { return t === "primary" ? "MC Primary Response Area" : t === "transfer" ? "Linden Transfer Area" : "Secondary Response Area"; }
@@ -2793,7 +2803,8 @@ function mRenderCalls(calls) {
     var alsPill = call.alsActivated ? '<span class="m-pill als">ALS: ' + (call.alsProvider||"Active") + '</span>' : "";
     var disp = (call.disposition||{}).type;
     var dispPill = disp === "transport" ? '<span class="m-pill disp-transport">Transport' + ((call.disposition||{}).hospital?" → "+call.disposition.hospital:"") + '</span>' :
-                   disp === "rma" ? '<span class="m-pill disp-rma">RMA</span>' : "";
+                   disp === "rma" ? '<span class="m-pill disp-rma">RMA</span>' :
+                   HZ_LINDEN_DISP[disp] ? '<span class="m-pill disp-linden">' + hzDispShort(disp) + '</span>' : "";
 
     var times = call.times || {};
     var timesHtml = "";
@@ -5467,7 +5478,7 @@ function mRenderDispatchList(calls) {
   var elapsedTxt = elapsedMin === null ? "" : (elapsedMin < 60 ? elapsedMin + "m" : Math.floor(elapsedMin/60) + "h " + (elapsedMin%60) + "m");
   var destTxt = (call.disposition && call.disposition.type === "transport")
     ? ((call.disposition.transports||[]).length > 1 ? call.disposition.transports.length + " destinations" : (call.disposition.hospital || ""))
-    : (call.disposition && call.disposition.type === "rma" ? "RMA" : "");
+    : (call.disposition && call.disposition.type === "rma" ? "RMA" : call.disposition && HZ_LINDEN_DISP[call.disposition.type] ? hzDispShort(call.disposition.type) : "");
     var addr = mPoiName(call.address) || (mCleanAddress(call.address)||"Unknown").split(",")[0];
     var addrStreet = mPoiName(call.address) ? mStreetPart(call.address) : "";
     return '<div class="m-disp-card" onclick="mOpenDispatchCall(\'' + call.id + '\')">' +
@@ -5716,7 +5727,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
     calls.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", l.apt || "", zoneName(l.zone), l.zoneArea || "", natureName(l.callNature),
       l.patientAgeNum ? Number(l.patientAgeNum) || l.patientAgeNum : (l.patientAge || ""), l.patientSex || "", unitList.join(", "), rigs.join(", "),
       t.dispatched || "", t.first_on_scene || "", t.enroute || "", t.cleared || "", t.home || "",
-      disp.type === "rma" ? "RMA" : disp.type === "transport" ? "Transport" : (disp.type || ""), hosp, disp.rmaBy || "",
+      hzDispName(disp.type), hosp, disp.rmaBy || "",
       l.alsActivated ? "Yes" : "No", l.alsProvider || "", l.alsUnit || "", l.blsActivated ? "Yes" : "No", l.pdActivated ? "Yes" : "No",
       l.dispatchNotes || "", (l.callNotes || []).filter(Boolean).map(function(n) { return (n.time ? n.time + " " : "") + (n.by ? n.by + ": " : "") + (n.text || ""); }).join("\n"),
       l.createdBy || "", l.completedBy || "", asDate(l.completedAt), l.testMode ? "Yes" : "", l.id]);
@@ -5771,7 +5782,7 @@ function mRenderCallLogs(logs) {
     if (l.patientSex === "male") who.push("M"); else if (l.patientSex === "female") who.push("F");
     var line2 = [town, nature, who.join(" ")].filter(Boolean).join(" · ");
     var units = (l.assignedUnits || []).map(function(u) { return String(u).toUpperCase().replace(/^([A-Z]+)(\d)/, "$1-$2"); });
-    var d = l.status === "cancelled" ? ["Cancelled", "var(--gray)"] : l.disposition && l.disposition.type === "transport" ? ["Transport", "#7ab8f5"] : l.disposition && l.disposition.type === "rma" ? ["RMA", "#7dedb5"] : ["Open", "var(--gray)"];
+    var d = l.status === "cancelled" ? ["Cancelled", "var(--gray)"] : l.disposition && l.disposition.type === "transport" ? ["Transport", "#7ab8f5"] : l.disposition && l.disposition.type === "rma" ? ["RMA", "#7dedb5"] : l.disposition && HZ_LINDEN_DISP[l.disposition.type] ? [hzDispShort(l.disposition.type), "#c9a6ff"] : ["Open", "var(--gray)"];
     var hosp = l.disposition && l.disposition.type === "transport" && l.disposition.hospital ? " → " + l.disposition.hospital : "";
     return '<div class="m-disp-card m-cl-card" onclick="mOpenCallLogDetail(\'' + l.id + '\')">' +
       '<div class="m-cl-r"><span class="m-cl-dot" style="background:' + zoneColor + '"></span><span class="m-cl-addr">' + mEscHtml(street) + '</span><span class="m-cl-when">' + mEscHtml(when) + '</span></div>' +
@@ -5812,7 +5823,7 @@ function mOpenCallLogDetail(id, keepPlace) {
   if (l.patientSex === "male") who.push("M"); else if (l.patientSex === "female") who.push("F");
   var natureTxt = [who.join(" · "), l.callNature ? l.callNature.replace(/^\d+\s*-\s*/, "") : ""].filter(Boolean).join(" · ") || "—";
   var disp = l.disposition || {};
-  var dispTxt = l.status === "cancelled" ? "CANCELLED" : disp.type ? disp.type.toUpperCase() + (disp.hospital ? " → " + disp.hospital : "") : "—";
+  var dispTxt = l.status === "cancelled" ? "CANCELLED" : HZ_LINDEN_DISP[disp.type] ? HZ_LINDEN_DISP[disp.type] : disp.type ? disp.type.toUpperCase() + (disp.hospital ? " → " + disp.hospital : "") : "—";
   var zone = hzZoneLabel(l.zone || "outside");
   var hm = function(iso) { return iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : ""; };
   var times = Object.assign({}, l.times || {}, l.completedAt ? { completed: hm(l.completedAt) } : {});
@@ -9073,7 +9084,8 @@ function mRenderDispatchDetail(call) {
   (call.crews||[]).forEach(function(crew, ci) {
     content += mBuildCrewBlock(call, crew, ci);
   });
-  content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
+  if (call.zone !== "transfer")   // Linden transfer area: Linden brings the rig — no MC rigs to add (12.33 / 4.96)
+    content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
 
   // Disposition (Add Additional Rig lives under the units — not repeated here)
   var needDisp = mAllOnSceneCheck(call) && !call.disposition.type;
@@ -9081,9 +9093,10 @@ function mRenderDispatchDetail(call) {
   content += needDisp
     ? '<div class="m-flash" style="display:inline-block;font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:8px">Set Call Disposition</div>'
     : '<div class="m-disp-label">Call Disposition</div>';
-  content += '<div style="display:flex;gap:8px">' +
+  content += '<div style="display:flex;gap:8px' + (call.zone === "transfer" ? ';flex-direction:column' : '') + '">' +
     '<button onclick="mSetDispositionRMA()"' + (call.disposition.type==='rma' ? ' class="m-pick-on"' : '') + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='rma'?'rgba(125,237,181,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='rma'?'rgba(125,237,181,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='rma'?'#7dedb5':'var(--gray)') + '">RMA</button>' +
-    '<button onclick="mOpenTransportSheet()"' + (call.disposition.type==='transport' ? ' class="m-pick-on"' : '') + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='transport'?'rgba(122,184,245,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='transport'?'rgba(122,184,245,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='transport'?'#7ab8f5':'var(--gray)') + '">🚑 Transport' + (call.disposition.type==='transport'&&call.disposition.hospital?' ✓':'') + '</button>' +
+    (call.zone === "transfer" ? mLindenDispBtns(call) : '') +
+    (call.zone === "transfer" ? '' : '<button onclick="mOpenTransportSheet()"' + (call.disposition.type==='transport' ? ' class="m-pick-on"' : '') + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='transport'?'rgba(122,184,245,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='transport'?'rgba(122,184,245,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='transport'?'#7ab8f5':'var(--gray)') + '">🚑 Transport' + (call.disposition.type==='transport'&&call.disposition.hospital?' ✓':'') + '</button>') +
   '</div>';
   if (call.disposition.type === 'rma') {
     content += '<div style="margin-top:8px"><div class="m-disp-label">Enter Approving Unit ID</div>' +
@@ -9231,7 +9244,7 @@ function mBuildCrewRigPanel(call, crewIdx) {
   } else if (every("ambo_responding")) {
     body = btn("Mark " + rig + " On Scene", "on_scene_ambo", "#7dedb5", "green");
   } else if (every("on_scene_ambo")) {
-    body = '<div style="font-size:0.7rem;color:var(--gray)">On scene — set the call disposition below (RMA or Transport).</div>';
+    body = '<div style="font-size:0.7rem;color:var(--gray)">On scene — set the call disposition below.</div>';
   } else if (every("rma_scene")) {
     // Direct response: RMA → the rig goes straight back to base, no intermediate steps
     body = mIsDirectResponse(call)
@@ -9861,6 +9874,7 @@ function mAddExtraRole(crewIdx, base) {
 // in-service rig that isn't committed to this or another active call is assigned automatically.
 // If every rig is taken, we suggest BLS mutual aid instead of creating a crew with no rig.
 function mAddRigPrompt() {
+  var _lzc = mDispCallCache[mDispSelectedCallId]; if (_lzc && _lzc.zone === "transfer") { mToast("Linden Hatzolah brings the rig on this call", true); return; }
   var call = mDispCallCache[mDispSelectedCallId] || {};
   var onCall = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") onCall[cr[k]] = true; }); });
@@ -10345,6 +10359,25 @@ function mActivatePD() {
 }
 
 // ── DISPOSITION / TRANSPORT ──
+function mLindenDispBtns(call) {
+  var cur = (call.disposition || {}).type || "";
+  return ["linden_noresp", "linden_stabilized"].map(function(t) {
+    var on = cur === t;
+    return '<button onclick="mSetDispositionLinden(\'' + t + '\')"' + (on ? ' class="m-pick-on"' : '') + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;font-size:0.72rem;line-height:1.3;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (on ? 'rgba(150,100,230,0.6)' : 'var(--card-border)') + ';background:' + (on ? 'rgba(150,100,230,0.15)' : 'rgba(255,255,255,0.03)') + ';color:' + (on ? '#c9a6ff' : 'var(--gray)') + '">' + HZ_LINDEN_DISP[t] + '</button>';
+  }).join("");
+}
+function mSetDispositionLinden(t) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data();
+    var newType = ((call.disposition || {}).type || "") === t ? "" : t;   // tap again to clear
+    var update = { disposition: { type: newType, hospital: "", rmaBy: "", rmaCustom: "" }, updatedAt: new Date().toISOString() };
+    update.callEvents = mEvtUnion(mEvt(newType ? "Disposition: " + HZ_LINDEN_DISP[newType] : "Disposition cleared", "🟣", "#c9a6ff", "disp"));
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).catch(function(e){ mToast("Error: " + e.message, true); });
+}
+window.mSetDispositionLinden = mSetDispositionLinden;
 function mSetDispositionRMA() {
   var callId = mDispSelectedCallId;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
@@ -10685,6 +10718,7 @@ function mBuildDispTimeline(call) {
     if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
     if (call.disposition && call.disposition.type === "transport" && call.disposition.hospital) entries.push({ time: t.enroute||"", icon:"🏥", text:"Transport → "+call.disposition.hospital, color:"#ff9090" });
     if (call.disposition && call.disposition.type === "rma") entries.push({ time:"", icon:"✋", text:"RMA"+(call.disposition.rmaBy?" — "+call.disposition.rmaBy:""), color:"#7dedb5" });
+    if (call.disposition && HZ_LINDEN_DISP[call.disposition.type]) entries.push({ time:"", icon:"🟣", text:HZ_LINDEN_DISP[call.disposition.type], color:"#c9a6ff" });
     entries.sort(function(a,b){ return (a.time||"").localeCompare(b.time||""); });
   }
   if (!entries.length) return "";
