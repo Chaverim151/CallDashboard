@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.14"; window.M_BUILD = BUILD;
+  var BUILD = "5.15"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1554,6 +1554,23 @@ function hzCanTestMode(role, roles) {
   if (String(role || "").toLowerCase() === "admin") return true;
   var t = (typeof hzTitleList === "function" ? hzTitleList() : []) || [];
   return (roles || []).some(function(r) { r = String(r || "").toLowerCase(); return r && r !== "responder" && t.indexOf(r) === -1; });
+}
+/* Call Logs unit filter: "12", "mc-12" and "MC-12" all mean MC-12; rigs match too (12.56 / 5.15) */
+function hzClUnitMatch(l, unit) {
+  if (!unit) return true;
+  var want = [String(unit).trim().toUpperCase()];
+  try { var n = orgUnit(orgStripUnit(unit)).toUpperCase(); if (want.indexOf(n) === -1) want.push(n); } catch (e) {}
+  var has = function(v) { return want.indexOf(String(v || "").toUpperCase()) !== -1; };
+  return (l.crews || []).some(function(c) { return Object.keys(c || {}).some(function(k) { return has(c[k]); }); }) || (l.assignedUnits || []).some(has);
+}
+/* Disposition text for a call record, incl. cancelled (+ reason) and several transport destinations */
+function hzClDispText(l) {
+  var d = l.disposition || {};
+  if (l.status === "cancelled") return "CANCELLED" + (l.cancelReason ? " — " + l.cancelReason : "");
+  if (HZ_LINDEN_DISP[d.type]) return HZ_LINDEN_DISP[d.type];
+  var trs = (d.transports || []).filter(function(t) { return t && t.hospital; });
+  if (d.type === "transport" && trs.length > 1) return "TRANSPORT → " + trs.map(function(t) { return (t.rig ? t.rig + " → " : "") + t.hospital; }).join("; ");
+  return d.type ? d.type.toUpperCase() + (d.hospital ? " → " + d.hospital : "") + (d.type === "rma" && d.rmaBy ? " (approved by " + d.rmaBy + ")" : "") : "—";
 }
 function hzLindenInk() { return "#5fe0d2"; }   /* same light purple in both looks; the Basic look darkens the TEXT only (CSS below), like the other zone colours */
 function hzZoneBg(z, a) { var c = z === "primary" ? "76,175,128" : z === "secondary" ? "240,165,0" : z === "transfer" ? "32,190,175" : "224,85,85"; return "rgba(" + c + "," + (a || 0.15) + ")"; }
@@ -5631,9 +5648,7 @@ function mLoadCallLogs() {
     if (disp) logs = logs.filter(function(l) { return disp === "cancelled" ? l.status === "cancelled" : (l.disposition||{}).type === disp && l.status !== "cancelled"; });
     if (nature === "__custom__") logs = logs.filter(function(l) { return l.callNature && !M_CALL_NATURES.some(function(nn){ return nn.value === l.callNature; }); });
     else if (nature) logs = logs.filter(function(l) { return l.callNature === nature; });
-    if (unit) logs = logs.filter(function(l) {
-      return (l.crews||[]).some(function(crew){ return Object.values(crew||{}).indexOf(unit) !== -1; }) || (l.assignedUnits||[]).indexOf(unit) !== -1;
-    });
+    if (unit) logs = logs.filter(function(l) { return hzClUnitMatch(l, unit); });
     logs.sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
     mAllCallLogs = logs;
     mRenderCallLogs(logs);
@@ -5726,11 +5741,12 @@ function hzSaveFile(blob, filename) {
 function hzCLDayStartISO(d) { return d ? new Date(d + "T00:00:00").toISOString() : ""; }
 function hzCLDayEndISO(d)   { return d ? new Date(d + "T23:59:59.999").toISOString() : ""; }
 function hzFetchCallLogs(from, to) {
+  if (from && to && from > to) { var _sw = from; from = to; to = _sw; }   // From after To → use them the other way round (12.56)
   var fromISO = hzCLDayStartISO(from), toISO = hzCLDayEndISO(to);
   var keep = function(snap) {
     var logs = [];
     snap.forEach(function(d) { logs.push(Object.assign({ id: d.id }, d.data())); });
-    return logs.filter(function(l) { var c = l.createdAt || ""; return (!fromISO || c >= fromISO) && (!toISO || c <= toISO); });
+    return logs.filter(function(l) { var c = l.createdAt || ""; return (l.status === "complete" || l.status === "cancelled") && (!fromISO || c >= fromISO) && (!toISO || c <= toISO); });
   };
   // Completed AND cancelled calls (12.55 / 5.14 — cancelled calls never reached the logs before)
   var q = db.collection("activeCalls").where("status", "in", ["complete", "cancelled"]);
@@ -5759,7 +5775,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
   var statusName = function(s) { var m = (typeof M_STATUS_LOG !== "undefined" && M_STATUS_LOG[s]) || null; return m ? m.text : (s || ""); };
   var asDate = function(iso) { var d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d : null; };
   var calls = [], units = [];
-  var nT = 0, nR = 0, nAls = 0;
+  var nT = 0, nR = 0, nAls = 0, nL = 0, nC = 0;
   logs.forEach(function(l) {
     var dt = asDate(l.createdAt), t = l.times || {}, disp = l.disposition || {};
     var unitList = [], rigs = [];
@@ -5776,7 +5792,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
       });
     });
     var hosp = (disp.transports && disp.transports.length > 1) ? disp.transports.map(function(x) { return (x.rig ? x.rig + " → " : "") + x.hospital; }).join("; ") : (disp.hospital || "");
-    if (disp.type === "transport") nT++; if (disp.type === "rma") nR++; if (l.alsActivated) nAls++;
+    if (l.status === "cancelled") nC++; else if (disp.type === "transport") nT++; else if (disp.type === "rma") nR++; else if (HZ_LINDEN_DISP[disp.type]) nL++; if (l.alsActivated) nAls++;
     calls.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", l.apt || "", zoneName(l.zone), l.zoneArea || "", natureName(l.callNature),
       l.patientAgeNum ? Number(l.patientAgeNum) || l.patientAgeNum : (l.patientAge || ""), l.patientSex || "", unitList.join(", "), rigs.join(", "),
       t.dispatched || "", t.first_on_scene || "", t.enroute || "", t.cleared || "", t.home || "",
@@ -5787,7 +5803,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
   });
   var summary = [["Exported", new Date().toLocaleString()], ["By", (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || (typeof currentUserUnit !== "undefined" && currentUserUnit) || ""], ["", ""]]
     .concat((filterLines || []).map(function(f) { return f; }))
-    .concat([["", ""], ["Calls", logs.length], ["Transports", nT], ["RMA", nR], ["ALS activated", nAls]]);
+    .concat([["", ""], ["Calls", logs.length], ["Transports", nT], ["RMA", nR], ["Transferred to Linden", nL], ["Cancelled", nC], ["ALS activated", nAls]]);
   var sheets = [
     { name: "Calls", cols: [{ h: "Date", w: 12, t: "d" }, { h: "Time", w: 7 }, { h: "Address", w: 38 }, { h: "Apt", w: 7 }, { h: "Zone", w: 12 }, { h: "Area", w: 14 }, { h: "Nature", w: 24 },
       { h: "Age", w: 6, t: "n" }, { h: "Sex", w: 7 }, { h: "Units", w: 22 }, { h: "Rigs", w: 10 }, { h: "Dispatched", w: 10 }, { h: "On Scene", w: 9 }, { h: "En Route", w: 9 },
@@ -5876,7 +5892,7 @@ function mOpenCallLogDetail(id, keepPlace) {
   if (l.patientSex === "male") who.push("M"); else if (l.patientSex === "female") who.push("F");
   var natureTxt = [who.join(" · "), l.callNature ? l.callNature.replace(/^\d+\s*-\s*/, "") : ""].filter(Boolean).join(" · ") || "—";
   var disp = l.disposition || {};
-  var dispTxt = l.status === "cancelled" ? "CANCELLED" : HZ_LINDEN_DISP[disp.type] ? HZ_LINDEN_DISP[disp.type] : disp.type ? disp.type.toUpperCase() + (disp.hospital ? " → " + disp.hospital : "") : "—";
+  var dispTxt = hzClDispText(l);
   var zone = hzZoneLabel(l.zone || "outside");
   var hm = function(iso) { return iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : ""; };
   var times = Object.assign({}, l.times || {}, l.completedAt ? { completed: hm(l.completedAt) } : {});
