@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.34"; window.M_BUILD = BUILD;
+  var BUILD = "5.35"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -966,7 +966,10 @@ html[data-theme="basic"] #hw-modal .hwm-sel{background:#f3f4f6 !important}
 html[data-theme="basic"] #hw-modal .hwm-sel option{background:#ffffff !important;color:#1f2328 !important}
 html[data-theme="basic"] #hw-modal .hwm-chips button{background:#f8f9fa !important}
 html[data-theme="basic"] #hw-modal .hwm-result{background:#f8f9fa !important}
-html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</style>
+html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}
+html[data-theme="basic"] .hzm-flag{color:#b42318 !important}
+html[data-theme="basic"] #hz-msg-pop textarea{background:#f3f4f6 !important}
+html[data-theme="basic"] #hz-msg-pop select{background:#f3f4f6 !important}</style>
 <!--HZ-BASIC-END-->
 </head>
 <body>
@@ -3275,11 +3278,14 @@ function mRenderDetail(call) {
     '</div>';
   }
 
+  if (isAssigned) html += hzMsgResponderHtml(call);   // 5.35: 💬 message dispatch
   // Map link
   html += '<a href="' + (call.lat && call.lng ? mDirUrl(call.lat, call.lng) : (call.mapsLink||'#')) + '" target="_blank" ' +
     'style="display:block;text-align:center;margin-top:4px;padding:12px;background:rgba(var(--gold-rgb),0.12);border:1px solid rgba(var(--gold-rgb),0.35);border-radius:8px;color:var(--gold);font-family:Oswald,sans-serif;font-size:0.8rem;font-weight:700;text-decoration:none">Open in Maps</a>';
 
+  var _rm = document.getElementById("hz-rmsg"), _rmv = _rm ? _rm.value : "", _rmf = _rm && document.activeElement === _rm;   // keep a half-typed message across live updates
   document.getElementById("m-detail-body").innerHTML = html;
+  var _rm2 = document.getElementById("hz-rmsg"); if (_rm2 && _rmv) { _rm2.value = _rmv; if (_rmf) _rm2.focus(); }
 }
 
 function mCloseDetail() {
@@ -6092,6 +6098,7 @@ function mOpenCallLogDetail(id, keepPlace) {
       (l.completedBy ? '<div>Closed by <b>' + E(l.completedBy) + '</b>' + (l.completedAt ? ' · ' + E(new Date(l.completedAt).toLocaleString()) : '') + '</div>' : '') +
       '<div>Call ID <span style="font-family:monospace">' + E(l.id || "") + '</span></div>' +
     '</div>' +
+    hzMsgLogSection(l) +   // 12.77 / 5.35: 💬 the call's text messages
     '<div style="margin-top:12px">' + mBuildDispTimeline(l) + '</div>';
   // Caller location links (same as the computer)
   var host = document.getElementById("m-cld-convo");
@@ -6993,6 +7000,7 @@ var M_SMS_TEMPLATE_DEFAULTS = {
   ticketPriority:"{priorityIcon} {priority} service request\n{ticketTitle}\n{ticketUnit}\nFrom {from}\nOpen the {app} App → Service Helpdesk to view.",
   ticketNotice:"{title}\n{message}\nOpen the {app} App → Service Helpdesk to view.",
   passwordLink:"{orgName}: {action}{unitPart}:\n{link}\nThe link works once and expires in about an hour. If it expires, tap \"Forgot password?\" on the login screen.",
+  msgReply:"DISPATCH: {message}\n(reply to this number to answer)",
   codeVerify:"{orgName}: your verification code is {code}. It expires in 10 minutes. If you didn't ask for this, ignore this text.",
   codeSubmitted:"Building code waiting for approval\n{building}\n{address}\nFrom {contact}\nOpen Admin → Codes & Locations to review.",
   codeApproved:"{orgName}: thank you — the access code for {building} ({address}) was approved and is now available to our responders.",
@@ -9358,6 +9366,182 @@ function mOpenDispatchCall(callId) {
   db.collection("activeCalls").doc(callId).get().then(function(s) { go(s.exists ? Object.assign({ id: s.id }, s.data()) : null); })
     .catch(function() { go(mDispCallCache[callId] || null); });
 }
+// ═════════════════════════════════════════════════════════════════════════════
+// 12.77 / 5.35 — 💬 CALL MESSAGES. Responders text the dispatch number (833-841-1732); the server
+// recognises them by their phone and puts the text on their active call (call.msgThread). On the
+// Manage Call page a pop-up shows each new text with a reply box (the reply is texted from the
+// dispatch number). Texts from someone not on any call (or an unknown number) live in smsInbox and
+// pop up, flagged, on every open Manage Call page. The thread is kept with the call (call log + timeline).
+// ═════════════════════════════════════════════════════════════════════════════
+var HZ_MSG = { call: null, inbox: [], inboxUnsub: null, pop: null, sending: false };
+function hzMsgEsc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function hzMsgSeen() { try { return JSON.parse(localStorage.getItem("hzMsgSeen") || "{}"); } catch (e) { return {}; } }
+function hzMsgMarkSeen(list) {
+  var s = hzMsgSeen(); (list || []).forEach(function(m) { if (m && m.id) s[m.id] = Date.now(); });
+  var k = Object.keys(s); if (k.length > 600) k.sort(function(a, b) { return s[a] - s[b]; }).slice(0, k.length - 600).forEach(function(x) { delete s[x]; });
+  try { localStorage.setItem("hzMsgSeen", JSON.stringify(s)); } catch (e) {}
+}
+function hzMsgCss() {
+  if (document.getElementById("hz-msg-css")) return;
+  var st = document.createElement("style"); st.id = "hz-msg-css";
+  st.textContent = ".hzm-thread{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;padding:4px 2px}"
+    + ".hzm-b{max-width:82%;padding:7px 10px;border-radius:12px;font-size:.86rem;line-height:1.35;word-wrap:break-word}"
+    + ".hzm-in{align-self:flex-start;background:rgba(122,184,245,.14);border:1px solid rgba(122,184,245,.35);color:var(--white)}"
+    + ".hzm-out{align-self:flex-end;background:rgba(125,237,181,.14);border:1px solid rgba(125,237,181,.35);color:var(--white)}"
+    + ".hzm-meta{font-size:.62rem;color:var(--gray);margin-bottom:2px;font-family:'Oswald',sans-serif;letter-spacing:.04em}"
+    + ".hzm-flag{background:rgba(255,144,144,.14);border:1px solid rgba(255,144,144,.55);color:#ff9090;border-radius:8px;padding:8px 10px;font-weight:700;font-size:.8rem;margin-bottom:8px}"
+    + "#hz-msg-pop{position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:14px}"
+    + "#hz-msg-pop .hzm-card{background:var(--navy,#122040);border:1px solid var(--card-border);border-radius:14px;width:100%;max-width:460px;max-height:92vh;overflow-y:auto;padding:14px 16px;box-shadow:0 10px 40px rgba(0,0,0,.5)}"
+    + "#hz-msg-pop textarea{width:100%;box-sizing:border-box;min-height:64px;margin-top:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,.06);color:var(--white);font:inherit;font-size:.9rem}"
+    + "#hz-msg-pop select{width:100%;margin-top:6px;padding:7px 8px;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,.06);color:var(--white)}"
+    + ".hzm-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.hzm-btns button{flex:1;min-width:110px;padding:9px 10px;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,.06);color:var(--white);font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:.04em;cursor:pointer}"
+    + ".hzm-btns .go{background:#7dedb5;border-color:#7dedb5;color:#0a1628}.hzm-btns .warn{border-color:rgba(255,144,144,.6);color:#ff9090}";
+  document.head.appendChild(st);
+}
+function hzMsgThreadHtml(list, opts) {
+  opts = opts || {};
+  list = (list || []).filter(Boolean);
+  if (!list.length) return '<div style="font-size:.78rem;color:var(--gray)">No messages yet.</div>';
+  return '<div class="hzm-thread"' + (opts.full ? ' style="max-height:none"' : '') + '>' + list.map(function(m) {
+    var inb = m.dir === "in";
+    var who = inb ? ((m.unit || m.phone || "Unknown") + (m.via === "app" ? " · app" : " · text")) : ((m.by || "Dispatch") + " → " + (m.toUnit || m.phone || ""));
+    return '<div class="hzm-b ' + (inb ? "hzm-in" : "hzm-out") + '"><div class="hzm-meta">' + hzMsgEsc(who) + ' · ' + hzMsgEsc(m.time || "") + (m.notAssigned ? ' · ⚠ not assigned when sent' : '') + '</div>' + hzMsgEsc(m.text) + '</div>';
+  }).join("") + '</div>';
+}
+function hzMsgCallUnits(call) {
+  var out = [];
+  (call && call.crews || []).forEach(function(c) { Object.keys(c || {}).forEach(function(r) { var v = c[r]; if (r !== "rig" && v && v !== "__added__" && out.indexOf(v) === -1) out.push(v); }); });
+  return out;
+}
+// Manage Call page: called on every update of the open call
+function hzMsgOnCall(call) {
+  HZ_MSG.call = call;
+  var seen = hzMsgSeen(), fresh = (call.msgThread || []).filter(function(m) { return m && m.dir === "in" && m.id && !seen[m.id]; });
+  if (HZ_MSG.pop && HZ_MSG.pop.kind === "call" && HZ_MSG.pop.callId === call.id) { hzMsgDraw(); hzMsgMarkSeen(fresh); return; }
+  if (HZ_MSG.pop && HZ_MSG.pop.kind === "inbox") { hzMsgDraw(); return; }   // shows "Attach to this call" once the call is known
+  if (fresh.length && !HZ_MSG.pop) hzMsgOpen({ kind: "call", callId: call.id, toUnit: fresh[fresh.length - 1].unit });
+}
+function hzMsgInboxStart() {
+  if (HZ_MSG.inboxUnsub || typeof db === "undefined") return;
+  HZ_MSG.inboxUnsub = db.collection("smsInbox").where("handled", "==", false).onSnapshot(function(q) {
+    HZ_MSG.inbox = []; q.forEach(function(d) { HZ_MSG.inbox.push(Object.assign({ id: d.id }, d.data())); });
+    if (HZ_MSG.pop && HZ_MSG.pop.kind === "inbox") { if (!HZ_MSG.inbox.some(function(x) { return x.id === HZ_MSG.pop.inboxId; })) hzMsgClose(true); else hzMsgDraw(); return; }
+    var seen = hzMsgSeen();
+    var ib = HZ_MSG.inbox.filter(function(x) { return (x.thread || []).some(function(m) { return m.dir === "in" && m.id && !seen[m.id]; }); })[0];
+    if (ib && !HZ_MSG.pop) hzMsgOpen({ kind: "inbox", inboxId: ib.id });
+  }, function(e) { console.warn("smsInbox:", e.message); });
+}
+function hzMsgRecheck() {
+  if (HZ_MSG.pop) return;
+  if (HZ_MSG.call) { hzMsgOnCall(HZ_MSG.call); if (HZ_MSG.pop) return; }
+  var seen = hzMsgSeen(), ib = HZ_MSG.inbox.filter(function(x) { return (x.thread || []).some(function(m) { return m.dir === "in" && m.id && !seen[m.id]; }); })[0];
+  if (ib) hzMsgOpen({ kind: "inbox", inboxId: ib.id });
+}
+function hzMsgInboxStop() { if (HZ_MSG.inboxUnsub) { HZ_MSG.inboxUnsub(); HZ_MSG.inboxUnsub = null; } HZ_MSG.call = null; hzMsgClose(true); }
+function hzMsgOpen(p) {
+  hzMsgCss(); HZ_MSG.pop = p;
+  var el = document.getElementById("hz-msg-pop");
+  if (!el) { el = document.createElement("div"); el.id = "hz-msg-pop"; document.body.appendChild(el); }
+  el.style.display = "flex"; hzMsgDraw();
+  try { if (typeof mPlayAlert === "function") mPlayAlert(); else if (navigator.vibrate) navigator.vibrate(200); } catch (e) {}
+}
+function hzMsgClose(silent) {
+  var p = HZ_MSG.pop; HZ_MSG.pop = null;
+  var el = document.getElementById("hz-msg-pop"); if (el) el.style.display = "none";
+  if (!p || silent) return;
+  if (p.kind === "call" && HZ_MSG.call) hzMsgMarkSeen(HZ_MSG.call.msgThread);
+  if (p.kind === "inbox") { var ib = HZ_MSG.inbox.filter(function(x) { return x.id === p.inboxId; })[0]; if (ib) hzMsgMarkSeen(ib.thread); }
+  setTimeout(hzMsgRecheck, 60);   // anything else waiting pops up next
+}
+function hzMsgDraw() {
+  var p = HZ_MSG.pop, el = document.getElementById("hz-msg-pop"); if (!p || !el) return;
+  var keep = document.getElementById("hzm-text"), draft = keep ? keep.value : "";
+  var h = '<div class="hzm-card">';
+  if (p.kind === "call") {
+    var call = HZ_MSG.call || {}, units = hzMsgCallUnits(call);
+    (call.msgThread || []).forEach(function(m) { if (m.dir === "in" && m.unit && units.indexOf(m.unit) === -1) units.push(m.unit); });
+    var to = p.toUnit || units[0] || "";
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-family:Oswald,sans-serif;font-weight:700;font-size:1rem;color:var(--white)">💬 Messages — ' + hzMsgEsc(String(call.address || "").split("—")[0]) + '</div>'
+      + '<button onclick="hzMsgClose()" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer">×</button></div>'
+      + hzMsgThreadHtml(call.msgThread)
+      + '<label style="display:block;margin-top:10px;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gray)">Reply by text to</label>'
+      + '<select id="hzm-to" onchange="HZ_MSG.pop.toUnit=this.value">' + units.map(function(u) { return '<option' + (u === to ? " selected" : "") + '>' + hzMsgEsc(u) + '</option>'; }).join("") + '</select>'
+      + '<textarea id="hzm-text" placeholder="Type your reply…"></textarea>'
+      + '<div class="hzm-btns"><button onclick="hzMsgClose()">Close</button><button class="go" id="hzm-send" onclick="hzMsgSend()">Send text</button></div>';
+  } else {
+    var ib = HZ_MSG.inbox.filter(function(x) { return x.id === p.inboxId; })[0] || {}, cur = HZ_MSG.call;
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-family:Oswald,sans-serif;font-weight:700;font-size:1rem;color:var(--white)">💬 Text from ' + hzMsgEsc(ib.unit || ib.phone || "unknown") + '</div>'
+      + '<button onclick="hzMsgClose()" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer">×</button></div>'
+      + '<div class="hzm-flag">⚠ ' + (ib.unit ? hzMsgEsc(ib.unit) + (ib.name ? " (" + hzMsgEsc(ib.name) + ")" : "") + ' is not assigned to a call' : 'Unknown number ' + hzMsgEsc(ib.phone || "") + ' — not a registered member') + '</div>'
+      + hzMsgThreadHtml(ib.thread)
+      + '<textarea id="hzm-text" placeholder="Type your reply…"></textarea>'
+      + '<div class="hzm-btns"><button onclick="hzMsgClose()">Later</button><button class="warn" onclick="hzMsgInbox(\'dismiss\')">Dismiss</button>'
+      + (cur && cur.id ? '<button onclick="hzMsgInbox(\'attach\')">Attach to this call</button>' : '')
+      + '<button class="go" id="hzm-send" onclick="hzMsgSend()">Send text</button></div>';
+  }
+  el.innerHTML = h + '</div>';
+  var t = document.getElementById("hzm-text"); if (t) { t.value = draft; }
+  var th = el.querySelector(".hzm-thread"); if (th) th.scrollTop = th.scrollHeight;
+}
+function hzMsgSend() {
+  var p = HZ_MSG.pop; if (!p || HZ_MSG.sending) return;
+  var t = document.getElementById("hzm-text"), text = t ? t.value.trim() : "";
+  if (!text) { mToast("Type a message first", true); return; }
+  var data = p.kind === "call" ? { callId: p.callId, toUnit: (document.getElementById("hzm-to") || {}).value || p.toUnit, text: text } : { inboxId: p.inboxId, text: text };
+  HZ_MSG.sending = true; var b = document.getElementById("hzm-send"); if (b) { b.disabled = true; b.textContent = "Sending…"; }
+  mRelay("callMsgSend", data).then(function() {
+    HZ_MSG.sending = false; if (t) t.value = ""; mToast("✓ Text sent");
+    var bb = document.getElementById("hzm-send"); if (bb) { bb.disabled = false; bb.textContent = "Send text"; }
+  }).catch(function(e) { HZ_MSG.sending = false; var bb = document.getElementById("hzm-send"); if (bb) { bb.disabled = false; bb.textContent = "Send text"; } mToast("Not sent: " + e.message, true); });
+}
+function hzMsgInbox(what) {
+  var p = HZ_MSG.pop; if (!p || p.kind !== "inbox") return;
+  var data = { inboxId: p.inboxId }; if (what === "dismiss") data.dismiss = true; else data.attachCallId = HZ_MSG.call && HZ_MSG.call.id;
+  mRelay("callMsgSend", data).then(function() { mToast(what === "dismiss" ? "Dismissed" : "✓ Attached to this call"); hzMsgClose(true); })
+    .catch(function(e) { mToast("Didn't work: " + e.message, true); });
+}
+// the section on the Manage Call page
+function hzMsgSectionHtml(call) {
+  hzMsgCss();
+  var list = call.msgThread || [];
+  return '<div style="margin-top:16px;background:rgba(255,255,255,0.03);border:1px solid var(--card-border);border-radius:10px;padding:10px 12px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-family:Oswald,sans-serif;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold)">💬 Messages' + (list.length ? " (" + list.length + ")" : "") + '</span>'
+    + (mDdReadOnly ? '' : '<button onclick="hzMsgOpen({kind:\'call\',callId:\'' + hzMsgEsc(call.id) + '\'})" style="font-family:Oswald,sans-serif;font-size:.68rem;font-weight:700;letter-spacing:.05em;padding:5px 10px;border-radius:6px;border:1px solid rgba(125,237,181,.5);background:rgba(125,237,181,.1);color:#7dedb5;cursor:pointer">✉ Text a unit</button>') + '</div>'
+    + (list.length ? hzMsgThreadHtml(list.slice(-6)) : '<div style="font-size:.74rem;color:var(--gray)">Responders on this call can text 833-841-1732 — their texts show up here.</div>') + '</div>';
+}
+// timeline / call log entries
+function hzMsgTimelineEntries(call) {
+  return (call.msgThread || []).filter(Boolean).map(function(m) {
+    return { time: m.time || "", icon: "💬", text: m.dir === "in" ? (m.unit || m.phone || "Unknown") + (m.via === "app" ? " (app)" : " (text)") + ": " + m.text : (m.by || "Dispatch") + " → " + (m.toUnit || "") + ": " + m.text, color: m.dir === "in" ? "#7ab8f5" : "#7dedb5", by: "", at: m.at || "" };
+  });
+}
+function hzMsgLogSection(call) {
+  var list = (call && call.msgThread) || []; if (!list.length) return "";
+  hzMsgCss();
+  return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:12px">'
+    + '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">💬 Messages (' + list.length + ')</div>'
+    + hzMsgThreadHtml(list, { full: true }) + '</div>';
+}
+// the responder's own call screen (phone app): their messages with dispatch, and a box to write one
+function hzMsgResponderHtml(call) {
+  hzMsgCss();
+  var me = typeof mCurrentUserUnit !== "undefined" ? mCurrentUserUnit : "";
+  var list = (call.msgThread || []).filter(function(m) { return m && (m.unit === me || m.toUnit === me); });
+  return '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;margin-bottom:10px">'
+    + '<div style="font-family:Oswald,sans-serif;font-size:0.7rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);margin-bottom:6px">💬 Message Dispatch</div>'
+    + (list.length ? hzMsgThreadHtml(list) : '<div style="font-size:.76rem;color:var(--gray)">Write to the dispatcher here, or text 833-841-1732.</div>')
+    + '<textarea id="hz-rmsg" placeholder="Message to dispatch…" style="width:100%;box-sizing:border-box;min-height:56px;margin-top:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,.06);color:var(--white);font:inherit;font-size:.9rem"></textarea>'
+    + '<button id="hz-rmsg-btn" onclick="hzMsgResp(\'' + hzMsgEsc(call.id) + '\')" style="margin-top:6px;width:100%;padding:9px;border-radius:8px;border:1px solid #7dedb5;background:rgba(125,237,181,.15);color:#7dedb5;font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.05em;cursor:pointer">Send to dispatch</button></div>';
+}
+function hzMsgResp(callId) {
+  var t = document.getElementById("hz-rmsg"), text = t ? t.value.trim() : "";
+  if (!text) { mToast("Type a message first", true); return; }
+  var b = document.getElementById("hz-rmsg-btn"); if (b) { b.disabled = true; b.textContent = "Sending…"; }
+  mRelay("callMsgSend", { callId: callId, text: text, asResponder: true }).then(function() {
+    var tt = document.getElementById("hz-rmsg"); if (tt) tt.value = ""; mToast("✓ Sent to dispatch");
+    var bb = document.getElementById("hz-rmsg-btn"); if (bb) { bb.disabled = false; bb.textContent = "Send to dispatch"; }
+  }).catch(function(e) { var bb = document.getElementById("hz-rmsg-btn"); if (bb) { bb.disabled = false; bb.textContent = "Send to dispatch"; } mToast("Not sent: " + e.message, true); });
+}
 function mOpenDispatchCallNow(callId, readOnly) {
   mDdReadOnly = !!readOnly;
   mDdOpen = { resources: false, timeline: false }; mDdOpenFor = callId;   // collapsed every time a call is opened
@@ -9369,15 +9553,18 @@ function mOpenDispatchCallNow(callId, readOnly) {
   try { window.scrollTo(0, 0); } catch (e) {}
   if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
   mPrefetchRigs();   // warm the fleet cache so Choose Rig opens with no wait
+  try { hzMsgInboxStart(); } catch (e) {}   // 12.77 / 5.35: texts from units not on a call
   mDispatchDetailListener = db.collection("activeCalls").doc(callId).onSnapshot(function(snap) {
     if (!snap.exists) { mToast("Call closed"); mCloseDispatchDetail(); return; }
     var call = Object.assign({id:snap.id}, snap.data());
     if (!call.crews || !call.crews.length) call.crews = [{}];
     mDispCallCache[callId] = call;
     mRenderDispatchDetail(call);
+    try { if (!mDdReadOnly) hzMsgOnCall(call); } catch (e) { console.warn("messages:", e); }   // 12.77 / 5.35
   }, function(e) { mToast("Call listener error: " + e.message, true); });
 }
 function mCloseDispatchDetail() {
+  try { hzMsgInboxStop(); } catch (e) {}   // 12.77 / 5.35
   mDdReadOnly = false;
   mDdLocStop();
   if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
@@ -9699,6 +9886,7 @@ function mRenderDispatchDetail(call) {
   '</div>';
 
   // Timeline
+  content += hzMsgSectionHtml(call);   // 12.77 / 5.35: 💬 Messages
   content += mBuildDispTimeline(call);
 
   // Call actions — regular buttons, always at the bottom of the call
@@ -11267,6 +11455,7 @@ function mBuildDispTimeline(call) {
   if (events.length) {
     // TRUE RUNNING LOG — every action, in the order it happened, with who did it
     events.forEach(function(ev) { entries.push({ time: ev.time || "", icon: ev.icon || "⚡", text: hzAvailEv(call, ev.text), color: ev.color || "var(--gray)", by: ev.by || "", at: ev.createdAt || "" }); });
+    try { hzMsgTimelineEntries(call).forEach(function(x) { entries.push(x); }); } catch (e) {}   // 12.77 / 5.35: 💬 messages
     (call.callNotes || []).forEach(function(nn) { if (nn && nn.text) entries.push({ time: nn.time || "", icon: "📝", text: nn.text, color: "var(--gray)", by: nn.by || "", at: nn.createdAt || "" }); });
     if (call.status === "cancelled") entries.push({ time: call.cancelledAt ? new Date(call.cancelledAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "✕", text: "Call Cancelled" + (call.cancelReason ? " — " + call.cancelReason : ""), color: "#ff9090", by: call.cancelledBy || "", at: call.cancelledAt || "" });
     if (call.status === "complete") entries.push({ time: call.completedAt ? new Date(call.completedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "🏁", text: "Call Complete", color: "#7dedb5", by: call.completedBy || "", at: call.completedAt || "" });
@@ -11274,6 +11463,7 @@ function mBuildDispTimeline(call) {
   } else {
     // Snapshot fallback (calls created before the running log existed)
     if (t.dispatched) entries.push({ time:t.dispatched, icon:"📟", text:"Call Dispatched", color:"#7ab8f5" });
+    try { hzMsgTimelineEntries(call).forEach(function(x) { entries.push(x); }); } catch (e) {}   // 12.77 / 5.35
     (call.crews||[]).forEach(function(crew, ci) {
       Object.keys(crew||{}).forEach(function(role) {
         if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
