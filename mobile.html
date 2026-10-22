@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.39"; window.M_BUILD = BUILD;
+  var BUILD = "5.40"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1146,6 +1146,13 @@ html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}</style>
           <span class="m-tile-sub">ImageTrend Elite</span>
         </div>
       </a>
+      <button class="m-tile hz-erv-entry" data-sec="erv" onclick="hzErvOpen('schedule')" style="display:none">
+        <div class="m-tile-inner">
+          <span class="m-tile-icon">🚙</span>
+          <span class="m-tile-label">ERV Shifts</span>
+          <span class="m-tile-sub hz-erv-tile-sub">Book the ERV · check in / out</span>
+        </div>
+      </button>
       <button class="m-tile" data-sec="shifts" onclick="mGoTo('shifts')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🌙</span>
@@ -12248,6 +12255,19 @@ function hzErvApplyAccess() {
   HZ_ERV.allowed = HZ_ERV.isAdmin || (HZ_ERV.access === "drivers" && me.ervDriver === true);
   document.querySelectorAll(".hz-erv-entry").forEach(function(el){ el.style.display = HZ_ERV.allowed ? "" : "none"; });
   document.querySelectorAll(".hz-erv-testing").forEach(function(el){ el.style.display = HZ_ERV.allowed && HZ_ERV.access !== "drivers" ? "" : "none"; });
+  hzErvTileSub();
+}
+// 12.82 / 5.40: the home tile's second line says what's next for me
+function hzErvTileSub() {
+  var els = document.querySelectorAll(".hz-erv-tile-sub"); if (!els.length) return;
+  var mine = HZ_ERV.tickets.filter(hzErvIsMine), now = Date.now(), txt = "Book the ERV · check in / out";
+  var on = mine.filter(hzErvCanOut)[0], due = mine.filter(hzErvCanIn)[0];
+  var next = mine.filter(function(t){ return hzErvStatus(t) === "approved" && !t.checkedInAt && t.startMs > now; }).sort(function(a, b){ return a.startMs - b.startMs; })[0];
+  if (on) txt = "✅ Checked in — tap to check out";
+  else if (due) txt = "⏰ Shift now — tap to check in";
+  else if (next) txt = "Next: " + hzErvDay(next.startMs) + " " + hzErvTime(next.startMs);
+  else if (HZ_ERV.isAdmin) { var p = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; }).length; if (p) txt = p + " request" + (p === 1 ? "" : "s") + " to approve"; }
+  els.forEach(function(el){ el.textContent = txt; });
 }
 function hzErvInit() {
   if (HZ_ERV.ready || typeof firebase === "undefined" || !firebase.auth) return;
@@ -12272,6 +12292,7 @@ function hzErvListen() {
   HZ_ERV.unsub = db.collection("tickets").where("category", "==", "erv").onSnapshot(function(q) {
     HZ_ERV.tickets = []; q.forEach(function(d){ var x = d.data(); if (typeof x.startMs === "number" && typeof x.endMs === "number") HZ_ERV.tickets.push(Object.assign({ id: d.id }, x)); });
     HZ_ERV.tickets.sort(function(a, b){ return a.startMs - b.startMs; });
+    hzErvTileSub();
     if (document.getElementById("hz-erv")) hzErvDraw();
   }, function(e){ console.warn("ERV list", e); });
   db.collection("vehicles").get().then(function(q) {
@@ -12293,9 +12314,10 @@ function hzErvOpen(tab, preset) {
   var el = document.getElementById("hz-erv");
   if (!el) { el = document.createElement("div"); el.id = "hz-erv"; document.body.appendChild(el); }
   el.style.display = "flex";
+  if (!HZ_ERV.bodyOv) { HZ_ERV.bodyOv = document.body.style.overflow || "x"; document.body.style.overflow = "hidden"; }   // the page behind doesn't scroll
   hzErvDraw();
 }
-function hzErvClose() { var el = document.getElementById("hz-erv"); if (el) el.remove(); }
+function hzErvClose() { var el = document.getElementById("hz-erv"); if (el) el.remove(); if (HZ_ERV.bodyOv) { document.body.style.overflow = HZ_ERV.bodyOv === "x" ? "" : HZ_ERV.bodyOv; HZ_ERV.bodyOv = ""; } }
 function hzErvTab(t) { HZ_ERV.tab = t; hzErvDraw(); }
 function hzErvWeek(n) { HZ_ERV.weekStart = n === 0 ? hzErvAddDays(hzErvDayStart(Date.now()), -new Date().getDay()) : hzErvAddDays(HZ_ERV.weekStart, 7 * n); hzErvDraw(); }
 function hzErvPick(id) { HZ_ERV.ervId = id; hzErvDraw(); }
@@ -12507,7 +12529,14 @@ function hzErvRefreshTicket(id) {
     + "html[data-theme=basic] .hz-erv-chip.ok,html[data-theme=basic] .hz-erv-pill.ok,html[data-theme=basic] .hz-erv-note.ok{color:#167a3e}"
     + "html[data-theme=basic] .hz-erv-chip.warn,html[data-theme=basic] .hz-erv-pill.warn,html[data-theme=basic] .hz-erv-note.warn{color:#8a5a00}"
     + "html[data-theme=basic] .hz-erv-chip.bad,html[data-theme=basic] .hz-erv-pill.bad,html[data-theme=basic] .hz-erv-note.bad,html[data-theme=basic] .hz-erv-btn.red{color:#b42318}"
-    + "html[data-theme=basic] .hz-erv-go{color:#fff}";
+    + "html[data-theme=basic] .hz-erv-go{color:#fff}"
+    // 12.82 / 5.40: iPhone — 16px boxes so Safari doesn't zoom in, date boxes that stay inside the form, and a full-screen sheet on phones
+    + ".hz-erv-in{font-size:16px}.hz-erv-two>div{min-width:0}"
+    + ".hz-erv-in[type=datetime-local]{-webkit-appearance:none;appearance:none;display:block;min-height:44px;text-align:left;line-height:1.2}"
+    + ".hz-erv-in[type=datetime-local]::-webkit-date-and-time-value{text-align:left;margin:0}"
+    + ".hz-erv-box{max-height:94vh;max-height:94dvh;overflow:hidden}.hz-erv-body{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;flex:1;min-height:0}"
+    + "@media (max-width:600px){#hz-erv{padding:0;align-items:stretch}.hz-erv-box{width:100%;max-height:none;height:100%;border-radius:0;border:none;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}"
+    + ".hz-erv-top{flex-wrap:wrap}.hz-erv-tabs button{flex:1 1 auto}}";
   document.head.appendChild(css);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hzErvInit); else hzErvInit();
 })();
