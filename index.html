@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.74">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.76">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2365,7 +2365,7 @@ html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}</sty
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.74</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.76</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -5547,7 +5547,7 @@ function renderCallCard(call, i) {
         var val = crew[role];
         if (!val || val === '__added__') return;
         var det = unitDetails[ci + '_' + role] || {};
-        var label = STATUS_LABEL[det.status] || '';
+        var label = hzAvail(call, det.status, STATUS_LABEL[det.status] || '');
         unitPills += '<span class="call-pill unit">' + escapeHtml(val) + (label ? ' · ' + label : '') + '</span>';
       });
     });
@@ -6606,7 +6606,7 @@ function openCallDetail(callId) {
         if (role === "rig") return;
         var val = crew[role]; if (!val || val === "__added__") return;
         var det = unitDetails[ci + "_" + role] || {};
-        var st = det.status ? (STATUS_ICON[det.status] || det.status) : "—";
+        var st = det.status ? hzAvail(call, det.status, STATUS_ICON[det.status] || det.status).replace(/^Available$/, "✓ Available") : "—";
         unitsHtml += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.82rem">' +
           '<span style="color:#7ab8f5;font-family:\'Oswald\',sans-serif;font-weight:700">' + val + '</span>' +
           '<span style="color:var(--gray)">' + st + '</span>' +
@@ -12009,6 +12009,20 @@ function clRenderTimeline() {
   tw.innerHTML = html || '<div style="font-size:0.78rem;color:var(--gray);border:1px solid var(--card-border);border-radius:10px;padding:10px 12px">⚡ Call Timeline — no events were recorded for this call</div>';
   var first = tw.firstElementChild; if (first && first.style) first.style.marginTop = "0";
 }
+// 12.76 / 5.34: once the rig is back at base, a responder who "Cleared Scene" is shown as "Available" everywhere
+// (call card, dispatch unit boxes, timeline, call logs, export). Wording only — the saved status stays cleared_scene.
+function hzAvail(call, status, text) { return status === "cleared_scene" && hzRigBackAtBase(call) ? "Available" : text; }
+function hzAvailEv(call, text) {
+  if (!text || !hzRigBackAtBase(call)) return text;
+  return String(text).replace(/ — Cleared Scene$/, " — Available").replace(/ — Cleared$/, " — Available");
+}
+// 12.75 / 5.33: in the call logs, a responder who "Cleared Scene" reads "Available" once the rig is back at base
+function hzRigBackAtBase(c) {
+  if (!c) return false;
+  if (c.times && c.times.home) return true;
+  var u = c.unitDetails || {};
+  return Object.keys(u).some(function(k) { return u[k] && u[k].status === "back_at_base"; });
+}
 function renderCLDetail(log, body) {
   var dt = log.createdAt ? new Date(log.createdAt) : null;
   var dateStr = dt ? dt.toLocaleDateString("en-US", {weekday:"long", month:"long", day:"numeric", year:"numeric"}) : "—";
@@ -12023,7 +12037,7 @@ function renderCLDetail(log, body) {
       var val = crew[role]; if (!val || val === "__added__") return;
       var det = (log.unitDetails||{})[ci+"_"+role] || {};
       unitRows += '<tr><td style="padding:6px 10px;color:#7ab8f5;font-weight:700">' + val + '</td>' +
-        '<td style="padding:6px 10px;color:var(--gray)">' + (STATUS_LABEL[det.status]||det.status||"—") + '</td>' +
+        '<td style="padding:6px 10px;color:var(--gray)">' + (det.status === "cleared_scene" && hzRigBackAtBase(log) ? "Available" : (STATUS_LABEL[det.status]||det.status||"—")) + '</td>' +
         '<td style="padding:6px 10px;color:var(--gray)">' + (det.responseDir === "scene" ? "Direct to Scene" : det.responseDir === "rig" ? "Picked Up Rig" : "—") + '</td></tr>';
     });
   });
@@ -12274,7 +12288,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
         var det = (l.unitDetails || {})[ci + "_" + k] || {};
         units.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", natureName(l.callNature), "Crew " + (ci + 1), c.rig || "", c[k],
           k.replace(/\d+$/, "").replace("rigUnit", "Unit 3").replace("primary", "Unit 1").replace("backup", "Unit 2").replace(/^sup_?|^supervisor/, "Supervisor").replace(/^observer/, "Observer").replace(/^responder/, "Responder"),
-          det.response === "rig" ? "Rig" : det.response === "scene" ? "Direct to scene" : "", det.customStatus || statusName(det.status), l.id]);
+          det.response === "rig" ? "Rig" : det.response === "scene" ? "Direct to scene" : "", det.customStatus || hzAvail(l, det.status, statusName(det.status)), l.id]);
       });
     });
     var hosp = (disp.transports && disp.transports.length > 1) ? disp.transports.map(function(x) { return (x.rig ? x.rig + " → " : "") + x.hospital; }).join("; ") : (disp.hospital || "");
@@ -16780,6 +16794,7 @@ function buildCallActionLog(call) {
     clearing_facility:{ icon:"✓",  text:"Cleared ER",       color:"#7dedb5" },
     back_at_base:     { icon:"🏠", text:"Back at Base",            color:"var(--gray)" }
   };
+  if (hzRigBackAtBase(call)) STATUS_LOG.cleared_scene = { icon:"✓", text:"Available", color:"#7dedb5" };   // 12.76
 
   // 1. Call dispatched
   if (times.dispatched) {
@@ -17519,7 +17534,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       var __d = unitDetails[crewIdx + '_' + role] || {};
       html += '<div style="margin-top:3px;padding:4px 8px;border-radius:5px;border:1px solid #e8a0ff;background:rgba(232,160,255,0.1);color:#e8a0ff;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700">• ' + uLbl + escapeHtml(__d.customStatus || 'Other') + '</div>';
     } else if (currentStatus === 'cleared_scene') {
-      html += '<div style="margin-top:3px;padding:4px 8px;border-radius:5px;border:1px solid #7dedb5;background:rgba(125,237,181,0.1);color:#7dedb5;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700">✓ ' + uLbl + 'Cleared Scene</div>';
+      html += '<div style="margin-top:3px;padding:4px 8px;border-radius:5px;border:1px solid #7dedb5;background:rgba(125,237,181,0.1);color:#7dedb5;font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700">✓ ' + uLbl + hzAvail(call, 'cleared_scene', 'Cleared Scene') + '</div>';
     } else if (response === 'scene' || currentStatus === 'enroute_scene' || currentStatus === 'on_scene_direct') {
       if (!currentStatus) {
         // Not started yet — show full chain preview
@@ -18600,7 +18615,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.74";
+var DESKTOP_VERSION = "12.76";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -20743,7 +20758,7 @@ function mOpenCallLogDetail(id, keepPlace) {
       var val = crew[role]; if (!val || val === "__added__") return;
       var det = (l.unitDetails || {})[ci + "_" + role] || {};
       unitRows += '<div class="m-cld-urow"><span class="m-cld-unit">' + E(String(val).toUpperCase().replace(/^([A-Z]+)(\d)/, "$1-$2")) + (crew.rig ? ' <small>' + E(crew.rig) + '</small>' : '') + '</span>' +
-        '<span>' + E(STATUS_LABEL[det.status] || det.status || "—") + '</span>' +
+        '<span>' + E(det.status === "cleared_scene" && hzRigBackAtBase(l) ? "Available" : (STATUS_LABEL[det.status] || det.status || "—")) + '</span>' +
         '<span>' + (det.responseDir === "scene" ? "Direct to Scene" : det.responseDir === "rig" ? "Picked Up Rig" : "—") + '</span></div>';
     });
   });
@@ -23870,6 +23885,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
 
   var sl = M_STATUS_LOG[status];
   if (mLoadRigBoarded(call, crewIdx) && det.response === "rig" && M_LR_PRESCENE.indexOf(status) !== -1) sl = M_STATUS_LOG.ambo_responding;
+  if (sl && hzAvail(call, status, "") === "Available") sl = { icon: "✓", text: "Available", color: sl.color };   // 12.76 / 5.34
   // Direct response: once someone is on scene, the other units' "En Route to Scene" line is stale —
   // they aren't being tracked individually any more. The rig keeps its own status line.
   if (sl && mIsDirectResponse(call) && !isDriver && status === "enroute_scene" && mSceneMarkedBy(call)) sl = null;
@@ -24844,7 +24860,7 @@ function mBuildDispTimeline(call) {
   var entries = [];
   if (events.length) {
     // TRUE RUNNING LOG — every action, in the order it happened, with who did it
-    events.forEach(function(ev) { entries.push({ time: ev.time || "", icon: ev.icon || "⚡", text: ev.text, color: ev.color || "var(--gray)", by: ev.by || "", at: ev.createdAt || "" }); });
+    events.forEach(function(ev) { entries.push({ time: ev.time || "", icon: ev.icon || "⚡", text: hzAvailEv(call, ev.text), color: ev.color || "var(--gray)", by: ev.by || "", at: ev.createdAt || "" }); });
     (call.callNotes || []).forEach(function(nn) { if (nn && nn.text) entries.push({ time: nn.time || "", icon: "📝", text: nn.text, color: "var(--gray)", by: nn.by || "", at: nn.createdAt || "" }); });
     if (call.status === "cancelled") entries.push({ time: call.cancelledAt ? new Date(call.cancelledAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "✕", text: "Call Cancelled" + (call.cancelReason ? " — " + call.cancelReason : ""), color: "#ff9090", by: call.cancelledBy || "", at: call.cancelledAt || "" });
     if (call.status === "complete") entries.push({ time: call.completedAt ? new Date(call.completedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "🏁", text: "Call Complete", color: "#7dedb5", by: call.completedBy || "", at: call.completedAt || "" });
@@ -24857,7 +24873,7 @@ function mBuildDispTimeline(call) {
         if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
         var det = mUdOf(call, ci, role);
         if (det.assignedAt) entries.push({ time: det.assignedAt, icon:"👤", text: crew[role] + " assigned", color:"var(--white)" });
-        if (det.status && M_STATUS_LOG[det.status]) entries.push({ time: det.statusAt||"", icon:M_STATUS_LOG[det.status].icon, text: crew[role] + " — " + (det.status==="other_status" ? (det.customStatus||"Other") : M_STATUS_LOG[det.status].text), color:M_STATUS_LOG[det.status].color });
+        if (det.status && M_STATUS_LOG[det.status]) entries.push({ time: det.statusAt||"", icon:M_STATUS_LOG[det.status].icon, text: crew[role] + " — " + (det.status==="other_status" ? (det.customStatus||"Other") : hzAvail(call, det.status, M_STATUS_LOG[det.status].text)), color:M_STATUS_LOG[det.status].color });
       });
     });
     if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon: call.alsProvider==="No ALS Available"?"⚠️":"🚨", text: call.alsProvider==="No ALS Available" ? "No ALS Available" : "ALS Activated — "+(call.alsProvider||""), color:"#ff9090" });

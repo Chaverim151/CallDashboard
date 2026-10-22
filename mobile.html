@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.32"; window.M_BUILD = BUILD;
+  var BUILD = "5.34"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3007,7 +3007,7 @@ function mRenderCalls(calls) {
           if (role === "rig") return;
           var val = crew[role]; if (!val || val === "__added__") return;
           var det = unitDetails[ci+"_"+role] || {};
-          var lbl = STATUS_LABEL[det.status] || "";
+          var lbl = hzAvail(call, det.status, STATUS_LABEL[det.status] || "");
           unitPills += '<span class="m-pill unit">' + mEscHtml(val) + (lbl ? " · "+lbl : "") + '</span>';
         });
       });
@@ -3248,7 +3248,7 @@ function mRenderDetail(call) {
       if (role === "rig") return;
       var val = crew[role]; if (!val || val === "__added__") return;
       var det = unitDetails[ci+"_"+role] || {};
-      var status = STATUS_LABEL[det.status] || "";
+      var status = hzAvail(call, det.status, STATUS_LABEL[det.status] || "");
       unitRows.push('<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">' +
         '<span style="font-family:Oswald,sans-serif;font-size:0.82rem;font-weight:700;color:' + (val===mCurrentUserUnit?"#7dedb5":"var(--white)") + '">' + val + '</span>' +
         (status ? '<span style="font-size:0.68rem;color:var(--gray)">' + status + '</span>' : "") +
@@ -5940,7 +5940,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
         var det = (l.unitDetails || {})[ci + "_" + k] || {};
         units.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", natureName(l.callNature), "Crew " + (ci + 1), c.rig || "", c[k],
           k.replace(/\d+$/, "").replace("rigUnit", "Unit 3").replace("primary", "Unit 1").replace("backup", "Unit 2").replace(/^sup_?|^supervisor/, "Supervisor").replace(/^observer/, "Observer").replace(/^responder/, "Responder"),
-          det.response === "rig" ? "Rig" : det.response === "scene" ? "Direct to scene" : "", det.customStatus || statusName(det.status), l.id]);
+          det.response === "rig" ? "Rig" : det.response === "scene" ? "Direct to scene" : "", det.customStatus || hzAvail(l, det.status, statusName(det.status)), l.id]);
       });
     });
     var hosp = (disp.transports && disp.transports.length > 1) ? disp.transports.map(function(x) { return (x.rig ? x.rig + " → " : "") + x.hospital; }).join("; ") : (disp.hospital || "");
@@ -6023,6 +6023,20 @@ window.hzLogEditOnSaved = function(id) {
     mToast("✓ Call log updated"); if (mClDetailId === id) mOpenCallLogDetail(id, true);
   }).catch(function() { mToast("✓ Call log updated"); });
 };
+// 12.76 / 5.34: once the rig is back at base, a responder who "Cleared Scene" is shown as "Available" everywhere
+// (call card, dispatch unit boxes, timeline, call logs, export). Wording only — the saved status stays cleared_scene.
+function hzAvail(call, status, text) { return status === "cleared_scene" && hzRigBackAtBase(call) ? "Available" : text; }
+function hzAvailEv(call, text) {
+  if (!text || !hzRigBackAtBase(call)) return text;
+  return String(text).replace(/ — Cleared Scene$/, " — Available").replace(/ — Cleared$/, " — Available");
+}
+// 12.75 / 5.33: in the call logs, a responder who "Cleared Scene" reads "Available" once the rig is back at base
+function hzRigBackAtBase(c) {
+  if (!c) return false;
+  if (c.times && c.times.home) return true;
+  var u = c.unitDetails || {};
+  return Object.keys(u).some(function(k) { return u[k] && u[k].status === "back_at_base"; });
+}
 function mOpenCallLogDetail(id, keepPlace) {
   var l = mSanitizeCall(mAllCallLogs.find(function(x){ return x.id === id; }));
   if (!l) return;
@@ -6043,7 +6057,7 @@ function mOpenCallLogDetail(id, keepPlace) {
       var val = crew[role]; if (!val || val === "__added__") return;
       var det = (l.unitDetails || {})[ci + "_" + role] || {};
       unitRows += '<div class="m-cld-urow"><span class="m-cld-unit">' + E(String(val).toUpperCase().replace(/^([A-Z]+)(\d)/, "$1-$2")) + (crew.rig ? ' <small>' + E(crew.rig) + '</small>' : '') + '</span>' +
-        '<span>' + E(STATUS_LABEL[det.status] || det.status || "—") + '</span>' +
+        '<span>' + E(det.status === "cleared_scene" && hzRigBackAtBase(l) ? "Available" : (STATUS_LABEL[det.status] || det.status || "—")) + '</span>' +
         '<span>' + (det.responseDir === "scene" ? "Direct to Scene" : det.responseDir === "rig" ? "Picked Up Rig" : "—") + '</span></div>';
     });
   });
@@ -9969,6 +9983,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
 
   var sl = M_STATUS_LOG[status];
   if (mLoadRigBoarded(call, crewIdx) && det.response === "rig" && M_LR_PRESCENE.indexOf(status) !== -1) sl = M_STATUS_LOG.ambo_responding;
+  if (sl && hzAvail(call, status, "") === "Available") sl = { icon: "✓", text: "Available", color: sl.color };   // 12.76 / 5.34
   // Direct response: once someone is on scene, the other units' "En Route to Scene" line is stale —
   // they aren't being tracked individually any more. The rig keeps its own status line.
   if (sl && mIsDirectResponse(call) && !isDriver && status === "enroute_scene" && mSceneMarkedBy(call)) sl = null;
@@ -11251,7 +11266,7 @@ function mBuildDispTimeline(call) {
   var entries = [];
   if (events.length) {
     // TRUE RUNNING LOG — every action, in the order it happened, with who did it
-    events.forEach(function(ev) { entries.push({ time: ev.time || "", icon: ev.icon || "⚡", text: ev.text, color: ev.color || "var(--gray)", by: ev.by || "", at: ev.createdAt || "" }); });
+    events.forEach(function(ev) { entries.push({ time: ev.time || "", icon: ev.icon || "⚡", text: hzAvailEv(call, ev.text), color: ev.color || "var(--gray)", by: ev.by || "", at: ev.createdAt || "" }); });
     (call.callNotes || []).forEach(function(nn) { if (nn && nn.text) entries.push({ time: nn.time || "", icon: "📝", text: nn.text, color: "var(--gray)", by: nn.by || "", at: nn.createdAt || "" }); });
     if (call.status === "cancelled") entries.push({ time: call.cancelledAt ? new Date(call.cancelledAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "✕", text: "Call Cancelled" + (call.cancelReason ? " — " + call.cancelReason : ""), color: "#ff9090", by: call.cancelledBy || "", at: call.cancelledAt || "" });
     if (call.status === "complete") entries.push({ time: call.completedAt ? new Date(call.completedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "🏁", text: "Call Complete", color: "#7dedb5", by: call.completedBy || "", at: call.completedAt || "" });
@@ -11264,7 +11279,7 @@ function mBuildDispTimeline(call) {
         if (role === "rig" || !crew[role] || crew[role] === "__added__") return;
         var det = mUdOf(call, ci, role);
         if (det.assignedAt) entries.push({ time: det.assignedAt, icon:"👤", text: crew[role] + " assigned", color:"var(--white)" });
-        if (det.status && M_STATUS_LOG[det.status]) entries.push({ time: det.statusAt||"", icon:M_STATUS_LOG[det.status].icon, text: crew[role] + " — " + (det.status==="other_status" ? (det.customStatus||"Other") : M_STATUS_LOG[det.status].text), color:M_STATUS_LOG[det.status].color });
+        if (det.status && M_STATUS_LOG[det.status]) entries.push({ time: det.statusAt||"", icon:M_STATUS_LOG[det.status].icon, text: crew[role] + " — " + (det.status==="other_status" ? (det.customStatus||"Other") : hzAvail(call, det.status, M_STATUS_LOG[det.status].text)), color:M_STATUS_LOG[det.status].color });
       });
     });
     if (call.alsActivated) entries.push({ time: call.alsActivatedAt||"", icon: call.alsProvider==="No ALS Available"?"⚠️":"🚨", text: call.alsProvider==="No ALS Available" ? "No ALS Available" : "ALS Activated — "+(call.alsProvider||""), color:"#ff9090" });
