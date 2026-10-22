@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.26"; window.M_BUILD = BUILD;
+  var BUILD = "5.27"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6017,6 +6017,12 @@ function mRenderCallLogs(logs) {
   }).join("");
 }
 var mClDetailId = null;
+window.hzLogEditOnSaved = function(id) {
+  db.collection("activeCalls").doc(id).get().then(function(d) {
+    if (d.exists) { var fresh = Object.assign({ id: d.id }, d.data()), i = mAllCallLogs.findIndex(function(x) { return x.id === id; }); if (i !== -1) mAllCallLogs[i] = fresh; }
+    mToast("✓ Call log updated"); if (mClDetailId === id) mOpenCallLogDetail(id, true);
+  }).catch(function() { mToast("✓ Call log updated"); });
+};
 function mOpenCallLogDetail(id, keepPlace) {
   var l = mSanitizeCall(mAllCallLogs.find(function(x){ return x.id === id; }));
   if (!l) return;
@@ -6055,6 +6061,7 @@ function mOpenCallLogDetail(id, keepPlace) {
     return '<div class="m-cld-note"><div class="m-cld-k">' + E((n.time || "") + (n.by ? " · " + n.by : "")) + '</div><div class="m-cld-v" style="font-weight:400">' + E(n.text || "") + '</div></div>';
   }).join("") || '<div class="m-cld-none">No notes</div>';
   el.innerHTML =
+    (function() { var b = hzLogEditBtn(l); return b ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">' + b + '</div>' : ''; })() +   // 5.27
     (l.testMode ? '<div class="hz-test-banner" style="background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.5);border-radius:8px;padding:8px 12px;margin-bottom:12px;color:#b07400;font-weight:700;font-size:0.8rem">🧪 Test call — posted in Test Mode (not a real call)</div>' : '') +
     '<div class="m-cld-head"><div class="m-cld-addr">' + E(l.address || "Unknown") + (l.apt ? ' <span style="color:var(--gold);font-size:0.85rem">· ' + E(l.apt) + '</span>' : '') + '</div><div class="m-cld-k" style="font-size:0.74rem;text-transform:none;letter-spacing:0">' + E(dateStr) + '</div></div>' +
     '<div class="m-cld-grid">' + info("Zone", zone) + info("Disposition", dispTxt) + '<div style="grid-column:1/-1">' + info("Nature", natureTxt) + '</div>' + (l.callback ? info("Callback", l.callback) : '') + '</div>' +
@@ -6958,6 +6965,7 @@ var M_SMS_TEMPLATE_DEFAULTS = {
   callback:   "CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
   rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}",
   adminUpdate:"NOTIFICATION GROUP\n{header}\n{address}\n{detail}\nBLS: {units}",
+  rigAssigned:"NOTIFICATION GROUP\nRIG ASSIGNED\n{address}\nRig {rig} \u2192 Crew {crew}: {crewUnits}{replaces}",
   callerLocation:"{orgName} — tap to send us your location so the ambulance can find you:\n{link}",
   accessCodeChange:"ACCESS CODE\n{address}\nCode: {accessCode}\n{time}",
   addressChange:"CALL LOCATION CHANGED\n{address}\nWas: {oldAddress}\n{mapsLink}\n\n{wazeLink}\n{time}",
@@ -7232,6 +7240,24 @@ function mAdminCopy(call, header, detail, key) {
   var body = mRenderTemplate(tpl, Object.assign(mCallVars(call), { header: mPlainHeader(header), address: mSmsAddress(call), detail: detail || "", units: isAssign ? mGroupUnits(call) : "" }));
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
   if (key) hzPushTo(units, key, "📟 " + mPlainHeader(header) + " — " + hzPushStreet(call), detail || "", call.id);
+}
+// 12.69 / 5.27: the notification group hears when a rig is put on a call — the first rig, another crew's rig, or a
+// swap / divert to another vehicle. Message Templates ▸ "📟 Notification group — rig assigned" (text + push boxes).
+function mRigAssignedCopy(call, crewIdx, rig, prevRig) {
+  if (!rig || !call || rig === prevRig) return;
+  var smsOn = hzSendOn("rigAssigned", "admin"), pushOn = hzSendOn("rigAssigned", "push");
+  if (!smsOn && !pushOn) return;
+  var already = {};
+  (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
+  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call follow it themselves
+  if (!units.length) return;
+  var crew = (call.crews || [])[crewIdx] || {};
+  var crewUnits = Object.keys(crew).filter(function(k){ return k !== "rig" && crew[k] && crew[k] !== "__added__"; }).map(function(k){ return crew[k]; });
+  var vars = Object.assign(mCallVars(call), { address: mSmsAddress(call), rig: rig, crew: String(crewIdx + 1), crewUnits: crewUnits.join(", ") || "no units yet",
+    replaces: prevRig ? " (replaces " + prevRig + ")" : "" });
+  var body = mRenderTemplate(mTemplateFor("rigAssigned"), vars);
+  if (smsOn && body.trim()) mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
+  hzPushTo(units, "rigAssigned", "📟 Rig " + rig + " assigned — " + hzPushStreet(call), "Crew " + (crewIdx + 1) + (crewUnits.length ? ": " + crewUnits.join(", ") : "") + vars.replaces, call.id);
 }
 // Units for the notification group: every unit on the crews, plus a crew's rig only once one of its
 // units is responding to the rig or riding it.
@@ -8947,6 +8973,217 @@ function hzIsMyCall(l, uid, unit) {
   if (cb === unit || cb.indexOf(unit + " ") === 0) return true;               // older calls: "MC-710 Dina Stern"
   return (l.callEvents || []).some(function(e) { return e && typeof e.text === "string" && e.text.indexOf(unit + " took over dispatch") === 0; });
 }
+// ══ CALL LOG EDITING (12.69 / 5.27) — identical block in index.html and mobile.html ══════════════════════
+// Admins can edit any call log, any time. The dispatcher who created the call can edit it for 1 hour after it was
+// marked complete (or cancelled). Every edit is written to the call's timeline ("✎ Call log edited by …"), to
+// editHistory (who, when, which fields, the old values) and to the HIPAA audit log. Editing never texts anyone.
+var HZ_LOG_EDIT_MIN = 60;
+function hzMeCtx() {
+  var u = (typeof currentUser !== "undefined" && currentUser) || (typeof mCurrentUser !== "undefined" && mCurrentUser) || null;
+  return { uid: u ? u.uid : "",
+    unit: (typeof currentUserUnit !== "undefined" && currentUserUnit) || (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || "",
+    role: (typeof currentRole !== "undefined" && currentRole) || (typeof mCurrentRole !== "undefined" && mCurrentRole) || "",
+    roles: ((typeof currentUserRoles !== "undefined" && currentUserRoles && currentUserRoles.length) ? currentUserRoles : (typeof mCurrentUserRoles !== "undefined" && mCurrentUserRoles) || []).map(function(r) { return String(r).toLowerCase(); }) };
+}
+// The dispatcher who created (posted) the call
+function hzLogCreatedBy(l, me) {
+  if (l.createdByUid) return l.createdByUid === me.uid;
+  if (!me.unit) return false;
+  var s = String(l.createdBy || "").trim();
+  return s === me.unit || s.indexOf(me.unit + " ") === 0;
+}
+function hzLogEditState(l) {
+  var me = hzMeCtx();
+  if (!l || (l.status !== "complete" && l.status !== "cancelled")) return { ok: false };
+  if (me.role === "admin" || me.roles.indexOf("admin") !== -1) return { ok: true, admin: true };
+  if (me.roles.indexOf("dispatcher") === -1 || !hzLogCreatedBy(l, me)) return { ok: false };
+  var end = Date.parse(l.firstClosedAt || l.completedAt || l.cancelledAt || "");
+  if (!end) return { ok: false };
+  var left = end + HZ_LOG_EDIT_MIN * 60000 - Date.now();
+  if (left <= 0) return { ok: false, expired: true };
+  return { ok: true, minsLeft: Math.ceil(left / 60000) };
+}
+function hzLogEditBtn(l, cls) {
+  var st = hzLogEditState(l);
+  if (!st.ok) return "";
+  return '<button type="button" class="' + (cls || "hz-le-open") + '" onclick="hzOpenLogEditor(\'' + String(l.id).replace(/[^\w-]/g, "") + '\')">✎ Edit call log' + (st.admin ? '' : ' <small>(' + st.minsLeft + ' min left)</small>') + '</button>';
+}
+var HZ_LE = null;   // { log, onSaved, s: working copy }
+var HZ_LE_STATUS = { "": "—", enroute_scene: "En Route to Scene", on_scene_direct: "On Scene", picking_up_ambo: "Responding to Base", onboard_rig: "Onboard Rig",
+  ambo_responding: "Rig Responding", on_scene_ambo: "On Scene w/ Rig", rma_scene: "RMA on Scene", transporting: "Transporting", at_facility: "At Hospital",
+  clearing_facility: "Cleared ER", returning_base: "Heading Back to Base", back_at_base: "Back at Base", cleared_scene: "Cleared Scene", other_status: "Other" };
+var HZ_LE_TIMES = [["dispatched", "Dispatched"], ["first_on_scene", "On Scene"], ["enroute", "En Route"], ["home", "Back at Base"]];
+function hzLeEsc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function hzLeCss() {
+  if (document.getElementById("hz-le-css")) return;
+  var st = document.createElement("style"); st.id = "hz-le-css";
+  st.textContent = ".hz-le-bg{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px}" +
+    ".hz-le{background:var(--navy-mid,#122040);color:var(--white,#f4f6fa);border:1px solid var(--card-border,#334);border-radius:14px;width:100%;max-width:760px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.35)}" +
+    ".hz-le-h{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--card-border,#334)}.hz-le-h b{flex:1;font-family:'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase}" +
+    ".hz-le-b{overflow-y:auto;padding:6px 16px 16px}.hz-le-f{padding:12px 16px;border-top:1px solid var(--card-border,#334);display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap}" +
+    ".hz-le-sec{border:1px solid var(--card-border,#334);border-radius:10px;padding:10px 12px;margin-top:12px}.hz-le-sec>h4{margin:0 0 8px;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gray,#8a9ab5)}" +
+    ".hz-le-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}.hz-le label{display:block;font-size:.68rem;color:var(--gray,#8a9ab5);margin:0 0 3px}" +
+    ".hz-le input,.hz-le select,.hz-le textarea{width:100%;box-sizing:border-box;background:rgba(127,127,127,.08);color:var(--white,#f4f6fa);border:1px solid var(--card-border,#334);border-radius:7px;padding:8px 9px;font:inherit;font-size:.86rem}" +
+    ".hz-le input[type=checkbox]{width:auto}.hz-le-row{display:flex;gap:6px;align-items:flex-end;margin-bottom:6px;flex-wrap:wrap}.hz-le-row>div{flex:1;min-width:110px}" +
+    ".hz-le button,.hz-le-open{font:inherit;font-size:.8rem;cursor:pointer;border-radius:7px;padding:7px 12px;border:1px solid var(--card-border,#334);background:rgba(127,127,127,.08);color:var(--white,#f4f6fa)}" +
+    ".hz-le .hz-le-save{background:var(--gold,#c9a84c);color:var(--navy,#0a1628);border-color:var(--gold,#c9a84c);font-weight:700}.hz-le .hz-le-x{background:none;border:none;color:var(--gray,#8a9ab5);font-size:1.1rem;padding:4px 8px}" +
+    ".hz-le-open{border-color:var(--gold,#c9a84c);color:var(--gold,#c9a84c);font-weight:700}.hz-le-open small{font-weight:400;opacity:.8}.hz-le-note{font-size:.75rem;color:var(--gray,#8a9ab5)}";
+  document.head.appendChild(st);
+}
+function hzLeHm(iso) { if (!iso) return ""; var d = new Date(iso); return isNaN(d) ? "" : String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+function hzOpenLogEditor(id, log, onSaved) {
+  var go = function(l) {
+    if (!l) { alert("Couldn't load that call."); return; }
+    var st = hzLogEditState(l);
+    if (!st.ok) { alert(st.expired ? "The 1-hour window to edit this call has passed. Ask an admin to change it." : "Only an admin, or the dispatcher who created this call (for 1 hour after it was closed), can edit it."); return; }
+    var c = JSON.parse(JSON.stringify(l));
+    HZ_LE = { log: l, onSaved: onSaved || window.hzLogEditOnSaved, st: st, s: {
+      crews: (c.crews || []).map(function(cr) { return cr || {}; }), ud: c.unitDetails || {}, notes: (c.callNotes || []).slice(),
+      transports: ((c.disposition || {}).transports || []).slice() } };
+    hzLeRender();
+  };
+  if (log) return go(log);
+  db.collection("activeCalls").doc(id).get().then(function(d) { go(d.exists ? Object.assign({ id: d.id }, d.data()) : null); }).catch(function(e) { alert("Couldn't load the call: " + e.message); });
+}
+window.hzOpenLogEditor = hzOpenLogEditor;
+function hzLeRender() {
+  hzLeCss();
+  var E = HZ_LE, l = E.log, s = E.s, e = hzLeEsc, d = l.disposition || {};
+  var inp = function(f, label, val, type, extra) { return '<div><label>' + label + '</label><input data-f="' + f + '"' + (type ? ' type="' + type + '"' : '') + ' value="' + e(val) + '"' + (extra || "") + '></div>'; };
+  var sel = function(f, label, val, opts) { var has = opts.some(function(o) { return o[0] === (val || ""); });
+    return '<div><label>' + label + '</label><select data-f="' + f + '">' + (has ? '' : '<option value="' + e(val) + '" selected>' + e(val) + '</option>') + opts.map(function(o) { return '<option value="' + e(o[0]) + '"' + (o[0] === (val || "") ? " selected" : "") + '>' + e(o[1]) + '</option>'; }).join("") + '</select></div>'; };
+  var natures = (typeof M_CALL_NATURES !== "undefined" ? M_CALL_NATURES : []).map(function(n) { return [n.value, n.label || n.value]; });
+  var hosp = (typeof M_HOSPITALS !== "undefined" ? M_HOSPITALS : []).filter(function(h) { return h && h !== "Other"; }).map(function(h) { return [h, h]; });
+  var zones = [["primary", "Local Response"], ["secondary", "Load a Rig"], ["transfer", "Stabilize · Linden Rig"], ["outside", "Outside Zone"]];
+  var times = l.times || {};
+  var h = '<div class="hz-le-note" style="margin-top:8px">' + (E.st.admin ? "Admin — you can edit this call any time." : "You can edit this call for " + E.st.minsLeft + " more minute" + (E.st.minsLeft === 1 ? "" : "s") + ".") + ' Changes are logged in the call\'s timeline. Nobody is texted.</div>';
+  h += '<div class="hz-le-sec"><h4>📍 Location</h4><div class="hz-le-g">' + inp("address", "Address", l.address) + inp("apt", "Apt / floor", l.apt) + inp("crossStreet", "Cross street", l.crossStreet)
+    + sel("zone", "Zone", l.zone || "", [["", "—"]].concat(zones)) + inp("accessCode", "Access code", l.accessCode) + inp("callbackNumber", "Callback number", l.callbackNumber, "tel") + '</div></div>';
+  h += '<div class="hz-le-sec"><h4>🩺 Patient & nature</h4><div class="hz-le-g">' + sel("callNature", "Nature", l.callNature || "", [["", "—"]].concat(natures))
+    + inp("patientAgeNum", "Age", l.patientAgeNum, "number", ' min="0" max="130"') + sel("patientAgeUnit", "Age in", l.patientAgeUnit || "years", [["years", "Years"], ["months", "Months"]])
+    + sel("patientSex", "Sex", l.patientSex || "", [["", "—"], ["male", "Male"], ["female", "Female"]]) + '</div></div>';
+  h += '<div class="hz-le-sec"><h4>🕑 Times</h4><div class="hz-le-g">' + HZ_LE_TIMES.map(function(t) { return inp("t_" + t[0], t[1], times[t[0]], "time"); }).join("")
+    + inp("t_completed", l.status === "cancelled" ? "Cancelled" : "Completed", hzLeHm(l.completedAt), "time") + '</div></div>';
+  // disposition
+  h += '<div class="hz-le-sec"><h4>🏁 ' + (l.status === "cancelled" ? "Cancelled" : "Disposition") + '</h4><div class="hz-le-g">';
+  if (l.status === "cancelled") h += inp("cancelReason", "Reason", l.cancelReason) + inp("cancelNote", "Details", l.cancelNote);
+  else h += sel("d_type", "Disposition", d.type || "", [["", "—"], ["transport", "Transport"], ["rma", "RMA"], ["linden_stabilized", "MC stabilized → Linden"], ["linden_noresp", "No MC unit → Linden"]])
+    + sel("d_hospital", "Hospital", d.hospital || "", [["", "—"]].concat(hosp)) + inp("d_hospitalOther", "…or another hospital", "") + inp("d_rmaBy", "RMA approved by", d.rmaBy === "__custom__" ? d.rmaCustom : (d.rmaBy || ""));
+  h += '</div>';
+  if (l.status !== "cancelled" && s.transports.length) h += '<div style="margin-top:8px"><label>Transports (one per rig)</label>' + s.transports.map(function(t, i) {
+    return '<div class="hz-le-row"><div>' + '<input data-tr="' + i + '" data-k="rig" value="' + e(t.rig) + '" placeholder="Rig"></div><div><input data-tr="' + i + '" data-k="hospital" value="' + e(t.hospital) + '" placeholder="Hospital"></div><button type="button" class="hz-le-x" onclick="hzLeOp(\'trDel\',' + i + ')">✕</button></div>'; }).join("") + '</div>';
+  h += '</div>';
+  // ALS
+  h += '<div class="hz-le-sec"><h4>🚨 ALS</h4><div class="hz-le-g"><div><label>ALS activated</label><input type="checkbox" data-f="alsActivated"' + (l.alsActivated ? " checked" : "") + '></div>'
+    + inp("alsProvider", "Provider", l.alsProvider) + inp("alsUnit", "ALS unit", l.alsUnit) + inp("alsEta", "ETA (min)", l.alsEta) + '</div></div>';
+  // units
+  h += '<div class="hz-le-sec"><h4>🚑 Crews & units</h4>' + s.crews.map(function(cr, ci) {
+    var roles = Object.keys(cr).filter(function(k) { return k !== "rig"; });
+    return '<div style="border-top:' + (ci ? '1px solid var(--card-border,#334)' : 'none') + ';padding-top:' + (ci ? '8px' : '0') + ';margin-top:' + (ci ? '8px' : '0') + '">'
+      + '<div class="hz-le-row"><div style="flex:0 0 auto;min-width:0;font-weight:700;align-self:center">Crew ' + (ci + 1) + '</div><div><label>Rig</label><input data-crew="' + ci + '" data-k="rig" value="' + e(cr.rig) + '" placeholder="—"></div>'
+      + '<button type="button" onclick="hzLeOp(\'crewDel\',' + ci + ')">Remove crew</button></div>'
+      + roles.map(function(r) { var det = s.ud[ci + "_" + r] || {}, val = cr[r] === "__added__" ? "" : cr[r];
+        return '<div class="hz-le-row"><div><label>' + e(r) + '</label><input data-crew="' + ci + '" data-k="' + e(r) + '" value="' + e(val) + '" placeholder="Unit"></div>'
+          + '<div><label>Status</label><select data-ud="' + ci + '_' + e(r) + '" data-k="status">' + Object.keys(HZ_LE_STATUS).map(function(k) { return '<option value="' + k + '"' + ((det.status || "") === k ? " selected" : "") + '>' + HZ_LE_STATUS[k] + '</option>'; }).join("") + '</select></div>'
+          + '<div><label>Response</label><select data-ud="' + ci + '_' + e(r) + '" data-k="responseDir">' + [["", "—"], ["scene", "Direct to Scene"], ["rig", "Picked Up Rig"]].map(function(o) { return '<option value="' + o[0] + '"' + ((det.responseDir || det.response || "") === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") + '</select></div>'
+          + '<button type="button" class="hz-le-x" title="Remove unit" onclick="hzLeOp(\'unitDel\',' + ci + ',\'' + e(r) + '\')">✕</button></div>'; }).join("")
+      + '<button type="button" onclick="hzLeOp(\'unitAdd\',' + ci + ')">+ Add unit</button></div>';
+  }).join("") + '<div style="margin-top:8px"><button type="button" onclick="hzLeOp(\'crewAdd\')">+ Add crew</button></div></div>';
+  // notes
+  h += '<div class="hz-le-sec"><h4>📝 Notes</h4><label>Dispatch notes</label><textarea data-f="dispatchNotes" rows="3">' + e(l.dispatchNotes) + '</textarea>'
+    + '<label style="margin-top:8px">Call notes</label>' + s.notes.map(function(n, i) {
+      return '<div class="hz-le-row"><div style="flex:0 0 90px;min-width:90px"><input data-note="' + i + '" data-k="time" value="' + e(n.time) + '" placeholder="HH:MM"></div><div style="flex:4"><input data-note="' + i + '" data-k="text" value="' + e(n.text) + '"></div>'
+        + '<div style="flex:0 0 auto;min-width:0" class="hz-le-note">' + e(n.by || "") + '</div><button type="button" class="hz-le-x" onclick="hzLeOp(\'noteDel\',' + i + ')">✕</button></div>'; }).join("")
+    + '<button type="button" onclick="hzLeOp(\'noteAdd\')">+ Add note</button></div>';
+  var old = document.getElementById("hz-le-bg"), keepTop = old ? old.querySelector(".hz-le-b").scrollTop : 0; if (old) old.remove();
+  var bg = document.createElement("div"); bg.id = "hz-le-bg"; bg.className = "hz-le-bg";
+  bg.innerHTML = '<div class="hz-le" role="dialog" aria-modal="true" aria-label="Edit call log"><div class="hz-le-h"><b>✎ Edit call log</b><span class="hz-le-note">' + e(l.address || "") + '</span><button type="button" class="hz-le-x" onclick="hzCloseLogEditor()" aria-label="Close">✕</button></div>'
+    + '<div class="hz-le-b">' + h + '</div><div class="hz-le-f"><span id="hz-le-msg" class="hz-le-note" style="flex:1"></span><button type="button" onclick="hzCloseLogEditor()">Cancel</button><button type="button" class="hz-le-save" onclick="hzSaveLogEdit()">💾 Save changes</button></div></div>';
+  document.body.appendChild(bg);
+  bg.querySelector(".hz-le-b").scrollTop = keepTop;
+}
+function hzCloseLogEditor() { var b = document.getElementById("hz-le-bg"); if (b) b.remove(); HZ_LE = null; }
+window.hzCloseLogEditor = hzCloseLogEditor;
+// copy what's typed in the lists back into the working copy (before a list changes, and before saving)
+function hzLeSync() {
+  var s = HZ_LE.s, bg = document.getElementById("hz-le-bg"); if (!bg) return;
+  bg.querySelectorAll("[data-crew]").forEach(function(el) { var cr = s.crews[+el.getAttribute("data-crew")]; if (cr) cr[el.getAttribute("data-k")] = el.value.trim(); });
+  bg.querySelectorAll("[data-ud]").forEach(function(el) { var k = el.getAttribute("data-ud"); s.ud[k] = Object.assign({}, s.ud[k] || {}); s.ud[k][el.getAttribute("data-k")] = el.value; });
+  bg.querySelectorAll("[data-note]").forEach(function(el) { var n = s.notes[+el.getAttribute("data-note")]; if (n) n[el.getAttribute("data-k")] = el.value; });
+  bg.querySelectorAll("[data-tr]").forEach(function(el) { var t = s.transports[+el.getAttribute("data-tr")]; if (t) t[el.getAttribute("data-k")] = el.value.trim(); });
+  HZ_LE.vals = {};
+  bg.querySelectorAll("[data-f]").forEach(function(el) { HZ_LE.vals[el.getAttribute("data-f")] = el.type === "checkbox" ? el.checked : el.value.trim(); });
+}
+function hzLeOp(op, a, b) {
+  hzLeSync();
+  var s = HZ_LE.s, keep = HZ_LE.vals, i;
+  if (op === "crewAdd") s.crews.push({});
+  else if (op === "crewDel") { if (!confirm("Remove Crew " + (a + 1) + " from the call log?")) return; s.crews.splice(a, 1);
+    var ud = {}; Object.keys(s.ud).forEach(function(k) { var p = k.split("_"), ci = +p[0]; if (ci === a) return; ud[(ci > a ? ci - 1 : ci) + "_" + p.slice(1).join("_")] = s.ud[k]; }); s.ud = ud; }
+  else if (op === "unitAdd") { var cr = s.crews[a], n = 1; while (cr["unit" + n] !== undefined) n++; cr["unit" + n] = ""; }
+  else if (op === "unitDel") { delete s.crews[a][b]; delete s.ud[a + "_" + b]; }
+  else if (op === "noteAdd") { var me = hzMeCtx(), d = new Date(); s.notes.push({ time: String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"), by: me.unit + " (added after the call)", text: "" }); }
+  else if (op === "noteDel") s.notes.splice(a, 1);
+  else if (op === "trDel") s.transports.splice(a, 1);
+  // keep what was typed in the single boxes
+  var L = HZ_LE.log, saved = {}; Object.keys(keep).forEach(function(k) { saved[k] = keep[k]; });
+  hzLeRender();
+  var bg = document.getElementById("hz-le-bg");
+  bg.querySelectorAll("[data-f]").forEach(function(el) { var k = el.getAttribute("data-f"); if (!(k in saved)) return; if (el.type === "checkbox") el.checked = !!saved[k]; else { if (el.tagName === "SELECT" && !Array.from(el.options).some(function(o) { return o.value === saved[k]; })) { var o = document.createElement("option"); o.value = o.textContent = saved[k]; el.appendChild(o); } el.value = saved[k]; } });
+  if (op === "noteAdd") { var ns = bg.querySelectorAll('[data-note][data-k="text"]'); if (ns.length) ns[ns.length - 1].focus(); }
+}
+window.hzLeOp = hzLeOp;
+function hzSaveLogEdit() {
+  if (!HZ_LE) return;
+  hzLeSync();
+  var E = HZ_LE, l = E.log, v = E.vals, s = E.s, msg = document.getElementById("hz-le-msg");
+  var st = hzLogEditState(l);
+  if (!st.ok) { msg.textContent = "⚠ The 1-hour edit window has passed — not saved. Ask an admin."; return; }
+  if (!v.address) { msg.textContent = "⚠ The address can't be empty."; return; }
+  var upd = {}, names = [], before = {};
+  var same = function(a, b) { return JSON.stringify(a == null ? "" : a) === JSON.stringify(b == null ? "" : b); };
+  var put = function(key, val, label) { if (same(l[key], val)) return; upd[key] = val; before[key] = l[key] == null ? "" : l[key]; if (names.indexOf(label) === -1) names.push(label); };
+  put("address", v.address, "address"); put("apt", v.apt, "apt"); put("crossStreet", v.crossStreet, "cross street"); put("zone", v.zone, "zone");
+  put("accessCode", v.accessCode, "access code"); put("callbackNumber", v.callbackNumber, "callback number");
+  put("callNature", v.callNature, "nature"); put("patientAgeNum", v.patientAgeNum, "age"); put("patientAgeUnit", v.patientAgeUnit, "age"); put("patientSex", v.patientSex, "sex");
+  var times = Object.assign({}, l.times || {}); HZ_LE_TIMES.forEach(function(t) { if (v["t_" + t[0]]) times[t[0]] = v["t_" + t[0]]; else delete times[t[0]]; });
+  put("times", times, "times");
+  if (v.t_completed && v.t_completed !== hzLeHm(l.completedAt) && l.completedAt) {
+    var cd = new Date(l.completedAt), p = v.t_completed.split(":"); cd.setHours(+p[0], +p[1], 0, 0); put("completedAt", cd.toISOString(), "times");
+    if (l.status === "cancelled") put("cancelledAt", cd.toISOString(), "times");
+  }
+  if (l.status === "cancelled") { put("cancelReason", v.cancelReason, "cancel reason"); put("cancelNote", v.cancelNote, "cancel reason"); }
+  else {
+    var d = Object.assign({}, l.disposition || {}), hosp = v.d_hospitalOther || v.d_hospital;
+    d.type = v.d_type; d.hospital = d.type === "transport" ? hosp : (d.type ? "" : hosp);
+    if (d.type === "rma") { d.rmaBy = v.d_rmaBy; d.rmaCustom = ""; } else { d.rmaBy = ""; d.rmaCustom = ""; }
+    if (s.transports.length || (l.disposition || {}).transports) d.transports = s.transports.filter(function(t) { return t.rig || t.hospital; });
+    put("disposition", d, "disposition");
+  }
+  put("alsActivated", !!v.alsActivated, "ALS"); put("alsProvider", v.alsProvider, "ALS"); put("alsUnit", v.alsUnit, "ALS"); put("alsEta", v.alsEta, "ALS");
+  put("dispatchNotes", v.dispatchNotes, "dispatch notes");
+  put("callNotes", s.notes.filter(function(n) { return String(n.text || "").trim(); }), "call notes");
+  // crews: drop empty unit slots, rebuild the unit list
+  var crews = s.crews.map(function(cr) { var o = {}; Object.keys(cr).forEach(function(k) { var val = String(cr[k] || "").trim(); if (val) o[k] = k === "rig" ? val : val.toUpperCase(); }); return o; });
+  var ud = {}; Object.keys(s.ud).forEach(function(k) { var p = k.split("_"), cr = crews[+p[0]]; if (!cr || !cr[p.slice(1).join("_")]) return; var x = Object.assign({}, s.ud[k]); if (x.responseDir) x.response = x.responseDir; ud[k] = x; });
+  var assigned = []; crews.forEach(function(c) { Object.keys(c).forEach(function(k) { if (k !== "rig" && assigned.indexOf(c[k]) === -1) assigned.push(c[k]); }); });
+  put("crews", crews, "units"); put("unitDetails", ud, "units"); put("assignedUnits", assigned, "units");
+  if (!names.length) { msg.textContent = "Nothing was changed."; return; }
+  var me = hzMeCtx(), now = new Date().toISOString();
+  if (!l.firstClosedAt && (l.completedAt || l.cancelledAt)) upd.firstClosedAt = l.completedAt || l.cancelledAt;   // the 1-hour window can't be moved by editing the time
+  upd.updatedAt = now;
+  upd.editHistory = firebase.firestore.FieldValue.arrayUnion({ at: now, by: me.unit, uid: me.uid, fields: names, before: JSON.parse(JSON.stringify(before)) });
+  upd.callEvents = firebase.firestore.FieldValue.arrayUnion({ text: "Call log edited by " + (me.unit || "a dispatcher") + " — " + names.join(", "), icon: "✎", color: "#7ab8f5", sub: "", kind: "edit",
+    time: hzLeHm(now), by: me.unit || "", createdAt: now });
+  msg.textContent = "⏳ Saving…";
+  var id = l.id, done = E.onSaved;
+  db.collection("activeCalls").doc(id).update(upd).then(function() {
+    db.collection("callLogAudit").add({ action: "call_record_edit", callId: id, uid: me.uid, unit: me.unit, role: me.role, fields: names, timestamp: now, userAgent: navigator.userAgent.substring(0, 100) }).catch(function() {});
+    hzCloseLogEditor();
+    if (typeof done === "function") done(id);
+  }).catch(function(e2) { msg.textContent = "⚠ Not saved: " + e2.message; });
+}
+window.hzSaveLogEdit = hzSaveLogEdit;
 function mCallOwner(call) { return call && call.dispatcherUid ? { uid: call.dispatcherUid, unit: call.dispatcherUnit || "Another dispatcher" } : null; }
 function mIOwnCall(call) { var o = mCallOwner(call); return !o || !!(mCurrentUser && o.uid === mCurrentUser.uid); }
 function mClaimCall(call, takeOver) {
@@ -10043,7 +10280,8 @@ function mDoAssign(unitId) {
           if (det.response === "rig" && ["", "picking_up_ambo", "onboard_rig"].indexOf(det.status || "") !== -1) ud[key] = Object.assign({}, det, { status: "ambo_responding", statusAt: mNowHHMM() });
         });
       }
-      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt((prevRig && prevRig !== unitId ? "Crew " + (crewIdx+1) + " diverted from " + prevRig + " to alternate vehicle " + unitId : "Rig " + unitId + " selected for Crew " + (crewIdx+1)) + (divert ? " — diverting from " + divert.address + ", responding to scene" : ""), "🚑", "#ffc84a", "assign")) });
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt((prevRig && prevRig !== unitId ? "Crew " + (crewIdx+1) + " diverted from " + prevRig + " to alternate vehicle " + unitId : "Rig " + unitId + " selected for Crew " + (crewIdx+1)) + (divert ? " — diverting from " + divert.address + ", responding to scene" : ""), "🚑", "#ffc84a", "assign")) })
+        .then(function() { mRigAssignedCopy(Object.assign({}, call, { id: callId, crews: crews, unitDetails: ud }), crewIdx, unitId, prevRig); });
     } else {
       crews[crewIdx][role] = unitId;
       var assignedUnits = [];
@@ -10205,7 +10443,8 @@ function mAddRigWithUnit(unitId) {
         callEvents: mEvtUnion(mEvt(divert
           ? res.rig + " diverting from " + divert.address + " — " + unitId + " responding to scene (Crew " + (idx+1) + ")"
           : unitId + " responding to " + (res.rig || "a rig") + " (Crew " + (idx+1) + ")", "🚑", "#ffc84a", "assign")) })
-        .then(function(){ mCloseAllSheets(); mToast(divert ? res.rig + " diverting — responding to scene" : res.rig ? unitId + " → " + res.rig : unitId + " added (no rig assigned)"); });
+        .then(function(){ mCloseAllSheets(); mToast(divert ? res.rig + " diverting — responding to scene" : res.rig ? unitId + " → " + res.rig : unitId + " added (no rig assigned)");
+          if (res.rig) mRigAssignedCopy(Object.assign({}, call, { id: callId, crews: crews, unitDetails: ud }), idx, res.rig, ""); });
     });
   }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
@@ -11001,7 +11240,7 @@ function mCompleteCallGo(away, why) {
   db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
     var d = snap.exists ? snap.data() : {};
     var completedBy = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim() || mCurrentUserUnit || "";
-    var upd = { status: "complete", completedAt: new Date().toISOString(), completedBy: completedBy };
+    var upd = { status: "complete", completedAt: new Date().toISOString(), completedBy: completedBy, completedByUid: mCurrentUser.uid };
     if (why) upd.callEvents = mEvtUnion(mEvt("Closed without " + away.join(", ") + " back at base — " + why, "⚠️", "#ffc84a", "event"));
     return db.collection("activeCalls").doc(callId).set(upd, { merge: true });
   }).then(function() { mToast("✓ Call complete"); mCloseDispatchDetail(); }).catch(function(e){ mToast("Error: "+e.message, true); });
@@ -11065,7 +11304,7 @@ function mConfirmCancelCall() {
     });
     return db.collection("activeCalls").doc(callId).set({
       status: "cancelled", cancelReason: reason, cancelNote: extraNote, cancelledBy: cancelledBy,
-      cancelledAt: now.toISOString(), completedAt: now.toISOString(),
+      cancelledAt: now.toISOString(), completedAt: now.toISOString(), completedByUid: mCurrentUser.uid,
       callNotes: notes, unitDetails: unitDetails, "disposition.type": "cancelled", updatedAt: now.toISOString()
     }, { merge: true });
   }).then(function() {
