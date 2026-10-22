@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.47"; window.M_BUILD = BUILD;
+  var BUILD = "5.48"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2100,6 +2100,9 @@ function mNavRecord(key) {
   st.push(key); history.pushState(mNavState(), "");
 }
 function mNavCloseOverlay() {
+  // 12.93 / 5.48: the 🚙 Vehicle Shifts window and the 📅 availability pop-up added their own back step ("added")
+  var ev = document.getElementById("hz-erv"); if (ev && typeof hzErvClose === "function") { var h1 = HZ_ERV.hist; HZ_ERV.hist = false; hzErvClose(true); return h1 ? "added" : true; }
+  var ap = document.getElementById("hz-av-pop"); if (ap && typeof hzAvClose === "function") { var h2 = HZ_AV.hist; HZ_AV.hist = false; hzAvClose(true); return h2 ? "added" : true; }
   if (document.querySelector(".m-disp-sheet.show")) { mCloseAllSheets(); return true; }
   var om = document.getElementById("m-own-modal") || document.getElementById("m-ec-modal"); if (om) { om.remove(); return true; }
   var dm = document.getElementById("m-detail-modal"); if (dm && dm.classList.contains("open")) { mCloseDetail(); return true; }
@@ -2120,7 +2123,9 @@ function mNavShow(key) {
 window.addEventListener("popstate", function(e) {
   if (mNav.skipPop > 0) { mNav.skipPop--; return; }
   if (!mNav.stack.length) return;                             // signed out
-  if (mNavCloseOverlay()) { history.pushState(mNavState(), ""); return; }   // Back closes the pop-up and stays here
+  var ov = mNavCloseOverlay();
+  if (ov === "added") return;                                  // that pop-up had its own back step — it's used up
+  if (ov) { history.pushState(mNavState(), ""); return; }      // Back closes the pop-up and stays here
   var st = e.state || {}, i = typeof st.hzI === "number" ? st.hzI : 0;
   mNav.stack = mNav.stack.slice(0, i + 1);
   if (!mNav.stack.length) mNav.stack = ["home"];
@@ -12340,10 +12345,16 @@ function hzErvOpen(tab, preset) {
   var el = document.getElementById("hz-erv");
   if (!el) { el = document.createElement("div"); el.id = "hz-erv"; document.body.appendChild(el); }
   el.style.display = "flex";
+  if (!HZ_ERV.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "erv" }), ""); HZ_ERV.hist = true; } catch (e) {} }
   if (!HZ_ERV.bodyOv) { HZ_ERV.bodyOv = document.body.style.overflow || "x"; document.body.style.overflow = "hidden"; }   // the page behind doesn't scroll
   hzErvDraw();
 }
-function hzErvClose() { var el = document.getElementById("hz-erv"); if (el) el.remove(); if (HZ_ERV.bodyOv) { document.body.style.overflow = HZ_ERV.bodyOv === "x" ? "" : HZ_ERV.bodyOv; HZ_ERV.bodyOv = ""; } }
+// 12.93 / 5.48: the phone's Back key closes this window (it adds one step to the phone's back history while open)
+function hzErvClose(fromBack) {
+  var el = document.getElementById("hz-erv"); if (el) el.remove();
+  if (HZ_ERV.bodyOv) { document.body.style.overflow = HZ_ERV.bodyOv === "x" ? "" : HZ_ERV.bodyOv; HZ_ERV.bodyOv = ""; }
+  if (HZ_ERV.hist) { HZ_ERV.hist = false; if (!fromBack && history.state && history.state.hzOv === "erv" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
+}
 function hzErvTab(t) { HZ_ERV.tab = t; hzErvDraw(); }
 function hzErvWeek(n) { HZ_ERV.weekStart = n === 0 ? hzErvAddDays(hzErvDayStart(Date.now()), -new Date().getDay()) : hzErvAddDays(HZ_ERV.weekStart, 7 * n); hzErvDraw(); }
 function hzErvPick(id) { HZ_ERV.ervId = id; hzErvDraw(); }
@@ -12760,10 +12771,15 @@ function hzAvTap(day) {
 function hzAvOpen() {
   var el = document.getElementById("hz-av-pop");
   if (!el) { el = document.createElement("div"); el.id = "hz-av-pop"; document.body.appendChild(el); }
+  if (!HZ_AV.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "av" }), ""); HZ_AV.hist = true; } catch (e) {} }   // 12.93: Back closes it
   el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="My availability"><div class="hz-erv-top"><b>📅 My availability</b><span style="flex:1"></span><button class="hz-erv-x" onclick="hzAvClose()" aria-label="Close">✕</button></div><div class="hz-erv-body" id="hz-av-pop-body"></div></div>';
   hzAvRefreshCards();
 }
-function hzAvClose() { var el = document.getElementById("hz-av-pop"); if (el) el.remove(); try { if (/availability/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
+function hzAvClose(fromBack) {
+  var el = document.getElementById("hz-av-pop"); if (el) el.remove();
+  try { if (/availability/.test(location.hash)) history.replaceState(history.state, "", location.pathname + location.search); } catch (e) {}   // 12.93: keep the back history
+  if (HZ_AV.hist) { HZ_AV.hist = false; if (!fromBack && history.state && history.state.hzOv === "av" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
+}
 // keep the card in My Settings after each redraw of that page
 function hzAvHook(name) {
   var f = window[name]; if (typeof f !== "function" || f.__hzAv) return;
