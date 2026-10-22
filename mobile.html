@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.43"; window.M_BUILD = BUILD;
+  var BUILD = "5.45"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -975,6 +975,7 @@ html[data-theme="basic"] .hz-erv-day{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-chip.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-erv-chip.warn{color:#8a5a00 !important}
 html[data-theme="basic"] .hz-erv-chip.bad{color:#b42318 !important}
+html[data-theme="basic"] .hz-erv-req{color:#b42318 !important}
 html[data-theme="basic"] .hz-erv-note.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}
@@ -1150,8 +1151,8 @@ html[data-theme="basic"] .hz-av-yes{color:#167a3e !important}</style>
       <button class="m-tile hz-erv-entry" data-sec="erv" onclick="hzErvOpen('schedule')" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🚙</span>
-          <span class="m-tile-label">ERV Shifts</span>
-          <span class="m-tile-sub hz-erv-tile-sub">Book the ERV · check in / out</span>
+          <span class="m-tile-label">Vehicle Shifts</span>
+          <span class="m-tile-sub hz-erv-tile-sub">Book a vehicle · check in / out</span>
         </div>
       </button>
       <button class="m-tile" data-sec="shifts" onclick="mGoTo('shifts')">
@@ -3024,7 +3025,7 @@ function mRenderCalls(calls) {
       crews.forEach(function(crew, ci) {
         if (!crew) return;
         if (crew.rig) rigPills += '<span class="m-pill plain">🚑 ' + mEscHtml(crew.rig) + '</span>';   // rigs get their own row (5.08)
-        if (ci === 0 && typeof hzErvOnCall === "function") hzErvOnCall(call).forEach(function(ev){ rigPills += '<span class="m-pill plain">🚙 ' + mEscHtml(ev) + '</span>'; });   // 5.38
+        if (ci === 0 && typeof hzErvOnCall === "function") hzErvOnCall(call).forEach(function(ev){ rigPills += '<span class="m-pill plain">' + (/^ERV/i.test(ev) ? '🚙 ' : '🚑 ') + mEscHtml(ev) + '</span>'; });   // 5.38
         Object.keys(crew).sort(function(a, b) { var o = ["primary","backup","rigUnit"]; var ia = o.indexOf(a), ib = o.indexOf(b); ia = ia < 0 ? 9 : ia; ib = ib < 0 ? 9 : ib; return ia - ib || a.localeCompare(b, undefined, { numeric: true }); }).forEach(function(role) {   // Unit 1, Unit 2, Unit 3, then extras
           if (role === "rig") return;
           var val = crew[role]; if (!val || val === "__added__") return;
@@ -6173,6 +6174,7 @@ function mLoadTickets() {
 }
 function mRenderTickets() {
   var list = mTicketStatusFilter === "all" ? mAllTickets : mAllTickets.filter(function(t) { return t.status === mTicketStatusFilter; });
+  if (typeof hzErvHidden === "function") list = list.filter(function(t){ return !hzErvHidden(t); });   // 12.89: denied ERV requests — admins and the driver only
   var el = document.getElementById("m-tickets-list");
   if (!list.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">No service requests.</div>'; return; }
   var statusColor = { open: "#ff9090", accepted: "#ffb26b", "in-progress": "#ffc84a", resolved: "#7dedb5" };
@@ -10203,7 +10205,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   if (sl) {
     var withRig = isDriver && crew.rig && (mLoadRigBoarded(call, crewIdx) && status === "picking_up_ambo" || ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1);
     var riding = !isDriver && crew.rig && M_RIDER_STATUSES.indexOf(status) !== -1;   // scene-direct unit riding in the rig
-    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.icon + ' ' + unit + ' ' + sl.text + (withRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : (det.ervVehicle && det.response === "scene" && HZ_ERV_DONE.indexOf(status) < 0 ? ' · 🚙 ' + mEscHtml(det.ervVehicle) : '')) + '</div>';
+    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.icon + ' ' + unit + ' ' + sl.text + (withRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : (det.ervVehicle && det.response === "scene" && HZ_ERV_DONE.indexOf(status) < 0 ? ' · ' + (/^ERV/i.test(det.ervVehicle) ? '🚙 ' : '🚑 ') + mEscHtml(det.ervVehicle) : '')) + '</div>';
   }
 
   var nextBtn = mNextStepButton(call, crewIdx, role, unit);
@@ -12183,7 +12185,12 @@ function mCloseAllSheets() {
    Who hears about a new request: the "🚙 ERV shift request" line in Who Receives What
    (dispatchSettings.ervTicketUnits; empty = every admin). How: push / text / email switches
    "ervRequest" and "ervDecision" in How each ticket stage is sent — all Off until ticked.
+   12.90 / 5.45 — renamed 🚙 VEHICLE SHIFTS: rigs (vehicles type "vehicle") can be booked too, by members ticked
+   "Approved for Rig Shifts" (users.rigDriver); ERVs by "Approved to Drive the ERV" (users.ervDriver); admins any.
+   Same request → approve/deny → check in/out; a rig on shift follows the unit on calls like the ERV does.
+   Every request needs a reason (shiftReason, also in details) and shows the advisory HZ_ERV_ADVISORY.
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+var HZ_ERV_ADVISORY = "While you have the vehicle you are expected to be available to respond to calls with it.";
 var HZ_ERV = { me: null, uid: "", isAdmin: false, access: "admins", allowed: false, tickets: [], ervs: [], unsub: null,
                tab: "schedule", ervId: "", weekStart: null, preset: null, ready: false };
 function hzErvEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
@@ -12201,7 +12208,18 @@ function hzErvParseInput(v) { var m = String(v || "").match(/^(\d{4})-(\d{2})-(\
 function hzErvDayStart(ms) { var d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
 function hzErvAddDays(ms, n) { var d = new Date(ms); d.setDate(d.getDate() + n); return d.getTime(); }
 function hzErvStatus(t) { return t.ervStatus || "pending"; }
+// 12.90: the vehicles I may book — admins all; ERVs for "Approved to Drive the ERV"; rigs for "Approved for Rig Shifts"
+function hzErvMyVehicles() {
+  var me = HZ_ERV.me || {};
+  return (HZ_ERV.ervs || []).filter(function(v){ return HZ_ERV.isAdmin || (v.kind === "rig" ? me.rigDriver === true : me.ervDriver === true); });
+}
 function hzErvIsMine(t) { return !!HZ_ERV.uid && t.submittedByUid === HZ_ERV.uid; }
+// 12.89 / 5.44: a denied ERV request is seen only by admins and the driver who asked (hidden from the Helpdesk lists for everyone else)
+function hzErvHidden(t) {
+  if (!t || t.category !== "erv" || hzErvStatus(t) !== "denied" || HZ_ERV.isAdmin) return false;
+  var uid = HZ_ERV.uid || (typeof firebase !== "undefined" && firebase.auth && firebase.auth().currentUser ? firebase.auth().currentUser.uid : "");
+  return !uid || t.submittedByUid !== uid;
+}
 // requests that hold the ERV: approved ones block a time; pending ones are shown but don't block
 function hzErvBlocking(ervId, exceptId) {
   return HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && t.id !== exceptId && hzErvStatus(t) === "approved"; });
@@ -12230,7 +12248,7 @@ function hzErvCheckBtns(t) {
 }
 function hzErvCheckLine(t) {
   if (t.checkedOutAt) return '<div class="hz-erv-muted">✅ Checked in ' + hzErvDay(t.checkedInAt) + ' ' + hzErvTime(t.checkedInAt) + ' · 🏁 checked out ' + hzErvTime(t.checkedOutAt) + '</div>';
-  if (t.checkedInAt) return '<div class="hz-erv-muted" style="color:#7dedb5">✅ Checked in ' + hzErvDay(t.checkedInAt) + ' ' + hzErvTime(t.checkedInAt) + ' — the ERV is theirs on calls until they check out</div>';
+  if (t.checkedInAt) return '<div class="hz-erv-muted" style="color:#7dedb5">✅ Checked in ' + hzErvDay(t.checkedInAt) + ' ' + hzErvTime(t.checkedInAt) + ' — the vehicle is theirs on calls until they check out</div>';
   return "";
 }
 function hzErvCheckInOut(id, kind) {
@@ -12253,15 +12271,16 @@ function hzErvOnCall(call) {
 function hzErvApplyAccess() {
   var me = HZ_ERV.me || {};
   HZ_ERV.isAdmin = me.role === "admin" || (me.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; });
-  HZ_ERV.allowed = HZ_ERV.isAdmin || (HZ_ERV.access === "drivers" && me.ervDriver === true);
+  HZ_ERV.allowed = HZ_ERV.isAdmin || (HZ_ERV.access === "drivers" && (me.ervDriver === true || me.rigDriver === true));   // 12.90: or rig shifts
   document.querySelectorAll(".hz-erv-entry").forEach(function(el){ el.style.display = HZ_ERV.allowed ? "" : "none"; });
   document.querySelectorAll(".hz-erv-testing").forEach(function(el){ el.style.display = HZ_ERV.allowed && HZ_ERV.access !== "drivers" ? "" : "none"; });
+  ["renderTickets", "mRenderTickets"].forEach(function(f){ try { if (typeof window[f] === "function") window[f](); } catch (e) {} });   // 12.89: re-filter denied ERV requests now that we know who this is
   hzErvTileSub();
 }
 // 12.82 / 5.40: the home tile's second line says what's next for me
 function hzErvTileSub() {
   var els = document.querySelectorAll(".hz-erv-tile-sub"); if (!els.length) return;
-  var mine = HZ_ERV.tickets.filter(hzErvIsMine), now = Date.now(), txt = "Book the ERV · check in / out";
+  var mine = HZ_ERV.tickets.filter(hzErvIsMine), now = Date.now(), txt = "Book a vehicle · check in / out";
   var on = mine.filter(hzErvCanOut)[0], due = mine.filter(hzErvCanIn)[0];
   var next = mine.filter(function(t){ return hzErvStatus(t) === "approved" && !t.checkedInAt && t.startMs > now; }).sort(function(a, b){ return a.startMs - b.startMs; })[0];
   if (on) txt = "✅ Checked in — tap to check out";
@@ -12297,17 +12316,21 @@ function hzErvListen() {
     if (document.getElementById("hz-erv")) hzErvDraw();
   }, function(e){ console.warn("ERV list", e); });
   db.collection("vehicles").get().then(function(q) {
-    var list = []; q.forEach(function(d){ var v = d.data() || {}, id = d.id; var ty = String(v.type || "").toLowerCase(); if (ty === "erv" || (/^ERV/i.test(id) && !/bag|kit|storage|other/.test(ty) && !/bag|kit/i.test(id))) list.push({ id: id, name: v.description ? id + " — " + v.description : id }); });
-    list.sort(function(a, b){ return a.id.localeCompare(b.id, undefined, { numeric: true }); });
-    HZ_ERV.ervs = list.length ? list : [{ id: "ERV-1", name: "ERV-1" }];
-    if (!HZ_ERV.ervId || !list.some(function(x){ return x.id === HZ_ERV.ervId; })) HZ_ERV.ervId = HZ_ERV.ervs[0].id;
+    var list = []; q.forEach(function(d){ var v = d.data() || {}, id = d.id, ty = String(v.type || "").toLowerCase(), nm = v.description ? id + " — " + v.description : id;
+      if (/bag|kit|storage|other/.test(ty) || /bag|kit/i.test(id)) return;
+      if (ty === "erv" || /^ERV/i.test(id)) list.push({ id: id, name: nm, kind: "erv" });
+      else if (ty === "vehicle" || (!ty && /^MC-?9\d\d$/i.test(id))) list.push({ id: id, name: nm, kind: "rig" });   // 12.90: rigs
+    });
+    list.sort(function(a, b){ return (a.kind === b.kind ? 0 : a.kind === "erv" ? -1 : 1) || a.id.localeCompare(b.id, undefined, { numeric: true }); });
+    HZ_ERV.ervs = list.length ? list : [{ id: "ERV-1", name: "ERV-1", kind: "erv" }];
+    var mine = hzErvMyVehicles(); if (!HZ_ERV.ervId || !mine.some(function(x){ return x.id === HZ_ERV.ervId; })) HZ_ERV.ervId = (mine[0] || HZ_ERV.ervs[0]).id;
     if (document.getElementById("hz-erv")) hzErvDraw();
-  }).catch(function(){ HZ_ERV.ervs = [{ id: "ERV-1", name: "ERV-1" }]; HZ_ERV.ervId = HZ_ERV.ervId || "ERV-1"; });
+  }).catch(function(){ HZ_ERV.ervs = [{ id: "ERV-1", name: "ERV-1", kind: "erv" }]; HZ_ERV.ervId = HZ_ERV.ervId || "ERV-1"; });
 }
 
 // ── the window ──
 function hzErvOpen(tab, preset) {
-  if (!HZ_ERV.allowed) { hzErvToast("ERV shift requests aren't open yet.", true); return; }
+  if (!HZ_ERV.allowed) { hzErvToast("Vehicle shift requests aren't open yet.", true); return; }
   hzErvListen();
   HZ_ERV.tab = tab || "schedule"; HZ_ERV.preset = preset || null;
   if (!HZ_ERV.weekStart) { var t = hzErvDayStart(Date.now()); HZ_ERV.weekStart = hzErvAddDays(t, -new Date(t).getDay()); }
@@ -12327,7 +12350,7 @@ function hzErvDraw() {
   var pend = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; }).length;
   var tabs = [["schedule", "🗓 Schedule"], ["request", "➕ Request a shift"], ["mine", "📋 My requests"]].concat(HZ_ERV.isAdmin ? [["approve", "✅ Approve" + (pend ? " (" + pend + ")" : "")]] : []);
   var body = HZ_ERV.tab === "request" ? hzErvRequestHtml() : HZ_ERV.tab === "mine" ? hzErvMineHtml() : HZ_ERV.tab === "approve" && HZ_ERV.isAdmin ? hzErvApproveHtml() : hzErvScheduleHtml();
-  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="ERV shifts"><div class="hz-erv-top"><b>🚙 ERV Shifts</b>'
+  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="Vehicle shifts"><div class="hz-erv-top"><b>🚙 Vehicle Shifts</b>'
     + (HZ_ERV.access !== "drivers" ? '<span class="hz-erv-pill warn" title="Only admins can see this until it is opened to drivers in Admin ▸ Notifications & Permissions">Testing — admins only</span>' : '')
     + '<span style="flex:1"></span><button class="hz-erv-x" onclick="hzErvClose()" aria-label="Close">✕</button></div>'
     + '<div class="hz-erv-tabs">' + tabs.map(function(t){ return '<button class="' + (HZ_ERV.tab === t[0] ? "on" : "") + '" onclick="hzErvTab(\'' + t[0] + '\')">' + t[1] + '</button>'; }).join("") + '</div>'
@@ -12341,8 +12364,12 @@ function hzErvNowBanner() {
   return '<div class="hz-erv-card" style="border-color:var(--gold)"><div class="hz-erv-row" style="margin:0"><b>Your shift: ' + hzErvEsc(t.ervUnit) + ' · ' + hzErvEsc(hzErvRange(t.startMs, t.endMs)) + '</b><span style="flex:1"></span>' + hzErvCheckBtns(t) + '</div>' + hzErvCheckLine(t) + '</div>';
 }
 function hzErvErvSelect(id, onchange) {
-  return '<select id="' + id + '" class="hz-erv-in" onchange="' + onchange + '">' + (HZ_ERV.ervs.length ? HZ_ERV.ervs : [{ id: HZ_ERV.ervId, name: HZ_ERV.ervId }]).map(function(v){ return '<option value="' + hzErvEsc(v.id) + '"' + (v.id === HZ_ERV.ervId ? " selected" : "") + '>' + hzErvEsc(v.name) + '</option>'; }).join("") + '</select>';
+  var vs = hzErvMyVehicles(); if (!vs.length) vs = [{ id: HZ_ERV.ervId, name: HZ_ERV.ervId, kind: "erv" }];
+  var opt = function(v){ return '<option value="' + hzErvEsc(v.id) + '"' + (v.id === HZ_ERV.ervId ? " selected" : "") + '>' + hzErvEsc(v.name) + '</option>'; };
+  var e = vs.filter(function(v){ return v.kind !== "rig"; }), r = vs.filter(function(v){ return v.kind === "rig"; });
+  return '<select id="' + id + '" class="hz-erv-in" onchange="' + onchange + '">' + (e.length && r.length ? '<optgroup label="🚙 ERVs">' + e.map(opt).join("") + '</optgroup><optgroup label="🚑 Rigs">' + r.map(opt).join("") + '</optgroup>' : vs.map(opt).join("")) + '</select>';
 }
+function hzErvKind(id) { var v = (HZ_ERV.ervs || []).filter(function(x){ return x.id === id; })[0]; return v ? v.kind : /^ERV/i.test(id) ? "erv" : "rig"; }
 // free times of one day, between the approved shifts
 function hzErvFree(dayMs, taken) {
   var a = dayMs, end = hzErvAddDays(dayMs, 1), out = [];
@@ -12373,14 +12400,15 @@ function hzErvScheduleHtml() {
           return '<button class="hz-erv-chip open" title="Request this time" onclick="hzErvOpen(\'request\',{a:' + fa + ',b:' + f[1] + '})">' + lbl + '</button>'; }).join(""))
       + '</div>';
   }
-  return h + '</div><div class="hz-erv-muted" style="margin-top:8px">Tap an open time to request it. Approved shifts show who has the ERV.</div>';
+  return h + '</div><div class="hz-erv-muted" style="margin-top:8px">Tap an open time to request it. Approved shifts show who has the vehicle.</div>';
 }
 function hzErvRequestHtml() {
   var p = HZ_ERV.preset || {}, now = Date.now(), a = p.a || (Math.ceil(now / 3600000) * 3600000 + 3600000), b = p.b && p.b - a <= 12 * 3600000 ? p.b : a + 4 * 3600000;
-  return '<div class="hz-erv-form"><label>ERV</label>' + hzErvErvSelect("hz-erv-unit", "HZ_ERV.ervId=this.value;hzErvCheck()")
+  return '<div class="hz-erv-form"><label>Vehicle</label>' + hzErvErvSelect("hz-erv-unit", "HZ_ERV.ervId=this.value;hzErvCheck()")
     + '<div class="hz-erv-two"><div><label for="hz-erv-a">Start</label><input id="hz-erv-a" class="hz-erv-in" type="datetime-local" step="900" value="' + hzErvLocalInput(a) + '" oninput="hzErvCheck()"></div>'
     + '<div><label for="hz-erv-b">End</label><input id="hz-erv-b" class="hz-erv-in" type="datetime-local" step="900" value="' + hzErvLocalInput(b) + '" oninput="hzErvCheck()"></div></div>'
-    + '<label for="hz-erv-note">Note <span class="hz-erv-muted">(optional)</span></label><textarea id="hz-erv-note" class="hz-erv-in" rows="2" placeholder="e.g. covering the Lakewood event"></textarea>'
+    + '<label for="hz-erv-note">Reason <span class="hz-erv-req">required</span></label><textarea id="hz-erv-note" class="hz-erv-in" rows="2" placeholder="Why do you need the vehicle? e.g. covering the Lakewood event" oninput="hzErvCheck()"></textarea>'
+    + '<div class="hz-erv-adv">⚠️ ' + hzErvEsc(HZ_ERV_ADVISORY) + '</div>'
     + '<div id="hz-erv-check" class="hz-erv-note"></div>'
     + '<button id="hz-erv-send" class="hz-erv-go" onclick="hzErvSubmit()">Request this shift</button></div>';
 }
@@ -12392,6 +12420,7 @@ function hzErvCheck() {
   if (isNaN(a) || isNaN(b)) err = "Pick a start and an end.";
   else if (b <= a) err = "The end has to be after the start.";
   else if (a < Date.now() - 5 * 60000) err = "The start is in the past.";
+  else if (!((document.getElementById("hz-erv-note") || {}).value || "").trim()) err = "Write the reason you need the vehicle.";   // 12.90: required
   else {
     var clash = hzErvOverlaps(hzErvBlocking(ervId), a, b);
     if (clash.length) err = "Already booked: " + clash.map(function(t){ return hzErvRange(t.startMs, t.endMs) + " (" + (t.submittedBy || "") + ")"; }).join("; ");
@@ -12411,7 +12440,7 @@ function hzErvSubmit() {
   var note = ((document.getElementById("hz-erv-note") || {}).value || "").trim(), text = hzErvRange(c.a, c.b);
   var tok = typeof hzRandomToken === "function" ? hzRandomToken(16) : Math.random().toString(36).slice(2) + Date.now().toString(36);
   (typeof mNextTicketNumber === "function" ? mNextTicketNumber() : Promise.resolve(null)).then(function(num) {
-    return db.collection("tickets").add({ number: num || null, title: "ERV shift — " + c.ervId + " · " + text, details: note, category: "erv",
+    return db.collection("tickets").add({ number: num || null, title: "Vehicle shift — " + c.ervId + " · " + text, details: note, shiftReason: note, vehKind: hzErvKind(c.ervId), category: "erv",
       ervUnit: c.ervId, startMs: c.a, endMs: c.b, shiftText: text, ervStatus: "pending", driverUnit: me.unit || "", unit: c.ervId, priority: "medium", status: "open",
       submittedBy: who, submittedByUid: HZ_ERV.uid, acceptToken: tok, createdAt: new Date().toISOString() });
   }).then(function() {
@@ -12422,8 +12451,8 @@ function hzErvSubmit() {
 function hzErvCard(t, actions) {
   var st = hzErvStatus(t), cls = st === "approved" ? "ok" : st === "pending" ? "warn" : "bad";
   return '<div class="hz-erv-card"><div class="hz-erv-row" style="margin:0"><b>' + hzErvEsc(t.ervUnit) + ' · ' + hzErvEsc(hzErvRange(t.startMs, t.endMs)) + '</b><span class="hz-erv-pill ' + cls + '">' + ({ approved: "Approved", pending: "Waiting", denied: "Denied", cancelled: "Cancelled" }[st] || st) + '</span></div>'
-    + '<div class="hz-erv-muted">' + (t.number ? "#" + t.number + " · " : "") + hzErvEsc(t.submittedBy || "") + (t.details ? ' · “' + hzErvEsc(t.details) + '”' : '') + '</div>'
-    + (t.ervReason ? '<div class="hz-erv-muted">Reason: ' + hzErvEsc(t.ervReason) + '</div>' : '')
+    + '<div class="hz-erv-muted">' + (t.number ? "#" + t.number + " · " : "") + hzErvEsc(t.submittedBy || "") + (t.details ? '<br>Reason for the shift: “' + hzErvEsc(t.details) + '”' : '') + '</div>'
+    + (t.ervReason ? '<div class="hz-erv-muted">Admin\'s note: ' + hzErvEsc(t.ervReason) + '</div>' : '')
     + (t.ervDecidedBy ? '<div class="hz-erv-muted">' + (st === "cancelled" ? "Cancelled" : "Decided") + ' by ' + hzErvEsc(t.ervDecidedBy) + '</div>' : '')
     + hzErvCheckLine(t)
     + (actions ? '<div class="hz-erv-row" style="margin:8px 0 0">' + actions + '</div>' : '') + '</div>';
@@ -12460,7 +12489,7 @@ function hzErvDecide(id, to) {
 }
 function hzErvCancel(id) {
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
-  if (!confirm("Cancel your ERV request for " + hzErvRange(t.startMs, t.endMs) + "?")) return;
+  if (!confirm("Cancel your vehicle shift request for " + hzErvRange(t.startMs, t.endMs) + "?")) return;
   var me = HZ_ERV.me || {};
   db.collection("tickets").doc(id).update({ ervStatus: "cancelled", status: "resolved", ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
     ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
@@ -12469,6 +12498,7 @@ function hzErvCancel(id) {
 }
 // an ERV request opened from the Service Helpdesk list
 function hzErvTicketHtml(id, t) {
+  if (hzErvHidden(t)) return '<div class="hz-erv-muted">This vehicle shift request is not available.</div>';   // 12.89: denied — admins and the driver only
   hzErvListen();
   var st = hzErvStatus(t), acts = "";
   var t2 = Object.assign({ id: id }, t);
@@ -12479,7 +12509,7 @@ function hzErvTicketHtml(id, t) {
   }
   acts += hzErvCheckBtns(t2);
   if (t.submittedByUid === HZ_ERV.uid && (st === "pending" || st === "approved") && t.endMs > Date.now() && !t.checkedInAt) acts += '<button class="hz-erv-btn" onclick="hzErvCancel(\'' + id + '\')">Cancel request</button>';
-  if (HZ_ERV.allowed) acts += '<button class="hz-erv-btn" onclick="hzErvOpen(\'schedule\')">🗓 ERV schedule</button>';
+  if (HZ_ERV.allowed) acts += '<button class="hz-erv-btn" onclick="hzErvOpen(\'schedule\')">🗓 Vehicle schedule</button>';
   return '<div class="hz-erv-ticket">' + hzErvCard(t2, acts) + '</div>';
 }
 function hzErvRefreshTicket(id) {
@@ -12522,6 +12552,8 @@ function hzErvRefreshTicket(id) {
     + "button.hz-erv-chip.open:hover{border-color:var(--gold);color:var(--gold)}"
     + ".hz-erv-form{max-width:520px}.hz-erv-form label{display:block;font-family:'Oswald',sans-serif;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin:10px 0 4px}"
     + ".hz-erv-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media (max-width:520px){.hz-erv-two{grid-template-columns:1fr}}"
+    + ".hz-erv-req{font-size:.66rem;color:#ff9090;letter-spacing:.04em;text-transform:uppercase;margin-left:4px}html[data-theme=basic] .hz-erv-req{color:#b42318}"
+    + ".hz-erv-adv{margin-top:10px;font-size:.84rem;line-height:1.4;border-radius:7px;padding:9px 11px;border:1px solid rgba(255,200,74,.6);background:rgba(255,200,74,.10);color:var(--white);font-weight:600}"
     + ".hz-erv-note{margin-top:10px;font-size:.82rem;border-radius:7px;padding:8px 10px;border:1px solid var(--card-border)}"
     + ".hz-erv-note.ok{color:#7dedb5;border-color:rgba(76,175,128,.5)}.hz-erv-note.warn{color:#ffc84a;border-color:rgba(255,200,74,.5)}.hz-erv-note.bad{color:#ff9090;border-color:rgba(224,85,85,.45)}"
     + ".hz-erv-card{border:1px solid var(--card-border);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,.02)}"
@@ -12545,6 +12577,10 @@ function hzErvRefreshTicket(id) {
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════════════════════
    12.86 / 5.41 — 📅 WEEKLY DAYTIME AVAILABILITY (same code in index.html and mobile.html) · 12.87 / 5.42 Unsure + counts · 12.88 / 5.43 reset options
+   12.89 / 5.44 — TWO POLLS: weekday daytime (Mon–Fri, only users ticked "Daytime Responder" in Users ▸ Edit; must be
+   available 6+ hours between 8:00 and 18:00) and Shabbos (every responder). No Sunday. Four answers: Available (true),
+   Intermittent ("intermittent"), Unsure ("unsure"), Unavailable (false). Counts: available, plus intermittent when any.
+   Each poll has its own reminder (reminderDay/Time/OnlyMissing and shabReminderDay/Time/OnlyMissing).
    Responders (Responder / Captain / Chief / Backup) mark each day of the week Available or Not —
    Sun · Mon · Tue · Wed · Thu · Fri · Shabbos (Shabbos is one). The week runs from Motzei Shabbos to the
    next Shabbos and resets at tzeis (42 minutes, Hebcal zmanim API, zip from settings — default 08904).
@@ -12556,7 +12592,12 @@ function hzErvRefreshTicket(id) {
    📅 Availability (availReminder / availSummary) — Off until ticked. The server sends them (availabilityTick).
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 var HZ_AV = { uid: "", me: null, set: {}, week: null, mine: null, unsub: null, unsubAll: null, counts: null, admWeek: 0, ready: false };
-var HZ_AV_DAYS = [["sun", "Sun"], ["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"], ["shabbos", "Shabbos"]];
+var HZ_AV_WEEK = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"]];   // the weekday daytime poll
+var HZ_AV_DAYS = HZ_AV_WEEK.concat([["shabbos", "Shabbos"]]);                                    // + the Shabbos poll
+// the four answers, in tap order: [value, css class, button text, word]
+var HZ_AV_STATES = [[true, "yes", "✓ Available", "available"], ["unsure", "maybe", "? Unsure", "unsure"], ["intermittent", "part", "≈ Intermittent", "intermittent"], [false, "no", "✕ Unavailable", "unavailable"]];
+var HZ_AV_QUALIFY = "To be available on a weekday you must be free for at least 6 hours between 8:00 AM and 6:00 PM.";
+function hzAvState(v) { for (var i = 0; i < HZ_AV_STATES.length; i++) if (HZ_AV_STATES[i][0] === v) return HZ_AV_STATES[i]; return null; }
 var HZ_AV_ROLES = ["responder", "captain", "chief", "backup"];
 function hzAvEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function hzAvToast(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); }
@@ -12564,9 +12605,12 @@ function hzAvPad(n) { return (n < 10 ? "0" : "") + n; }
 function hzAvYmd(d) { return d.getFullYear() + "-" + hzAvPad(d.getMonth() + 1) + "-" + hzAvPad(d.getDate()); }
 function hzAvMd(d) { return (d.getMonth() + 1) + "/" + d.getDate(); }
 function hzAvTime(ms) { var d = new Date(ms), h = d.getHours(), m = d.getMinutes(); return ((h % 12) || 12) + ":" + hzAvPad(m) + " " + (h < 12 ? "AM" : "PM"); }
-function hzAvCanFill(u) { u = u || {}; return (u.roles || []).some(function(r){ return HZ_AV_ROLES.indexOf(String(r).toLowerCase()) >= 0; }); }
-// 12.87 / 5.42: a day can be Available (true), Not available (false) or Unsure ("unsure") — all count as answered
-function hzAvAnswered(v) { return v === true || v === false || v === "unsure"; }
+function hzAvCanFill(u) { u = u || {}; return (u.roles || []).some(function(r){ return HZ_AV_ROLES.indexOf(String(r).toLowerCase()) >= 0; }); }   // the Shabbos poll
+function hzAvDaytime(u) { return !!(u && u.daytimeResponder === true); }                                                                          // the weekday poll
+function hzAvAny(u) { return hzAvCanFill(u) || hzAvDaytime(u); }
+function hzAvMyDays(u) { return (hzAvDaytime(u) ? HZ_AV_WEEK : []).concat(hzAvCanFill(u) ? [["shabbos", "Shabbos"]] : []); }
+// all four answers count as answered
+function hzAvAnswered(v) { return !!hzAvState(v); }
 function hzAvIsAdmin(u) { u = u || {}; return u.role === "admin" || (u.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; }); }
 // tzeis (42 min) for one date, from Hebcal — cached in this browser; if Hebcal can't be reached, 8:00 PM (marked "about")
 // 12.88 / 5.43: when the week starts over — Admin ▸ 📅 Availability ▸ "When the week resets" (appdata/availability.resetMode)
@@ -12602,7 +12646,7 @@ function hzAvWeek(offset) {
     if (offset) sun = new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 7 * offset);
     var shab = new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 6);
     var nxt = next && !offset ? Promise.resolve(next) : hzAvReset(hzAvYmd(shab));
-    return nxt.then(function(rs) { return { key: hzAvYmd(sun), sun: sun, shab: shab, label: "Sun " + hzAvMd(sun) + " – Shabbos " + hzAvMd(shab), reset: rs, tzeis: rs }; });
+    return nxt.then(function(rs) { return { key: hzAvYmd(sun), sun: sun, shab: shab, label: "Mon " + hzAvMd(new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 1)) + " – Shabbos " + hzAvMd(shab), reset: rs, tzeis: rs }; });
   });
 }
 function hzAvInit() {
@@ -12625,10 +12669,12 @@ function hzAvInit() {
         HZ_AV.mine = s.exists ? s.data() : null; hzAvRefreshCards();
       }, function(){});
       // 12.87 / 5.42: how many marked themselves available each day (everyone's answers for this week)
-      if (hzAvCanFill(HZ_AV.me)) HZ_AV.unsubAll = db.collection("availability").where("weekKey", "==", w.key).onSnapshot(function(q) {
-        var c = {}; HZ_AV_DAYS.forEach(function(d){ c[d[0]] = 0; });
-        q.forEach(function(d){ var x = (d.data() || {}).days || {}; HZ_AV_DAYS.forEach(function(k){ if (x[k[0]] === true) c[k[0]]++; }); });
-        HZ_AV.counts = c; hzAvRefreshCards();
+      // 12.89 / 5.44: available and intermittent counted separately; weekdays only from Daytime Responders (dt on the answer)
+      if (hzAvAny(HZ_AV.me)) HZ_AV.unsubAll = db.collection("availability").where("weekKey", "==", w.key).onSnapshot(function(q) {
+        var c = {}, p = {}; HZ_AV_DAYS.forEach(function(d){ c[d[0]] = 0; p[d[0]] = 0; });
+        q.forEach(function(d){ var doc = d.data() || {}, x = doc.days || {};
+          HZ_AV_DAYS.forEach(function(k){ if (k[0] !== "shabbos" && doc.dt !== true) return; if (x[k[0]] === true) c[k[0]]++; else if (x[k[0]] === "intermittent") p[k[0]]++; }); });
+        HZ_AV.counts = c; HZ_AV.parts = p; hzAvRefreshCards();
       }, function(){});
       hzAvRefreshCards();
       if (/availability/.test(location.hash)) hzAvOpen();
@@ -12638,15 +12684,27 @@ function hzAvInit() {
 // ── the member's card in My Settings (and the pop-up a reminder opens) ──
 function hzAvCardHtml(big) {
   var me = HZ_AV.me || {}, w = HZ_AV.week;
-  if (!w || !hzAvCanFill(me)) return "";
-  var days = (HZ_AV.mine && HZ_AV.mine.days) || {}, done = HZ_AV_DAYS.filter(function(d){ return hzAvAnswered(days[d[0]]); }).length;
-  return '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>📅 My availability</b><span class="hz-av-sub">Daytime · week of ' + hzAvEsc(w.label) + '</span></div>'
-    + '<div class="hz-av-days">' + HZ_AV_DAYS.map(function(d) {
-        var v = days[d[0]], cls = v === true ? "yes" : v === false ? "no" : v === "unsure" ? "maybe" : "";
-        return '<button class="hz-av-day ' + cls + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (v === true ? "available" : v === false ? "not available" : v === "unsure" ? "unsure" : "not answered") + '"><span>' + d[1] + '</span><i>' + (v === true ? "✓ Available" : v === false ? "✕ Not" : v === "unsure" ? "? Unsure" : "Tap") + '</i>'
-          + (HZ_AV.counts ? '<em title="People who marked themselves available">👥 ' + (HZ_AV.counts[d[0]] || 0) + '</em>' : '') + '</button>';
-      }).join("") + '</div>'
-    + '<div class="hz-av-note">' + (done === 7 ? "✓ All 7 days answered — thank you." : done + " of 7 answered.") + " Tap a day: Available → Not available → Unsure." + (HZ_AV.counts ? " 👥 = how many marked themselves available that day." : "") + ' Saves by itself. Starts over ' + hzAvEsc(hzAvResetText(w.reset)) + '.</div></div>';
+  if (!w || !hzAvAny(me)) return "";
+  var days = (HZ_AV.mine && HZ_AV.mine.days) || {}, mine = hzAvMyDays(me);
+  var done = mine.filter(function(d){ return hzAvAnswered(days[d[0]]); }).length;
+  var btn = function(d) {
+    var v = days[d[0]], st = hzAvState(v), n = HZ_AV.counts ? (HZ_AV.counts[d[0]] || 0) : null, pn = HZ_AV.parts ? (HZ_AV.parts[d[0]] || 0) : 0;
+    return '<button class="hz-av-day ' + (st ? st[1] : "") + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (st ? st[3] : "not answered") + '"><span>' + d[1] + '</span><i>' + (st ? st[2] : "Tap") + '</i>'
+      + (n !== null ? '<em title="Marked themselves available">👥 ' + n + '</em>' : '')
+      + (pn ? '<em class="hz-av-pn" title="Marked themselves intermittent (on and off)">≈ ' + pn + '</em>' : '') + '</button>';
+  };
+  var sec = function(title, sub, list, note) {
+    return '<div class="hz-av-sec"><div class="hz-av-sec-h"><b>' + title + '</b><span class="hz-av-sub">' + hzAvEsc(sub) + '</span></div>'
+      + (note ? '<div class="hz-av-qual">' + hzAvEsc(note) + '</div>' : '')
+      + '<div class="hz-av-days' + (list.length === 1 ? ' one' : '') + '">' + list.map(btn).join("") + '</div></div>';
+  };
+  var fri = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 5), mon = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 1);
+  var h = '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>📅 My availability</b><span class="hz-av-sub">week of ' + hzAvEsc(hzAvMd(mon) + " – " + hzAvMd(w.shab)) + '</span></div>';
+  if (hzAvDaytime(me)) h += sec("☀️ Weekday daytime", "Mon " + hzAvMd(mon) + " – Fri " + hzAvMd(fri), HZ_AV_WEEK, HZ_AV_QUALIFY);
+  if (hzAvCanFill(me)) h += sec("🕯️ Shabbos", hzAvMd(w.shab), [["shabbos", "Shabbos"]], "");
+  return h + '<div class="hz-av-note">' + (done === mine.length ? "✓ All answered — thank you." : done + " of " + mine.length + " answered.")
+    + " Tap a day: Available → Unsure → Intermittent → Unavailable." + (HZ_AV.counts ? " 👥 = how many marked themselves available; ≈ = how many marked intermittent." : "")
+    + ' Saves by itself. Starts over ' + hzAvEsc(hzAvResetText(w.reset)) + '.</div></div>';
 }
 function hzAvRefreshCards() {
   ["set-content", "m-set-content"].forEach(function(id) {
@@ -12655,13 +12713,14 @@ function hzAvRefreshCards() {
     if (!box) { box = document.createElement("div"); box.className = "hz-av-slot"; host.insertBefore(box, host.firstChild); }
     box.innerHTML = hzAvCardHtml(false);
   });
-  var pop = document.getElementById("hz-av-pop-body"); if (pop) pop.innerHTML = hzAvCardHtml(true) || '<div class="hz-erv-muted">Availability is filled in by responders.</div>';
+  var pop = document.getElementById("hz-av-pop-body"); if (pop) pop.innerHTML = hzAvCardHtml(true) || '<div class="hz-erv-muted">Availability is filled in by responders and Daytime Responders.</div>';
 }
 function hzAvTap(day) {
   var w = HZ_AV.week, me = HZ_AV.me || {}; if (!w || !HZ_AV.uid) return;
-  var cur = ((HZ_AV.mine && HZ_AV.mine.days) || {})[day], next = cur === true ? false : cur === false ? "unsure" : true;
+  var cur = ((HZ_AV.mine && HZ_AV.mine.days) || {})[day], st = hzAvState(cur), i = st ? HZ_AV_STATES.indexOf(st) : -1;
+  var next = HZ_AV_STATES[(i + 1) % HZ_AV_STATES.length][0];   // Available → Unsure → Intermittent → Unavailable → Available
   HZ_AV.mine = HZ_AV.mine || { days: {} }; HZ_AV.mine.days = HZ_AV.mine.days || {}; HZ_AV.mine.days[day] = next; hzAvRefreshCards();
-  var data = { uid: HZ_AV.uid, unit: me.unit || "", name: ((me.firstName || "") + " " + (me.lastName || "")).trim(), weekKey: w.key, updatedAt: Date.now(), days: {} };
+  var data = { uid: HZ_AV.uid, unit: me.unit || "", name: ((me.firstName || "") + " " + (me.lastName || "")).trim(), weekKey: w.key, dt: hzAvDaytime(me), updatedAt: Date.now(), days: {} };
   HZ_AV_DAYS.forEach(function(d){ var x = HZ_AV.mine.days[d[0]]; if (hzAvAnswered(x)) data.days[d[0]] = x; });   // the whole week, so nothing is lost
   db.collection("availability").doc(w.key + "_" + HZ_AV.uid).set(data, { merge: true })
     .catch(function(e){ hzAvToast("Not saved: " + e.message + (/permission/i.test(e.message) ? " — the database rules need publishing" : ""), true); });
@@ -12690,22 +12749,28 @@ function hzAvAdminRender() {
     db.collection("appdata").doc("availability").get().then(function(s){ return s.exists ? s.data() : {}; }).catch(function(){ return {}; })
   ]).then(function(r) {
     var w = r[0], users = [], S = r[2] || {}; HZ_AV.set = S;
-    r[1].forEach(function(d){ var u = d.data() || {}; if (u.unit && hzAvCanFill(u)) users.push(Object.assign({ uid: d.id }, u)); });
+    r[1].forEach(function(d){ var u = d.data() || {}; if (u.unit && hzAvAny(u)) users.push(Object.assign({ uid: d.id }, u)); });
     users.sort(function(a, b){ return String(a.unit).localeCompare(String(b.unit), undefined, { numeric: true }); });
     return db.collection("availability").where("weekKey", "==", w.key).get().then(function(q) {
       var by = {}; q.forEach(function(d){ var x = d.data() || {}; if (x.uid) by[x.uid] = x.days || {}; });
-      var counts = HZ_AV_DAYS.map(function(d){ return users.filter(function(u){ return (by[u.uid] || {})[d[0]] === true; }).length; });
-      var answered = users.filter(function(u){ var dd = by[u.uid] || {}; return HZ_AV_DAYS.every(function(d){ return hzAvAnswered(dd[d[0]]); }); }).length;
-      var cell = function(v){ return v === true ? '<td class="hz-av-yes">✓</td>' : v === false ? '<td class="hz-av-no">✕</td>' : v === "unsure" ? '<td class="hz-av-maybe" title="Unsure">?</td>' : '<td class="hz-av-nil">—</td>'; };
+      // 12.89: weekdays count only Daytime Responders, Shabbos counts every responder; intermittent counted on its own row
+      var inPoll = function(u, k){ return k === "shabbos" ? hzAvCanFill(u) : hzAvDaytime(u); };
+      var tally = function(val){ return HZ_AV_DAYS.map(function(d){ return users.filter(function(u){ return inPoll(u, d[0]) && (by[u.uid] || {})[d[0]] === val; }).length; }); };
+      var counts = tally(true), parts = tally("intermittent"), anyPart = parts.some(function(n){ return n > 0; });
+      var answered = users.filter(function(u){ var dd = by[u.uid] || {}; return hzAvMyDays(u).every(function(d){ return hzAvAnswered(dd[d[0]]); }); }).length;
+      var cell = function(u, k){ if (!inPoll(u, k)) return '<td class="hz-av-na" title="' + (k === "shabbos" ? "Not a responder" : "Not a Daytime Responder") + '"></td>';
+        var v = (by[u.uid] || {})[k];
+        return v === true ? '<td class="hz-av-yes" title="Available">✓</td>' : v === "intermittent" ? '<td class="hz-av-part" title="Intermittent">≈</td>' : v === "unsure" ? '<td class="hz-av-maybe" title="Unsure">?</td>' : v === false ? '<td class="hz-av-no" title="Unavailable">✕</td>' : '<td class="hz-av-nil">—</td>'; };
       var h = '<div class="hz-erv-row"><button class="hz-erv-btn" onclick="HZ_AV.admWeek--;hzAvAdminRender()">‹ Prev</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek=0;hzAvAdminRender()">This week</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek++;hzAvAdminRender()">Next ›</button>'
-        + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ✕ not · ? unsure · — no answer</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' responders answered every day · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
+        + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ≈ intermittent · ? unsure · ✕ unavailable · — no answer · blank = not in that poll</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' answered everything · ☀️ = Daytime Responder (Mon–Fri poll; set in Users ▸ Edit) · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
         + '<div class="tbl-wrap" style="max-width:900px"><table class="hz-av-tbl"><thead><tr><th>Unit</th><th>Name</th>' + HZ_AV_DAYS.map(function(d){ return '<th>' + d[1] + '</th>'; }).join("") + '</tr></thead><tbody>'
         + '<tr class="hz-av-tot"><td colspan="2"><b>Available</b></td>' + counts.map(function(n){ return '<td><b>' + n + '</b></td>'; }).join("") + '</tr>'
-        + users.map(function(u){ var dd = by[u.uid] || {}; return '<tr><td><b>' + hzAvEsc(u.unit) + '</b></td><td>' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + '</td>' + HZ_AV_DAYS.map(function(d){ return cell(dd[d[0]]); }).join("") + '</tr>'; }).join("")
+        + (anyPart ? '<tr class="hz-av-tot"><td colspan="2"><b>Intermittent</b></td>' + parts.map(function(n){ return '<td>' + (n || "") + '</td>'; }).join("") + '</tr>' : '')
+        + users.map(function(u){ return '<tr><td><b>' + hzAvEsc(u.unit) + '</b></td><td>' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + (hzAvDaytime(u) ? ' <span title="Daytime Responder">☀️</span>' : '') + '</td>' + HZ_AV_DAYS.map(function(d){ return cell(u, d[0]); }).join("") + '</tr>'; }).join("")
         + '</tbody></table></div>';
       var mode = hzAvMode(), rt = S.resetTime || (mode === "sunTime" ? "08:00" : "21:00");
       h += '<div class="add-user-form" style="max-width:900px;margin-top:16px"><div class="admin-label" style="margin-bottom:6px">🔄 When the week resets</div>'
-        + '<div class="hz-erv-muted" style="margin-bottom:8px">The poll starts a new week (Sunday – Shabbos) at this moment; everyone\'s answers start blank.</div>'
+        + '<div class="hz-erv-muted" style="margin-bottom:8px">Both polls start a new week (Monday – Shabbos) at this moment; everyone\'s answers start blank.</div>'
         + HZ_AV_RESETS.map(function(x){ return '<label class="hz-av-radio"><input type="radio" name="av-reset" value="' + x[0] + '"' + (mode === x[0] ? " checked" : "") + ' onchange="hzAvResetPick()"><span>' + hzAvEsc(x[1]) + '</span></label>'; }).join("")
         + '<div id="av-reset-time-row" class="hz-erv-row" style="margin:8px 0 0;' + (/Time$/.test(mode) ? '' : 'display:none') + '"><span class="hz-erv-muted">Time</span><input id="av-reset-time" class="hz-erv-in" type="time" value="' + hzAvEsc(rt) + '" style="width:130px"></div>'
         + '<div id="av-zip-row" class="hz-erv-row" style="margin:8px 0 0;' + (/^tzeis/.test(mode) ? '' : 'display:none') + '"><span class="hz-erv-muted">Zip code for tzeis (Hebcal)</span><input id="av-zip" class="hz-erv-in" inputmode="numeric" maxlength="5" value="' + hzAvEsc(S.zip || "08904") + '" style="width:110px"></div>'
@@ -12721,16 +12786,22 @@ function hzAvSettingsRender() {
   db.collection("appdata").doc("availability").get().then(function(s){ return s.exists ? s.data() : {}; }).catch(function(){ return {}; }).then(function(S) {
     HZ_AV.set = S || {}; var h = "";
     var days = [["motzash", "When the week resets"], ["sun", "Sunday"], ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"], ["fri", "Friday"]];
+    var chk = 'display:flex!important;justify-content:flex-start;gap:8px;align-items:center;margin-top:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-family:inherit;font-size:.86rem;color:var(--white)';
+    // 12.89: one reminder block per poll — [title, who, ids, day, time, only-missing]
+    var rem = function(title, who, id, day, time, only) {
+      return '<div class="hz-av-set"><label>' + title + '</label><div class="hz-erv-muted" style="margin-bottom:5px">' + who + '</div><div class="hz-erv-row" style="margin:0"><select id="' + id + '-day" class="hz-erv-in">' + days.map(function(d){ return '<option value="' + d[0] + '"' + (day === d[0] ? " selected" : "") + '>' + d[1] + '</option>'; }).join("") + '</select>'
+        + '<span class="hz-erv-muted">at</span><input id="' + id + '-time" class="hz-erv-in" type="time" value="' + hzAvEsc(time) + '" style="width:130px"></div>'
+        + '<label style="' + chk + '"><input type="checkbox" id="' + id + '-missing" style="width:auto!important;flex:0 0 auto;margin:0"' + (only === false ? "" : " checked") + '><span style="flex:1;text-align:left">Only to those who haven\'t answered yet</span></label></div>';
+    };
       h += '<div class="add-user-form" style="max-width:900px;margin-top:16px"><div class="admin-label" style="margin-bottom:6px">⚙ Settings</div>'
-        + '<div class="hz-av-set"><label>Reminder to update availability</label><div class="hz-erv-row" style="margin:0"><select id="av-rem-day" class="hz-erv-in">' + days.map(function(d){ return '<option value="' + d[0] + '"' + ((S.reminderDay || "motzash") === d[0] ? " selected" : "") + '>' + d[1] + '</option>'; }).join("") + '</select>'
-        + '<span class="hz-erv-muted">at</span><input id="av-rem-time" class="hz-erv-in" type="time" value="' + hzAvEsc(S.reminderTime || "21:00") + '" style="width:130px"></div>'
-        + '<label style="display:flex!important;justify-content:flex-start;gap:8px;align-items:center;margin-top:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-family:inherit;font-size:.86rem;color:var(--white)"><input type="checkbox" id="av-rem-missing" style="width:auto!important;flex:0 0 auto;margin:0"' + (S.reminderOnlyMissing === false ? "" : " checked") + '><span style="flex:1;text-align:left">Only to responders who haven\'t answered every day yet</span></label>'
-        + '<div class="hz-erv-muted">"When the week resets" goes out right after the reset (the time is used only for a weekday).</div></div>'
-        + '<div class="hz-av-set"><label>Morning "on call today" summary</label><div class="hz-erv-row" style="margin:0"><span class="hz-erv-muted">every day at</span><input id="av-sum-time" class="hz-erv-in" type="time" value="' + hzAvEsc(S.summaryTime || "07:00") + '" style="width:130px"></div>'
-        + '<div class="hz-erv-muted">Not sent on Shabbos — Friday\'s summary also lists who is available for Shabbos. Who gets it: 👥 Who Receives What ▸ "📅 Morning on-call summary".</div></div>'
+        + rem("☀️ Weekday daytime poll reminder (Mon–Fri)", "Goes to Daytime Responders (ticked in Users ▸ Edit).", "av-rem", S.reminderDay || "motzash", S.reminderTime || "21:00", S.reminderOnlyMissing)
+        + rem("🕯️ Shabbos poll reminder", "Goes to every responder (Responder / Captain / Chief / Backup).", "av-shab", S.shabReminderDay || "thu", S.shabReminderTime || "20:00", S.shabReminderOnlyMissing)
+        + '<div class="hz-erv-muted" style="margin:-4px 0 12px">"When the week resets" goes out right after the reset (the time is used only for a weekday).</div>'
+        + '<div class="hz-av-set"><label>Morning "on call today" summary</label><div class="hz-erv-row" style="margin:0"><span class="hz-erv-muted">Monday – Friday at</span><input id="av-sum-time" class="hz-erv-in" type="time" value="' + hzAvEsc(S.summaryTime || "07:00") + '" style="width:130px"></div>'
+        + '<div class="hz-erv-muted">Lists the Daytime Responders available today, and separately anyone intermittent. Friday\'s also lists Shabbos. Who gets it: 👥 Who Receives What ▸ "📅 Morning on-call summary".</div></div>'
         + '<div class="hz-erv-muted" style="margin:6px 0 10px">How they are sent (Push / Text / Email): 📣 How It\'s Sent ▸ Availability — Off until ticked.</div>'
         + '<button class="submit-btn" style="width:auto;padding:10px 22px" onclick="hzAvSaveSettings()">💾 Save</button> <span id="av-msg" class="hz-erv-muted"></span></div>';
-    el.innerHTML = '<p style="color:var(--gray);font-size:0.82rem;margin:0 0 12px;line-height:1.6">The weekly daytime availability poll (responders fill it in at ⚙ My Settings; the answers are in ⚙ Admin ▸ 📅 Availability). Set when the reminder and the morning summary go out here. Push / Text / Email for each: 📣 How It\'s Sent ▸ Availability. Who gets the summary: 👥 Who Receives What ▸ 📅 Morning on-call summary. Wording: ✉️ Message Templates ▸ Availability.</p>' + h;
+    el.innerHTML = '<p style="color:var(--gray);font-size:0.82rem;margin:0 0 12px;line-height:1.6">Two weekly availability polls, filled in at ⚙ My Settings: the weekday daytime poll (Mon–Fri, Daytime Responders) and the Shabbos poll (every responder). The answers are in ⚙ Admin ▸ 📅 Availability. Set when the reminder and the morning summary go out here. Push / Text / Email for each: 📣 How It\'s Sent ▸ Availability. Who gets the summary: 👥 Who Receives What ▸ 📅 Morning on-call summary. Wording: ✉️ Message Templates ▸ Availability.</p>' + h;
   });
 }
 function hzAvResetPick() {
@@ -12750,6 +12821,7 @@ function hzAvSaveReset() {
 function hzAvSaveSettings() {
   var v = function(id){ return ((document.getElementById(id) || {}).value || "").trim(); }, m = document.getElementById("av-msg");
   var data = { reminderDay: v("av-rem-day") || "motzash", reminderTime: v("av-rem-time") || "21:00", reminderOnlyMissing: !!(document.getElementById("av-rem-missing") || {}).checked,
+    shabReminderDay: v("av-shab-day") || "thu", shabReminderTime: v("av-shab-time") || "20:00", shabReminderOnlyMissing: !!(document.getElementById("av-shab-missing") || {}).checked,
     summaryTime: v("av-sum-time") || "07:00", updatedAt: new Date().toISOString(), updatedBy: (HZ_AV.me && HZ_AV.me.unit) || "" };
   db.collection("appdata").doc("availability").set(data, { merge: true }).then(function(){ HZ_AV.set = Object.assign(HZ_AV.set || {}, data); if (m) m.textContent = "✓ Saved"; })
     .catch(function(e){ if (m) m.textContent = "Not saved: " + e.message; });
@@ -12760,13 +12832,17 @@ function hzAvSaveSettings() {
     + ".hz-av-head{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin-bottom:10px}.hz-av-head b{font-family:'Oswald',sans-serif;letter-spacing:.04em;color:var(--white)}"
     + ".hz-av-sub{font-size:.78rem;color:var(--gray)}"
     + ".hz-av-slot{grid-column:1/-1;min-width:0}"
-    + ".hz-av-days{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:6px}"
-    + "@media (max-width:520px){.hz-av-days{grid-template-columns:repeat(4,minmax(0,1fr))}}"
+    + ".hz-av-days{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;max-width:560px}.hz-av-days.one{grid-template-columns:minmax(0,1fr);max-width:150px}"
+    + "@media (max-width:520px){.hz-av-days{grid-template-columns:repeat(3,minmax(0,1fr))}.hz-av-days.one{grid-template-columns:minmax(0,1fr)}}"
+    + ".hz-av-sec{margin-bottom:12px}.hz-av-sec-h{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;margin-bottom:5px}.hz-av-sec-h b{font-size:.86rem;color:var(--white)}"
+    + ".hz-av-qual{font-size:.76rem;color:var(--gold);margin-bottom:6px;line-height:1.35}"
+    + ".hz-av-day.part{background:rgba(90,160,255,.12);border-color:rgba(90,160,255,.55)}.hz-av-day.part i,.hz-av-part,.hz-av-day em.hz-av-pn{color:#8cbcff}.hz-av-part{font-weight:700}"
+    + "html[data-theme=basic] .hz-av-day.part i,html[data-theme=basic] .hz-av-part,html[data-theme=basic] .hz-av-day em.hz-av-pn{color:#1d5fb8}.hz-av-na{background:rgba(127,127,127,.06)}"
     + ".hz-av-day{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,.03);color:var(--white);cursor:pointer;font-family:'Oswald',sans-serif;min-width:0}"
     + ".hz-av-day span{font-size:.82rem;letter-spacing:.02em;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}.hz-av-day i{font-style:normal;font-family:'Source Sans 3',sans-serif;font-size:.68rem;color:var(--gray);white-space:nowrap}"
     + ".hz-av-day.yes{background:rgba(76,175,128,.16);border-color:rgba(76,175,128,.6)}.hz-av-day.yes i{color:#7dedb5}"
     + ".hz-av-day.no{background:rgba(224,85,85,.10);border-color:rgba(224,85,85,.45)}.hz-av-day.no i{color:#ff9090}"
-    + ".hz-av-day em{font-style:normal;font-size:.66rem;color:var(--gray);border-top:1px solid var(--card-border);padding-top:3px;margin-top:1px;width:80%;text-align:center}"
+    + ".hz-av-day em{font-style:normal;font-size:.66rem;color:var(--gray);border-top:1px solid var(--card-border);padding-top:3px;margin-top:1px;width:80%;text-align:center}.hz-av-day em+em{border-top:0;padding-top:0;margin-top:0}"
     + ".hz-av-day.maybe{background:rgba(255,200,74,.12);border-color:rgba(255,200,74,.55)}.hz-av-day.maybe i{color:#ffc84a}.hz-av-maybe{color:#ffc84a;font-weight:700}"
     + "html[data-theme=basic] .hz-av-day.maybe i,html[data-theme=basic] .hz-av-maybe{color:#8a5a00}"
     + ".hz-av-note{font-size:.74rem;color:var(--gray);margin-top:8px;line-height:1.4}"
