@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.45"; window.M_BUILD = BUILD;
+  var BUILD = "5.46"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -979,7 +979,8 @@ html[data-theme="basic"] .hz-erv-req{color:#b42318 !important}
 html[data-theme="basic"] .hz-erv-note.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}
-html[data-theme="basic"] .hz-av-yes{color:#167a3e !important}</style>
+html[data-theme="basic"] .hz-av-yes{color:#167a3e !important}
+html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
 <!--HZ-BASIC-END-->
 </head>
 <body>
@@ -12608,7 +12609,7 @@ function hzAvTime(ms) { var d = new Date(ms), h = d.getHours(), m = d.getMinutes
 function hzAvCanFill(u) { u = u || {}; return (u.roles || []).some(function(r){ return HZ_AV_ROLES.indexOf(String(r).toLowerCase()) >= 0; }); }   // the Shabbos poll
 function hzAvDaytime(u) { return !!(u && u.daytimeResponder === true); }                                                                          // the weekday poll
 function hzAvAny(u) { return hzAvCanFill(u) || hzAvDaytime(u); }
-function hzAvMyDays(u) { return (hzAvDaytime(u) ? HZ_AV_WEEK : []).concat(hzAvCanFill(u) ? [["shabbos", "Shabbos"]] : []); }
+function hzAvMyDays(u, w) { var yt = (w && w.yt) || {}; return (hzAvDaytime(u) ? HZ_AV_WEEK.filter(function(d){ return !yt[d[0]]; }) : []).concat(hzAvCanFill(u) ? [["shabbos", "Shabbos"]] : []); }
 // all four answers count as answered
 function hzAvAnswered(v) { return !!hzAvState(v); }
 function hzAvIsAdmin(u) { u = u || {}; return u.role === "admin" || (u.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; }); }
@@ -12635,6 +12636,17 @@ function hzAvResetText(r) {
   var d = new Date(r.ms), day = r.mode === "sunTime" ? "Sunday" : "Motzei Shabbos";
   return day + " " + (r.est ? "about " : "") + hzAvTime(r.ms) + (/^tzeis/.test(r.mode) ? " (tzeis)" : "");
 }
+// 12.91 / 5.46: which weekdays of a week are Yom Tov (Hebcal, diaspora; Chol Hamoed is not) — those drop out of the weekday poll
+function hzAvYT(sun) {
+  var a = hzAvYmd(new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 1)), b = hzAvYmd(new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 5)), key = "hzYT_" + a;
+  var toKeys = function(dates){ var o = {}; HZ_AV_WEEK.forEach(function(d, i){ if (dates.indexOf(hzAvYmd(new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 1 + i))) >= 0) o[d[0]] = true; }); return o; };
+  try { var c = localStorage.getItem(key); if (c) return Promise.resolve(toKeys(JSON.parse(c))); } catch (e) {}
+  return fetch("https://www.hebcal.com/hebcal?v=1&cfg=json&maj=on&min=off&mod=off&nx=off&ss=off&mf=off&s=off&c=off&i=off&start=" + a + "&end=" + b).then(function(r){ return r.json(); }).then(function(j) {
+    var dates = ((j && j.items) || []).filter(function(it){ return it.yomtov === true; }).map(function(it){ return String(it.date).slice(0, 10); });
+    try { localStorage.setItem(key, JSON.stringify(dates)); } catch (e) {}
+    return toKeys(dates);
+  }).catch(function(){ return {}; });
+}
 // the week being filled in now: Sunday → Shabbos; it moves on at the reset
 function hzAvWeek(offset) {
   var now = new Date(), sun0 = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());   // this calendar week's Sunday
@@ -12646,7 +12658,7 @@ function hzAvWeek(offset) {
     if (offset) sun = new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 7 * offset);
     var shab = new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 6);
     var nxt = next && !offset ? Promise.resolve(next) : hzAvReset(hzAvYmd(shab));
-    return nxt.then(function(rs) { return { key: hzAvYmd(sun), sun: sun, shab: shab, label: "Mon " + hzAvMd(new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 1)) + " – Shabbos " + hzAvMd(shab), reset: rs, tzeis: rs }; });
+    return Promise.all([nxt, hzAvYT(sun)]).then(function(z) { var rs = z[0]; return { key: hzAvYmd(sun), sun: sun, shab: shab, yt: z[1], label: "Mon " + hzAvMd(new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() + 1)) + " – Shabbos " + hzAvMd(shab), reset: rs, tzeis: rs }; });
   });
 }
 function hzAvInit() {
@@ -12685,9 +12697,10 @@ function hzAvInit() {
 function hzAvCardHtml(big) {
   var me = HZ_AV.me || {}, w = HZ_AV.week;
   if (!w || !hzAvAny(me)) return "";
-  var days = (HZ_AV.mine && HZ_AV.mine.days) || {}, mine = hzAvMyDays(me);
+  var days = (HZ_AV.mine && HZ_AV.mine.days) || {}, mine = hzAvMyDays(me, w), yt = w.yt || {};
   var done = mine.filter(function(d){ return hzAvAnswered(days[d[0]]); }).length;
   var btn = function(d) {
+    if (yt[d[0]]) return '<div class="hz-av-day yt" title="Yom Tov — not part of the weekday poll"><span>' + d[1] + '</span><i>🕯️ Yom Tov</i></div>';
     var v = days[d[0]], st = hzAvState(v), n = HZ_AV.counts ? (HZ_AV.counts[d[0]] || 0) : null, pn = HZ_AV.parts ? (HZ_AV.parts[d[0]] || 0) : 0;
     return '<button class="hz-av-day ' + (st ? st[1] : "") + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (st ? st[3] : "not answered") + '"><span>' + d[1] + '</span><i>' + (st ? st[2] : "Tap") + '</i>'
       + (n !== null ? '<em title="Marked themselves available">👥 ' + n + '</em>' : '')
@@ -12716,7 +12729,7 @@ function hzAvRefreshCards() {
   var pop = document.getElementById("hz-av-pop-body"); if (pop) pop.innerHTML = hzAvCardHtml(true) || '<div class="hz-erv-muted">Availability is filled in by responders and Daytime Responders.</div>';
 }
 function hzAvTap(day) {
-  var w = HZ_AV.week, me = HZ_AV.me || {}; if (!w || !HZ_AV.uid) return;
+  var w = HZ_AV.week, me = HZ_AV.me || {}; if (!w || !HZ_AV.uid || (w.yt || {})[day]) return;
   var cur = ((HZ_AV.mine && HZ_AV.mine.days) || {})[day], st = hzAvState(cur), i = st ? HZ_AV_STATES.indexOf(st) : -1;
   var next = HZ_AV_STATES[(i + 1) % HZ_AV_STATES.length][0];   // Available → Unsure → Intermittent → Unavailable → Available
   HZ_AV.mine = HZ_AV.mine || { days: {} }; HZ_AV.mine.days = HZ_AV.mine.days || {}; HZ_AV.mine.days[day] = next; hzAvRefreshCards();
@@ -12754,17 +12767,17 @@ function hzAvAdminRender() {
     return db.collection("availability").where("weekKey", "==", w.key).get().then(function(q) {
       var by = {}; q.forEach(function(d){ var x = d.data() || {}; if (x.uid) by[x.uid] = x.days || {}; });
       // 12.89: weekdays count only Daytime Responders, Shabbos counts every responder; intermittent counted on its own row
-      var inPoll = function(u, k){ return k === "shabbos" ? hzAvCanFill(u) : hzAvDaytime(u); };
+      var yt = w.yt || {}, inPoll = function(u, k){ return k === "shabbos" ? hzAvCanFill(u) : hzAvDaytime(u) && !yt[k]; };
       var tally = function(val){ return HZ_AV_DAYS.map(function(d){ return users.filter(function(u){ return inPoll(u, d[0]) && (by[u.uid] || {})[d[0]] === val; }).length; }); };
       var counts = tally(true), parts = tally("intermittent"), anyPart = parts.some(function(n){ return n > 0; });
-      var answered = users.filter(function(u){ var dd = by[u.uid] || {}; return hzAvMyDays(u).every(function(d){ return hzAvAnswered(dd[d[0]]); }); }).length;
-      var cell = function(u, k){ if (!inPoll(u, k)) return '<td class="hz-av-na" title="' + (k === "shabbos" ? "Not a responder" : "Not a Daytime Responder") + '"></td>';
+      var answered = users.filter(function(u){ var dd = by[u.uid] || {}; return hzAvMyDays(u, w).every(function(d){ return hzAvAnswered(dd[d[0]]); }); }).length;
+      var cell = function(u, k){ if (yt[k]) return '<td class="hz-av-na" title="Yom Tov — not in the weekday poll"></td>'; if (!inPoll(u, k)) return '<td class="hz-av-na" title="' + (k === "shabbos" ? "Not a responder" : "Not a Daytime Responder") + '"></td>';
         var v = (by[u.uid] || {})[k];
         return v === true ? '<td class="hz-av-yes" title="Available">✓</td>' : v === "intermittent" ? '<td class="hz-av-part" title="Intermittent">≈</td>' : v === "unsure" ? '<td class="hz-av-maybe" title="Unsure">?</td>' : v === false ? '<td class="hz-av-no" title="Unavailable">✕</td>' : '<td class="hz-av-nil">—</td>'; };
       var h = '<div class="hz-erv-row"><button class="hz-erv-btn" onclick="HZ_AV.admWeek--;hzAvAdminRender()">‹ Prev</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek=0;hzAvAdminRender()">This week</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek++;hzAvAdminRender()">Next ›</button>'
         + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ≈ intermittent · ? unsure · ✕ unavailable · — no answer · blank = not in that poll</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' answered everything · ☀️ = Daytime Responder (Mon–Fri poll; set in Users ▸ Edit) · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
-        + '<div class="tbl-wrap" style="max-width:900px"><table class="hz-av-tbl"><thead><tr><th>Unit</th><th>Name</th>' + HZ_AV_DAYS.map(function(d){ return '<th>' + d[1] + '</th>'; }).join("") + '</tr></thead><tbody>'
-        + '<tr class="hz-av-tot"><td colspan="2"><b>Available</b></td>' + counts.map(function(n){ return '<td><b>' + n + '</b></td>'; }).join("") + '</tr>'
+        + '<div class="tbl-wrap" style="max-width:900px"><table class="hz-av-tbl"><thead><tr><th>Unit</th><th>Name</th>' + HZ_AV_DAYS.map(function(d){ return '<th>' + d[1] + (yt[d[0]] ? '<br><span class="hz-av-ytl">🕯️ Yom Tov</span>' : '') + '</th>'; }).join("") + '</tr></thead><tbody>'
+        + '<tr class="hz-av-tot"><td colspan="2"><b>Available</b></td>' + counts.map(function(n, i){ return '<td><b>' + (yt[HZ_AV_DAYS[i][0]] ? "" : n) + '</b></td>'; }).join("") + '</tr>'
         + (anyPart ? '<tr class="hz-av-tot"><td colspan="2"><b>Intermittent</b></td>' + parts.map(function(n){ return '<td>' + (n || "") + '</td>'; }).join("") + '</tr>' : '')
         + users.map(function(u){ return '<tr><td><b>' + hzAvEsc(u.unit) + '</b></td><td>' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + (hzAvDaytime(u) ? ' <span title="Daytime Responder">☀️</span>' : '') + '</td>' + HZ_AV_DAYS.map(function(d){ return cell(u, d[0]); }).join("") + '</tr>'; }).join("")
         + '</tbody></table></div>';
@@ -12780,30 +12793,39 @@ function hzAvAdminRender() {
     });
   }).catch(function(e){ el.innerHTML = '<div style="color:#ff9090">Couldn\'t load: ' + hzAvEsc(e.message) + '</div>'; });
 }
-// 12.87: the reminder / summary timing lives in Notification Settings ▸ 📅 Availability
+// 12.87: the reminder / summary timing lives in Notification Settings ▸ 📅 Availability · 12.91: one compact table
 function hzAvSettingsRender() {
   var el = document.getElementById("ns-av"); if (!el) return;
-  db.collection("appdata").doc("availability").get().then(function(s){ return s.exists ? s.data() : {}; }).catch(function(){ return {}; }).then(function(S) {
-    HZ_AV.set = S || {}; var h = "";
-    var days = [["motzash", "When the week resets"], ["sun", "Sunday"], ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"], ["fri", "Friday"]];
-    var chk = 'display:flex!important;justify-content:flex-start;gap:8px;align-items:center;margin-top:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-family:inherit;font-size:.86rem;color:var(--white)';
-    // 12.89: one reminder block per poll — [title, who, ids, day, time, only-missing]
-    var rem = function(title, who, id, day, time, only) {
-      return '<div class="hz-av-set"><label>' + title + '</label><div class="hz-erv-muted" style="margin-bottom:5px">' + who + '</div><div class="hz-erv-row" style="margin:0"><select id="' + id + '-day" class="hz-erv-in">' + days.map(function(d){ return '<option value="' + d[0] + '"' + (day === d[0] ? " selected" : "") + '>' + d[1] + '</option>'; }).join("") + '</select>'
-        + '<span class="hz-erv-muted">at</span><input id="' + id + '-time" class="hz-erv-in" type="time" value="' + hzAvEsc(time) + '" style="width:130px"></div>'
-        + '<label style="' + chk + '"><input type="checkbox" id="' + id + '-missing" style="width:auto!important;flex:0 0 auto;margin:0"' + (only === false ? "" : " checked") + '><span style="flex:1;text-align:left">Only to those who haven\'t answered yet</span></label></div>';
-    };
-      h += '<div class="add-user-form" style="max-width:900px;margin-top:16px"><div class="admin-label" style="margin-bottom:6px">⚙ Settings</div>'
-        + rem("☀️ Weekday daytime poll reminder (Mon–Fri)", "Goes to Daytime Responders (ticked in Users ▸ Edit).", "av-rem", S.reminderDay || "motzash", S.reminderTime || "21:00", S.reminderOnlyMissing)
-        + rem("🕯️ Shabbos poll reminder", "Goes to every responder (Responder / Captain / Chief / Backup).", "av-shab", S.shabReminderDay || "thu", S.shabReminderTime || "20:00", S.shabReminderOnlyMissing)
-        + '<div class="hz-erv-muted" style="margin:-4px 0 12px">"When the week resets" goes out right after the reset (the time is used only for a weekday).</div>'
-        + '<div class="hz-av-set"><label>Morning "on call today" summary</label><div class="hz-erv-row" style="margin:0"><span class="hz-erv-muted">Monday – Friday at</span><input id="av-sum-time" class="hz-erv-in" type="time" value="' + hzAvEsc(S.summaryTime || "07:00") + '" style="width:130px"></div>'
-        + '<div class="hz-erv-muted">Lists the Daytime Responders available today, and separately anyone intermittent. Friday\'s also lists Shabbos. Who gets it: 👥 Who Receives What ▸ "📅 Morning on-call summary".</div></div>'
-        + '<div class="hz-erv-muted" style="margin:6px 0 10px">How they are sent (Push / Text / Email): 📣 How It\'s Sent ▸ Availability — Off until ticked.</div>'
-        + '<button class="submit-btn" style="width:auto;padding:10px 22px" onclick="hzAvSaveSettings()">💾 Save</button> <span id="av-msg" class="hz-erv-muted"></span></div>';
-    el.innerHTML = '<p style="color:var(--gray);font-size:0.82rem;margin:0 0 12px;line-height:1.6">Two weekly availability polls, filled in at ⚙ My Settings: the weekday daytime poll (Mon–Fri, Daytime Responders) and the Shabbos poll (every responder). The answers are in ⚙ Admin ▸ 📅 Availability. Set when the reminder and the morning summary go out here. Push / Text / Email for each: 📣 How It\'s Sent ▸ Availability. Who gets the summary: 👥 Who Receives What ▸ 📅 Morning on-call summary. Wording: ✉️ Message Templates ▸ Availability.</p>' + h;
+  Promise.all([
+    db.collection("appdata").doc("availability").get().then(function(s){ return s.exists ? s.data() : {}; }).catch(function(){ return {}; }),
+    db.collection("appdata").doc("dispatchSettings").get().then(function(s){ return s.exists ? s.data() : {}; }).catch(function(){ return {}; })
+  ]).then(function(r) {
+    var S = HZ_AV.set = r[0] || {}, sumN = (Array.isArray(r[1].availSummaryUnits) ? r[1].availSummaryUnits.filter(Boolean) : []).length;
+    var days = [["motzash", "At the reset"], ["sun", "Sunday"], ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"], ["fri", "Friday"]];
+    var sel = function(id, v){ return '<select id="' + id + '" class="hz-erv-in hz-av-s-day" onchange="hzAvDayPick(this)">' + days.map(function(d){ return '<option value="' + d[0] + '"' + (v === d[0] ? " selected" : "") + '>' + d[1] + '</option>'; }).join("") + '</select>'; };
+    var tm = function(id, v, hide){ return '<input id="' + id + '" class="hz-erv-in hz-av-s-tm" type="time" value="' + hzAvEsc(v) + '"' + (hide ? ' style="visibility:hidden"' : '') + '>'; };
+    var ck = function(id, v){ return '<input type="checkbox" id="' + id + '" class="hz-av-s-ck"' + (v === false ? "" : " checked") + ' title="Only those who haven\'t answered yet">'; };
+    var ch = function(k){ return ["push", "sms", "email"].map(function(c, n){ var on = typeof dsStageOn === "function" && dsStageOn(k, c);
+        return '<span class="hz-av-ch' + (on ? " on" : "") + '">' + ["Push", "Text", "Email"][n] + '</span>'; }).join(""); };
+    var rd = S.reminderDay || "motzash", sd = S.shabReminderDay || "thu";
+    var rows = [
+      ["☀️ Weekday poll reminder", "Daytime Responders <span class=\"hz-erv-muted\">(Users ▸ Edit)</span>", sel("av-rem-day", rd) + tm("av-rem-time", S.reminderTime || "21:00", rd === "motzash"), ck("av-rem-missing", S.reminderOnlyMissing), ch("availReminder")],
+      ["🕯️ Shabbos poll reminder", "Every responder", sel("av-shab-day", sd) + tm("av-shab-time", S.shabReminderTime || "20:00", sd === "motzash"), ck("av-shab-missing", S.shabReminderOnlyMissing), ch("availShabReminder")],
+      ["📅 Morning on-call summary", sumN ? sumN + " on the list <span class=\"hz-erv-muted\">(Who Receives What)</span>" : "<span style=\"color:#ff9090\">Nobody yet</span> <span class=\"hz-erv-muted\">— add in Who Receives What</span>", '<span class="hz-av-s-fix">Mon – Fri</span>' + tm("av-sum-time", S.summaryTime || "07:00"), '<span class="hz-erv-muted">—</span>', ch("availSummary")]
+    ];
+    var reset = HZ_AV.week ? hzAvResetText(HZ_AV.week.reset) : "Motzei Shabbos";
+    el.innerHTML = '<div class="hz-av-s-top">Each week (Mon – Shabbos) has <b>two polls</b>, filled in at ⚙ My Settings ▸ 📅 My availability: <b>☀️ weekdays</b> (Daytime Responders only) and <b>🕯️ Shabbos</b> (every responder). '
+        + 'The week resets <b>' + hzAvEsc(reset) + '</b> — change that and see the answers in ⚙ Admin ▸ 📅 Availability.</div>'
+      + '<div class="tbl-wrap" style="max-width:980px"><table class="hz-av-s"><thead><tr><th>Message</th><th>Goes to</th><th>When</th><th title="Only to those who haven\'t answered yet">Only unanswered</th><th>Sent by</th></tr></thead><tbody>'
+      + rows.map(function(x){ return '<tr><td><b>' + x[0] + '</b></td><td>' + x[1] + '</td><td><div class="hz-av-s-when">' + x[2] + '</div></td><td style="text-align:center">' + x[3] + '</td><td><div class="hz-av-s-chs">' + x[4] + '</div></td></tr>'; }).join("")
+      + '</tbody></table></div>'
+      + '<div class="hz-av-s-foot"><button class="submit-btn" style="width:auto;padding:10px 22px" onclick="hzAvSaveSettings()">💾 Save</button> <span id="av-msg" class="hz-erv-muted"></span></div>'
+      + '<div class="hz-erv-muted" style="line-height:1.6;max-width:980px">"Sent by" shows what is ticked now — change it in 📣 How It\'s Sent ▸ Availability (all Off until ticked). Wording: ✉️ Message Templates ▸ Availability. '
+      + '"At the reset" goes out as the new week starts. The summary lists who is available today, intermittent separately; Friday\'s adds Shabbos.<br>🕯️ <b>Shabbos &amp; Yom Tov</b> (from Hebcal): nothing goes out on Shabbos or Yom Tov. If the Shabbos poll reminder would land on Yom Tov, it goes out Erev Yom Tov instead (before candle lighting) — one reminder covers Yom Tov running into Shabbos. A weekday reminder that lands on Yom Tov goes out right after it. Yom Tov days drop out of the weekday poll. No summary on Yom Tov; Chol Hamoed is a normal day.</div>';
   });
 }
+// "At the reset" doesn't use a time
+function hzAvDayPick(selEl) { var t = selEl.parentNode.querySelector(".hz-av-s-tm"); if (t) t.style.visibility = selEl.value === "motzash" ? "hidden" : ""; }
 function hzAvResetPick() {
   var m = (document.querySelector('input[name="av-reset"]:checked') || {}).value || "tzeis42";
   var tr = document.getElementById("av-reset-time-row"), zr = document.getElementById("av-zip-row"), ti = document.getElementById("av-reset-time");
@@ -12836,6 +12858,7 @@ function hzAvSaveSettings() {
     + "@media (max-width:520px){.hz-av-days{grid-template-columns:repeat(3,minmax(0,1fr))}.hz-av-days.one{grid-template-columns:minmax(0,1fr)}}"
     + ".hz-av-sec{margin-bottom:12px}.hz-av-sec-h{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;margin-bottom:5px}.hz-av-sec-h b{font-size:.86rem;color:var(--white)}"
     + ".hz-av-qual{font-size:.76rem;color:var(--gold);margin-bottom:6px;line-height:1.35}"
+    + ".hz-av-day.yt{cursor:default;opacity:.75;background:rgba(127,127,127,.08);border-style:dashed}.hz-av-ytl{font-size:.62rem;letter-spacing:0;text-transform:none;color:var(--gold)}"
     + ".hz-av-day.part{background:rgba(90,160,255,.12);border-color:rgba(90,160,255,.55)}.hz-av-day.part i,.hz-av-part,.hz-av-day em.hz-av-pn{color:#8cbcff}.hz-av-part{font-weight:700}"
     + "html[data-theme=basic] .hz-av-day.part i,html[data-theme=basic] .hz-av-part,html[data-theme=basic] .hz-av-day em.hz-av-pn{color:#1d5fb8}.hz-av-na{background:rgba(127,127,127,.06)}"
     + ".hz-av-day{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,.03);color:var(--white);cursor:pointer;font-family:'Oswald',sans-serif;min-width:0}"
@@ -12850,6 +12873,14 @@ function hzAvSaveSettings() {
     + ".hz-av-tbl th:nth-child(-n+2),.hz-av-tbl td:nth-child(-n+2){text-align:left}.hz-av-tbl th{font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.06em;color:var(--gray);text-transform:uppercase}"
     + ".hz-av-yes{color:#7dedb5;font-weight:700}.hz-av-no{color:#ff9090}.hz-av-nil{color:var(--gray)}.hz-av-tot td{background:rgba(var(--gold-rgb),.08)}"
     + ".hz-av-radio{display:flex!important;gap:8px;align-items:center;margin:4px 0;cursor:pointer;text-transform:none!important;letter-spacing:0!important;font-family:inherit!important;font-size:.86rem!important;color:var(--white)!important}.hz-av-radio input{width:auto!important;margin:0;flex:0 0 auto}"
+    + ".hz-av-s-top{font-size:.84rem;color:var(--gray);line-height:1.55;margin:0 0 12px;max-width:980px}.hz-av-s-top b{color:var(--white)}"
+    + ".hz-av-s{width:100%;border-collapse:collapse;font-size:.86rem}.hz-av-s th,.hz-av-s td{padding:8px;border-bottom:1px solid var(--card-border);text-align:left;vertical-align:middle}"
+    + ".hz-av-s th{font-family:'Oswald',sans-serif;font-size:.7rem;letter-spacing:.06em;color:var(--gray);text-transform:uppercase;white-space:nowrap}.hz-av-s td:first-child{white-space:nowrap}"
+    + ".hz-av-s-when{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}.hz-av-s-day{width:190px!important;min-width:0}.hz-av-s-tm{width:150px!important;min-width:150px}.hz-av-s-fix{width:190px;color:var(--white)}"
+    + ".hz-av-s-ck{width:18px!important;height:18px;margin:0;cursor:pointer}"
+    + ".hz-av-s-chs{display:flex;gap:4px}.hz-av-ch{font-size:.68rem;padding:2px 7px;border-radius:10px;border:1px solid var(--card-border);color:var(--gray);opacity:.6;text-decoration:line-through}"
+    + ".hz-av-ch.on{opacity:1;text-decoration:none;color:#7dedb5;border-color:rgba(76,175,128,.6);background:rgba(76,175,128,.12)}html[data-theme=basic] .hz-av-ch.on{color:#167a3e}"
+    + ".hz-av-s-foot{margin:12px 0 8px}"
     + ".hz-av-set{margin-bottom:12px}.hz-av-set>label{display:block;font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin-bottom:5px}"
     + "#hz-av-pop{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}"
     + "@media (max-width:600px){#hz-av-pop{padding:0;align-items:stretch}}"
