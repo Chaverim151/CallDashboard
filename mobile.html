@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.30"; window.M_BUILD = BUILD;
+  var BUILD = "5.31"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6965,7 +6965,7 @@ var M_SMS_TEMPLATE_DEFAULTS = {
   callback:   "CALLBACK NUMBER\n{address}\nCallback: {callback}\n{time}",
   rigResponse:"{baseName}\n{baseMapsLink}\n\n{baseWazeLink}",
   adminUpdate:"NOTIFICATION GROUP\n{header}\n{address}\n{detail}\nBLS: {units}",
-  rigAssigned:"NOTIFICATION GROUP\nRIG ASSIGNED\n{address}\nRig {rig} \u2192 Crew {crew}: {crewUnits}{replaces}",
+  rigAssigned:"NOTIFICATION GROUP\nRIG ASSIGNED\n{address}\n{rig} assigned to this call{replaces}\nBLS: {units}",
   callerLocation:"{orgName} — tap to send us your location so the ambulance can find you:\n{link}",
   accessCodeChange:"ACCESS CODE\n{address}\nCode: {accessCode}\n{time}",
   addressChange:"CALL LOCATION CHANGED\n{address}\nWas: {oldAddress}\n{mapsLink}\n\n{wazeLink}\n{time}",
@@ -7253,11 +7253,18 @@ function mRigAssignedCopy(call, crewIdx, rig, prevRig) {
   if (!units.length) return;
   var crew = (call.crews || [])[crewIdx] || {};
   var crewUnits = Object.keys(crew).filter(function(k){ return k !== "rig" && crew[k] && crew[k] !== "__added__"; }).map(function(k){ return crew[k]; });
+  // 12.73: same shape as the group's "UNIT ASSIGNED" copy — header, address, "<rig> assigned to this call", BLS: units on the call
+  var bls = mGroupUnits(call).split(", ").filter(Boolean); if (bls.indexOf(rig) === -1) bls.push(rig);
   var vars = Object.assign(mCallVars(call), { address: mSmsAddress(call), rig: rig, crew: String(crewIdx + 1), crewUnits: crewUnits.join(", ") || "no units yet",
-    replaces: prevRig ? " (replaces " + prevRig + ")" : "" });
-  var body = mRenderTemplate(mTemplateFor("rigAssigned"), vars);
+    replaces: prevRig ? " (replaces " + prevRig + ")" : "", units: bls.join(", ") });
+  // Until someone saves its own wording, it uses the group's Unit-assigned wording (adminUpdate) — so the two always match
+  var own = M_SMS_TEMPLATES && typeof M_SMS_TEMPLATES.rigAssigned === "string" && M_SMS_TEMPLATES.rigAssigned.trim();
+  var tpl = own ? mTemplateFor("rigAssigned") : mTemplateFor("adminUpdate");
+  if (!own && tpl.indexOf("{units}") === -1) tpl = tpl.replace(/\s+$/, "") + "\nBLS: {units}";
+  vars.header = "RIG ASSIGNED"; vars.detail = rig + " assigned to this call" + vars.replaces;
+  var body = mRenderTemplate(tpl, vars);
   if (smsOn && body.trim()) mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
-  hzPushTo(units, "rigAssigned", "📟 Rig " + rig + " assigned — " + hzPushStreet(call), "Crew " + (crewIdx + 1) + (crewUnits.length ? ": " + crewUnits.join(", ") : "") + vars.replaces, call.id);
+  hzPushTo(units, "rigAssigned", "📟 RIG ASSIGNED — " + hzPushStreet(call), rig + " assigned to this call" + vars.replaces, call.id);   // like the unit-assigned push
 }
 // Units for the notification group: every unit on the crews, plus a crew's rig only once one of its
 // units is responding to the rig or riding it.
