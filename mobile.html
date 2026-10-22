@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.35"; window.M_BUILD = BUILD;
+  var BUILD = "5.39"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -969,7 +969,15 @@ html[data-theme="basic"] #hw-modal .hwm-result{background:#f8f9fa !important}
 html[data-theme="basic"] #hw-modal .hwm-result.ok{color:#167a3e !important}
 html[data-theme="basic"] .hzm-flag{color:#b42318 !important}
 html[data-theme="basic"] #hz-msg-pop textarea{background:#f3f4f6 !important}
-html[data-theme="basic"] #hz-msg-pop select{background:#f3f4f6 !important}</style>
+html[data-theme="basic"] #hz-msg-pop select{background:#f3f4f6 !important}
+html[data-theme="basic"] .hz-erv-btn.red{color:#b42318 !important}
+html[data-theme="basic"] .hz-erv-day{background:#f8f9fa !important}
+html[data-theme="basic"] .hz-erv-chip.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-erv-chip.warn{color:#8a5a00 !important}
+html[data-theme="basic"] .hz-erv-chip.bad{color:#b42318 !important}
+html[data-theme="basic"] .hz-erv-note.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
+html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}</style>
 <!--HZ-BASIC-END-->
 </head>
 <body>
@@ -1353,6 +1361,7 @@ html[data-theme="basic"] #hz-msg-pop select{background:#f3f4f6 !important}</styl
       <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
       <span class="m-page-title">Service Helpdesk</span>
     </div>
+    <button class="m-disp-btn hz-erv-entry" onclick="hzErvOpen('schedule')" style="display:none;margin-left:auto;margin-right:6px;padding:6px 10px">🚙 ERV</button>
     <button onclick="mGoTo('service-new');mBindTicketFormMentions()" style="background:linear-gradient(135deg,var(--gold),#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New</button>
   </div>
   <div style="display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--card-border);flex-wrap:wrap" id="m-tk-tabs">
@@ -1377,6 +1386,7 @@ html[data-theme="basic"] #hz-msg-pop select{background:#f3f4f6 !important}</styl
       <button type="button" class="m-disp-btn m-tk-type-chip on" data-type="general" onclick="mTkPickType('general')" style="flex:1 1 calc(50% - 6px)">🔧 Service Request</button>
       <button type="button" class="m-disp-btn m-tk-type-chip" data-type="restock" onclick="mTkPickType('restock')" style="flex:1 1 calc(50% - 6px)">📦 Restock</button>
       <button type="button" class="m-disp-btn m-tk-type-chip" data-type="it" onclick="mTkPickType('it')" style="flex:1 1 calc(50% - 6px)">💻 IT / App Issue</button>
+      <button type="button" class="m-disp-btn m-tk-type-chip hz-erv-entry" onclick="hzErvOpen('request')" style="flex:1 1 calc(50% - 6px);display:none">🚙 ERV Shift</button>
       <button type="button" class="m-disp-btn m-tk-type-chip" data-type="feature" onclick="mTkPickType('feature')" style="flex:1 1 calc(50% - 6px)">💡 Feature Request</button>
     </div>
     <div id="m-tk-restock-fields" class="rs-box" style="display:none"></div>
@@ -3006,6 +3016,7 @@ function mRenderCalls(calls) {
       crews.forEach(function(crew, ci) {
         if (!crew) return;
         if (crew.rig) rigPills += '<span class="m-pill plain">🚑 ' + mEscHtml(crew.rig) + '</span>';   // rigs get their own row (5.08)
+        if (ci === 0 && typeof hzErvOnCall === "function") hzErvOnCall(call).forEach(function(ev){ rigPills += '<span class="m-pill plain">🚙 ' + mEscHtml(ev) + '</span>'; });   // 5.38
         Object.keys(crew).sort(function(a, b) { var o = ["primary","backup","rigUnit"]; var ia = o.indexOf(a), ib = o.indexOf(b); ia = ia < 0 ? 9 : ia; ib = ib < 0 ? 9 : ib; return ia - ib || a.localeCompare(b, undefined, { numeric: true }); }).forEach(function(role) {   // Unit 1, Unit 2, Unit 3, then extras
           if (role === "rig") return;
           var val = crew[role]; if (!val || val === "__added__") return;
@@ -5472,7 +5483,7 @@ function mRigStatusStop() { if (mRigStatusUnsub) { mRigStatusUnsub(); mRigStatus
 function mRigState(v) {
   var out = v.serviceStatus === "out" && !(v.outUntil && new Date(v.outUntil).getTime() < Date.now());
   if (out) return { s: "out" };
-  var call = (mActiveCallsLive || []).filter(function(c) { return (!c.status || c.status === "active") && (c.crews || []).some(function(cr) { return cr && cr.rig === v.rid; }); })[0];
+  var call = (mActiveCallsLive || []).filter(function(c) { return (!c.status || c.status === "active") && ((c.crews || []).some(function(cr) { return cr && cr.rig === v.rid; }) || (typeof hzErvOnCall === "function" && hzErvOnCall(c).indexOf(v.rid) >= 0)); })[0];
   return call ? { s: "busy", call: call } : { s: "in" };
 }
 function mDashUpdateRigs() {
@@ -6123,7 +6134,7 @@ function mOpenCallLogDetail(id, keepPlace) {
 // ── SERVICE REQUESTS (TICKETS) ──
 var mAllTickets = [];
 var mTicketStatusFilter = "open";   // opens on Open requests
-var M_CAT_ICONS = { general: "📋", it: "💻", restock: "📦", feature: "💡" };
+var M_CAT_ICONS = { general: "📋", it: "💻", restock: "📦", feature: "💡", erv: "🚙" };
 var M_PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 // Ticket stages: open → accepted → in-progress → resolved (shown as "Completed")
 var M_TICKET_STAGES = [
@@ -6720,6 +6731,11 @@ function mOpenTicket(id) {
   db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) Object.assign(t, s.data()); mRenderTicketDetail(id, t); }).catch(function(){ mRenderTicketDetail(id, t); });
 }
 function mRenderTicketDetail(id, t) {
+  if (t && t.category === "erv" && typeof hzErvTicketHtml === "function") {   // 5.37: ERV shift request
+    document.getElementById("m-tk-detail-title").textContent = mTicketNo(t, id);
+    document.getElementById("m-tk-detail-content").innerHTML = '<div data-erv-ticket="' + id + '" style="padding:12px 16px">' + hzErvTicketHtml(id, t) + '</div>';
+    return;
+  }
   var isAdmin = mCurrentRole === "admin";
   var isServiceUnit = mCanManageTickets();
   var date = t.createdAt ? new Date(t.createdAt).toLocaleString() : "—";
@@ -7000,6 +7016,7 @@ var M_SMS_TEMPLATE_DEFAULTS = {
   ticketPriority:"{priorityIcon} {priority} service request\n{ticketTitle}\n{ticketUnit}\nFrom {from}\nOpen the {app} App → Service Helpdesk to view.",
   ticketNotice:"{title}\n{message}\nOpen the {app} App → Service Helpdesk to view.",
   passwordLink:"{orgName}: {action}{unitPart}:\n{link}\nThe link works once and expires in about an hour. If it expires, tap \"Forgot password?\" on the login screen.",
+  msgNotOnCall:"DISPATCH: You are not assigned to an active call. Your message was passed to the dispatcher.",
   msgReply:"DISPATCH: {message}\n(reply to this number to answer)",
   codeVerify:"{orgName}: your verification code is {code}. It expires in 10 minutes. If you didn't ask for this, ignore this text.",
   codeSubmitted:"Building code waiting for approval\n{building}\n{address}\nFrom {contact}\nOpen Admin → Codes & Locations to review.",
@@ -10178,7 +10195,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   if (sl) {
     var withRig = isDriver && crew.rig && (mLoadRigBoarded(call, crewIdx) && status === "picking_up_ambo" || ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1);
     var riding = !isDriver && crew.rig && M_RIDER_STATUSES.indexOf(status) !== -1;   // scene-direct unit riding in the rig
-    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.icon + ' ' + unit + ' ' + sl.text + (withRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : '') + '</div>';
+    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.icon + ' ' + unit + ' ' + sl.text + (withRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : (det.ervVehicle && det.response === "scene" && HZ_ERV_DONE.indexOf(status) < 0 ? ' · 🚙 ' + mEscHtml(det.ervVehicle) : '')) + '</div>';
   }
 
   var nextBtn = mNextStepButton(call, crewIdx, role, unit);
@@ -10222,8 +10239,10 @@ function mDivertResponse(crewIdx, role, unit) {
     var oneStepD = toRig && !!mCrewOf(call, crewIdx).rig;   // Standard call: straight to responding with the rig
     update["unitDetails." + mUdKey(crewIdx, role) + ".status"] = toRig ? (oneStepD ? "ambo_responding" : "picking_up_ambo") : "enroute_scene";
     update["unitDetails." + mUdKey(crewIdx, role) + ".statusAt"] = now;
+    var ervD = !toRig && typeof hzErvActiveFor === "function" ? hzErvActiveFor(unit) : "";   // 12.80 / 5.38
+    update["unitDetails." + mUdKey(crewIdx, role) + ".ervVehicle"] = ervD;
     var notes = call.callNotes || [];
-    notes.push({ text: unit + " diverted — now " + (toRig ? "responding to the rig" : "responding direct to scene"), time: now, by: mCurrentUserUnit || "Dispatch" });
+    notes.push({ text: unit + " diverted — now " + (toRig ? "responding to the rig" : "responding direct to scene" + (ervD ? " with " + ervD : "")), time: now, by: mCurrentUserUnit || "Dispatch" });
     update.callNotes = notes;
     update.callEvents = mEvtUnion(mEvt(unit + " diverted → " + (toRig ? "the rig" : "direct to scene"), "↔", "#ffc84a", "event"));
     return db.collection("activeCalls").doc(callId).update(update);
@@ -10790,7 +10809,9 @@ function mSetUnitResponse(crewIdx, role, response) {
   update[key + ".response"] = response;
   update[key + ".status"] = initialStatus;
   var crewR = mCrewOf(mDispCallCache[mDispSelectedCallId]||{}, crewIdx); var unitR = crewR[role] || role;
-  update.callEvents = mEvtUnion(mEvt(unitR + (response === "rig" ? (oneStep ? " — Responding with " + crewR0.rig : " — Responding to Rig") : " — En Route to Scene"), response === "rig" ? "🏠" : "🏃", response === "rig" ? "#ffc84a" : "#7ab8f5", "status"));
+  var ervR = response === "scene" && typeof hzErvActiveFor === "function" ? hzErvActiveFor(unitR) : "";   // 12.80 / 5.38: on an ERV shift → responding with the ERV
+  update[key + ".ervVehicle"] = ervR;
+  update.callEvents = mEvtUnion(mEvt(unitR + (response === "rig" ? (oneStep ? " — Responding with " + crewR0.rig : " — Responding to Rig") : " — En Route to Scene" + (ervR ? " with " + ervR : "")), response === "rig" ? "🏠" : "🏃", response === "rig" ? "#ffc84a" : "#7ab8f5", "status"));
   update[key + ".statusAt"] = mNowHHMM();
   update.updatedAt = new Date().toISOString();
   db.collection("activeCalls").doc(callId).update(update).then(function() {
@@ -12141,6 +12162,354 @@ function mCloseAllSheets() {
   window.addEventListener("focus", function () { check(false); });
   window.addEventListener("pageshow", function () { check(false); });
   window.hzCheckForUpdate = function () { check(true); };
+})();
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   12.79 / 5.37 — 🚙 ERV SHIFT REQUESTS (same code in index.html and mobile.html) · 12.81 / 5.39 check in / check out
+   A driver who is approved to drive the ERV (users.ervDriver, ticked in Admin ▸ Users ▸ Edit) asks to
+   book the ERV for a start/end time. The request is a Service Helpdesk ticket (category "erv"). Admins
+   approve or deny it; approved shifts show on the ERV calendar with the driver's unit and name, and the
+   free times in between show as open. Until launch only admins see it: Admin ▸ Notifications &
+   Permissions ▸ "🚙 ERV shift requests" (appdata/dispatchSettings.ervAccess = "admins" | "drivers").
+   Who hears about a new request: the "🚙 ERV shift request" line in Who Receives What
+   (dispatchSettings.ervTicketUnits; empty = every admin). How: push / text / email switches
+   "ervRequest" and "ervDecision" in How each ticket stage is sent — all Off until ticked.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+var HZ_ERV = { me: null, uid: "", isAdmin: false, access: "admins", allowed: false, tickets: [], ervs: [], unsub: null,
+               tab: "schedule", ervId: "", weekStart: null, preset: null, ready: false };
+function hzErvEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function hzErvToast(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); else alert(m); }
+function hzErvPad(n) { return (n < 10 ? "0" : "") + n; }
+function hzErvTime(ms) { var d = new Date(ms), h = d.getHours(), m = d.getMinutes(); return ((h % 12) || 12) + (m ? ":" + hzErvPad(m) : "") + " " + (h < 12 ? "AM" : "PM"); }
+function hzErvDay(ms) { var d = new Date(ms); return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()] + " " + (d.getMonth() + 1) + "/" + d.getDate(); }
+function hzErvRange(a, b) {
+  var sameDay = new Date(a).toDateString() === new Date(b - 1).toDateString();
+  var mid = new Date(b).getHours() === 0 && new Date(b).getMinutes() === 0;
+  return hzErvDay(a) + " " + hzErvTime(a) + " – " + (sameDay ? "" : hzErvDay(b) + " ") + (sameDay && mid ? "midnight" : hzErvTime(b));
+}
+function hzErvLocalInput(ms) { var d = new Date(ms); return d.getFullYear() + "-" + hzErvPad(d.getMonth() + 1) + "-" + hzErvPad(d.getDate()) + "T" + hzErvPad(d.getHours()) + ":" + hzErvPad(d.getMinutes()); }
+function hzErvParseInput(v) { var m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime() : NaN; }
+function hzErvDayStart(ms) { var d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
+function hzErvAddDays(ms, n) { var d = new Date(ms); d.setDate(d.getDate() + n); return d.getTime(); }
+function hzErvStatus(t) { return t.ervStatus || "pending"; }
+function hzErvIsMine(t) { return !!HZ_ERV.uid && t.submittedByUid === HZ_ERV.uid; }
+// requests that hold the ERV: approved ones block a time; pending ones are shown but don't block
+function hzErvBlocking(ervId, exceptId) {
+  return HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && t.id !== exceptId && hzErvStatus(t) === "approved"; });
+}
+function hzErvOverlaps(list, a, b) { return list.filter(function(t){ return t.startMs < b && t.endMs > a; }); }
+
+// ── 12.80: a unit on an approved ERV shift responds WITH the ERV ──
+// The unit's ERV now (or at a given time): "" when they're not on a shift.
+function hzErvDriverUnit(t) { return String(t.driverUnit || String(t.submittedBy || "").split(" ")[0] || "").toUpperCase(); }
+// 12.81: the ERV is theirs only while they're CHECKED IN (approved shift, checked in, not checked out, shift not over)
+function hzErvActiveFor(unit, atMs) {
+  var at = atMs || Date.now(), u = String(unit || "").toUpperCase(); if (!u) return "";
+  var t = HZ_ERV.tickets.filter(function(x){ return hzErvStatus(x) === "approved" && x.checkedInAt && !x.checkedOutAt && at < x.endMs && hzErvDriverUnit(x) === u; })[0];
+  return t ? t.ervUnit : "";
+}
+// check in from 30 minutes before the shift until it ends; check out any time after checking in
+var HZ_ERV_EARLY = 30 * 60000;
+function hzErvCanIn(t) { var n = Date.now(); return hzErvStatus(t) === "approved" && !t.checkedInAt && n >= t.startMs - HZ_ERV_EARLY && n < t.endMs; }
+function hzErvCanOut(t) { return hzErvStatus(t) === "approved" && !!t.checkedInAt && !t.checkedOutAt; }
+function hzErvCheckBtns(t) {
+  if (!hzErvIsMine(t)) return "";
+  if (hzErvCanIn(t)) return '<button class="hz-erv-go sm" onclick="hzErvCheckInOut(\'' + t.id + '\',\'in\')">✅ Check in — take ' + hzErvEsc(t.ervUnit) + '</button>';
+  if (hzErvCanOut(t)) return '<button class="hz-erv-go sm" onclick="hzErvCheckInOut(\'' + t.id + '\',\'out\')">🏁 Check out — return ' + hzErvEsc(t.ervUnit) + '</button>';
+  if (hzErvStatus(t) === "approved" && !t.checkedInAt && Date.now() < t.startMs - HZ_ERV_EARLY) return '<span class="hz-erv-muted">Check in opens 30 minutes before the shift.</span>';
+  return "";
+}
+function hzErvCheckLine(t) {
+  if (t.checkedOutAt) return '<div class="hz-erv-muted">✅ Checked in ' + hzErvDay(t.checkedInAt) + ' ' + hzErvTime(t.checkedInAt) + ' · 🏁 checked out ' + hzErvTime(t.checkedOutAt) + '</div>';
+  if (t.checkedInAt) return '<div class="hz-erv-muted" style="color:#7dedb5">✅ Checked in ' + hzErvDay(t.checkedInAt) + ' ' + hzErvTime(t.checkedInAt) + ' — the ERV is theirs on calls until they check out</div>';
+  return "";
+}
+function hzErvCheckInOut(id, kind) {
+  var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
+  if (kind === "in" && !hzErvCanIn(t)) { hzErvToast("You can check in from 30 minutes before the shift until it ends.", true); return; }
+  if (kind === "out" && !confirm("Check out and return " + t.ervUnit + "?")) return;
+  var upd = { lastActionByUid: HZ_ERV.uid }; upd[kind === "in" ? "checkedInAt" : "checkedOutAt"] = Date.now();
+  db.collection("tickets").doc(id).update(upd)
+    .then(function(){ hzErvToast(kind === "in" ? "✅ Checked in — " + t.ervUnit + " is yours on calls until you check out" : "🏁 Checked out — " + t.ervUnit + " returned"); hzErvRefreshTicket(id); })
+    .catch(function(e){ hzErvToast("Not saved: " + e.message + (/permission/i.test(e.message) ? " — the database rules need publishing" : ""), true); });
+}
+// a unit with the ERV stops holding it once they're clear of the call
+var HZ_ERV_DONE = ["cleared_scene", "back_at_base", "returning_base", "other_status"];
+function hzErvOnCall(call) {
+  var out = [], ud = (call && call.unitDetails) || {};
+  Object.keys(ud).forEach(function(k){ var d = ud[k] || {}; if (d.ervVehicle && d.response === "scene" && HZ_ERV_DONE.indexOf(d.status) < 0 && out.indexOf(d.ervVehicle) < 0) out.push(d.ervVehicle); });
+  return out;
+}
+// ── who may use it ──
+function hzErvApplyAccess() {
+  var me = HZ_ERV.me || {};
+  HZ_ERV.isAdmin = me.role === "admin" || (me.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; });
+  HZ_ERV.allowed = HZ_ERV.isAdmin || (HZ_ERV.access === "drivers" && me.ervDriver === true);
+  document.querySelectorAll(".hz-erv-entry").forEach(function(el){ el.style.display = HZ_ERV.allowed ? "" : "none"; });
+  document.querySelectorAll(".hz-erv-testing").forEach(function(el){ el.style.display = HZ_ERV.allowed && HZ_ERV.access !== "drivers" ? "" : "none"; });
+}
+function hzErvInit() {
+  if (HZ_ERV.ready || typeof firebase === "undefined" || !firebase.auth) return;
+  HZ_ERV.ready = true;
+  firebase.auth().onAuthStateChanged(function(u) {
+    if (HZ_ERV.unsub) { try { HZ_ERV.unsub(); } catch (e) {} HZ_ERV.unsub = null; }
+    HZ_ERV.uid = u ? u.uid : ""; HZ_ERV.me = null; HZ_ERV.allowed = false; HZ_ERV.tickets = [];
+    hzErvApplyAccess();
+    if (!u) return;
+    Promise.all([
+      db.collection("users").doc(u.uid).get().then(function(s){ return s.exists ? s.data() : {}; }).catch(function(){ return {}; }),
+      db.collection("appdata").doc("dispatchSettings").get().then(function(s){ return s.exists ? s.data() : {}; }).catch(function(){ return {}; })
+    ]).then(function(r) {
+      HZ_ERV.me = r[0]; HZ_ERV.access = r[1].ervAccess === "drivers" ? "drivers" : "admins";
+      hzErvApplyAccess();
+      hzErvListen();   // 12.80: every signed-in app knows the approved ERV shifts (a unit on shift responds with the ERV)
+    });
+  });
+}
+function hzErvListen() {
+  if (HZ_ERV.unsub) return;
+  HZ_ERV.unsub = db.collection("tickets").where("category", "==", "erv").onSnapshot(function(q) {
+    HZ_ERV.tickets = []; q.forEach(function(d){ var x = d.data(); if (typeof x.startMs === "number" && typeof x.endMs === "number") HZ_ERV.tickets.push(Object.assign({ id: d.id }, x)); });
+    HZ_ERV.tickets.sort(function(a, b){ return a.startMs - b.startMs; });
+    if (document.getElementById("hz-erv")) hzErvDraw();
+  }, function(e){ console.warn("ERV list", e); });
+  db.collection("vehicles").get().then(function(q) {
+    var list = []; q.forEach(function(d){ var v = d.data() || {}, id = d.id; var ty = String(v.type || "").toLowerCase(); if (ty === "erv" || (/^ERV/i.test(id) && !/bag|kit|storage|other/.test(ty) && !/bag|kit/i.test(id))) list.push({ id: id, name: v.description ? id + " — " + v.description : id }); });
+    list.sort(function(a, b){ return a.id.localeCompare(b.id, undefined, { numeric: true }); });
+    HZ_ERV.ervs = list.length ? list : [{ id: "ERV-1", name: "ERV-1" }];
+    if (!HZ_ERV.ervId || !list.some(function(x){ return x.id === HZ_ERV.ervId; })) HZ_ERV.ervId = HZ_ERV.ervs[0].id;
+    if (document.getElementById("hz-erv")) hzErvDraw();
+  }).catch(function(){ HZ_ERV.ervs = [{ id: "ERV-1", name: "ERV-1" }]; HZ_ERV.ervId = HZ_ERV.ervId || "ERV-1"; });
+}
+
+// ── the window ──
+function hzErvOpen(tab, preset) {
+  if (!HZ_ERV.allowed) { hzErvToast("ERV shift requests aren't open yet.", true); return; }
+  hzErvListen();
+  HZ_ERV.tab = tab || "schedule"; HZ_ERV.preset = preset || null;
+  if (!HZ_ERV.weekStart) { var t = hzErvDayStart(Date.now()); HZ_ERV.weekStart = hzErvAddDays(t, -new Date(t).getDay()); }
+  if (!HZ_ERV.ervId) HZ_ERV.ervId = "ERV-1";
+  var el = document.getElementById("hz-erv");
+  if (!el) { el = document.createElement("div"); el.id = "hz-erv"; document.body.appendChild(el); }
+  el.style.display = "flex";
+  hzErvDraw();
+}
+function hzErvClose() { var el = document.getElementById("hz-erv"); if (el) el.remove(); }
+function hzErvTab(t) { HZ_ERV.tab = t; hzErvDraw(); }
+function hzErvWeek(n) { HZ_ERV.weekStart = n === 0 ? hzErvAddDays(hzErvDayStart(Date.now()), -new Date().getDay()) : hzErvAddDays(HZ_ERV.weekStart, 7 * n); hzErvDraw(); }
+function hzErvPick(id) { HZ_ERV.ervId = id; hzErvDraw(); }
+function hzErvDraw() {
+  var el = document.getElementById("hz-erv"); if (!el) return;
+  var pend = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; }).length;
+  var tabs = [["schedule", "🗓 Schedule"], ["request", "➕ Request a shift"], ["mine", "📋 My requests"]].concat(HZ_ERV.isAdmin ? [["approve", "✅ Approve" + (pend ? " (" + pend + ")" : "")]] : []);
+  var body = HZ_ERV.tab === "request" ? hzErvRequestHtml() : HZ_ERV.tab === "mine" ? hzErvMineHtml() : HZ_ERV.tab === "approve" && HZ_ERV.isAdmin ? hzErvApproveHtml() : hzErvScheduleHtml();
+  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="ERV shifts"><div class="hz-erv-top"><b>🚙 ERV Shifts</b>'
+    + (HZ_ERV.access !== "drivers" ? '<span class="hz-erv-pill warn" title="Only admins can see this until it is opened to drivers in Admin ▸ Notifications & Permissions">Testing — admins only</span>' : '')
+    + '<span style="flex:1"></span><button class="hz-erv-x" onclick="hzErvClose()" aria-label="Close">✕</button></div>'
+    + '<div class="hz-erv-tabs">' + tabs.map(function(t){ return '<button class="' + (HZ_ERV.tab === t[0] ? "on" : "") + '" onclick="hzErvTab(\'' + t[0] + '\')">' + t[1] + '</button>'; }).join("") + '</div>'
+    + '<div class="hz-erv-body">' + hzErvNowBanner() + body + '</div></div>';
+  if (HZ_ERV.tab === "request") hzErvCheck();
+}
+// my shift that can be checked in / out right now, at the top of every tab
+function hzErvNowBanner() {
+  var t = HZ_ERV.tickets.filter(function(x){ return hzErvIsMine(x) && (hzErvCanIn(x) || hzErvCanOut(x)); })[0];
+  if (!t) return "";
+  return '<div class="hz-erv-card" style="border-color:var(--gold)"><div class="hz-erv-row" style="margin:0"><b>Your shift: ' + hzErvEsc(t.ervUnit) + ' · ' + hzErvEsc(hzErvRange(t.startMs, t.endMs)) + '</b><span style="flex:1"></span>' + hzErvCheckBtns(t) + '</div>' + hzErvCheckLine(t) + '</div>';
+}
+function hzErvErvSelect(id, onchange) {
+  return '<select id="' + id + '" class="hz-erv-in" onchange="' + onchange + '">' + (HZ_ERV.ervs.length ? HZ_ERV.ervs : [{ id: HZ_ERV.ervId, name: HZ_ERV.ervId }]).map(function(v){ return '<option value="' + hzErvEsc(v.id) + '"' + (v.id === HZ_ERV.ervId ? " selected" : "") + '>' + hzErvEsc(v.name) + '</option>'; }).join("") + '</select>';
+}
+// free times of one day, between the approved shifts
+function hzErvFree(dayMs, taken) {
+  var a = dayMs, end = hzErvAddDays(dayMs, 1), out = [];
+  taken.filter(function(t){ return t.startMs < end && t.endMs > a; }).sort(function(x, y){ return x.startMs - y.startMs; }).forEach(function(t){
+    if (t.startMs > a) out.push([a, t.startMs]); a = Math.max(a, t.endMs);
+  });
+  if (a < end) out.push([a, end]);
+  return out;
+}
+function hzErvScheduleHtml() {
+  var ws = HZ_ERV.weekStart, now = Date.now(), ervId = HZ_ERV.ervId;
+  var mine = function(t){ return hzErvIsMine(t); };
+  var list = HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && (["approved", "pending"].indexOf(hzErvStatus(t)) >= 0 || (mine(t) && hzErvStatus(t) === "denied")); });
+  var approved = list.filter(function(t){ return hzErvStatus(t) === "approved"; });
+  var h = '<div class="hz-erv-row">' + hzErvErvSelect("hz-erv-pick", "hzErvPick(this.value)")
+    + '<button class="hz-erv-btn" onclick="hzErvWeek(-1)">‹ Prev</button><button class="hz-erv-btn" onclick="hzErvWeek(0)">This week</button><button class="hz-erv-btn" onclick="hzErvWeek(1)">Next ›</button>'
+    + '<span class="hz-erv-muted">' + hzErvDay(ws) + " – " + hzErvDay(hzErvAddDays(ws, 6)) + '</span></div>'
+    + '<div class="hz-erv-legend"><span class="hz-erv-chip ok">Approved</span><span class="hz-erv-chip warn">Requested — waiting</span><span class="hz-erv-chip open">Open</span></div><div class="hz-erv-week">';
+  for (var i = 0; i < 7; i++) {
+    var d = hzErvAddDays(ws, i), e = hzErvAddDays(d, 1), past = e <= now, today = d <= now && now < e;
+    var items = list.filter(function(t){ return t.startMs < e && t.endMs > d; });
+    var free = hzErvFree(d, approved).filter(function(f){ return f[1] > now; }).map(function(f){ return [Math.max(f[0], d), f[1]]; });
+    h += '<div class="hz-erv-day' + (today ? " today" : "") + (past ? " past" : "") + '"><div class="hz-erv-dh">' + hzErvDay(d) + '</div>'
+      + items.map(function(t){ var st = hzErvStatus(t), cls = st === "approved" ? "ok" : st === "pending" ? "warn" : "bad";
+          return '<div class="hz-erv-chip ' + cls + '" title="' + hzErvEsc(hzErvRange(t.startMs, t.endMs)) + '"><b>' + hzErvTime(Math.max(t.startMs, d)) + '–' + hzErvTime(Math.min(t.endMs, e)) + '</b><br>' + hzErvEsc(t.submittedBy || "") + (st !== "approved" ? ' · ' + st : t.checkedOutAt ? ' · returned' : t.checkedInAt ? ' · ✅ checked in' : '') + '</div>'; }).join("")
+      + (past ? '' : free.map(function(f){ var fa = Math.max(f[0], Math.ceil(now / 1800000) * 1800000); if (fa >= f[1]) return "";
+          var lbl = fa === d && f[1] === e ? "Open all day" : "Open " + hzErvTime(fa) + "–" + (f[1] === e ? "midnight" : hzErvTime(f[1]));
+          return '<button class="hz-erv-chip open" title="Request this time" onclick="hzErvOpen(\'request\',{a:' + fa + ',b:' + f[1] + '})">' + lbl + '</button>'; }).join(""))
+      + '</div>';
+  }
+  return h + '</div><div class="hz-erv-muted" style="margin-top:8px">Tap an open time to request it. Approved shifts show who has the ERV.</div>';
+}
+function hzErvRequestHtml() {
+  var p = HZ_ERV.preset || {}, now = Date.now(), a = p.a || (Math.ceil(now / 3600000) * 3600000 + 3600000), b = p.b && p.b - a <= 12 * 3600000 ? p.b : a + 4 * 3600000;
+  return '<div class="hz-erv-form"><label>ERV</label>' + hzErvErvSelect("hz-erv-unit", "HZ_ERV.ervId=this.value;hzErvCheck()")
+    + '<div class="hz-erv-two"><div><label for="hz-erv-a">Start</label><input id="hz-erv-a" class="hz-erv-in" type="datetime-local" step="900" value="' + hzErvLocalInput(a) + '" oninput="hzErvCheck()"></div>'
+    + '<div><label for="hz-erv-b">End</label><input id="hz-erv-b" class="hz-erv-in" type="datetime-local" step="900" value="' + hzErvLocalInput(b) + '" oninput="hzErvCheck()"></div></div>'
+    + '<label for="hz-erv-note">Note <span class="hz-erv-muted">(optional)</span></label><textarea id="hz-erv-note" class="hz-erv-in" rows="2" placeholder="e.g. covering the Lakewood event"></textarea>'
+    + '<div id="hz-erv-check" class="hz-erv-note"></div>'
+    + '<button id="hz-erv-send" class="hz-erv-go" onclick="hzErvSubmit()">Request this shift</button></div>';
+}
+function hzErvCheck() {
+  var a = hzErvParseInput((document.getElementById("hz-erv-a") || {}).value), b = hzErvParseInput((document.getElementById("hz-erv-b") || {}).value);
+  var ervId = (document.getElementById("hz-erv-unit") || {}).value || HZ_ERV.ervId, box = document.getElementById("hz-erv-check"), go = document.getElementById("hz-erv-send");
+  if (!box) return null;
+  var err = "", warn = "";
+  if (isNaN(a) || isNaN(b)) err = "Pick a start and an end.";
+  else if (b <= a) err = "The end has to be after the start.";
+  else if (a < Date.now() - 5 * 60000) err = "The start is in the past.";
+  else {
+    var clash = hzErvOverlaps(hzErvBlocking(ervId), a, b);
+    if (clash.length) err = "Already booked: " + clash.map(function(t){ return hzErvRange(t.startMs, t.endMs) + " (" + (t.submittedBy || "") + ")"; }).join("; ");
+    var pend = hzErvOverlaps(HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && hzErvStatus(t) === "pending"; }), a, b);
+    if (!err && pend.length) warn = "Someone else already asked for part of this time (" + pend.map(function(t){ return t.submittedBy || ""; }).join(", ") + ") — an admin will choose.";
+    if (!err && b - a > 24 * 3600000) warn = (warn ? warn + " " : "") + "That's longer than 24 hours.";
+  }
+  box.className = "hz-erv-note" + (err ? " bad" : warn ? " warn" : " ok");
+  box.textContent = err || warn || ("✓ " + hzErvRange(a, b) + " is open.");
+  if (go) go.disabled = !!err;
+  return err ? null : { a: a, b: b, ervId: ervId };
+}
+function hzErvSubmit() {
+  var c = hzErvCheck(); if (!c) return;
+  var go = document.getElementById("hz-erv-send"); go.disabled = true; go.textContent = "Sending…";
+  var me = HZ_ERV.me || {}, who = ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim();
+  var note = ((document.getElementById("hz-erv-note") || {}).value || "").trim(), text = hzErvRange(c.a, c.b);
+  var tok = typeof hzRandomToken === "function" ? hzRandomToken(16) : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  (typeof mNextTicketNumber === "function" ? mNextTicketNumber() : Promise.resolve(null)).then(function(num) {
+    return db.collection("tickets").add({ number: num || null, title: "ERV shift — " + c.ervId + " · " + text, details: note, category: "erv",
+      ervUnit: c.ervId, startMs: c.a, endMs: c.b, shiftText: text, ervStatus: "pending", driverUnit: me.unit || "", unit: c.ervId, priority: "medium", status: "open",
+      submittedBy: who, submittedByUid: HZ_ERV.uid, acceptToken: tok, createdAt: new Date().toISOString() });
+  }).then(function() {
+    hzErvToast("✓ Requested " + c.ervId + " " + text + " — you'll see it approved or denied under My requests.");
+    HZ_ERV.preset = null; HZ_ERV.tab = "mine"; hzErvDraw();
+  }).catch(function(e) { hzErvToast("Not sent: " + e.message, true); go.disabled = false; go.textContent = "Request this shift"; });
+}
+function hzErvCard(t, actions) {
+  var st = hzErvStatus(t), cls = st === "approved" ? "ok" : st === "pending" ? "warn" : "bad";
+  return '<div class="hz-erv-card"><div class="hz-erv-row" style="margin:0"><b>' + hzErvEsc(t.ervUnit) + ' · ' + hzErvEsc(hzErvRange(t.startMs, t.endMs)) + '</b><span class="hz-erv-pill ' + cls + '">' + ({ approved: "Approved", pending: "Waiting", denied: "Denied", cancelled: "Cancelled" }[st] || st) + '</span></div>'
+    + '<div class="hz-erv-muted">' + (t.number ? "#" + t.number + " · " : "") + hzErvEsc(t.submittedBy || "") + (t.details ? ' · “' + hzErvEsc(t.details) + '”' : '') + '</div>'
+    + (t.ervReason ? '<div class="hz-erv-muted">Reason: ' + hzErvEsc(t.ervReason) + '</div>' : '')
+    + (t.ervDecidedBy ? '<div class="hz-erv-muted">' + (st === "cancelled" ? "Cancelled" : "Decided") + ' by ' + hzErvEsc(t.ervDecidedBy) + '</div>' : '')
+    + hzErvCheckLine(t)
+    + (actions ? '<div class="hz-erv-row" style="margin:8px 0 0">' + actions + '</div>' : '') + '</div>';
+}
+function hzErvMineHtml() {
+  var mine = HZ_ERV.tickets.filter(hzErvIsMine).sort(function(a, b){ return b.startMs - a.startMs; });
+  if (!mine.length) return '<div class="hz-erv-muted">No requests yet. Use ➕ Request a shift, or tap an open time on the Schedule.</div>';
+  return mine.map(function(t){ var st = hzErvStatus(t), can = (st === "pending" || st === "approved") && t.endMs > Date.now() && !t.checkedInAt;
+    return hzErvCard(t, hzErvCheckBtns(t) + (can ? '<button class="hz-erv-btn" onclick="hzErvCancel(\'' + t.id + '\')">Cancel request</button>' : '')); }).join("");
+}
+function hzErvApproveHtml() {
+  var pend = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; });
+  var upcoming = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "approved" && t.endMs > Date.now(); });
+  var h = '<div class="hz-erv-sub">Waiting for a decision</div>' + (pend.length ? pend.map(function(t){
+      var clash = hzErvOverlaps(hzErvBlocking(t.ervUnit, t.id), t.startMs, t.endMs);
+      return hzErvCard(t, (clash.length ? '<span class="hz-erv-pill bad">Clashes with ' + clash.map(function(x){ return hzErvEsc(x.submittedBy || ""); }).join(", ") + '</span>' : '')
+        + '<button class="hz-erv-go sm" onclick="hzErvDecide(\'' + t.id + '\',\'approved\')"' + (clash.length ? ' disabled' : '') + '>✓ Approve</button>'
+        + '<button class="hz-erv-btn red" onclick="hzErvDecide(\'' + t.id + '\',\'denied\')">✕ Deny</button>');
+    }).join("") : '<div class="hz-erv-muted">Nothing waiting.</div>');
+  h += '<div class="hz-erv-sub">Approved — coming up</div>' + (upcoming.length ? upcoming.map(function(t){ return hzErvCard(t, '<button class="hz-erv-btn red" onclick="hzErvDecide(\'' + t.id + '\',\'denied\')">Cancel this shift</button>'); }).join("") : '<div class="hz-erv-muted">None.</div>');
+  return h;
+}
+function hzErvDecide(id, to) {
+  if (!HZ_ERV.isAdmin) return;
+  var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
+  if (to === "approved" && hzErvOverlaps(hzErvBlocking(t.ervUnit, t.id), t.startMs, t.endMs).length) { hzErvToast("That time is already booked.", true); return; }
+  var reason = "";
+  if (to === "denied") { reason = prompt("Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?\nReason (optional, they will see it):", ""); if (reason === null) return; }
+  var me = HZ_ERV.me || {};
+  db.collection("tickets").doc(id).update({ ervStatus: to, status: "resolved", ervReason: String(reason || "").trim().slice(0, 300), ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
+    ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
+    .then(function(){ hzErvToast(to === "approved" ? "✓ Approved" : "Denied"); hzErvRefreshTicket(id); })
+    .catch(function(e){ hzErvToast("Not saved: " + e.message, true); });
+}
+function hzErvCancel(id) {
+  var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
+  if (!confirm("Cancel your ERV request for " + hzErvRange(t.startMs, t.endMs) + "?")) return;
+  var me = HZ_ERV.me || {};
+  db.collection("tickets").doc(id).update({ ervStatus: "cancelled", status: "resolved", ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
+    ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
+    .then(function(){ hzErvToast("Request cancelled"); hzErvRefreshTicket(id); })
+    .catch(function(e){ hzErvToast("Not cancelled: " + e.message + (/permission/i.test(e.message) ? " — the database rules need publishing" : ""), true); });
+}
+// an ERV request opened from the Service Helpdesk list
+function hzErvTicketHtml(id, t) {
+  hzErvListen();
+  var st = hzErvStatus(t), acts = "";
+  var t2 = Object.assign({ id: id }, t);
+  if (HZ_ERV.isAdmin && st === "pending") {
+    var clash = hzErvOverlaps(hzErvBlocking(t.ervUnit, id), t.startMs, t.endMs);
+    acts += (clash.length ? '<span class="hz-erv-pill bad">Clashes with ' + clash.map(function(x){ return hzErvEsc(x.submittedBy || ""); }).join(", ") + '</span>' : '')
+      + '<button class="hz-erv-go sm" onclick="hzErvDecide(\'' + id + '\',\'approved\')"' + (clash.length ? ' disabled' : '') + '>✓ Approve</button><button class="hz-erv-btn red" onclick="hzErvDecide(\'' + id + '\',\'denied\')">✕ Deny</button>';
+  }
+  acts += hzErvCheckBtns(t2);
+  if (t.submittedByUid === HZ_ERV.uid && (st === "pending" || st === "approved") && t.endMs > Date.now() && !t.checkedInAt) acts += '<button class="hz-erv-btn" onclick="hzErvCancel(\'' + id + '\')">Cancel request</button>';
+  if (HZ_ERV.allowed) acts += '<button class="hz-erv-btn" onclick="hzErvOpen(\'schedule\')">🗓 ERV schedule</button>';
+  return '<div class="hz-erv-ticket">' + hzErvCard(t2, acts) + '</div>';
+}
+function hzErvRefreshTicket(id) {
+  if (document.getElementById("hz-erv")) hzErvDraw();
+  db.collection("tickets").doc(id).get().then(function(s) {
+    if (!s.exists) return; var t = s.data();
+    var box = document.querySelector('[data-erv-ticket="' + id + '"]'); if (box) box.innerHTML = hzErvTicketHtml(id, t);
+  }).catch(function(){});
+}
+(function() {
+  var css = document.createElement("style");
+  css.textContent = "#hz-erv{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}"
+    + ".hz-erv-box{background:var(--navy-mid,#122040);color:var(--white,#f4f6fa);border:1px solid var(--card-border);border-radius:12px;width:min(980px,100%);max-height:94vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)}"
+    + ".hz-erv-top{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--card-border);font-family:'Oswald',sans-serif;font-size:1rem;letter-spacing:.04em}"
+    + ".hz-erv-x{background:none;border:none;color:var(--gray);font-size:1.2rem;cursor:pointer}"
+    + ".hz-erv-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0}"
+    + ".hz-erv-tabs button{background:transparent;border:1px solid var(--card-border);color:var(--gray);border-radius:7px;padding:7px 12px;font-family:'Oswald',sans-serif;font-size:.74rem;letter-spacing:.05em;cursor:pointer}"
+    + ".hz-erv-tabs button.on{background:rgba(var(--gold-rgb),.18);border-color:var(--gold);color:var(--gold)}"
+    + ".hz-erv-body{padding:12px 16px 16px;overflow:auto}"
+    + ".hz-erv-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}"
+    + ".hz-erv-in{background:rgba(255,255,255,.06);border:1px solid var(--card-border);border-radius:7px;padding:9px 11px;color:var(--white);font-family:'Source Sans 3',sans-serif;font-size:.88rem;width:100%;box-sizing:border-box;max-width:100%;min-width:0}"
+    + ".hz-erv-row .hz-erv-in{width:auto}"
+    + ".hz-erv-btn{background:rgba(255,255,255,.05);border:1px solid var(--card-border);color:var(--white);border-radius:7px;padding:7px 12px;font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.05em;cursor:pointer}"
+    + ".hz-erv-btn.red{color:#ff9090;border-color:rgba(224,85,85,.45)}"
+    + ".hz-erv-go{background:var(--gold);color:var(--navy);border:none;border-radius:8px;padding:12px 18px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:.06em;cursor:pointer;width:100%;margin-top:12px}"
+    + ".hz-erv-go.sm{width:auto;margin:0;padding:7px 14px;font-size:.74rem}.hz-erv-go:disabled{opacity:.45;cursor:not-allowed}"
+    + ".hz-erv-muted{color:var(--gray);font-size:.78rem}.hz-erv-sub{font-family:'Oswald',sans-serif;color:var(--gold);font-size:.8rem;letter-spacing:.06em;margin:12px 0 6px;text-transform:uppercase}"
+    + ".hz-erv-legend{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}"
+    + ".hz-erv-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}"
+    + "@media (max-width:760px){.hz-erv-week{grid-template-columns:1fr}.hz-erv-day{min-height:0!important}}"
+    + ".hz-erv-day{border:1px solid var(--card-border);border-radius:8px;padding:6px;min-height:150px;background:rgba(255,255,255,.02);display:flex;flex-direction:column;gap:4px}"
+    + ".hz-erv-day.today{border-color:var(--gold)}.hz-erv-day.past{opacity:.55}"
+    + ".hz-erv-dh{font-family:'Oswald',sans-serif;font-size:.74rem;color:var(--gold);letter-spacing:.05em}"
+    + ".hz-erv-chip{display:block;text-align:left;border-radius:6px;padding:4px 6px;font-size:.7rem;line-height:1.3;border:1px solid;font-family:'Source Sans 3',sans-serif;width:100%;box-sizing:border-box}"
+    + ".hz-erv-legend .hz-erv-chip{display:inline-block;width:auto}"
+    + ".hz-erv-chip.ok{background:rgba(76,175,128,.16);border-color:rgba(76,175,128,.5);color:#7dedb5}"
+    + ".hz-erv-chip.warn{background:rgba(255,200,74,.13);border-color:rgba(255,200,74,.5);color:#ffc84a}"
+    + ".hz-erv-chip.bad{background:rgba(224,85,85,.12);border-color:rgba(224,85,85,.45);color:#ff9090;text-decoration:line-through}"
+    + ".hz-erv-chip.open{background:transparent;border-style:dashed;border-color:var(--card-border);color:var(--gray);cursor:pointer}"
+    + "button.hz-erv-chip.open:hover{border-color:var(--gold);color:var(--gold)}"
+    + ".hz-erv-form{max-width:520px}.hz-erv-form label{display:block;font-family:'Oswald',sans-serif;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin:10px 0 4px}"
+    + ".hz-erv-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media (max-width:520px){.hz-erv-two{grid-template-columns:1fr}}"
+    + ".hz-erv-note{margin-top:10px;font-size:.82rem;border-radius:7px;padding:8px 10px;border:1px solid var(--card-border)}"
+    + ".hz-erv-note.ok{color:#7dedb5;border-color:rgba(76,175,128,.5)}.hz-erv-note.warn{color:#ffc84a;border-color:rgba(255,200,74,.5)}.hz-erv-note.bad{color:#ff9090;border-color:rgba(224,85,85,.45)}"
+    + ".hz-erv-card{border:1px solid var(--card-border);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,.02)}"
+    + ".hz-erv-pill{display:inline-block;border-radius:10px;padding:2px 9px;font-size:.66rem;font-family:'Oswald',sans-serif;letter-spacing:.05em;border:1px solid}"
+    + ".hz-erv-pill.ok{color:#7dedb5;border-color:rgba(76,175,128,.5)}.hz-erv-pill.warn{color:#ffc84a;border-color:rgba(255,200,74,.5)}.hz-erv-pill.bad{color:#ff9090;border-color:rgba(224,85,85,.45)}"
+    + "html[data-theme=basic] .hz-erv-chip.ok,html[data-theme=basic] .hz-erv-pill.ok,html[data-theme=basic] .hz-erv-note.ok{color:#167a3e}"
+    + "html[data-theme=basic] .hz-erv-chip.warn,html[data-theme=basic] .hz-erv-pill.warn,html[data-theme=basic] .hz-erv-note.warn{color:#8a5a00}"
+    + "html[data-theme=basic] .hz-erv-chip.bad,html[data-theme=basic] .hz-erv-pill.bad,html[data-theme=basic] .hz-erv-note.bad,html[data-theme=basic] .hz-erv-btn.red{color:#b42318}"
+    + "html[data-theme=basic] .hz-erv-go{color:#fff}";
+  document.head.appendChild(css);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hzErvInit); else hzErvInit();
 })();
 </script>
 </body>
