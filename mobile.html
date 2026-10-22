@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.46"; window.M_BUILD = BUILD;
+  var BUILD = "5.47"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12276,7 +12276,7 @@ function hzErvApplyAccess() {
   document.querySelectorAll(".hz-erv-entry").forEach(function(el){ el.style.display = HZ_ERV.allowed ? "" : "none"; });
   document.querySelectorAll(".hz-erv-testing").forEach(function(el){ el.style.display = HZ_ERV.allowed && HZ_ERV.access !== "drivers" ? "" : "none"; });
   ["renderTickets", "mRenderTickets"].forEach(function(f){ try { if (typeof window[f] === "function") window[f](); } catch (e) {} });   // 12.89: re-filter denied ERV requests now that we know who this is
-  hzErvTileSub();
+  hzErvTileSub(); hzErvAdminRefresh();
 }
 // 12.82 / 5.40: the home tile's second line says what's next for me
 function hzErvTileSub() {
@@ -12315,6 +12315,7 @@ function hzErvListen() {
     HZ_ERV.tickets.sort(function(a, b){ return a.startMs - b.startMs; });
     hzErvTileSub();
     if (document.getElementById("hz-erv")) hzErvDraw();
+    hzErvAdminRefresh();   // 12.92: Admin ▸ 🚙 Vehicle Shifts
   }, function(e){ console.warn("ERV list", e); });
   db.collection("vehicles").get().then(function(q) {
     var list = []; q.forEach(function(d){ var v = d.data() || {}, id = d.id, ty = String(v.type || "").toLowerCase(), nm = v.description ? id + " — " + v.description : id;
@@ -12476,6 +12477,23 @@ function hzErvApproveHtml() {
   h += '<div class="hz-erv-sub">Approved — coming up</div>' + (upcoming.length ? upcoming.map(function(t){ return hzErvCard(t, '<button class="hz-erv-btn red" onclick="hzErvDecide(\'' + t.id + '\',\'denied\')">Cancel this shift</button>'); }).join("") : '<div class="hz-erv-muted">None.</div>');
   return h;
 }
+// ── 12.92: Admin ▸ 🚙 Vehicle Shifts — approve / deny from the admin panel (computer) ──
+function hzErvAdminRender() {
+  var el = document.getElementById("adm-erv"); if (!el) return;
+  hzErvListen();
+  if (!HZ_ERV.isAdmin) { el.innerHTML = '<div class="hz-erv-muted">Only admins approve vehicle shifts.</div>'; return; }
+  var now = Date.now(), recent = HZ_ERV.tickets.filter(function(t){ var st = hzErvStatus(t); return (st === "denied" || st === "cancelled" || (st === "approved" && t.endMs <= now)) && t.endMs > now - 14 * 86400000; })
+    .sort(function(a, b){ return b.startMs - a.startMs; }).slice(0, 15);
+  el.innerHTML = '<div class="hz-erv-row" style="margin:0 0 10px"><button class="hz-erv-btn" onclick="hzErvOpen(\'schedule\')">🗓 Open the schedule</button>'
+    + (HZ_ERV.access !== "drivers" ? '<span class="hz-erv-pill warn">Testing — admins only (open it to drivers in Notifications &amp; Permissions)</span>' : '') + '</div>'
+    + '<div class="hz-erv-adm">' + hzErvApproveHtml()
+    + '<div class="hz-erv-sub">Past 2 weeks — done, denied or cancelled</div>' + (recent.length ? recent.map(function(t){ return hzErvCard(t, ""); }).join("") : '<div class="hz-erv-muted">Nothing yet.</div>') + '</div>';
+}
+function hzErvAdminRefresh() {
+  var n = HZ_ERV.isAdmin ? HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; }).length : 0;
+  document.querySelectorAll('.admin-tab[data-tab="ervshifts"]').forEach(function(b){ b.innerHTML = "🚙 Vehicle Shifts" + (n ? ' <span class="hz-erv-badge">' + n + '</span>' : ""); });
+  var el = document.getElementById("adm-erv"); if (el && el.offsetParent !== null) hzErvAdminRender();
+}
 function hzErvDecide(id, to) {
   if (!HZ_ERV.isAdmin) return;
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
@@ -12485,7 +12503,7 @@ function hzErvDecide(id, to) {
   var me = HZ_ERV.me || {};
   db.collection("tickets").doc(id).update({ ervStatus: to, status: "resolved", ervReason: String(reason || "").trim().slice(0, 300), ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
     ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
-    .then(function(){ hzErvToast(to === "approved" ? "✓ Approved" : "Denied"); hzErvRefreshTicket(id); })
+    .then(function(){ hzErvToast(to === "approved" ? "✓ Approved" : "Denied"); hzErvRefreshTicket(id); hzErvAdminRefresh(); })
     .catch(function(e){ hzErvToast("Not saved: " + e.message, true); });
 }
 function hzErvCancel(id) {
@@ -12553,6 +12571,7 @@ function hzErvRefreshTicket(id) {
     + "button.hz-erv-chip.open:hover{border-color:var(--gold);color:var(--gold)}"
     + ".hz-erv-form{max-width:520px}.hz-erv-form label{display:block;font-family:'Oswald',sans-serif;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin:10px 0 4px}"
     + ".hz-erv-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media (max-width:520px){.hz-erv-two{grid-template-columns:1fr}}"
+    + ".hz-erv-adm{max-width:760px}.hz-erv-badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:#e05555;color:#fff;font-size:.7rem;line-height:18px;text-align:center}"
     + ".hz-erv-req{font-size:.66rem;color:#ff9090;letter-spacing:.04em;text-transform:uppercase;margin-left:4px}html[data-theme=basic] .hz-erv-req{color:#b42318}"
     + ".hz-erv-adv{margin-top:10px;font-size:.84rem;line-height:1.4;border-radius:7px;padding:9px 11px;border:1px solid rgba(255,200,74,.6);background:rgba(255,200,74,.10);color:var(--white);font-weight:600}"
     + ".hz-erv-note{margin-top:10px;font-size:.82rem;border-radius:7px;padding:8px 10px;border:1px solid var(--card-border)}"

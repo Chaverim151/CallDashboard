@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.91">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.92">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2386,7 +2386,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.91</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.92</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2709,6 +2709,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
     <button class="admin-tab" data-tab="codes" onclick="setAdminTab('codes')">🔑 Codes &amp; Locations</button>
     <button class="admin-tab" data-tab="shifts" onclick="setAdminTab('shifts')">🌙 Night Shifts</button>
     <button class="admin-tab" data-tab="availability" onclick="setAdminTab('availability')">📅 Availability</button>
+    <button class="admin-tab" data-tab="ervshifts" onclick="setAdminTab('ervshifts')">🚙 Vehicle Shifts</button>
     <button class="admin-tab" data-tab="fleet" onclick="setAdminTab('fleet')">🚑 Fleet</button>
     <button class="admin-tab" data-tab="traffic" onclick="setAdminTab('traffic')">🚧 Closure Notifications</button>
     <button class="admin-tab" data-tab="notifsettings" onclick="setAdminTab('notifsettings')">🔔 Notification Settings</button>
@@ -3229,6 +3230,11 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
   </div>
 </div>
 
+    <div class="admin-section" data-admin-tab="ervshifts" id="adm-ervshifts">
+      <div class="admin-section-title">🚙 Vehicle Shifts</div>
+      <div style="font-size:0.82rem;color:var(--gray);margin:-4px 0 12px;max-width:900px">Approve or deny ERV and rig shift requests. Each request shows the driver's reason. A clash with an approved shift has to be sorted out before you can approve.</div>
+      <div id="adm-erv"></div>
+    </div>
     <div class="admin-section" data-admin-tab="availability" id="adm-availability">
       <div class="admin-section-title">📅 Availability</div>
       <div style="font-size:0.82rem;color:var(--gray);margin:-4px 0 12px;max-width:900px">Who is available in the daytime each day of the week. Responders fill it in at ⚙ My Settings ▸ 📅 My availability; it starts over when the week resets (set below). The reminder and the morning summary are set in 🔔 Notification Settings ▸ 📅 Availability.</div>
@@ -4720,7 +4726,7 @@ function tcLoad() {
 }
 // The original tabs. Names used by 9.87–9.90 (when tabs were briefly regrouped) still work.
 var ADMIN_TAB_ALIASES = { members: "users", dispatch: "protocols", messaging: "notifsettings", templates: "notifsettings", activity: "notifsettings", notifications: "notifsettings", locations: "protocols", testing: "notifsettings" };
-var ADMIN_TABS = ["users", "security", "protocols", "codes", "shifts", "availability", "fleet", "traffic", "notifsettings", "org", "protoai", "imagetrend"];
+var ADMIN_TABS = ["users", "security", "protocols", "codes", "shifts", "availability", "ervshifts", "fleet", "traffic", "notifsettings", "org", "protoai", "imagetrend"];
 // A new tab starts at the top.
 function admUnstickPage() {
   var pg = document.getElementById("pg-admin"); if (pg) pg.scrollTop = 0;
@@ -4829,6 +4835,7 @@ function setAdminTab(tab) {
   if (tab === "traffic") { tcBindAddress(); tcLoad(); tcCheckOldList(); hdLoad(); if (typeof mLoadSmsTemplates === "function") mLoadSmsTemplates(); }   // closure/divert wording
   if (tab === "org") orgFormLoad();
   if (tab === "availability" && typeof hzAvAdminRender === "function") hzAvAdminRender();   // 12.86
+  if (tab === "ervshifts" && typeof hzErvAdminRender === "function") hzErvAdminRender();   // 12.92
   if (tab === "fleet") loadFleetAlerts();
   if (tab === "notifsettings") { renderTemplateSend(); Promise.all([typeof mLoadSmsTemplates === "function" ? mLoadSmsTemplates() : 0, loadFleetAlerts()]).then(renderTemplateSend); }
   if (tab === "fleet") setFleetTab(fleetTab);
@@ -18774,7 +18781,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.91";
+var DESKTOP_VERSION = "12.92";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -26318,7 +26325,7 @@ function hzErvApplyAccess() {
   document.querySelectorAll(".hz-erv-entry").forEach(function(el){ el.style.display = HZ_ERV.allowed ? "" : "none"; });
   document.querySelectorAll(".hz-erv-testing").forEach(function(el){ el.style.display = HZ_ERV.allowed && HZ_ERV.access !== "drivers" ? "" : "none"; });
   ["renderTickets", "mRenderTickets"].forEach(function(f){ try { if (typeof window[f] === "function") window[f](); } catch (e) {} });   // 12.89: re-filter denied ERV requests now that we know who this is
-  hzErvTileSub();
+  hzErvTileSub(); hzErvAdminRefresh();
 }
 // 12.82 / 5.40: the home tile's second line says what's next for me
 function hzErvTileSub() {
@@ -26357,6 +26364,7 @@ function hzErvListen() {
     HZ_ERV.tickets.sort(function(a, b){ return a.startMs - b.startMs; });
     hzErvTileSub();
     if (document.getElementById("hz-erv")) hzErvDraw();
+    hzErvAdminRefresh();   // 12.92: Admin ▸ 🚙 Vehicle Shifts
   }, function(e){ console.warn("ERV list", e); });
   db.collection("vehicles").get().then(function(q) {
     var list = []; q.forEach(function(d){ var v = d.data() || {}, id = d.id, ty = String(v.type || "").toLowerCase(), nm = v.description ? id + " — " + v.description : id;
@@ -26518,6 +26526,23 @@ function hzErvApproveHtml() {
   h += '<div class="hz-erv-sub">Approved — coming up</div>' + (upcoming.length ? upcoming.map(function(t){ return hzErvCard(t, '<button class="hz-erv-btn red" onclick="hzErvDecide(\'' + t.id + '\',\'denied\')">Cancel this shift</button>'); }).join("") : '<div class="hz-erv-muted">None.</div>');
   return h;
 }
+// ── 12.92: Admin ▸ 🚙 Vehicle Shifts — approve / deny from the admin panel (computer) ──
+function hzErvAdminRender() {
+  var el = document.getElementById("adm-erv"); if (!el) return;
+  hzErvListen();
+  if (!HZ_ERV.isAdmin) { el.innerHTML = '<div class="hz-erv-muted">Only admins approve vehicle shifts.</div>'; return; }
+  var now = Date.now(), recent = HZ_ERV.tickets.filter(function(t){ var st = hzErvStatus(t); return (st === "denied" || st === "cancelled" || (st === "approved" && t.endMs <= now)) && t.endMs > now - 14 * 86400000; })
+    .sort(function(a, b){ return b.startMs - a.startMs; }).slice(0, 15);
+  el.innerHTML = '<div class="hz-erv-row" style="margin:0 0 10px"><button class="hz-erv-btn" onclick="hzErvOpen(\'schedule\')">🗓 Open the schedule</button>'
+    + (HZ_ERV.access !== "drivers" ? '<span class="hz-erv-pill warn">Testing — admins only (open it to drivers in Notifications &amp; Permissions)</span>' : '') + '</div>'
+    + '<div class="hz-erv-adm">' + hzErvApproveHtml()
+    + '<div class="hz-erv-sub">Past 2 weeks — done, denied or cancelled</div>' + (recent.length ? recent.map(function(t){ return hzErvCard(t, ""); }).join("") : '<div class="hz-erv-muted">Nothing yet.</div>') + '</div>';
+}
+function hzErvAdminRefresh() {
+  var n = HZ_ERV.isAdmin ? HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; }).length : 0;
+  document.querySelectorAll('.admin-tab[data-tab="ervshifts"]').forEach(function(b){ b.innerHTML = "🚙 Vehicle Shifts" + (n ? ' <span class="hz-erv-badge">' + n + '</span>' : ""); });
+  var el = document.getElementById("adm-erv"); if (el && el.offsetParent !== null) hzErvAdminRender();
+}
 function hzErvDecide(id, to) {
   if (!HZ_ERV.isAdmin) return;
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
@@ -26527,7 +26552,7 @@ function hzErvDecide(id, to) {
   var me = HZ_ERV.me || {};
   db.collection("tickets").doc(id).update({ ervStatus: to, status: "resolved", ervReason: String(reason || "").trim().slice(0, 300), ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
     ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
-    .then(function(){ hzErvToast(to === "approved" ? "✓ Approved" : "Denied"); hzErvRefreshTicket(id); })
+    .then(function(){ hzErvToast(to === "approved" ? "✓ Approved" : "Denied"); hzErvRefreshTicket(id); hzErvAdminRefresh(); })
     .catch(function(e){ hzErvToast("Not saved: " + e.message, true); });
 }
 function hzErvCancel(id) {
@@ -26595,6 +26620,7 @@ function hzErvRefreshTicket(id) {
     + "button.hz-erv-chip.open:hover{border-color:var(--gold);color:var(--gold)}"
     + ".hz-erv-form{max-width:520px}.hz-erv-form label{display:block;font-family:'Oswald',sans-serif;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin:10px 0 4px}"
     + ".hz-erv-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media (max-width:520px){.hz-erv-two{grid-template-columns:1fr}}"
+    + ".hz-erv-adm{max-width:760px}.hz-erv-badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:#e05555;color:#fff;font-size:.7rem;line-height:18px;text-align:center}"
     + ".hz-erv-req{font-size:.66rem;color:#ff9090;letter-spacing:.04em;text-transform:uppercase;margin-left:4px}html[data-theme=basic] .hz-erv-req{color:#b42318}"
     + ".hz-erv-adv{margin-top:10px;font-size:.84rem;line-height:1.4;border-radius:7px;padding:9px 11px;border:1px solid rgba(255,200,74,.6);background:rgba(255,200,74,.10);color:var(--white);font-weight:600}"
     + ".hz-erv-note{margin-top:10px;font-size:.82rem;border-radius:7px;padding:8px 10px;border:1px solid var(--card-border)}"
