@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.94"; window.M_BUILD = BUILD;
+  var BUILD = "5.95"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -478,7 +478,7 @@ html[data-theme="basic"] button.m-ct-pill.m-ct-pill.m-ct-pill.on{background:#e6e
 /* color strip across the top of each tile — same colors as the desktop home screen */
 .m-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--accent,var(--gold));z-index:2}
 .m-tile[data-sec="rma"],.m-tile[data-sec="codes"],.m-tile[data-sec="hospital"],.m-tile[data-sec="epcr"],.m-tile[data-sec="buildings"]{--accent:#8b7cef}
-.m-tile[data-sec="shifts"],.m-tile[data-sec="shuls"],.m-tile[data-sec="storage"],.m-tile[data-sec="portal"],.m-tile[data-sec="maps"],.m-tile[data-sec="edispatches"],.m-tile[data-sec="diverts"]{--accent:#4a90d9}
+.m-tile[data-sec="shifts"],.m-tile[data-sec="avail"],.m-tile[data-sec="shuls"],.m-tile[data-sec="storage"],.m-tile[data-sec="portal"],.m-tile[data-sec="maps"],.m-tile[data-sec="edispatches"],.m-tile[data-sec="diverts"]{--accent:#4a90d9}
 .hz-leader .hz-ct-name,.hz-leader .hz-ct-roles{color:#ff6b6b !important}
 html[data-theme="basic"] .hz-leader .hz-ct-name,html[data-theme="basic"] .hz-leader .hz-ct-roles{color:#c62828 !important}
 .m-tile[data-sec="service"],.m-tile[data-sec="contacts"],.m-tile[data-sec="regional"]{--accent:#4caf80}
@@ -1160,6 +1160,13 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
           <span class="m-tile-icon">🚙</span>
           <span class="m-tile-label">Vehicle Shifts</span>
           <span class="m-tile-sub hz-erv-tile-sub">Book a vehicle · check in / out</span>
+        </div>
+      </button>
+      <button class="m-tile" data-sec="avail" onclick="hzAvOpen()">
+        <div class="m-tile-inner">
+          <span class="m-tile-icon">📅</span>
+          <span class="m-tile-label">Availability</span>
+          <span class="m-tile-sub hz-av-tile-sub">Who's around this week</span>
         </div>
       </button>
       <button class="m-tile" data-sec="shifts" onclick="mGoTo('shifts')">
@@ -1868,7 +1875,7 @@ function paiShowEntry(elId, isAdminUser, rolesLower) {
 // A tile with saved roles shows only to members who have one of those roles; admins always see every tile.
 // Tiles with nothing saved keep the built-in rules (hzTileDefault mirrors them for the admin grid).
 var HZ_TILES = [
-  { k: "rma", l: "RMA Hotline" }, { k: "codes", l: "Access Codes" }, { k: "epcr", l: "ePCR" }, { k: "shifts", l: "Night Shifts" },
+  { k: "rma", l: "RMA Hotline" }, { k: "codes", l: "Access Codes" }, { k: "epcr", l: "ePCR" }, { k: "shifts", l: "Night Shifts" }, { k: "avail", l: "Availability" },
   { k: "contacts", l: "Member Directory" }, { k: "regional", l: "Regional Hatzolah" }, { k: "maps", l: "Dispatch Console" }, { k: "education", l: "Education" }, { k: "portal", l: "MC Portal" },
   { k: "service", l: "Service Helpdesk" }, { k: "guide", l: "User Guide" },
   { k: "diverts", l: "Hospital Diverts" }, { k: "hospital", l: "Hospitals" }, { k: "buildings", l: "Buildings" }, { k: "shuls", l: "Shuls" }, { k: "storage", l: "Storage Room" }
@@ -2195,6 +2202,7 @@ function mDirUrl(lat, lng) {
 function mApplyTilePrefs() {
   var grid = document.getElementById("m-home-grid"), order = mPrefs.tilesPhone;
   if (!grid || !Array.isArray(order) || !order.length) return;
+  if (order.indexOf("avail") === -1) { order = order.slice(); var si = order.indexOf("shifts"); order.splice(si < 0 ? order.length : si + 1, 0, "avail"); }   // 12.140: new 📅 Availability tile sits after Night Shifts
   var by = {}; Array.prototype.forEach.call(grid.querySelectorAll(".m-tile"), function(t) { by[t.getAttribute("data-sec")] = t; });
   order.forEach(function(k) { if (by[k]) { grid.appendChild(by[k]); delete by[k]; } });
   Object.keys(by).forEach(function(k) { grid.appendChild(by[k]); });   // tiles added since — at the end
@@ -2305,7 +2313,8 @@ function mSetPreview(tiles) {
   var g = document.getElementById("m-home-grid"), cols = 2;
   try { cols = Math.max(1, getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length); } catch (e) {}
   return '<div class="m-set-prev" style="grid-template-columns:repeat(' + cols + ',1fr)">' + tiles.map(function(t, i) {
-    return '<div class="m-set-pcell"><b>' + (i + 1) + '</b><span>' + mEscHtml(t.label) + '</span></div>'; }).join("") + '</div>';
+    return '<div class="m-set-pcell"' + (i >= 6 ? ' style="opacity:.5"' : '') + '><b>' + (i < 6 ? '⭐' : '') + (i + 1) + '</b><span>' + mEscHtml(t.label) + '</span></div>'; }).join("") + '</div>'
+    + '<div class="m-set-note">⭐ 1–6 show on the home screen; the rest are under ▾ More.</div>';   // 12.140
 }
 function mSetSlot(i, k) {
   var t = mSetFlow.tiles, j = t.findIndex(function(x) { return x.k === k; });
@@ -6044,7 +6053,9 @@ HZ_LG.lastAct = Date.now();
 ["pointerdown", "keydown", "scroll", "touchstart"].forEach(function(ev) { document.addEventListener(ev, function() { HZ_LG.lastAct = Date.now(); }, { passive: true, capture: true }); });
 function hzLgWatch() {
   try {
-    var pg = hzLgPage(); if (!pg || pg.classList.contains("hz-lg-lock")) return;
+    var pg = hzLgPage(); if (!pg) return;
+    // 12.140: locked but a good pass is here now (the page opened before sign-in finished, or the code was entered in another tab) → open it
+    if (pg.classList.contains("hz-lg-lock")) { if (hzLgOk()) { hzLgUnlock(); if (typeof HZ_LG.retry === "function") HZ_LG.retry(); } return; }
     var open = pg.classList.contains("active") || pg.offsetParent !== null; if (!open) return;
     var idle = Date.now() - (HZ_LG.lastAct || 0) >= HZ_LG_IDLE_MS;
     if (idle) { try { localStorage.removeItem(hzLgKey()); } catch (e) {} hzLgShow("Logged out after 1 hour with no activity — please verify again."); return; }
@@ -11944,11 +11955,7 @@ function mCloseAllSheets() {
         <span class="m-dash-txt"><span class="m-dash-t">Call Logs</span><span class="m-dash-s">Completed &amp; cancelled calls (HIPAA-secured)</span></span>
         <span class="m-dash-go">›</span>
       </button>
-      <button class="m-dash-row" onclick="window.open('https://chmc.myesched.com/schedule/logon.asp','_blank')">
-        <span class="m-dash-ic">🗓️</span>
-        <span class="m-dash-txt"><span class="m-dash-t">eScheduler</span><span class="m-dash-s">Dispatch schedule (opens the eScheduler site)</span></span>
-        <span class="m-dash-go">↗</span>
-      </button>
+      <!-- 12.140: 🗓️ eScheduler moved to the 📅 Availability tile -->
     </div>
     <!-- Active calls list -->
     <div id="m-disp-calls-view" style="display:none">
@@ -12079,7 +12086,6 @@ function mCloseAllSheets() {
     <button onclick="mDrawerGoTo('dispatch-map')" class="m-drawer-item">🗺️ Map View</button>
     <button onclick="mDrawerGoTo('dispatch-rigs')" class="m-drawer-item">🚐 Rigs &amp; Vehicles</button>
     <button onclick="mCloseDispDrawer();mGoTo('calllogs')" class="m-drawer-item" id="m-drawer-calllogs" style="display:none">📁 Call Logs</button>
-    <button onclick="mCloseDispDrawer();window.open('https://chmc.myesched.com/schedule/logon.asp','_blank')" class="m-drawer-item">🗓️ eScheduler ↗</button>
     <div id="m-drawer-call-section" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--card-border)">
       <div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);padding:0 12px 8px;font-family:'Oswald',sans-serif;font-weight:700" id="m-drawer-call-label">Current Call</div>
       <button onclick="mDrawerJump('info')" class="m-drawer-item">📍 Call Info</button>
@@ -12803,6 +12809,62 @@ function hzErvRefreshTicket(id) {
 })();
 </script>
 <script>
+/* ═══════════════════════════════════════
+   12.140 / 5.95 — 🏠 HOME: 6 FAVORITES + ▾ MORE (same code in index.html and mobile.html)
+   Sam: the home screen keeps 6 main tiles; every other tile is under a "More" tile that opens in place.
+   The 6 = the first 6 tiles this member can see, in their own Home screen order (My Settings ▸ 🔢 Home screen order).
+   More remembers open / closed on this device (localStorage hzHomeMore). While the phone's tiles jiggle (drag to
+   reorder) every tile shows. The More tile has no data-sec, so the tile-order code never counts it.
+   ═══════════════════════════════════════ */
+var HZ_HOME = { favs: 6, busy: false, t: null };
+function hzHomeGrid() { return document.getElementById("m-home-grid") || document.getElementById("home-btn-grid"); }
+function hzHomeOpen() { try { return localStorage.getItem("hzHomeMore") === "1"; } catch (e) { return false; } }
+function hzHomeToggle() { var o = !hzHomeOpen(); try { localStorage.setItem("hzHomeMore", o ? "1" : "0"); } catch (e) {} hzHomeLayout(); }
+function hzHomeLayout() {
+  var g = hzHomeGrid(); if (!g || HZ_HOME.busy) return;
+  HZ_HOME.busy = true;
+  try {
+    var phone = g.id === "m-home-grid";
+    var tiles = Array.prototype.filter.call(g.children, function(t) { return t.hasAttribute && t.hasAttribute("data-sec"); });
+    var vis = tiles.filter(function(t) { return t.style.display !== "none"; });
+    var more = g.querySelector(".hz-more-tile");
+    if (!more) {
+      more = document.createElement("a"); more.href = "javascript:void(0)"; more.setAttribute("role", "button");
+      more.className = phone ? "hz-more-tile hz-more-m" : "big-btn hz-more-tile";
+      more.onclick = function(e) { e.preventDefault(); hzHomeToggle(); };
+      more.innerHTML = phone
+        ? '<div class="m-tile-inner"><span class="m-tile-icon hz-more-ic">▾</span><span class="m-tile-label">More</span><span class="m-tile-sub hz-more-sub"></span></div>'
+        : '<div class="btn-inner"><span class="btn-icon hz-more-ic">▾</span><span class="btn-label">More</span><span class="btn-sub hz-more-sub"></span></div>';
+    }
+    tiles.forEach(function(t) { t.classList.remove("hz-more-x"); });
+    var extra = vis.slice(HZ_HOME.favs), open = hzHomeOpen();
+    if (!extra.length) { if (more.parentNode) more.parentNode.removeChild(more); return; }
+    extra.forEach(function(t) { t.classList.add("hz-more-x"); });
+    g.insertBefore(more, extra[0]);   // right after the 6th favorite
+    g.classList.toggle("hz-more-open", open);
+    more.querySelector(".hz-more-ic").textContent = open ? "▴" : "▾";
+    more.querySelector(".hz-more-sub").textContent = open ? "Show less" : extra.length + " more tile" + (extra.length === 1 ? "" : "s");
+    more.setAttribute("aria-expanded", open ? "true" : "false");
+  } finally { setTimeout(function() { HZ_HOME.busy = false; }, 0); }
+}
+function hzHomeSoon() { clearTimeout(HZ_HOME.t); HZ_HOME.t = setTimeout(hzHomeLayout, 30); }
+(function() {
+  var css = document.createElement("style");
+  css.textContent = ".hz-more-x{display:none!important}.hz-more-open>.hz-more-x,#m-home-grid.jiggle>.hz-more-x{display:flex!important}#m-home-grid.jiggle>.hz-more-tile{display:none!important}"
+    + "#home-btn-grid.hz-more-open>.big-btn.hz-more-x{display:flex!important}"
+    + ".hz-more-tile{text-decoration:none;cursor:pointer}.hz-more-m{background:var(--card-bg);border:1px dashed var(--card-border);border-radius:16px;padding:0;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--white)}"
+    + ".hz-more-m:active{opacity:.85;transform:scale(.98)}.hz-more-ic{color:var(--gold)}#home-btn-grid .hz-more-tile{border-style:dashed}"
+    + "html[data-theme=basic] .hz-more-m{border:1px dashed #dcc78f!important;border-radius:16px!important;background:#fff!important}";
+  document.head.appendChild(css);
+  var go = function() {
+    var g = hzHomeGrid(); if (!g) return;
+    new MutationObserver(function() { if (!HZ_HOME.busy) hzHomeSoon(); }).observe(g, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+    hzHomeLayout();
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go); else go();
+})();
+</script>
+<script>
 /* ═══════════════════════════════════════════════════════════════════════════════════════════════
    12.86 / 5.41 — 📅 WEEKLY DAYTIME AVAILABILITY (same code in index.html and mobile.html) · 12.87 / 5.42 Unsure + counts · 12.88 / 5.43 reset options
    12.89 / 5.44 — TWO POLLS: weekday daytime (Mon–Fri, only users ticked "Daytime Responder" in Users ▸ Edit; must be
@@ -12823,7 +12885,7 @@ var HZ_AV = { uid: "", me: null, set: {}, week: null, mine: null, unsub: null, u
 var HZ_AV_WEEK = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"]];   // the weekday daytime poll
 var HZ_AV_DAYS = HZ_AV_WEEK.concat([["shabbos", "Shabbos"]]);                                    // + the Shabbos poll
 // the four answers, in tap order: [value, css class, button text, word]
-var HZ_AV_STATES = [[true, "yes", "✓ Available", "available", "✓ Avail."], ["unsure", "maybe", "? Unsure", "unsure", "? Unsure"], ["intermittent", "part", "≈ Intermittent", "intermittent", "≈ Interm."], [false, "no", "✕ Unavailable", "unavailable", "✕ Unavail."]];
+var HZ_AV_STATES = [[true, "yes", "✓ Available", "available", "✓ Avail."], [false, "no", "✕ Unavailable", "unavailable", "✕ Unavail."]];   // 12.140 (Sam): just Available / – / Unavailable (old "unsure" / "intermittent" answers count as no answer)
 var HZ_AV_QUALIFY = "To be available on a weekday you must be free for at least 6 hours between 8:00 AM and 6:00 PM.";
 function hzAvState(v) { for (var i = 0; i < HZ_AV_STATES.length; i++) if (HZ_AV_STATES[i][0] === v) return HZ_AV_STATES[i]; return null; }
 var HZ_AV_ROLES = ["responder", "captain", "chief", "backup"];
@@ -12914,12 +12976,8 @@ function hzAvInit() {
       }, function(){});
       // 12.87 / 5.42: how many marked themselves available each day (everyone's answers for this week)
       // 12.89 / 5.44: available and intermittent counted separately; weekdays only from Daytime Responders (dt on the answer)
-      if (hzAvAny(HZ_AV.me)) HZ_AV.unsubAll = db.collection("availability").where("weekKey", "==", w.key).onSnapshot(function(q) {
-        var c = {}, p = {}, all = []; HZ_AV_DAYS.forEach(function(d){ c[d[0]] = 0; p[d[0]] = 0; });
-        q.forEach(function(d){ var doc = d.data() || {}, x = doc.days || {}; all.push(doc);
-          HZ_AV_DAYS.forEach(function(k){ if (k[0] !== "shabbos" && doc.dt !== true) return; if (x[k[0]] === true) c[k[0]]++; else if (x[k[0]] === "intermittent") p[k[0]]++; }); });
-        HZ_AV.counts = c; HZ_AV.parts = p; HZ_AV.all = all; hzAvRefreshCards();
-      }, function(){});
+      if (!HZ_AV.unsubAll) HZ_AV.unsubAll = db.collection("availability")   // 12.140: everyone (dispatchers see 👥 Who's available too)
+        .where("weekKey", "==", w.key).onSnapshot(function(q) { return hzAvAllSnap(q); }, function(){});
       // 12.121: rigs out of service, for "👥 Who's available"
       if (!HZ_AV.unsubRigs) HZ_AV.unsubRigs = db.collection("vehicles").onSnapshot(function(q) {
         var out = [], all = [], now = Date.now();
@@ -12947,8 +13005,8 @@ function hzAvCardHtml(big) {
   var btn = function(d) {
     if (yt[d[0]]) return '<div class="hz-av-day yt" title="Yom Tov — not part of the weekday poll"><span>' + d[1] + '</span><i>🕯️ Yom Tov</i></div>';
     var v = days[d[0]], st = hzAvState(v), n = HZ_AV.counts ? (HZ_AV.counts[d[0]] || 0) : null, pn = HZ_AV.parts ? (HZ_AV.parts[d[0]] || 0) : 0;
-    return '<button class="hz-av-day ' + (st ? st[1] : "") + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (st ? st[3] : "not answered") + '"><span>' + d[1] + '</span><i><b class="hz-av-lg">' + (st ? st[2] : "Tap") + '</b><b class="hz-av-sm">' + (st ? st[4] : "Tap") + '</b></i>'
-      + (n !== null ? '<em title="Marked available' + (pn ? ' / intermittent' : '') + '">👥 ' + n + (pn ? ' <b class="hz-av-pn">≈ ' + pn + '</b>' : '') + '</em>' : '') + '</button>';
+    return '<button class="hz-av-day ' + (st ? st[1] : "") + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (st ? st[3] : "not answered") + '"><span>' + d[1] + '</span><i><b class="hz-av-lg">' + (st ? st[2] : "–") + '</b><b class="hz-av-sm">' + (st ? st[4] : "–") + '</b></i>'
+      + (n !== null ? '<em title="Marked available">👥 ' + n + '</em>' : '') + '</button>';
   };
   var mon = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 1), fri = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 5);
   // 12.129 (Sam): compact — one line of header, rig status right under it, weekdays + Shabbos in one row (phone too), one small note
@@ -12958,7 +13016,7 @@ function hzAvCardHtml(big) {
   if (dtOn) h += '<div class="hz-av-grp"><div class="hz-av-grp-h">☀️ Weekdays <span>' + hzAvMd(mon) + '–' + hzAvMd(fri) + '</span></div><div class="hz-av-days">' + HZ_AV_WEEK.map(btn).join("") + '</div></div>';
   if (shOn) h += '<div class="hz-av-grp shab"><div class="hz-av-grp-h">🕯️ <span class="hz-av-lg">Shabbos </span><span class="hz-av-dt">' + hzAvMd(w.shab) + '</span></div><div class="hz-av-days one">' + btn(["shabbos", "Shabbos"]) + '</div></div>';
   h += '</div><div class="hz-av-note">' + (dtOn ? '<b class="hz-av-q">☀️ ' + hzAvEsc(HZ_AV_QUALIFY.replace(/^To be available on a weekday you must be /, "Weekday ✓ = ").replace(/ for at least (\d+) hours between /, " $1+ hrs, ").replace(/ and /, "–").replace(/\.$/, "")) + '</b> · ' : '')
-    + 'Tap a day: ✓ → ? → ≈ → ✕ · saves itself · resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</div>';
+    + 'Tap a day: – → ✓ Available → ✕ Unavailable · saves itself · resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</div>';
   return h + hzAvWhoHtml(w) + '</div>';
 }
 // 👥 Who's available — from this week's answers (each answer carries the member's unit and name).
@@ -13000,35 +13058,50 @@ function hzSetView(v) {
   ["set-content", "m-set-content"].forEach(function(id) { var h = document.getElementById(id); if (h && h.offsetParent) { try { h.scrollTop = 0; } catch (e) {} } });
   try { window.scrollTo(0, 0); } catch (e) {}
 }
+// everyone's answers this week → counts per day (weekdays only from Daytime Responders) + the list for 👥 Who's available
+function hzAvAllSnap(q) {
+  var c = {}, all = []; HZ_AV_DAYS.forEach(function(d){ c[d[0]] = 0; });
+  q.forEach(function(d){ var doc = d.data() || {}, x = doc.days || {}; all.push(doc);
+    HZ_AV_DAYS.forEach(function(k){ if (k[0] !== "shabbos" && doc.dt !== true) return; if (x[k[0]] === true) c[k[0]]++; }); });
+  HZ_AV.counts = c; HZ_AV.parts = null; HZ_AV.all = all; hzAvRefreshCards();
+}
+function hzAvDispatcher(u) { u = u || {}; return u.role === "admin" || (u.roles || []).some(function(r){ return String(r).toLowerCase() === "dispatcher"; }); }
 function hzAvDoneText() {
   var me = HZ_AV.me || {}, w = HZ_AV.week; if (!w || !hzAvAny(me)) return "";
   var days = (HZ_AV.mine && HZ_AV.mine.days) || {}, mine = hzAvMyDays(me, w), done = mine.filter(function(d){ return hzAvAnswered(days[d[0]]); }).length;
   return done === mine.length ? '<span class="hz-av-ok">✓ All answered</span>' : '<span class="hz-av-todo">' + done + ' of ' + mine.length + ' answered</span>';
 }
 function hzAvRefreshCards() {
-  var card = hzAvCardHtml(false), v = HZ_SET_VIEW;
-  if (v === "avail" && !card) v = null;
+  var card = "", v = "plain";   // 12.140: availability + rig status moved to the 📅 Availability home tile — My Settings is just settings again
   ["set-content", "m-set-content"].forEach(function(id) {
     var host = document.getElementById(id); if (!host) return;
     var box = host.querySelector(".hz-av-slot");
     if (!box) { box = document.createElement("div"); box.className = "hz-av-slot"; host.insertBefore(box, host.firstChild); }
-    host.classList.remove("hz-set-v-home", "hz-set-v-avail", "hz-set-v-settings"); host.classList.add("hz-set-v-" + (v || "home"));
+    host.classList.remove("hz-set-v-home", "hz-set-v-avail", "hz-set-v-settings");
     var back = '<button class="hz-set-back" onclick="hzSetView(null)">← My Settings</button>';
-    box.innerHTML = v === "avail" ? back + card
+    box.innerHTML = v === "plain" ? ""
+      : v === "avail" ? back + card
       : v === "settings" ? back
       : hzAvRigsHtml() + '<div class="hz-set-tiles">'
         + (card ? '<button class="hz-set-tile" onclick="hzSetView(\'avail\')"><span class="hz-set-ic">📅</span><b>Availability</b><small>' + (hzAvDoneText() || 'This week') + '</small></button>' : '')
         + '<button class="hz-set-tile" onclick="hzSetView(\'settings\')"><span class="hz-set-ic">⚙️</span><b>Settings</b><small>My info · notifications · maps · password · home screen</small></button></div>';
   });
-  var pop = document.getElementById("hz-av-pop-body"); if (pop) pop.innerHTML = hzAvCardHtml(true) || '<div class="hz-erv-muted">Availability is filled in by responders and Daytime Responders.</div>';
+  // 12.140 (Sam): 📅 Availability is its own home tile — 🚑 rig status, my availability (if I'm in a poll), 👥 who's available, 🗓️ eScheduler (dispatchers)
+  var pop = document.getElementById("hz-av-pop-body");
+  if (pop) { var big = hzAvCardHtml(true), me = HZ_AV.me || {};
+    pop.innerHTML = hzAvRigsHtml() + (big || (HZ_AV.week ? '<div class="hz-av-card big hz-av-only">' + hzAvWhoHtml(HZ_AV.week).replace('<details class="hz-av-who"', '<details open class="hz-av-who"') + '</div>' : '<div class="hz-erv-muted">Loading…</div>'))
+      + (hzAvDispatcher(me) ? '<a class="hz-av-esched" href="https://chmc.myesched.com/schedule/logon.asp" target="_blank" rel="noopener">🗓️ eScheduler <small>Dispatch schedule — opens the eScheduler site ↗</small></a>' : ''); }
+  var sub = HZ_AV.week ? (hzAvDoneText() || "") : "", oo = (HZ_AV.rigs || []).filter(function(v){ return v.isOut; }).length;
+  document.querySelectorAll(".hz-av-tile-sub").forEach(function(el) { el.innerHTML = (sub ? sub : "Who's around this week") + (oo ? ' · <span class="hz-av-oos-pill">🚑 ' + oo + ' out</span>' : ''); });
 }
 function hzAvTap(day) {
   var w = HZ_AV.week, me = HZ_AV.me || {}; if (!w || !HZ_AV.uid || (w.yt || {})[day]) return;
   var cur = ((HZ_AV.mine && HZ_AV.mine.days) || {})[day], st = hzAvState(cur), i = st ? HZ_AV_STATES.indexOf(st) : -1;
-  var next = HZ_AV_STATES[(i + 1) % HZ_AV_STATES.length][0];   // Available → Unsure → Intermittent → Unavailable → Available
+  var next = i === -1 ? true : i === 0 ? false : null;   // 12.140: – → Available → Unavailable → –
   HZ_AV.mine = HZ_AV.mine || { days: {} }; HZ_AV.mine.days = HZ_AV.mine.days || {}; HZ_AV.mine.days[day] = next; hzAvRefreshCards();
   var data = { uid: HZ_AV.uid, unit: me.unit || "", name: ((me.firstName || "") + " " + (me.lastName || "")).trim(), weekKey: w.key, dt: hzAvDaytime(me), updatedAt: Date.now(), days: {} };
   HZ_AV_DAYS.forEach(function(d){ var x = HZ_AV.mine.days[d[0]]; if (hzAvAnswered(x)) data.days[d[0]] = x; });   // the whole week, so nothing is lost
+  if (next === null) data.days[day] = firebase.firestore.FieldValue.delete();   // back to – (no answer)
   db.collection("availability").doc(w.key + "_" + HZ_AV.uid).set(data, { merge: true })
     .catch(function(e){ hzAvToast("Not saved: " + e.message + (/permission/i.test(e.message) ? " — the database rules need publishing" : ""), true); });
 }
@@ -13036,7 +13109,7 @@ function hzAvOpen() {
   var el = document.getElementById("hz-av-pop");
   if (!el) { el = document.createElement("div"); el.id = "hz-av-pop"; document.body.appendChild(el); }
   if (!HZ_AV.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "av" }), ""); HZ_AV.hist = true; } catch (e) {} }   // 12.93: Back closes it
-  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="My availability"><div class="hz-erv-top"><b>📅 My availability</b><span style="flex:1"></span><button class="hz-erv-x" onclick="hzAvClose()" aria-label="Close">✕</button></div><div class="hz-erv-body" id="hz-av-pop-body"></div></div>';
+  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="Availability"><div class="hz-erv-top"><b>📅 Availability</b><span style="flex:1"></span><button class="hz-erv-x" onclick="hzAvClose()" aria-label="Close">✕</button></div><div class="hz-erv-body" id="hz-av-pop-body"></div></div>';
   hzAvRefreshCards();
 }
 function hzAvClose(fromBack) {
@@ -13074,21 +13147,20 @@ function hzAvAdminRender() {
       // 12.89: weekdays count only Daytime Responders, Shabbos counts every responder; intermittent counted on its own row
       var yt = w.yt || {}, inPoll = function(u, k){ return k === "shabbos" ? hzAvCanFill(u) : hzAvDaytime(u) && !yt[k]; };
       var tally = function(val){ return HZ_AV_DAYS.map(function(d){ return users.filter(function(u){ return inPoll(u, d[0]) && (by[u.uid] || {})[d[0]] === val; }).length; }); };
-      var counts = tally(true), parts = tally("intermittent"), anyPart = parts.some(function(n){ return n > 0; });
+      var counts = tally(true);
       var answered = users.filter(function(u){ var dd = by[u.uid] || {}; return hzAvMyDays(u, w).every(function(d){ return hzAvAnswered(dd[d[0]]); }); }).length;
       var cell = function(u, k){ if (yt[k]) return '<td class="hz-av-na" title="Yom Tov — not in the weekday poll"></td>'; if (!inPoll(u, k)) return '<td class="hz-av-na" title="' + (k === "shabbos" ? "Not a responder" : "Not a Daytime Responder") + '"></td>';
         var v = (by[u.uid] || {})[k];
-        return v === true ? '<td class="hz-av-yes" title="Available">✓</td>' : v === "intermittent" ? '<td class="hz-av-part" title="Intermittent">≈</td>' : v === "unsure" ? '<td class="hz-av-maybe" title="Unsure">?</td>' : v === false ? '<td class="hz-av-no" title="Unavailable">✕</td>' : '<td class="hz-av-nil">—</td>'; };
+        return v === true ? '<td class="hz-av-yes" title="Available">✓</td>' : v === false ? '<td class="hz-av-no" title="Unavailable">✕</td>' : '<td class="hz-av-nil">—</td>'; };
       var h = '<div class="hz-erv-row"><button class="hz-erv-btn" onclick="HZ_AV.admWeek--;hzAvAdminRender()">‹ Prev</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek=0;hzAvAdminRender()">This week</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek++;hzAvAdminRender()">Next ›</button>'
         + '<button class="hz-erv-btn" style="border-color:var(--gold);color:var(--gold)" onclick="hzAvRollCall()">🕯️ Shabbos roll call</button>'
-        + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ≈ intermittent · ? unsure · ✕ unavailable · — no answer · blank = not in that poll</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' answered everything · ☀️ = Daytime Responder (Mon–Fri poll; set in Users ▸ Edit) · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
+        + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ✕ unavailable · — no answer · blank = not in that poll</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' answered everything · ☀️ = Daytime Responder (Mon–Fri poll; set in Users ▸ Edit) · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
         + '<div class="tbl-wrap" style="max-width:none;width:100%"><table class="hz-av-tbl"><thead><tr><th>Unit</th><th>Name</th>' + HZ_AV_DAYS.map(function(d){ return '<th>' + d[1] + (yt[d[0]] ? '<br><span class="hz-av-ytl">🕯️ Yom Tov</span>' : '') + '</th>'; }).join("") + '</tr></thead><tbody>'
         + '<tr class="hz-av-tot"><td colspan="2"><b>Available</b></td>' + counts.map(function(n, i){ return '<td><b>' + (yt[HZ_AV_DAYS[i][0]] ? "" : n) + '</b></td>'; }).join("") + '</tr>'
-        + (anyPart ? '<tr class="hz-av-tot"><td colspan="2"><b>Intermittent</b></td>' + parts.map(function(n){ return '<td>' + (n || "") + '</td>'; }).join("") + '</tr>' : '')
         + users.map(function(u){ return '<tr><td><b>' + hzAvEsc(u.unit) + '</b></td><td>' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + (hzAvDaytime(u) ? ' <span title="Daytime Responder">☀️</span>' : '') + '</td>' + HZ_AV_DAYS.map(function(d){ return cell(u, d[0]); }).join("") + '</tr>'; }).join("")
         + '</tbody></table></div>';
       // 12.109 / 5.64: under the grid — each day's people in the order Available, Intermittent, Unsure, Unavailable
-      var grp = [[true, "✓ Available", "yes", "✓ Avail."], ["intermittent", "≈ Intermittent", "part", "≈ Interm."], ["unsure", "? Unsure", "maybe", "? Unsure"], [false, "✕ Unavailable", "no", "✕ Unavail."]];
+      var grp = [[true, "✓ Available", "yes", "✓ Avail."], [false, "✕ Unavailable", "no", "✕ Unavail."]];
       h += '<div class="hz-av-sum">' + HZ_AV_DAYS.map(function(d) {
         var head = '<div class="hz-av-sum-h">' + d[1] + '</div>';
         if (yt[d[0]]) return '<div class="hz-av-sum-d">' + head + '<div class="hz-erv-muted">🕯️ Yom Tov — not in the weekday poll</div></div>';
@@ -13147,7 +13219,7 @@ function hzAvRcLoad() {
       users.sort(function(a, b){ return String(a.unit).localeCompare(String(b.unit), undefined, { numeric: true }); });
       var nm = function(u){ return (u.unit + " " + ((u.firstName || "") + " " + (u.lastName || "")).trim()).trim(); };
       var g = function(val){ return users.filter(function(u){ return (by[u.uid] || {}).shabbos === val; }); };
-      var away = g(false), yes = g(true), part = g("intermittent"), uns = g("unsure"), none = users.filter(function(u){ return !hzAvAnswered((by[u.uid] || {}).shabbos); });
+      var away = g(false), yes = g(true), none = users.filter(function(u){ return !hzAvAnswered((by[u.uid] || {}).shabbos); });
       var oosOf = function(v){ return v.serviceStatus === "out" && !(v.outUntil && new Date(v.outUntil).getTime() < Date.now()); };
       var shiftOf = function(v){ return shifts.filter(function(t){ return t.ervUnit === v.id; })[0]; };
       var stamp = new Date(), title = "Shabbos roll call — Shabbos " + hzAvMd(w.shab) + "/" + w.shab.getFullYear();
@@ -13155,7 +13227,7 @@ function hzAvRcLoad() {
       var h = '<div class="hz-av-rc-h">' + hzAvEsc(title) + '<span class="hz-erv-muted"> · made ' + hzAvEsc(stamp.toLocaleString([], { weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })) + '</span></div>'
         + '<div class="hz-erv-sub">👤 Away for Shabbos — marked Unavailable (' + away.length + ')</div>'
         + (away.length ? '<ol class="hz-av-rc-list">' + away.map(function(u){ return '<li><b>' + hzAvEsc(u.unit) + '</b> ' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + '</li>'; }).join("") + '</ol>' : '<div class="hz-erv-muted">Nobody has marked themselves unavailable.</div>')
-        + '<div class="hz-erv-muted" style="margin-top:6px">Also: ✓ ' + yes.length + ' available · ≈ ' + part.length + ' intermittent · ? ' + uns.length + ' unsure · — ' + none.length + ' haven\'t answered (of ' + users.length + ' responders)</div>'
+        + '<div class="hz-erv-muted" style="margin-top:6px">Also: ✓ ' + yes.length + ' available · — ' + none.length + ' haven\'t answered (of ' + users.length + ' responders)</div>'
         + '<div class="hz-erv-sub">🚑 Vehicles</div><div class="tbl-wrap"><table class="hz-av-tbl hz-av-rc-t"><thead><tr><th>Vehicle</th><th>Service</th><th>Shift over Shabbos</th><th>Not at home base</th><th>Home base</th></tr></thead><tbody>'
         + vehs.map(function(v){ var o = oosOf(v), sh = shiftOf(v);
             return '<tr' + (o || v.offBase || sh ? ' class="hz-av-rc-flag"' : '') + '><td><b>' + (v.kind === "erv" ? "🚙 " : "🚑 ") + hzAvEsc(v.id) + '</b></td>'
@@ -13169,7 +13241,7 @@ function hzAvRcLoad() {
       // ── text for Copy / Print ──
       var flagged = vehs.filter(function(v){ return oosOf(v) || v.offBase || shiftOf(v); }), ok = vehs.filter(function(v){ return flagged.indexOf(v) < 0; });
       var t = [title, "", "AWAY FOR SHABBOS (" + away.length + "):"].concat(away.length ? away.map(function(u, i){ return (i + 1) + ". " + nm(u); }) : ["None"])
-        .concat(["", "Also: " + yes.length + " available, " + part.length + " intermittent, " + uns.length + " unsure, " + none.length + " no answer", "", "VEHICLES:"])
+        .concat(["", "Also: " + yes.length + " available, " + none.length + " no answer", "", "VEHICLES:"])
         .concat(flagged.map(function(v){ var o = oosOf(v), sh = shiftOf(v), bits = [];
           if (o) bits.push("OUT OF SERVICE" + (v.outReason ? " (" + v.outReason + ")" : ""));
           if (v.offBase) bits.push("NOT AT BASE" + (v.offBaseNote ? " — " + v.offBaseNote : ""));
@@ -13214,14 +13286,14 @@ function hzAvSettingsRender() {
       ["📅 Morning on-call summary", sumN ? sumN + " on the list <span class=\"hz-erv-muted\">(Who Receives What)</span>" : "<span style=\"color:#ff9090\">Nobody yet</span> <span class=\"hz-erv-muted\">— add in Who Receives What</span>", '<span class="hz-av-s-fix">Mon – Fri</span>' + tm("av-sum-time", S.summaryTime || "07:00"), '<span class="hz-erv-muted">—</span>', ch("availSummary")]
     ];
     var reset = HZ_AV.week ? hzAvResetText(HZ_AV.week.reset) : "Motzei Shabbos";
-    el.innerHTML = '<div class="hz-av-s-top">Each week (Mon – Shabbos) has <b>two polls</b>, filled in at ⚙ My Settings ▸ 📅 My availability: <b>☀️ weekdays</b> (Daytime Responders only) and <b>🕯️ Shabbos</b> (every responder). '
+    el.innerHTML = '<div class="hz-av-s-top">Each week (Mon – Shabbos) has <b>two polls</b>, filled in on the 📅 Availability home tile: <b>☀️ weekdays</b> (Daytime Responders only) and <b>🕯️ Shabbos</b> (every responder). '
         + 'The week resets <b>' + hzAvEsc(reset) + '</b> — change that and see the answers in ⚙ Admin ▸ 📅 Availability.</div>'
       + '<div class="tbl-wrap" style="max-width:980px"><table class="hz-av-s"><thead><tr><th>Message</th><th>Goes to</th><th>When</th><th title="Only to those who haven\'t answered yet">Only unanswered</th><th>Sent by</th></tr></thead><tbody>'
       + rows.map(function(x){ return '<tr><td><b>' + x[0] + '</b></td><td>' + x[1] + '</td><td><div class="hz-av-s-when">' + x[2] + '</div></td><td style="text-align:center">' + x[3] + '</td><td><div class="hz-av-s-chs">' + x[4] + '</div></td></tr>'; }).join("")
       + '</tbody></table></div>'
       + '<div class="hz-av-s-foot"><button class="submit-btn" style="width:auto;padding:10px 22px" onclick="hzAvSaveSettings()">💾 Save</button> <span id="av-msg" class="hz-erv-muted"></span></div>'
       + '<div class="hz-erv-muted" style="line-height:1.6;max-width:980px">"Sent by" shows what is ticked now — change it in 📣 How It\'s Sent ▸ Availability (all Off until ticked). Wording: ✉️ Message Templates ▸ Availability. '
-      + '"At the reset" goes out as the new week starts. The summary lists who is available today, intermittent separately; Friday\'s adds Shabbos.<br>🕯️ <b>Shabbos &amp; Yom Tov</b> (from Hebcal): nothing goes out on Shabbos or Yom Tov. If the Shabbos poll reminder would land on Yom Tov, it goes out Erev Yom Tov instead (before candle lighting) — one reminder covers Yom Tov running into Shabbos. A weekday reminder that lands on Yom Tov goes out right after it. Yom Tov days drop out of the weekday poll. No summary on Yom Tov; Chol Hamoed is a normal day.</div>';
+      + '"At the reset" goes out as the new week starts. The summary lists who is available today; Friday\'s adds Shabbos.<br>🕯️ <b>Shabbos &amp; Yom Tov</b> (from Hebcal): nothing goes out on Shabbos or Yom Tov. If the Shabbos poll reminder would land on Yom Tov, it goes out Erev Yom Tov instead (before candle lighting) — one reminder covers Yom Tov running into Shabbos. A weekday reminder that lands on Yom Tov goes out right after it. Yom Tov days drop out of the weekday poll. No summary on Yom Tov; Chol Hamoed is a normal day.</div>';
   });
 }
 // "At the reset" doesn't use a time
@@ -13270,6 +13342,9 @@ function hzAvSaveSettings() {
     + ".hz-av-rig.ok{color:#7dedb5;border-color:rgba(76,175,128,.55);background:rgba(76,175,128,.12)}.hz-av-rig.out{color:#fff;border-color:#c73c3c;background:#c73c3c}"
     + "html[data-theme=basic] .hz-av-rig.ok{color:#167a3e}"
     + ".hz-av-rig-why{font-size:.76rem;color:var(--white);margin-top:5px;line-height:1.35}.hz-av-rig-why b{color:#ff9090}html[data-theme=basic] .hz-av-rig-why b{color:#b42318}"
+    + ".hz-av-esched{display:flex;flex-direction:column;gap:2px;margin-top:12px;padding:12px 14px;border-radius:10px;border:1px solid var(--card-border);background:rgba(74,144,217,.08);color:var(--white);text-decoration:none;font-family:'Oswald',sans-serif;font-size:.95rem;letter-spacing:.04em}.hz-av-esched small{font-family:inherit;letter-spacing:0;font-size:.74rem;color:var(--gray)}"
+    + "#hz-av-pop-body .hz-av-rigs{margin-bottom:10px}"
+    + ".hz-av-only .hz-av-who{margin-top:0;border-top:0;padding-top:0}"
     + ".hz-set-v-home>:not(.hz-av-slot),.hz-set-v-avail>:not(.hz-av-slot){display:none!important}"
     + ".hz-set-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;max-width:720px}"
     + ".hz-set-tile{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:14px 14px 12px;border-radius:14px;border:1px solid var(--card-border);background:rgba(var(--gold-rgb),.06);color:var(--white);cursor:pointer;min-height:104px;font:inherit}"
