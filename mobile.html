@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.52"; window.M_BUILD = BUILD;
+  var BUILD = "5.54"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3425,7 +3425,7 @@ function mCtMatches(u, f) {
 }
 function mSetContactsFilter(f) { mContactsFilter = f; mRenderContacts(); }
 // 12.96 / 5.51: 👤 Save contact — downloads a .vcf card for one member (name + unit, cell, email, roles).
-// iPhone/iPad: the share sheet (choose Contacts / Save to Files); elsewhere a normal download that opens in Contacts.
+// iPhone/iPad: opens the card (Create New Contact); Android & computers: a download that opens in Contacts.
 var HZ_VCF = {}, HZ_VCF_N = 0;
 function hzVcfKey(u) { var k = "c" + (++HZ_VCF_N); HZ_VCF[k] = u; return k; }
 function hzVcfEsc(t) { return String(t == null ? "" : t).replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\;"); }
@@ -3448,8 +3448,15 @@ function hzVcfSave(k) {
   var txt = hzVcfText(u), blob = new Blob([txt], { type: "text/vcard" });
   try {
     var file = new File([blob], name + ".vcf", { type: "text/vcard" });
-    if (/iPhone|iPad|iPod/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(function(){}); return; }
-  } catch (e) {}
+  } catch (e) { file = null; }
+  // 12.99 / 5.54: iPhone/iPad — open the card itself, which shows iOS's "Create New Contact / Add to Existing Contact";
+  // the share sheet only if that window can't open
+  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    var url = URL.createObjectURL(blob), win = window.open(url, "_blank");
+    if (win) { setTimeout(function(){ URL.revokeObjectURL(url); }, 60000); return; }
+    URL.revokeObjectURL(url);
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(function(){}); return; }
+  }
   var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name + ".vcf";
   document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
@@ -3490,8 +3497,8 @@ function mRenderContacts() {
           return '<div style="display:flex;gap:6px;flex-shrink:0">' +
             btn("tel:+" + digits, "📞", "#7dedb5", "Call " + (u.unit||"")) +
             btn("sms:+" + digits, "💬", "#7ab8f5", "Text " + (u.unit||"")) +
-            btn("#", '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c9a227" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>', "#ffc84a", "Download contact (.vcf) " + (u.unit||""), 'onclick="hzVcfSave(\'' + hzVcfKey(u) + '\');return false"') +
             btn("https://wa.me/" + (function(){ var w = String(u.whatsapp || "").replace(/\D/g, ""); if (w.length === 10) w = "1" + w; return w.length === 11 ? w : digits; })(), '<svg width="20" height="20" viewBox="0 0 24 24" fill="#25D366" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.8 1-1 1.2-.2.2-.3.2-.6.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.5-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.2-.6-.4zM12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2z"/></svg>', "#25D366", "WhatsApp " + (u.unit||""), 'target="_blank" rel="noopener"') +
+            btn("#", '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c9a227" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>', "#ffc84a", "Download contact (.vcf) " + (u.unit||""), 'onclick="hzVcfSave(\'' + hzVcfKey(u) + '\');return false"') +
           '</div>';
         })() +
       '</div>';

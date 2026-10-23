@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.97">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.99">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2387,7 +2387,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.97</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.99</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7943,7 +7943,7 @@ function getFirstPhone(phone) {
   return "+" + raw;
 }
 // 12.96 / 5.51: 👤 Save contact — downloads a .vcf card for one member (name + unit, cell, email, roles).
-// iPhone/iPad: the share sheet (choose Contacts / Save to Files); elsewhere a normal download that opens in Contacts.
+// iPhone/iPad: opens the card (Create New Contact); Android & computers: a download that opens in Contacts.
 var HZ_VCF = {}, HZ_VCF_N = 0;
 function hzVcfKey(u) { var k = "c" + (++HZ_VCF_N); HZ_VCF[k] = u; return k; }
 function hzVcfEsc(t) { return String(t == null ? "" : t).replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\;"); }
@@ -7966,8 +7966,15 @@ function hzVcfSave(k) {
   var txt = hzVcfText(u), blob = new Blob([txt], { type: "text/vcard" });
   try {
     var file = new File([blob], name + ".vcf", { type: "text/vcard" });
-    if (/iPhone|iPad|iPod/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(function(){}); return; }
-  } catch (e) {}
+  } catch (e) { file = null; }
+  // 12.99 / 5.54: iPhone/iPad — open the card itself, which shows iOS's "Create New Contact / Add to Existing Contact";
+  // the share sheet only if that window can't open
+  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    var url = URL.createObjectURL(blob), win = window.open(url, "_blank");
+    if (win) { setTimeout(function(){ URL.revokeObjectURL(url); }, 60000); return; }
+    URL.revokeObjectURL(url);
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(function(){}); return; }
+  }
   var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name + ".vcf";
   document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
@@ -18813,7 +18820,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.97";
+var DESKTOP_VERSION = "12.99";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -19142,8 +19149,8 @@ function mLoadContacts() {
           return '<div style="display:flex;gap:6px;flex-shrink:0">' +
             btn("tel:+" + digits, "📞", "#7dedb5", "Call " + (u.unit||"")) +
             btn("sms:+" + digits, "💬", "#7ab8f5", "Text " + (u.unit||"")) +
-            btn("#", '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c9a227" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>', "#ffc84a", "Download contact (.vcf) " + (u.unit||""), 'onclick="hzVcfSave(\'' + hzVcfKey(u) + '\');return false"') +
             btn("https://wa.me/" + (function(){ var w = String(u.whatsapp || "").replace(/\D/g, ""); if (w.length === 10) w = "1" + w; return w.length === 11 ? w : digits; })(), '<svg width="20" height="20" viewBox="0 0 24 24" fill="#25D366" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.8 1-1 1.2-.2.2-.3.2-.6.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.5-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.2-.6-.4zM12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2z"/></svg>', "#25D366", "WhatsApp " + (u.unit||""), 'target="_blank" rel="noopener"') +
+            btn("#", '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c9a227" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>', "#ffc84a", "Download contact (.vcf) " + (u.unit||""), 'onclick="hzVcfSave(\'' + hzVcfKey(u) + '\');return false"') +
           '</div>';
         })() +
       '</div>';
