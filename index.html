@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.105">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.107">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2312,7 +2312,6 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
     <button class="back-btn" onclick="goHome()">← Home</button>
     <div class="page-title">🎫 Service Helpdesk <span style="font-size:0.6rem;background:rgba(var(--gold-rgb),0.2);border:1px solid rgba(var(--gold-rgb),0.4);color:var(--gold);padding:2px 8px;border-radius:10px;letter-spacing:0.1em;margin-left:8px;vertical-align:middle">BETA</span></div>
     <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-      <button class="edit-mode-btn hz-erv-entry" onclick="hzErvOpen('schedule')" style="display:none" title="Book an ERV or rig — schedule and requests">🚙 Vehicle Shifts</button>
       <button class="edit-mode-btn" onclick="goTo('service-new');tkFormOpened()">+ New</button>
     </div>
   </div>
@@ -2339,7 +2338,6 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
           <button type="button" class="edit-mode-btn tk-type-chip" data-type="restock" onclick="tkPickType('restock')" style="flex:1">📦 Restock</button>
           <button type="button" class="edit-mode-btn tk-type-chip" data-type="it" onclick="tkPickType('it')" style="flex:1">💻 IT / App Issue</button>
           <button type="button" class="edit-mode-btn tk-type-chip" data-type="feature" onclick="tkPickType('feature')" style="flex:1">💡 Feature Request</button>
-          <button type="button" class="edit-mode-btn tk-type-chip hz-erv-entry" onclick="hzErvOpen('request')" style="flex:1;display:none">🚙 ERV Shift</button>
         </div></div></div>
       <div id="tk-restock-fields" class="rs-box" style="display:none"></div>
       <div id="tk-it-fields" style="display:none;background:rgba(122,184,245,0.07);border:1px solid rgba(122,184,245,0.3);border-radius:9px;padding:10px 12px;margin-bottom:12px">
@@ -2388,7 +2386,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.105</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.107</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7947,7 +7945,7 @@ function getFirstPhone(phone) {
   return "+" + raw;
 }
 // 12.96 / 5.51: 👤 Save contact — downloads a .vcf card for one member (name + unit, cell, email, roles).
-// Android: the native "Create contact" screen; iPhone: the native card via a short-lived server link (vcardLink/vcard); computers: a download.
+// Every device: a direct download of the .vcf file.
 var HZ_VCF = {}, HZ_VCF_N = 0;
 function hzVcfKey(u) { var k = "c" + (++HZ_VCF_N); HZ_VCF[k] = u; return k; }
 function hzVcfEsc(t) { return String(t == null ? "" : t).replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\;"); }
@@ -7964,61 +7962,12 @@ function hzVcfText(u) {
   L.push("END:VCARD");
   return L.join("\r\n") + "\r\n";
 }
+// 12.106 / 5.61 (Sam: "just do direct download"): every device downloads the .vcf file — opening it adds the contact.
+// (12.102–12.104 tried the native contact screens; on iPhone it worked once, then the tap did nothing.)
 function hzVcfSave(k) {
   var u = HZ_VCF[k]; if (!u) return;
-  var ua = navigator.userAgent || "";
-  // 12.102 / 5.57 — Android: open the phone's own "Create contact" screen, filled in (Chrome intent link)
-  if (/Android/i.test(ua)) {
-    var first = (u.firstName || "").trim(), last = (u.lastName || "").trim(), unit = (u.unit || "").trim();
-    var tel = String(u.phone || "").split(/[\/|]/)[0].replace(/\D/g, ""); if (tel.length === 10) tel = "1" + tel;
-    var org = (typeof ORG !== "undefined" && ORG && (ORG.shortName || ORG.fullName)) || "Hatzolah";
-    var roles = (u.roles || []).filter(function(r){ return String(r).toLowerCase() !== "admin"; }).map(function(r){ return String(r).replace(/\b\w/g, function(c){ return c.toUpperCase(); }); }).join(", ");
-    var x = function(key, v){ return v ? "S." + key + "=" + encodeURIComponent(v) + ";" : ""; };
-    var intent = "intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.dir/raw_contact;"
-      + x("name", ((first + " " + last).trim() || unit) + (unit && (first || last) ? " (" + unit + ")" : "")) + x("phone", tel ? "+" + tel : "") + x("email", u.email || "")
-      + x("company", org) + x("job_title", roles) + x("notes", unit ? org + " unit " + unit : "") + "end";
-    var left = false, onHide = function(){ if (document.visibilityState === "hidden") left = true; };
-    document.addEventListener("visibilitychange", onHide);
-    location.href = intent;
-    setTimeout(function(){ document.removeEventListener("visibilitychange", onHide); if (!left) { hzVcfDownload(u); hzVcfSay("Contacts didn't open — the card was downloaded instead. Tap it in your notifications or Downloads to add it."); } }, 1800);   // nothing opened → the file instead
-    return;
-  }
-  // 12.103 / 5.58 — iPhone/iPad: open the card from the web link fetched when Contacts opened (iOS shows its own
-  // "Create New Contact" screen). It must open right on the tap — iPhone blocks anything that waits for the server first.
-  // No link (server not updated / offline) → the share sheet, also right on the tap.
-  if (/iPhone|iPad|iPod/i.test(ua) && u.unit && HZ_VCF_LINK.url && HZ_VCF_LINK.exp - Date.now() > 60000) {
-    location.href = HZ_VCF_LINK.url + "&u=" + encodeURIComponent(u.unit);
-    return;
-  }
-  hzVcfDownload(u);
-}
-// 12.103: get the Contacts-page link ahead of time (iPhone only; valid 30 minutes, renewed when Contacts opens again)
-var HZ_VCF_LINK = { url: "", exp: 0, busy: false, err: "" };
-function hzVcfPrime() {
-  if (!/iPhone|iPad|iPod/i.test(navigator.userAgent || "") || HZ_VCF_LINK.busy || HZ_VCF_LINK.exp - Date.now() > 5 * 60000) return;
-  var relay = typeof hzRelay === "function" ? hzRelay : typeof mRelay === "function" ? mRelay : null; if (!relay) return;
-  HZ_VCF_LINK.busy = true;
-  relay("vcardLink", {}).then(function(r){ if (r && r.url) { HZ_VCF_LINK.url = r.url; HZ_VCF_LINK.exp = r.exp || Date.now() + 1500000; } })
-    .catch(function(e){ HZ_VCF_LINK.err = (e && e.message) || "error"; }).then(function(){ HZ_VCF_LINK.busy = false; });
-}
-// the .vcf file itself — computers, and the fallback on phones (iPhone: share sheet)
-function hzVcfSay(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); }
-function hzVcfDownload(u) {
   var name = ((u.unit ? u.unit + " " : "") + ((u.firstName || "") + " " + (u.lastName || "")).trim()).trim().replace(/[^\w .-]+/g, "") || "contact";
-  var txt = hzVcfText(u), blob = new Blob([txt], { type: "text/vcard" });
-  var ios = /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
-  if (ios) {
-    // 12.104: say why the native screen didn't open (shown under the share sheet)
-    if (HZ_VCF_LINK.err) hzVcfSay("Contact link not available (" + HZ_VCF_LINK.err + ") — using Share instead", true);
-    // try the two names iPhone uses for a contact card, then share the card as text
-    var files = [];
-    ["text/vcard", "text/x-vcard"].forEach(function(t){ try { var f = new File([txt], name + ".vcf", { type: t }); if (navigator.canShare && navigator.canShare({ files: [f] })) files.push(f); } catch (e) {} });
-    var fail = function(e) { if (e && e.name === "AbortError") return; hzVcfSay("Couldn't open the contact on this iPhone (" + ((e && (e.name + ": " + e.message)) || "no share") + ")", true); };
-    if (files.length) { navigator.share({ files: [files[0]] }).catch(function(e){ if (e && e.name === "NotAllowedError") hzVcfFile(blob, name); else fail(e); }); return; }
-    if (navigator.share) { navigator.share({ title: name, text: txt }).catch(fail); return; }
-    fail(null); return;
-  }
-  hzVcfFile(blob, name);
+  hzVcfFile(new Blob([hzVcfText(u)], { type: "text/vcard" }), name);
 }
 function hzVcfFile(blob, name) {
   var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name + ".vcf";
@@ -8026,7 +7975,6 @@ function hzVcfFile(blob, name) {
 }
 function renderContacts(list) {
   var el = document.getElementById("g-contacts"); if (!el) return;
-  hzVcfPrime();
   if (!list.length) { el.innerHTML = '<div style="color:var(--gray);text-align:center;padding:40px">No contacts found.</div>'; return; }
   var html = "";
   list.forEach(function(u, i) {
@@ -18899,7 +18847,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.105";
+var DESKTOP_VERSION = "12.107";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -19209,7 +19157,6 @@ function mLoadShifts() {
   }).catch(function(e) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; });
 }
 function mLoadContacts() {
-  hzVcfPrime();
   db.collection("users").orderBy("unit").get().then(function(snap) {
     var el = document.getElementById("m-contacts-content");
     if (snap.empty) { el.innerHTML = '<div style="color:var(--gray)">No contacts found.</div>'; return; }

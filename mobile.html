@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.60"; window.M_BUILD = BUILD;
+  var BUILD = "5.62"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1371,7 +1371,6 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
       <button class="m-back-btn" onclick="mGoTo('home')">← Back</button>
       <span class="m-page-title">Service Helpdesk</span>
     </div>
-    <button class="m-disp-btn hz-erv-entry" onclick="hzErvOpen('schedule')" style="display:none;margin-left:auto;margin-right:6px;padding:6px 10px">🚙 ERV</button>
     <button onclick="mGoTo('service-new');mBindTicketFormMentions()" style="background:linear-gradient(135deg,var(--gold),#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New</button>
   </div>
   <div style="display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--card-border);flex-wrap:wrap" id="m-tk-tabs">
@@ -1396,7 +1395,6 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
       <button type="button" class="m-disp-btn m-tk-type-chip on" data-type="general" onclick="mTkPickType('general')" style="flex:1 1 calc(50% - 6px)">🔧 Service Request</button>
       <button type="button" class="m-disp-btn m-tk-type-chip" data-type="restock" onclick="mTkPickType('restock')" style="flex:1 1 calc(50% - 6px)">📦 Restock</button>
       <button type="button" class="m-disp-btn m-tk-type-chip" data-type="it" onclick="mTkPickType('it')" style="flex:1 1 calc(50% - 6px)">💻 IT / App Issue</button>
-      <button type="button" class="m-disp-btn m-tk-type-chip hz-erv-entry" onclick="hzErvOpen('request')" style="flex:1 1 calc(50% - 6px);display:none">🚙 ERV Shift</button>
       <button type="button" class="m-disp-btn m-tk-type-chip" data-type="feature" onclick="mTkPickType('feature')" style="flex:1 1 calc(50% - 6px)">💡 Feature Request</button>
     </div>
     <div id="m-tk-restock-fields" class="rs-box" style="display:none"></div>
@@ -3427,7 +3425,7 @@ function mCtMatches(u, f) {
 }
 function mSetContactsFilter(f) { mContactsFilter = f; mRenderContacts(); }
 // 12.96 / 5.51: 👤 Save contact — downloads a .vcf card for one member (name + unit, cell, email, roles).
-// Android: the native "Create contact" screen; iPhone: the native card via a short-lived server link (vcardLink/vcard); computers: a download.
+// Every device: a direct download of the .vcf file.
 var HZ_VCF = {}, HZ_VCF_N = 0;
 function hzVcfKey(u) { var k = "c" + (++HZ_VCF_N); HZ_VCF[k] = u; return k; }
 function hzVcfEsc(t) { return String(t == null ? "" : t).replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\;"); }
@@ -3444,68 +3442,18 @@ function hzVcfText(u) {
   L.push("END:VCARD");
   return L.join("\r\n") + "\r\n";
 }
+// 12.106 / 5.61 (Sam: "just do direct download"): every device downloads the .vcf file — opening it adds the contact.
+// (12.102–12.104 tried the native contact screens; on iPhone it worked once, then the tap did nothing.)
 function hzVcfSave(k) {
   var u = HZ_VCF[k]; if (!u) return;
-  var ua = navigator.userAgent || "";
-  // 12.102 / 5.57 — Android: open the phone's own "Create contact" screen, filled in (Chrome intent link)
-  if (/Android/i.test(ua)) {
-    var first = (u.firstName || "").trim(), last = (u.lastName || "").trim(), unit = (u.unit || "").trim();
-    var tel = String(u.phone || "").split(/[\/|]/)[0].replace(/\D/g, ""); if (tel.length === 10) tel = "1" + tel;
-    var org = (typeof ORG !== "undefined" && ORG && (ORG.shortName || ORG.fullName)) || "Hatzolah";
-    var roles = (u.roles || []).filter(function(r){ return String(r).toLowerCase() !== "admin"; }).map(function(r){ return String(r).replace(/\b\w/g, function(c){ return c.toUpperCase(); }); }).join(", ");
-    var x = function(key, v){ return v ? "S." + key + "=" + encodeURIComponent(v) + ";" : ""; };
-    var intent = "intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.dir/raw_contact;"
-      + x("name", ((first + " " + last).trim() || unit) + (unit && (first || last) ? " (" + unit + ")" : "")) + x("phone", tel ? "+" + tel : "") + x("email", u.email || "")
-      + x("company", org) + x("job_title", roles) + x("notes", unit ? org + " unit " + unit : "") + "end";
-    var left = false, onHide = function(){ if (document.visibilityState === "hidden") left = true; };
-    document.addEventListener("visibilitychange", onHide);
-    location.href = intent;
-    setTimeout(function(){ document.removeEventListener("visibilitychange", onHide); if (!left) { hzVcfDownload(u); hzVcfSay("Contacts didn't open — the card was downloaded instead. Tap it in your notifications or Downloads to add it."); } }, 1800);   // nothing opened → the file instead
-    return;
-  }
-  // 12.103 / 5.58 — iPhone/iPad: open the card from the web link fetched when Contacts opened (iOS shows its own
-  // "Create New Contact" screen). It must open right on the tap — iPhone blocks anything that waits for the server first.
-  // No link (server not updated / offline) → the share sheet, also right on the tap.
-  if (/iPhone|iPad|iPod/i.test(ua) && u.unit && HZ_VCF_LINK.url && HZ_VCF_LINK.exp - Date.now() > 60000) {
-    location.href = HZ_VCF_LINK.url + "&u=" + encodeURIComponent(u.unit);
-    return;
-  }
-  hzVcfDownload(u);
-}
-// 12.103: get the Contacts-page link ahead of time (iPhone only; valid 30 minutes, renewed when Contacts opens again)
-var HZ_VCF_LINK = { url: "", exp: 0, busy: false, err: "" };
-function hzVcfPrime() {
-  if (!/iPhone|iPad|iPod/i.test(navigator.userAgent || "") || HZ_VCF_LINK.busy || HZ_VCF_LINK.exp - Date.now() > 5 * 60000) return;
-  var relay = typeof hzRelay === "function" ? hzRelay : typeof mRelay === "function" ? mRelay : null; if (!relay) return;
-  HZ_VCF_LINK.busy = true;
-  relay("vcardLink", {}).then(function(r){ if (r && r.url) { HZ_VCF_LINK.url = r.url; HZ_VCF_LINK.exp = r.exp || Date.now() + 1500000; } })
-    .catch(function(e){ HZ_VCF_LINK.err = (e && e.message) || "error"; }).then(function(){ HZ_VCF_LINK.busy = false; });
-}
-// the .vcf file itself — computers, and the fallback on phones (iPhone: share sheet)
-function hzVcfSay(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); }
-function hzVcfDownload(u) {
   var name = ((u.unit ? u.unit + " " : "") + ((u.firstName || "") + " " + (u.lastName || "")).trim()).trim().replace(/[^\w .-]+/g, "") || "contact";
-  var txt = hzVcfText(u), blob = new Blob([txt], { type: "text/vcard" });
-  var ios = /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
-  if (ios) {
-    // 12.104: say why the native screen didn't open (shown under the share sheet)
-    if (HZ_VCF_LINK.err) hzVcfSay("Contact link not available (" + HZ_VCF_LINK.err + ") — using Share instead", true);
-    // try the two names iPhone uses for a contact card, then share the card as text
-    var files = [];
-    ["text/vcard", "text/x-vcard"].forEach(function(t){ try { var f = new File([txt], name + ".vcf", { type: t }); if (navigator.canShare && navigator.canShare({ files: [f] })) files.push(f); } catch (e) {} });
-    var fail = function(e) { if (e && e.name === "AbortError") return; hzVcfSay("Couldn't open the contact on this iPhone (" + ((e && (e.name + ": " + e.message)) || "no share") + ")", true); };
-    if (files.length) { navigator.share({ files: [files[0]] }).catch(function(e){ if (e && e.name === "NotAllowedError") hzVcfFile(blob, name); else fail(e); }); return; }
-    if (navigator.share) { navigator.share({ title: name, text: txt }).catch(fail); return; }
-    fail(null); return;
-  }
-  hzVcfFile(blob, name);
+  hzVcfFile(new Blob([hzVcfText(u)], { type: "text/vcard" }), name);
 }
 function hzVcfFile(blob, name) {
   var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name + ".vcf";
   document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
 function mRenderContacts() {
-  hzVcfPrime();
   var el = document.getElementById("m-contacts-content"); if (!el) return;
   // Pills: All, Responder, Dispatcher, then every other role in use, then titles (Captain, Chief…)
   var titles = hzTitleList().map(function(x) { return String(x).toLowerCase(); });
