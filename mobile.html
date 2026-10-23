@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.83"; window.M_BUILD = BUILD;
+  var BUILD = "5.84"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -980,6 +980,8 @@ html[data-theme="basic"] .hz-erv-req{color:#b42318 !important}
 html[data-theme="basic"] .hz-erv-note.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-av-rig.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-av-todo{color:#8a5a00 !important}
 html[data-theme="basic"] .hz-av-oos-pill{color:#b42318 !important}
 html[data-theme="basic"] .hz-av-yes{color:#167a3e !important}
 html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}
@@ -12847,7 +12849,7 @@ function hzAvInit() {
   firebase.auth().onAuthStateChanged(function(u) {
     if (HZ_AV.unsub) { try { HZ_AV.unsub(); } catch (e) {} HZ_AV.unsub = null; }
     if (HZ_AV.unsubAll) { try { HZ_AV.unsubAll(); } catch (e) {} HZ_AV.unsubAll = null; HZ_AV.counts = null; }
-    if (HZ_AV.unsubRigs) { try { HZ_AV.unsubRigs(); } catch (e) {} HZ_AV.unsubRigs = null; HZ_AV.oos = null; }
+    if (HZ_AV.unsubRigs) { try { HZ_AV.unsubRigs(); } catch (e) {} HZ_AV.unsubRigs = null; HZ_AV.oos = null; HZ_AV.rigs = null; }
     HZ_AV.uid = u ? u.uid : ""; HZ_AV.me = null; HZ_AV.mine = null;
     if (!u) return;
     Promise.all([
@@ -12870,13 +12872,15 @@ function hzAvInit() {
         HZ_AV.counts = c; HZ_AV.parts = p; HZ_AV.all = all; hzAvRefreshCards();
       }, function(){});
       // 12.121: rigs out of service, for "👥 Who's available"
-      if (hzAvAny(HZ_AV.me) && !HZ_AV.unsubRigs) HZ_AV.unsubRigs = db.collection("vehicles").onSnapshot(function(q) {
-        var out = [], now = Date.now();
+      if (!HZ_AV.unsubRigs) HZ_AV.unsubRigs = db.collection("vehicles").onSnapshot(function(q) {
+        var out = [], all = [], now = Date.now();
         q.forEach(function(d){ var v = d.data() || {}, id = v.id || d.id, ty = String(v.type || "").toLowerCase();
           if (/bag|kit|storage|other/.test(ty) || /bag|kit/i.test(id)) return;
-          if (v.serviceStatus === "out" && !(v.outUntil && new Date(v.outUntil).getTime() < now)) out.push(Object.assign({ id: id }, v)); });
-        out.sort(function(a, b){ return a.id.localeCompare(b.id, undefined, { numeric: true }); });
-        HZ_AV.oos = out; hzAvRefreshCards();
+          var isOut = v.serviceStatus === "out" && !(v.outUntil && new Date(v.outUntil).getTime() < now);
+          var x = Object.assign({ id: id, isOut: isOut }, v); all.push(x); if (isOut) out.push(x); });
+        var byId = function(a, b){ return a.id.localeCompare(b.id, undefined, { numeric: true }); };
+        out.sort(byId); all.sort(byId);
+        HZ_AV.oos = out; HZ_AV.rigs = all; hzAvRefreshCards();
       }, function(){});
       hzAvRefreshCards();
       if (/availability/.test(location.hash)) hzAvOpen();
@@ -12898,15 +12902,27 @@ function hzAvCardHtml(big) {
       + (n !== null ? '<em title="Marked available' + (pn ? ' / intermittent' : '') + '">👥 ' + n + (pn ? ' <b class="hz-av-pn">≈ ' + pn + '</b>' : '') + '</em>' : '') + '</button>';
   };
   var mon = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 1), fri = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 5);
-  var h = '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>📅 My availability</b><span class="hz-av-sub">' + hzAvEsc(hzAvMd(mon) + " – " + hzAvMd(w.shab)) + ' · ' + (done === mine.length ? '✓ all answered' : done + ' of ' + mine.length + ' answered') + '</span></div>'
-    + '<div class="hz-av-row">';
-  if (hzAvDaytime(me)) h += '<div class="hz-av-grp"><div class="hz-av-grp-h">☀️ Weekdays <span>' + hzAvMd(mon) + '–' + hzAvMd(fri) + '</span></div><div class="hz-av-qual">' + hzAvEsc(HZ_AV_QUALIFY) + '</div><div class="hz-av-days">' + HZ_AV_WEEK.map(btn).join("") + '</div></div>';
-  if (hzAvCanFill(me)) h += '<div class="hz-av-grp shab"><div class="hz-av-grp-h">🕯️ Shabbos <span>' + hzAvMd(w.shab) + '</span></div><div class="hz-av-qual hz-av-sp">&nbsp;</div><div class="hz-av-days one">' + btn(["shabbos", "Shabbos"]) + '</div></div>';
-  h += '</div><div class="hz-av-note">Tap to change: ✓ Available → ? Unsure → ≈ Intermittent → ✕ Unavailable · saves by itself · resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</div>';
+  // 12.129 (Sam): compact — one line of header, rig status right under it, weekdays + Shabbos in one row (phone too), one small note
+  var dtOn = hzAvDaytime(me), shOn = hzAvCanFill(me);
+  var h = '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>📅 My availability</b><span class="hz-av-sub">' + hzAvEsc(hzAvMd(mon) + " – " + hzAvMd(w.shab)) + ' · ' + (done === mine.length ? '<span class="hz-av-ok">✓ all answered</span>' : done + ' of ' + mine.length + ' answered') + '</span></div>'
+    + '<div class="hz-av-row' + (dtOn && shOn ? ' two' : '') + '">';
+  if (dtOn) h += '<div class="hz-av-grp"><div class="hz-av-grp-h">☀️ Weekdays <span>' + hzAvMd(mon) + '–' + hzAvMd(fri) + '</span></div><div class="hz-av-days">' + HZ_AV_WEEK.map(btn).join("") + '</div></div>';
+  if (shOn) h += '<div class="hz-av-grp shab"><div class="hz-av-grp-h">🕯️ <span class="hz-av-lg">Shabbos </span><span class="hz-av-dt">' + hzAvMd(w.shab) + '</span></div><div class="hz-av-days one">' + btn(["shabbos", "Shabbos"]) + '</div></div>';
+  h += '</div><div class="hz-av-note">' + (dtOn ? '<b class="hz-av-q">☀️ ' + hzAvEsc(HZ_AV_QUALIFY.replace(/^To be available on a weekday you must be /, "Weekday ✓ = ").replace(/ for at least (\d+) hours between /, " $1+ hrs, ").replace(/ and /, "–").replace(/\.$/, "")) + '</b> · ' : '')
+    + 'Tap a day: ✓ → ? → ≈ → ✕ · saves itself · resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</div>';
   return h + hzAvWhoHtml(w) + '</div>';
 }
 // 👥 Who's available — from this week's answers (each answer carries the member's unit and name).
 // 12.121: weekdays list only who is ✓ Available; Shabbos lists only who is ✕ Unavailable (away); rigs out of service on top.
+// 12.129 (Sam): 🚑 Rig status tile on top of My Settings — only the rigs out of service (why + when back); green when none are
+function hzAvRigsHtml() {
+  var rigs = HZ_AV.rigs; if (!rigs) return "";
+  var oos = rigs.filter(function(v){ return v.isOut; });
+  if (!oos.length) return '<div class="hz-av-rigs"><div class="hz-av-rigs-h">🚑 Rig status <span>✓ All rigs in service</span></div></div>';
+  return '<div class="hz-av-rigs bad"><div class="hz-av-rigs-h">🚑 Rig status <span>' + oos.length + ' out of service</span></div>'
+    + oos.map(function(v){ return '<div class="hz-av-rig-why"><span class="hz-av-rig out">✕ ' + hzAvEsc(v.id) + '</span> ' + (v.outReason ? hzAvEsc(v.outReason) : 'Out of service') + (v.outUntil ? ' <span class="hz-av-back">· back ' + hzAvEsc(new Date(v.outUntil).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })) + '</span>' : '') + '</div>'; }).join("")
+    + '</div>';
+}
 function hzAvWhoHtml(w) {
   var all = HZ_AV.all; if (!all) return "";
   var yt = w.yt || {};
@@ -12926,14 +12942,34 @@ function hzAvWhoHtml(w) {
     var yes = people.filter(function(x){ return x.dt === true && (x.days || {})[d[0]] === true; });
     return '<div class="hz-av-sum-d">' + head + (yes.length ? '<div class="hz-av-sum-g yes"><div class="hz-av-sum-t"><span class="hz-av-lg">✓ Available</span><span class="hz-av-sm">✓ Avail.</span> (' + yes.length + ')</div>' + names(yes) + '</div>' : '<div class="hz-erv-muted">Nobody yet</div>') + '</div>';
   }).join("");
-  return '<details class="hz-av-who"' + (HZ_AV.whoOpen ? ' open' : '') + ' ontoggle="HZ_AV.whoOpen=this.open"><summary>👥 Who\'s available this week' + (oos.length ? ' · <span class="hz-av-oos-pill">🚑 ' + oos.length + ' out of service</span>' : '') + '</summary>' + rigs + '<div class="hz-av-sum">' + body + '</div></details>';
+  return '<details class="hz-av-who"' + (HZ_AV.whoOpen ? ' open' : '') + ' ontoggle="HZ_AV.whoOpen=this.open"><summary>👥 Who\'s available this week</summary><div class="hz-av-sum">' + body + '</div></details>';
+}
+// 12.129 (Sam): My Settings opens on 🚑 Rig status + two tiles (📅 Availability · ⚙️ Settings); a tile opens just that part, with ← Back
+var HZ_SET_VIEW = null;
+function hzSetView(v) {
+  HZ_SET_VIEW = v || null; hzAvRefreshCards();
+  ["set-content", "m-set-content"].forEach(function(id) { var h = document.getElementById(id); if (h && h.offsetParent) { try { h.scrollTop = 0; } catch (e) {} } });
+  try { window.scrollTo(0, 0); } catch (e) {}
+}
+function hzAvDoneText() {
+  var me = HZ_AV.me || {}, w = HZ_AV.week; if (!w || !hzAvAny(me)) return "";
+  var days = (HZ_AV.mine && HZ_AV.mine.days) || {}, mine = hzAvMyDays(me, w), done = mine.filter(function(d){ return hzAvAnswered(days[d[0]]); }).length;
+  return done === mine.length ? '<span class="hz-av-ok">✓ All answered</span>' : '<span class="hz-av-todo">' + done + ' of ' + mine.length + ' answered</span>';
 }
 function hzAvRefreshCards() {
+  var card = hzAvCardHtml(false), v = HZ_SET_VIEW;
+  if (v === "avail" && !card) v = null;
   ["set-content", "m-set-content"].forEach(function(id) {
     var host = document.getElementById(id); if (!host) return;
     var box = host.querySelector(".hz-av-slot");
     if (!box) { box = document.createElement("div"); box.className = "hz-av-slot"; host.insertBefore(box, host.firstChild); }
-    box.innerHTML = hzAvCardHtml(false);
+    host.classList.remove("hz-set-v-home", "hz-set-v-avail", "hz-set-v-settings"); host.classList.add("hz-set-v-" + (v || "home"));
+    var back = '<button class="hz-set-back" onclick="hzSetView(null)">← My Settings</button>';
+    box.innerHTML = v === "avail" ? back + card
+      : v === "settings" ? back
+      : hzAvRigsHtml() + '<div class="hz-set-tiles">'
+        + (card ? '<button class="hz-set-tile" onclick="hzSetView(\'avail\')"><span class="hz-set-ic">📅</span><b>Availability</b><small>' + (hzAvDoneText() || 'This week') + '</small></button>' : '')
+        + '<button class="hz-set-tile" onclick="hzSetView(\'settings\')"><span class="hz-set-ic">⚙️</span><b>Settings</b><small>My info · notifications · maps · password · home screen</small></button></div>';
   });
   var pop = document.getElementById("hz-av-pop-body"); if (pop) pop.innerHTML = hzAvCardHtml(true) || '<div class="hz-erv-muted">Availability is filled in by responders and Daytime Responders.</div>';
 }
@@ -12959,6 +12995,12 @@ function hzAvClose(fromBack) {
   try { if (/availability/.test(location.hash)) history.replaceState(history.state, "", location.pathname + location.search); } catch (e) {}   // 12.93: keep the back history
   if (HZ_AV.hist) { HZ_AV.hist = false; if (!fromBack && history.state && history.state.hzOv === "av" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
 }
+// 12.129: opening My Settings starts on the tiles
+["mGoTo", "goTo"].forEach(function(n) {
+  var f = window[n]; if (typeof f !== "function" || f.__hzSetV) return;
+  var w = function(sec) { if (sec === "settings") HZ_SET_VIEW = null; return f.apply(this, arguments); };
+  w.__hzSetV = true; window[n] = w;
+});
 // keep the card in My Settings after each redraw of that page
 function hzAvHook(name) {
   var f = window[name]; if (typeof f !== "function" || f.__hzAv) return;
@@ -13168,6 +13210,27 @@ function hzAvSaveSettings() {
     + ".hz-av-days{display:grid;grid-template-columns:repeat(5,84px);gap:6px}.hz-av-days.one{grid-template-columns:96px}"
     + ".hz-av-day i b{font-weight:inherit}.hz-av-sm{display:none}"
     + "@media (max-width:560px){.hz-av-grp,.hz-av-grp.shab{flex:1 1 100%}.hz-av-days,.hz-av-days.one{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}.hz-av-sp{display:none}.hz-av-lg{display:none}.hz-av-sm{display:inline}.hz-av-day i{font-size:.64rem}.hz-av-day span{font-size:.8rem}.hz-av-days.one .hz-av-day{grid-column:span 2}.hz-av-day em{white-space:nowrap;font-size:.6rem;width:96%}}"
+    // 12.129 (Sam): compact card + prominent rig status
+    + ".hz-av-card{padding:10px 12px}.hz-av-head{margin-bottom:8px}.hz-av-ok{color:#4caf80;font-weight:700}html[data-theme=basic] .hz-av-ok{color:#167a3e}"
+    + ".hz-av-grp-h .hz-av-dt{color:var(--gray);font-family:inherit;letter-spacing:0;margin-left:0}"
+    + ".hz-av-note{margin-top:7px;font-size:.68rem;line-height:1.4}.hz-av-q{color:var(--gold);font-weight:600}html[data-theme=basic] .hz-av-q{color:#8a5a00}"
+    + ".hz-av-rigs{margin:0 0 9px;border-radius:9px;padding:7px 9px;border:1px solid rgba(76,175,128,.45);background:rgba(76,175,128,.08)}.hz-av-rigs.bad{border-color:rgba(224,85,85,.6);background:rgba(224,85,85,.09)}"
+    + ".hz-av-rigs-h{font-family:'Oswald',sans-serif;font-size:.82rem;letter-spacing:.04em;color:var(--white);margin-bottom:5px}.hz-av-rigs-h span{font-family:inherit;letter-spacing:0;font-size:.74rem;margin-left:6px;color:#4caf80;font-weight:700}.hz-av-rigs.bad .hz-av-rigs-h span{color:#ff9090}"
+    + "html[data-theme=basic] .hz-av-rigs-h span{color:#167a3e}html[data-theme=basic] .hz-av-rigs.bad .hz-av-rigs-h span{color:#b42318}"
+    + ".hz-av-rigs-c{display:flex;flex-wrap:wrap;gap:4px}.hz-av-rig{font-family:'Oswald',sans-serif;font-size:.74rem;font-weight:700;border-radius:6px;padding:2px 7px;border:1px solid;white-space:nowrap}"
+    + ".hz-av-rig.ok{color:#7dedb5;border-color:rgba(76,175,128,.55);background:rgba(76,175,128,.12)}.hz-av-rig.out{color:#fff;border-color:#c73c3c;background:#c73c3c}"
+    + "html[data-theme=basic] .hz-av-rig.ok{color:#167a3e}"
+    + ".hz-av-rig-why{font-size:.76rem;color:var(--white);margin-top:5px;line-height:1.35}.hz-av-rig-why b{color:#ff9090}html[data-theme=basic] .hz-av-rig-why b{color:#b42318}"
+    + ".hz-set-v-home>:not(.hz-av-slot),.hz-set-v-avail>:not(.hz-av-slot){display:none!important}"
+    + ".hz-set-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;max-width:720px}"
+    + ".hz-set-tile{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:14px 14px 12px;border-radius:14px;border:1px solid var(--card-border);background:rgba(var(--gold-rgb),.06);color:var(--white);cursor:pointer;min-height:104px;font:inherit}"
+    + ".hz-set-tile:active{transform:scale(.98)}.hz-set-ic{font-size:1.6rem;line-height:1}.hz-set-tile b{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:.04em;margin-top:4px}.hz-set-tile small{font-size:.72rem;color:var(--gray);line-height:1.3}"
+    + ".hz-av-todo{color:#ffc84a;font-weight:700}html[data-theme=basic] .hz-av-todo{color:#8a5a00}"
+    + ".hz-set-back{display:inline-flex;align-items:center;gap:4px;margin:0 0 10px;padding:7px 12px;border-radius:9px;border:1px solid var(--card-border);background:transparent;color:var(--white);font-weight:700;cursor:pointer;font-size:.85rem}"
+    + ".hz-set-v-home .hz-av-rigs{margin-bottom:10px;max-width:720px}.hz-av-rigs .hz-av-rig-why{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin-top:4px}.hz-av-back{color:var(--gray)}"
+    + "@media (max-width:560px){.hz-av-row.two{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,1.2fr);gap:6px}.hz-av-row.two .hz-av-grp{flex:none;min-width:0}"
+    +   ".hz-av-row.two .hz-av-days.one{grid-template-columns:minmax(0,1fr)}.hz-av-row.two .hz-av-days.one .hz-av-day{grid-column:auto}"
+    +   ".hz-av-row.two .hz-av-grp-h{white-space:nowrap;overflow:hidden;font-size:.72rem}.hz-av-row.two .hz-av-day i{font-size:.56rem;letter-spacing:0}.hz-av-row.two .hz-av-day span{font-size:.74rem}.hz-av-row.two .hz-av-day{padding:5px 1px}.hz-av-row.two .hz-av-day em{font-size:.56rem}.hz-av-row.two .hz-av-days{gap:3px}}"
     + ".hz-av-who{margin-top:10px;border-top:1px solid var(--card-border);padding-top:8px}.hz-av-who>summary{cursor:pointer;font-family:'Oswald',sans-serif;font-size:.82rem;letter-spacing:.04em;color:var(--white);list-style-position:inside}"
     + ".hz-av-who .hz-av-sum{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}"
     // 12.127 (Sam): on a phone the days stay side by side like the computer — 3 a row (Mon Tue Wed / Thu Fri Shabbos), names listed down (unit, then name under it)
