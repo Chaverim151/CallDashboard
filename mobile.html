@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.70"; window.M_BUILD = BUILD;
+  var BUILD = "5.71"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -5979,17 +5979,28 @@ var HZ_LG = { el: null, retry: null, sent: "" };
 function hzLgRelay(fn, data) { var r = typeof hzRelay === "function" ? hzRelay : mRelay; return r(fn, data); }
 function hzLgKey() { var u = firebase.auth().currentUser; return "hzLogsOk_" + (u ? u.uid : ""); }
 function hzLgOk() { try { return +(localStorage.getItem(hzLgKey()) || 0) > Date.now(); } catch (e) { return false; } }
-function hzLogsGate(el, go) { HZ_LG.el = el; HZ_LG.retry = go; if (hzLgOk()) return true; hzLgShow(); return false; }
+function hzLogsGate(el, go) { HZ_LG.el = el; HZ_LG.retry = go; if (hzLgOk()) { hzLgUnlock(); return true; } hzLgShow(); return false; }
 function hzLgEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// 12.116 / 5.71: the check takes over the whole Call Logs page (filters, totals, export hidden) with its own back button
+function hzLgPage() { return HZ_LG.el && HZ_LG.el.closest ? HZ_LG.el.closest(".page") : null; }
+function hzLgUnlock() { var pg = hzLgPage(); if (!pg) return; pg.classList.remove("hz-lg-lock"); var o = pg.querySelector(".hz-lg-over"); if (o) o.remove(); }
 function hzLgShow(note) {
-  var el = HZ_LG.el; if (!el) return;
-  el.innerHTML = '<div class="hz-lg"><div class="hz-lg-h">🔒 Call Logs — quick check</div>'
+  var pg = hzLgPage(); if (!pg) return;
+  pg.classList.add("hz-lg-lock");
+  var over = pg.querySelector(".hz-lg-over");
+  if (!over) { over = document.createElement("div"); over.className = "hz-lg-over"; pg.appendChild(over); }
+  var phone = /^m-pg-/.test(pg.id);
+  var head = phone
+    ? '<div class="m-subpage-header"><button class="m-back-btn" onclick="hzLgUnlock();mGoTo(\'dispatch\');mDispView(\'dash\')">← Console</button><span class="m-page-title">Call Logs</span></div>'
+    : '<div class="inner-topbar"><button class="back-btn" onclick="hzLgUnlock();openDispatchConsole()">← Console</button><div class="page-title">📁 Call Logs</div></div>';
+  over.innerHTML = head + '<div class="hz-lg-wrap"><div class="hz-lg"><div class="hz-lg-h">🔒 Call Logs — quick check</div>'
     + '<div class="hz-lg-p">Call records are protected health information. We\'ll send you a 6-digit code; after that this device won\'t ask again for 14 days.</div>'
     + (note ? '<div class="hz-lg-note">' + hzLgEsc(note) + '</div>' : '')
     + '<div class="hz-lg-row"><button class="hz-lg-btn" onclick="hzLgSend(\'sms\')">📱 Text me a code</button><button class="hz-lg-btn" onclick="hzLgSend(\'email\')">✉️ Email me a code</button></div>'
     + '<div id="hz-lg-code" style="display:none"><div class="hz-lg-sent" id="hz-lg-sent"></div>'
     + '<div class="hz-lg-row"><input id="hz-lg-in" class="hz-lg-in" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" onkeydown="if(event.key===\'Enter\')hzLgVerify()"><button class="hz-lg-btn go" onclick="hzLgVerify()">Unlock</button></div></div>'
-    + '<div class="hz-lg-msg" id="hz-lg-msg"></div></div>';
+    + '<div class="hz-lg-msg" id="hz-lg-msg"></div></div></div>';
+  setTimeout(function(){ var b = over.querySelector(".hz-lg-btn"); if (b && !phone) b.focus(); }, 50);
 }
 function hzLgMsg(t, bad) { var m = document.getElementById("hz-lg-msg"); if (m) { m.textContent = t || ""; m.className = "hz-lg-msg" + (bad ? " bad" : ""); } }
 function hzLgSend(via) {
@@ -6007,6 +6018,7 @@ function hzLgVerify() {
   hzLgRelay("logsCodeVerify", { code: code }).then(function(r) {
     var until = Math.min((r && r.until) || 0, Date.now() + 14 * 86400000) || Date.now() + 14 * 86400000;
     try { localStorage.setItem(hzLgKey(), String(until)); } catch (e) {}
+    hzLgUnlock();
     if (typeof HZ_LG.retry === "function") HZ_LG.retry();
   }).catch(function(e) { hzLgMsg((e && e.message) || "That didn't work — try again", true); });
 }
@@ -6018,7 +6030,8 @@ function hzLgLocked() {
 function hzLgIsDenied(e) { return /permission|insufficient/i.test((e && (e.code || e.message)) || ""); }
 (function() {
   var css = document.createElement("style");
-  css.textContent = ".hz-lg{max-width:460px;margin:16px auto;border:1px solid var(--card-border);border-radius:12px;padding:16px;background:rgba(var(--gold-rgb),.05)}"
+  css.textContent = ".page.hz-lg-lock>*:not(.hz-lg-over){display:none!important}.hz-lg-over{min-height:100%;display:flex;flex-direction:column}.hz-lg-wrap{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px 24px}"
+    + ".hz-lg{width:100%;max-width:460px;margin:0 auto;border:1px solid var(--card-border);border-radius:12px;padding:16px;background:rgba(var(--gold-rgb),.05)}"
     + ".hz-lg-h{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:.04em;color:var(--white);margin-bottom:6px}.hz-lg-p{font-size:.84rem;color:var(--gray);line-height:1.5;margin-bottom:12px}"
     + ".hz-lg-note{font-size:.82rem;color:#ffc84a;margin-bottom:10px}html[data-theme=basic] .hz-lg-note{color:#8a5a00}"
     + ".hz-lg-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.hz-lg-btn{flex:1 1 150px;min-height:44px;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,.05);color:var(--white);font-family:'Oswald',sans-serif;font-size:.9rem;letter-spacing:.03em;cursor:pointer}"
