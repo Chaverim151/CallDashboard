@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.74"; window.M_BUILD = BUILD;
+  var BUILD = "5.79"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -980,8 +980,10 @@ html[data-theme="basic"] .hz-erv-req{color:#b42318 !important}
 html[data-theme="basic"] .hz-erv-note.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-av-oos-pill{color:#b42318 !important}
 html[data-theme="basic"] .hz-av-yes{color:#167a3e !important}
-html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
+html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}
+html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
 <!--HZ-BASIC-END-->
 </head>
 <body>
@@ -12753,7 +12755,7 @@ var HZ_AV = { uid: "", me: null, set: {}, week: null, mine: null, unsub: null, u
 var HZ_AV_WEEK = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"]];   // the weekday daytime poll
 var HZ_AV_DAYS = HZ_AV_WEEK.concat([["shabbos", "Shabbos"]]);                                    // + the Shabbos poll
 // the four answers, in tap order: [value, css class, button text, word]
-var HZ_AV_STATES = [[true, "yes", "✓ Available", "available"], ["unsure", "maybe", "? Unsure", "unsure"], ["intermittent", "part", "≈ Intermittent", "intermittent"], [false, "no", "✕ Unavailable", "unavailable"]];
+var HZ_AV_STATES = [[true, "yes", "✓ Available", "available", "✓ Avail."], ["unsure", "maybe", "? Unsure", "unsure", "? Unsure"], ["intermittent", "part", "≈ Intermittent", "intermittent", "≈ Interm."], [false, "no", "✕ Unavailable", "unavailable", "✕ Unavail."]];
 var HZ_AV_QUALIFY = "To be available on a weekday you must be free for at least 6 hours between 8:00 AM and 6:00 PM.";
 function hzAvState(v) { for (var i = 0; i < HZ_AV_STATES.length; i++) if (HZ_AV_STATES[i][0] === v) return HZ_AV_STATES[i]; return null; }
 var HZ_AV_ROLES = ["responder", "captain", "chief", "backup"];
@@ -12824,6 +12826,7 @@ function hzAvInit() {
   firebase.auth().onAuthStateChanged(function(u) {
     if (HZ_AV.unsub) { try { HZ_AV.unsub(); } catch (e) {} HZ_AV.unsub = null; }
     if (HZ_AV.unsubAll) { try { HZ_AV.unsubAll(); } catch (e) {} HZ_AV.unsubAll = null; HZ_AV.counts = null; }
+    if (HZ_AV.unsubRigs) { try { HZ_AV.unsubRigs(); } catch (e) {} HZ_AV.unsubRigs = null; HZ_AV.oos = null; }
     HZ_AV.uid = u ? u.uid : ""; HZ_AV.me = null; HZ_AV.mine = null;
     if (!u) return;
     Promise.all([
@@ -12840,10 +12843,19 @@ function hzAvInit() {
       // 12.87 / 5.42: how many marked themselves available each day (everyone's answers for this week)
       // 12.89 / 5.44: available and intermittent counted separately; weekdays only from Daytime Responders (dt on the answer)
       if (hzAvAny(HZ_AV.me)) HZ_AV.unsubAll = db.collection("availability").where("weekKey", "==", w.key).onSnapshot(function(q) {
-        var c = {}, p = {}; HZ_AV_DAYS.forEach(function(d){ c[d[0]] = 0; p[d[0]] = 0; });
-        q.forEach(function(d){ var doc = d.data() || {}, x = doc.days || {};
+        var c = {}, p = {}, all = []; HZ_AV_DAYS.forEach(function(d){ c[d[0]] = 0; p[d[0]] = 0; });
+        q.forEach(function(d){ var doc = d.data() || {}, x = doc.days || {}; all.push(doc);
           HZ_AV_DAYS.forEach(function(k){ if (k[0] !== "shabbos" && doc.dt !== true) return; if (x[k[0]] === true) c[k[0]]++; else if (x[k[0]] === "intermittent") p[k[0]]++; }); });
-        HZ_AV.counts = c; HZ_AV.parts = p; hzAvRefreshCards();
+        HZ_AV.counts = c; HZ_AV.parts = p; HZ_AV.all = all; hzAvRefreshCards();
+      }, function(){});
+      // 12.121: rigs out of service, for "👥 Who's available"
+      if (hzAvAny(HZ_AV.me) && !HZ_AV.unsubRigs) HZ_AV.unsubRigs = db.collection("vehicles").onSnapshot(function(q) {
+        var out = [], now = Date.now();
+        q.forEach(function(d){ var v = d.data() || {}, id = v.id || d.id, ty = String(v.type || "").toLowerCase();
+          if (/bag|kit|storage|other/.test(ty) || /bag|kit/i.test(id)) return;
+          if (v.serviceStatus === "out" && !(v.outUntil && new Date(v.outUntil).getTime() < now)) out.push(Object.assign({ id: id }, v)); });
+        out.sort(function(a, b){ return a.id.localeCompare(b.id, undefined, { numeric: true }); });
+        HZ_AV.oos = out; hzAvRefreshCards();
       }, function(){});
       hzAvRefreshCards();
       if (/availability/.test(location.hash)) hzAvOpen();
@@ -12851,6 +12863,8 @@ function hzAvInit() {
   });
 }
 // ── the member's card in My Settings (and the pop-up a reminder opens) ──
+// 12.120 / 5.75: compact card — every day in one row (weekdays, then Shabbos), counts on one line, a one-line note,
+// and "👥 Who's available" underneath (each day: Available, Intermittent, Unsure, Unavailable — like Admin ▸ Availability)
 function hzAvCardHtml(big) {
   var me = HZ_AV.me || {}, w = HZ_AV.week;
   if (!w || !hzAvAny(me)) return "";
@@ -12859,22 +12873,39 @@ function hzAvCardHtml(big) {
   var btn = function(d) {
     if (yt[d[0]]) return '<div class="hz-av-day yt" title="Yom Tov — not part of the weekday poll"><span>' + d[1] + '</span><i>🕯️ Yom Tov</i></div>';
     var v = days[d[0]], st = hzAvState(v), n = HZ_AV.counts ? (HZ_AV.counts[d[0]] || 0) : null, pn = HZ_AV.parts ? (HZ_AV.parts[d[0]] || 0) : 0;
-    return '<button class="hz-av-day ' + (st ? st[1] : "") + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (st ? st[3] : "not answered") + '"><span>' + d[1] + '</span><i>' + (st ? st[2] : "Tap") + '</i>'
-      + (n !== null ? '<em title="Marked themselves available">👥 ' + n + '</em>' : '')
-      + (pn ? '<em class="hz-av-pn" title="Marked themselves intermittent (on and off)">≈ ' + pn + '</em>' : '') + '</button>';
+    return '<button class="hz-av-day ' + (st ? st[1] : "") + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (st ? st[3] : "not answered") + '"><span>' + d[1] + '</span><i><b class="hz-av-lg">' + (st ? st[2] : "Tap") + '</b><b class="hz-av-sm">' + (st ? st[4] : "Tap") + '</b></i>'
+      + (n !== null ? '<em title="Marked available' + (pn ? ' / intermittent' : '') + '">👥 ' + n + (pn ? ' <b class="hz-av-pn">≈ ' + pn + '</b>' : '') + '</em>' : '') + '</button>';
   };
-  var sec = function(title, sub, list, note) {
-    return '<div class="hz-av-sec"><div class="hz-av-sec-h"><b>' + title + '</b><span class="hz-av-sub">' + hzAvEsc(sub) + '</span></div>'
-      + (note ? '<div class="hz-av-qual">' + hzAvEsc(note) + '</div>' : '')
-      + '<div class="hz-av-days' + (list.length === 1 ? ' one' : '') + '">' + list.map(btn).join("") + '</div></div>';
-  };
-  var fri = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 5), mon = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 1);
-  var h = '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>📅 My availability</b><span class="hz-av-sub">week of ' + hzAvEsc(hzAvMd(mon) + " – " + hzAvMd(w.shab)) + '</span></div>';
-  if (hzAvDaytime(me)) h += sec("☀️ Weekday daytime", "Mon " + hzAvMd(mon) + " – Fri " + hzAvMd(fri), HZ_AV_WEEK, HZ_AV_QUALIFY);
-  if (hzAvCanFill(me)) h += sec("🕯️ Shabbos", hzAvMd(w.shab), [["shabbos", "Shabbos"]], "");
-  return h + '<div class="hz-av-note">' + (done === mine.length ? "✓ All answered — thank you." : done + " of " + mine.length + " answered.")
-    + " Tap a day: Available → Unsure → Intermittent → Unavailable." + (HZ_AV.counts ? " 👥 = how many marked themselves available; ≈ = how many marked intermittent." : "")
-    + ' Saves by itself. Starts over ' + hzAvEsc(hzAvResetText(w.reset)) + '.</div></div>';
+  var mon = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 1), fri = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 5);
+  var h = '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>📅 My availability</b><span class="hz-av-sub">' + hzAvEsc(hzAvMd(mon) + " – " + hzAvMd(w.shab)) + ' · ' + (done === mine.length ? '✓ all answered' : done + ' of ' + mine.length + ' answered') + '</span></div>'
+    + '<div class="hz-av-row">';
+  if (hzAvDaytime(me)) h += '<div class="hz-av-grp"><div class="hz-av-grp-h">☀️ Weekdays <span>' + hzAvMd(mon) + '–' + hzAvMd(fri) + '</span></div><div class="hz-av-qual">' + hzAvEsc(HZ_AV_QUALIFY) + '</div><div class="hz-av-days">' + HZ_AV_WEEK.map(btn).join("") + '</div></div>';
+  if (hzAvCanFill(me)) h += '<div class="hz-av-grp shab"><div class="hz-av-grp-h">🕯️ Shabbos <span>' + hzAvMd(w.shab) + '</span></div><div class="hz-av-qual hz-av-sp">&nbsp;</div><div class="hz-av-days one">' + btn(["shabbos", "Shabbos"]) + '</div></div>';
+  h += '</div><div class="hz-av-note">Tap to change: ✓ Available → ? Unsure → ≈ Intermittent → ✕ Unavailable · saves by itself · resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</div>';
+  return h + hzAvWhoHtml(w) + '</div>';
+}
+// 👥 Who's available — from this week's answers (each answer carries the member's unit and name).
+// 12.121: weekdays list only who is ✓ Available; Shabbos lists only who is ✕ Unavailable (away); rigs out of service on top.
+function hzAvWhoHtml(w) {
+  var all = HZ_AV.all; if (!all) return "";
+  var yt = w.yt || {};
+  var people = all.slice().sort(function(a, b){ return String(a.unit || "").localeCompare(String(b.unit || ""), undefined, { numeric: true }); });
+  var names = function(list){ return list.map(function(x){ return '<div class="hz-av-sum-n"><b>' + hzAvEsc(x.unit || "") + '</b> ' + hzAvEsc(x.name || "") + '</div>'; }).join(""); };
+  var oos = (HZ_AV.oos || []);
+  var rigs = '<div class="hz-av-oos' + (oos.length ? ' bad' : '') + '">' + (oos.length
+      ? '<b>🚑 Out of service (' + oos.length + ')</b>' + oos.map(function(v){ return '<div class="hz-av-sum-n"><b>' + hzAvEsc(v.id) + '</b>' + (v.outReason ? ' — ' + hzAvEsc(v.outReason) : '') + (v.outUntil ? ' <span class="hz-erv-muted">· back ' + hzAvEsc(new Date(v.outUntil).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })) + '</span>' : '') + '</div>'; }).join("")
+      : '✓ All rigs in service') + '</div>';
+  var body = HZ_AV_DAYS.map(function(d) {
+    var head = '<div class="hz-av-sum-h">' + d[1] + '</div>';
+    if (yt[d[0]]) return '<div class="hz-av-sum-d">' + head + '<div class="hz-erv-muted">🕯️ Yom Tov</div></div>';
+    if (d[0] === "shabbos") {
+      var away = people.filter(function(x){ return (x.days || {}).shabbos === false; });
+      return '<div class="hz-av-sum-d">' + head + (away.length ? '<div class="hz-av-sum-g no"><div class="hz-av-sum-t">✕ Away / unavailable (' + away.length + ')</div>' + names(away) + '</div>' : '<div class="hz-erv-muted">Nobody has said they\'re away</div>') + '</div>';
+    }
+    var yes = people.filter(function(x){ return x.dt === true && (x.days || {})[d[0]] === true; });
+    return '<div class="hz-av-sum-d">' + head + (yes.length ? '<div class="hz-av-sum-g yes"><div class="hz-av-sum-t">✓ Available (' + yes.length + ')</div>' + names(yes) + '</div>' : '<div class="hz-erv-muted">Nobody yet</div>') + '</div>';
+  }).join("");
+  return '<details class="hz-av-who"' + (HZ_AV.whoOpen ? ' open' : '') + ' ontoggle="HZ_AV.whoOpen=this.open"><summary>👥 Who\'s available this week' + (oos.length ? ' · <span class="hz-av-oos-pill">🚑 ' + oos.length + ' out of service</span>' : '') + '</summary>' + rigs + '<div class="hz-av-sum">' + body + '</div></details>';
 }
 function hzAvRefreshCards() {
   ["set-content", "m-set-content"].forEach(function(id) {
@@ -13111,21 +13142,28 @@ function hzAvSaveSettings() {
     + ".hz-av-head{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin-bottom:10px}.hz-av-head b{font-family:'Oswald',sans-serif;letter-spacing:.04em;color:var(--white)}"
     + ".hz-av-sub{font-size:.78rem;color:var(--gray)}"
     + ".hz-av-slot{grid-column:1/-1;min-width:0}"
-    + ".hz-av-days{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;max-width:560px}.hz-av-days.one{grid-template-columns:minmax(0,1fr);max-width:150px}"
-    + "@media (max-width:520px){.hz-av-days{grid-template-columns:repeat(3,minmax(0,1fr))}.hz-av-days.one{grid-template-columns:minmax(0,1fr)}}"
+    + ".hz-av-row{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-start}.hz-av-grp{min-width:0;flex:0 1 auto}.hz-av-grp.shab{flex:0 0 auto}"
+    + ".hz-av-grp-h{font-family:'Oswald',sans-serif;font-size:.78rem;letter-spacing:.05em;color:var(--white);margin-bottom:3px}.hz-av-grp-h span{color:var(--gray);font-family:inherit;letter-spacing:0;margin-left:4px}"
+    + ".hz-av-days{display:grid;grid-template-columns:repeat(5,84px);gap:6px}.hz-av-days.one{grid-template-columns:96px}"
+    + ".hz-av-day i b{font-weight:inherit}.hz-av-sm{display:none}"
+    + "@media (max-width:560px){.hz-av-grp,.hz-av-grp.shab{flex:1 1 100%}.hz-av-days,.hz-av-days.one{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}.hz-av-sp{display:none}.hz-av-lg{display:none}.hz-av-sm{display:inline}.hz-av-day i{font-size:.64rem}.hz-av-day span{font-size:.8rem}.hz-av-days.one .hz-av-day{grid-column:span 2}.hz-av-day em{white-space:nowrap;font-size:.6rem;width:96%}}"
+    + ".hz-av-who{margin-top:10px;border-top:1px solid var(--card-border);padding-top:8px}.hz-av-who>summary{cursor:pointer;font-family:'Oswald',sans-serif;font-size:.82rem;letter-spacing:.04em;color:var(--white);list-style-position:inside}"
+    + ".hz-av-who .hz-av-sum{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}"
+    + ".hz-av-oos{margin:8px 0 0;font-size:.8rem;border-radius:8px;padding:6px 9px;border-left:3px solid #4caf80;background:rgba(76,175,128,.10);color:var(--white)}.hz-av-oos.bad{border-color:#e05555;background:rgba(224,85,85,.10)}.hz-av-oos.bad>b{color:#ff9090}"
+    + ".hz-av-oos-pill{color:#ff9090;font-family:inherit;letter-spacing:0;font-size:.76rem}html[data-theme=basic] .hz-av-oos.bad>b,html[data-theme=basic] .hz-av-oos-pill{color:#b42318}"
     + ".hz-av-sec{margin-bottom:12px}.hz-av-sec-h{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;margin-bottom:5px}.hz-av-sec-h b{font-size:.86rem;color:var(--white)}"
-    + ".hz-av-qual{font-size:.76rem;color:var(--gold);margin-bottom:6px;line-height:1.35}"
+    + ".hz-av-qual{font-size:.7rem;color:var(--gold);margin-bottom:5px;line-height:1.3;max-width:440px}"
     + ".hz-av-day.yt{cursor:default;opacity:.75;background:rgba(127,127,127,.08);border-style:dashed}.hz-av-ytl{font-size:.62rem;letter-spacing:0;text-transform:none;color:var(--gold)}"
     + ".hz-av-day.part{background:rgba(90,160,255,.12);border-color:rgba(90,160,255,.55)}.hz-av-day.part i,.hz-av-part,.hz-av-day em.hz-av-pn{color:#8cbcff}.hz-av-part{font-weight:700}"
     + "html[data-theme=basic] .hz-av-day.part i,html[data-theme=basic] .hz-av-part,html[data-theme=basic] .hz-av-day em.hz-av-pn{color:#1d5fb8}.hz-av-na{background:rgba(127,127,127,.06)}"
-    + ".hz-av-day{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,.03);color:var(--white);cursor:pointer;font-family:'Oswald',sans-serif;min-width:0}"
+    + ".hz-av-day{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,.03);color:var(--white);cursor:pointer;font-family:'Oswald',sans-serif;min-width:0}"
     + ".hz-av-day span{font-size:.82rem;letter-spacing:.02em;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}.hz-av-day i{font-style:normal;font-family:'Source Sans 3',sans-serif;font-size:.68rem;color:var(--gray);white-space:nowrap}"
     + ".hz-av-day.yes{background:rgba(76,175,128,.16);border-color:rgba(76,175,128,.6)}.hz-av-day.yes i{color:#7dedb5}"
     + ".hz-av-day.no{background:rgba(224,85,85,.10);border-color:rgba(224,85,85,.45)}.hz-av-day.no i{color:#ff9090}"
-    + ".hz-av-day em{font-style:normal;font-size:.66rem;color:var(--gray);border-top:1px solid var(--card-border);padding-top:3px;margin-top:1px;width:80%;text-align:center}.hz-av-day em+em{border-top:0;padding-top:0;margin-top:0}"
+    + ".hz-av-day em{font-style:normal;font-size:.66rem;color:var(--gray);border-top:1px solid var(--card-border);padding-top:3px;margin-top:1px;width:80%;text-align:center}.hz-av-day em+em{border-top:0;padding-top:0;margin-top:0}.hz-av-day em b.hz-av-pn{font-weight:600;margin-left:3px}"
     + ".hz-av-day.maybe{background:rgba(255,200,74,.12);border-color:rgba(255,200,74,.55)}.hz-av-day.maybe i{color:#ffc84a}.hz-av-maybe{color:#ffc84a;font-weight:700}"
     + "html[data-theme=basic] .hz-av-day.maybe i,html[data-theme=basic] .hz-av-maybe{color:#8a5a00}"
-    + ".hz-av-note{font-size:.74rem;color:var(--gray);margin-top:8px;line-height:1.4}"
+    + ".hz-av-note{font-size:.7rem;color:var(--gray);margin-top:6px;line-height:1.35}"
     + ".hz-av-tbl{width:100%;border-collapse:collapse;font-size:.84rem}.hz-av-tbl th,.hz-av-tbl td{padding:6px 8px;border-bottom:1px solid var(--card-border);text-align:center}"
     + ".hz-av-tbl th:nth-child(-n+2),.hz-av-tbl td:nth-child(-n+2){text-align:left}.hz-av-tbl th{font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.06em;color:var(--gray);text-transform:uppercase}"
     + ".hz-av-yes{color:#7dedb5;font-weight:700}.hz-av-no{color:#ff9090}.hz-av-nil{color:var(--gray)}.hz-av-tot td{background:rgba(var(--gold-rgb),.08)}"
@@ -13161,6 +13199,232 @@ function hzAvSaveSettings() {
   var go = function(){ hzAvInit(); hzAvHook("setRender"); hzAvHook("mSettingsRender"); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go); else go();
   window.addEventListener("hashchange", function(){ if (/availability/.test(location.hash) && HZ_AV.week) hzAvOpen(); });
+})();
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   12.122 / 5.77 — 🔁 NIGHT SHIFT COVERS & SWAPS (same code in index.html and mobile.html)
+   A member who is on a night (appdata/shifts: [{ day: "Tuesday", units: [...] }]) picks one of their upcoming
+   nights and who is covering it: "cover" (they take my night) or "swap" (they take my night, I take one of theirs).
+   12.122 (Sam): no accept step — you call the member, agree it, then submit; it's on Night Shifts right away (status
+   "accepted" on create). The covering member gets a notice; either of you, or an admin, can cancel (undo). It changes that date only:
+   Night Shifts shows "Tue 10/27 — MC-12 covering for MC-23" and a Tonight banner; the weekly schedule is unchanged.
+   shiftCovers/<id> = { date, day, fromUid, fromUnit, fromName, toUid, toUnit, toName, type, swapDate, swapDay, note,
+   status: pending | accepted | declined | cancelled, createdAt, decidedAt, decidedBy }.
+   The server tells the other member (shiftCoverAsk), the requester (shiftCoverReply) and the
+   Who Receives What ▸ "🔁 Night shift changes" list (shiftCoverDone) — How It's Sent, Off until ticked.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+var HZ_SC = { uid: "", me: null, isAdmin: false, list: [], shifts: [], users: null, unsub: null, ready: false, form: null };
+var HZ_SC_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+function hzScEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function hzScToast(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); }
+function hzScPad(n) { return (n < 10 ? "0" : "") + n; }
+function hzScYmd(d) { return d.getFullYear() + "-" + hzScPad(d.getMonth() + 1) + "-" + hzScPad(d.getDate()); }
+function hzScDate(ymd) { var p = String(ymd || "").split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+function hzScLabel(ymd) { var d = hzScDate(ymd); return HZ_SC_DAYS[d.getDay()].slice(0, 3) + " " + (d.getMonth() + 1) + "/" + d.getDate(); }
+// the night that is "tonight" (after midnight it is still last night's shift — same rule as the Night Shifts page)
+function hzScTonight() { var d = new Date(); if (typeof HZ_NIGHT_ENDS_HOUR !== "undefined" && d.getHours() < HZ_NIGHT_ENDS_HOUR) d.setDate(d.getDate() - 1); return hzScYmd(d); }
+function hzScUnitsOn(dayName) {
+  var s = (HZ_SC.shifts || []).filter(function(x){ return String(x.day || x.date || "").toLowerCase().indexOf(String(dayName).toLowerCase()) === 0; })[0];
+  return s ? (s.units || []).map(function(u){ return (u && typeof u === "object") ? (u.unit || u.name || "") : String(u || ""); }).filter(Boolean).map(function(u){ return u.toUpperCase(); }) : [];
+}
+// a unit's own nights in the next 4 weeks (from tonight)
+function hzScNightsOf(unit) {
+  var out = [], t0 = hzScDate(hzScTonight()); unit = String(unit || "").toUpperCase(); if (!unit) return out;
+  for (var i = 0; i < 28; i++) { var d = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + i); if (hzScUnitsOn(HZ_SC_DAYS[d.getDay()]).indexOf(unit) >= 0) out.push(hzScYmd(d)); }
+  return out;
+}
+function hzScIsAdmin(u) { u = u || {}; return u.role === "admin" || (u.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; }); }
+function hzScInit() {
+  if (HZ_SC.ready || typeof firebase === "undefined" || !firebase.auth) return;
+  HZ_SC.ready = true;
+  firebase.auth().onAuthStateChanged(function(u) {
+    if (HZ_SC.unsub) { try { HZ_SC.unsub(); } catch (e) {} HZ_SC.unsub = null; }
+    HZ_SC.uid = u ? u.uid : ""; HZ_SC.me = null; HZ_SC.list = []; HZ_SC.users = null;
+    if (!u) return;
+    Promise.all([
+      db.collection("users").doc(u.uid).get().then(function(s){ return s.exists ? s.data() : {}; }).catch(function(){ return {}; }),
+      db.collection("appdata").doc("shifts").get().then(function(s){ return (s.exists && s.data().shifts) || []; }).catch(function(){ return []; })
+    ]).then(function(r) {
+      HZ_SC.me = r[0]; HZ_SC.isAdmin = hzScIsAdmin(r[0]); HZ_SC.shifts = r[1];
+      var from = hzScYmd(new Date(Date.now() - 2 * 86400000));
+      HZ_SC.unsub = db.collection("shiftCovers").where("date", ">=", from).onSnapshot(function(q) {
+        var l = []; q.forEach(function(d){ l.push(Object.assign({ id: d.id }, d.data())); });
+        l.sort(function(a, b){ return String(a.date).localeCompare(String(b.date)); });
+        HZ_SC.list = l; hzScRefresh();
+      }, function(e){ console.warn("Shift covers", e && e.message); });
+      hzScRefresh();
+      hzScFromLink();
+    });
+  });
+}
+// a notification link (…#shifts) opens Night Shifts
+function hzScFromLink() {
+  if (!/(^|[#&])shifts\b/.test(location.hash || "")) return;
+  try { history.replaceState(history.state, "", location.pathname + location.search); } catch (e) {}
+  setTimeout(function(){ if (typeof mGoTo === "function" && document.getElementById("m-pg-shifts")) mGoTo("shifts"); else if (typeof goTo === "function") goTo("shifts"); }, 300);
+}
+// who covers whom on one date (accepted only): [{ by, for, id }]
+function hzScOn(ymd) {
+  var out = [];
+  (HZ_SC.list || []).forEach(function(c) {
+    if (c.status !== "accepted") return;
+    if (c.date === ymd) out.push({ by: c.toUnit, "for": c.fromUnit, id: c.id, swap: c.type === "swap" });
+    if (c.type === "swap" && c.swapDate === ymd) out.push({ by: c.fromUnit, "for": c.toUnit, id: c.id, swap: true });
+  });
+  return out;
+}
+function hzScWhat(c, mineView) {
+  var a = '<b>' + hzScEsc(c.toUnit) + '</b> covers <b>' + hzScEsc(c.fromUnit) + '</b> on ' + hzScEsc(hzScLabel(c.date));
+  if (c.type === "swap" && c.swapDate) a += ' · <b>' + hzScEsc(c.fromUnit) + '</b> covers <b>' + hzScEsc(c.toUnit) + '</b> on ' + hzScEsc(hzScLabel(c.swapDate));
+  return (c.type === "swap" ? "🔁 Swap: " : "🙋 Cover: ") + a;
+}
+function hzScPanelHtml() {
+  var me = HZ_SC.me || {}, myUnit = String(me.unit || "").toUpperCase(), uid = HZ_SC.uid; if (!uid) return "";
+  var today = hzScTonight(), list = HZ_SC.list || [];
+  var live = function(c){ return c.date >= today || (c.swapDate && c.swapDate >= today); };
+  var h = '<div class="hz-sc"><div class="hz-sc-top"><b>🔁 Covers &amp; swaps</b><span style="flex:1"></span>'
+    + (hzScNightsOf(myUnit).length ? '<button class="hz-sc-btn go" onclick="hzScOpenForm()">🔁 Get cover / swap a night</button>' : '') + '</div>';
+  // tonight
+  var tn = hzScOn(today);
+  if (tn.length) h += '<div class="hz-sc-tonight">🌙 <b>Tonight:</b> ' + tn.map(function(x){ return '<b>' + hzScEsc(x.by) + '</b> covering for <b>' + hzScEsc(x["for"]) + '</b>'; }).join(" · ") + '</div>';
+  // my requests
+  // mine — ones I asked for, or I'm covering
+  var mine = list.filter(function(c){ return (c.fromUid === uid || c.toUid === uid) && live(c) && (c.status === "accepted" || c.status === "pending"); });
+  if (mine.length) h += '<div class="hz-sc-sub">Yours</div>' + mine.map(function(c) {
+    return '<div class="hz-sc-card"><div>' + hzScWhat(c) + (c.note ? '<div class="hz-sc-note">“' + hzScEsc(c.note) + '”</div>' : '') + '</div>'
+      + '<div class="hz-sc-row"><button class="hz-sc-btn" onclick="hzScCancel(\'' + c.id + '\')">' + (c.fromUid === uid ? "↩ I'm available after all — cancel" : "Cancel") + '</button></div></div>';
+  }).join("");
+  // coming up — everyone's accepted changes in the next 14 days
+  var lim = hzScYmd(new Date(hzScDate(today).getTime() + 14 * 86400000)), rows = [];
+  list.forEach(function(c) {
+    if (c.status !== "accepted") return;
+    if (c.date >= today && c.date <= lim) rows.push({ d: c.date, t: '<b>' + hzScEsc(c.toUnit) + '</b> covering for <b>' + hzScEsc(c.fromUnit) + '</b>', c: c });
+    if (c.type === "swap" && c.swapDate && c.swapDate >= today && c.swapDate <= lim) rows.push({ d: c.swapDate, t: '<b>' + hzScEsc(c.fromUnit) + '</b> covering for <b>' + hzScEsc(c.toUnit) + '</b>', c: c });
+  });
+  rows.sort(function(a, b){ return a.d.localeCompare(b.d); });
+  h += '<div class="hz-sc-sub">Coming up (next 2 weeks)</div>' + (rows.length ? rows.map(function(r) {
+    return '<div class="hz-sc-line"><span class="hz-sc-date">' + hzScEsc(hzScLabel(r.d)) + '</span> ' + r.t + (r.c.type === "swap" ? ' <span class="hz-sc-muted">(swap)</span>' : '')
+      + (HZ_SC.isAdmin ? ' <button class="hz-sc-x" title="Undo (admin)" onclick="hzScCancel(\'' + r.c.id + '\')">Undo</button>' : '') + '</div>';
+  }).join("") : '<div class="hz-sc-muted">No covers or swaps.</div>');
+  return h + (HZ_SC.form ? hzScFormHtml() : '') + '</div>';
+}
+function hzScOpenForm() {
+  HZ_SC.form = { date: "", to: "", type: "cover", swapDate: "", note: "" };
+  var go = function(){ hzScRefresh(); var el = document.getElementById("hz-sc-form"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" }); };
+  if (HZ_SC.users) { go(); return; }
+  db.collection("users").get().then(function(q) {
+    var l = []; q.forEach(function(d){ var u = d.data() || {}; if (u.unit && d.id !== HZ_SC.uid) l.push({ uid: d.id, unit: String(u.unit).toUpperCase(), name: ((u.firstName || "") + " " + (u.lastName || "")).trim(), phone: String(u.phone || "").split(/[\/|]/)[0].replace(/\D/g, "") }); });
+    l.sort(function(a, b){ return a.unit.localeCompare(b.unit, undefined, { numeric: true }); });
+    HZ_SC.users = l; go();
+  }).catch(function(e){ hzScToast("Couldn't load members: " + e.message, true); });
+}
+function hzScFormHtml() {
+  var f = HZ_SC.form, me = HZ_SC.me || {}, my = hzScNightsOf(me.unit), to = (HZ_SC.users || []).filter(function(u){ return u.uid === f.to; })[0];
+  var theirs = to ? hzScNightsOf(to.unit).filter(function(d){ return d !== f.date; }) : [];
+  var opt = function(v, l, cur){ return '<option value="' + hzScEsc(v) + '"' + (v === cur ? ' selected' : '') + '>' + hzScEsc(l) + '</option>'; };
+  return '<div class="hz-sc-form" id="hz-sc-form"><div class="hz-sc-sub" style="margin-top:0">🔁 Get cover / swap a night</div><div class="hz-sc-muted" style="margin-bottom:4px">Call the member first and agree it between you — then submit it here.</div>'
+    + '<label>My night</label><select class="hz-sc-in" onchange="HZ_SC.form.date=this.value;hzScRefresh()">' + opt("", "Pick a night…", f.date) + my.map(function(d){ return opt(d, hzScLabel(d), f.date); }).join("") + '</select>'
+    + '<label>Who is covering</label><select class="hz-sc-in" onchange="HZ_SC.form.to=this.value;HZ_SC.form.swapDate=\'\';hzScRefresh()">' + opt("", "Pick a member…", f.to) + (HZ_SC.users || []).map(function(u){ return opt(u.uid, u.unit + (u.name ? " — " + u.name : ""), f.to); }).join("") + '</select>'
+    + '<label>Type</label><div class="hz-sc-row" style="margin:0">'
+    + '<label class="hz-sc-radio"><input type="radio" name="hz-sc-type" ' + (f.type === "cover" ? "checked" : "") + ' onchange="HZ_SC.form.type=\'cover\';hzScRefresh()"> 🙋 Cover — they take my night</label>'
+    + '<label class="hz-sc-radio"><input type="radio" name="hz-sc-type" ' + (f.type === "swap" ? "checked" : "") + ' onchange="HZ_SC.form.type=\'swap\';hzScRefresh()"> 🔁 Swap — I take one of theirs</label></div>'
+    + (f.type === "swap" ? '<label>Their night I take</label>' + (to ? (theirs.length ? '<select class="hz-sc-in" onchange="HZ_SC.form.swapDate=this.value">' + opt("", "Pick their night…", f.swapDate) + theirs.map(function(d){ return opt(d, hzScLabel(d), f.swapDate); }).join("") + '</select>' : '<div class="hz-sc-muted">' + hzScEsc(to.unit) + ' has no nights in the next 4 weeks — choose Cover instead.</div>') : '<div class="hz-sc-muted">Pick who is covering first.</div>') : '')
+    + '<label>Note <span class="hz-sc-muted">(optional)</span></label><input class="hz-sc-in" maxlength="200" value="' + hzScEsc(f.note) + '" oninput="HZ_SC.form.note=this.value" placeholder="e.g. family simcha">'
+    + '<div class="hz-sc-row"><button class="hz-sc-btn go" onclick="hzScSubmit()">✓ Submit</button><button class="hz-sc-btn" onclick="HZ_SC.form=null;hzScRefresh()">Cancel</button></div>'
+    + '<div class="hz-sc-muted">It shows on Night Shifts right away, for that night only. ' + (to ? hzScEsc(to.unit) + ' gets' : 'They get') + ' a notice.</div></div>';
+}
+function hzScSubmit() {
+  var f = HZ_SC.form, me = HZ_SC.me || {}, to = (HZ_SC.users || []).filter(function(u){ return u.uid === f.to; })[0];
+  if (!f.date) { hzScToast("Pick your night", true); return; }
+  if (!to) { hzScToast("Pick who is covering", true); return; }
+  if (f.type === "swap" && !f.swapDate) { hzScToast("Pick their night you'll take", true); return; }
+  var clash = (HZ_SC.list || []).filter(function(c){ return c.fromUid === HZ_SC.uid && c.date === f.date && (c.status === "pending" || c.status === "accepted"); });
+  if (clash.length) { hzScToast("You already have a change for " + hzScLabel(f.date) + " — cancel it first", true); return; }
+  var d = hzScDate(f.date), data = { date: f.date, day: HZ_SC_DAYS[d.getDay()], fromUid: HZ_SC.uid, fromUnit: String(me.unit || "").toUpperCase(), fromName: ((me.firstName || "") + " " + (me.lastName || "")).trim(),
+    toUid: to.uid, toUnit: to.unit, toName: to.name, type: f.type === "swap" ? "swap" : "cover", note: String(f.note || "").trim().slice(0, 200), status: "accepted", createdAt: new Date().toISOString() };
+  if (data.type === "swap") { data.swapDate = f.swapDate; data.swapDay = HZ_SC_DAYS[hzScDate(f.swapDate).getDay()]; }
+  db.collection("shiftCovers").add(data).then(function(){ HZ_SC.form = null; hzScToast("✓ Done — " + to.unit + " is on Night Shifts for " + hzScLabel(f.date)); hzScRefresh(); })
+    .catch(function(e){ hzScToast("Not saved: " + e.message + (/permission/i.test(e.message) ? " — the database rules need publishing" : ""), true); });
+}
+function hzScCancel(id) {
+  var c = (HZ_SC.list || []).filter(function(x){ return x.id === id; })[0]; if (!c) return;
+  if (!confirm("Cancel this " + (c.type === "swap" ? "swap" : "cover") + " for " + hzScLabel(c.date) + "?" + (c.fromUid === HZ_SC.uid ? "\nYou'll be back on " + hzScLabel(c.date) + " and " + c.toUnit + " gets a notice." : ""))) return;
+  var me = HZ_SC.me || {};
+  db.collection("shiftCovers").doc(id).update({ status: "cancelled", decidedAt: new Date().toISOString(), decidedBy: String(me.unit || "") })
+    .then(function(){ hzScToast("Cancelled"); }).catch(function(e){ hzScToast("Not cancelled: " + e.message, true); });
+}
+// 12.124 / 5.79: the night cards themselves show the change for their next date (tonight first, then the coming week):
+// the member being covered is struck through, the one covering is added ("covering"), with a line under the card —
+// and the member who asked can cancel it there ("↩ I'm available after all"). After that night it's back to normal.
+function hzScMarkCards() {
+  var today = hzScTonight(), t0 = hzScDate(today), uid = HZ_SC.uid;
+  document.querySelectorAll("#m-shifts-content .m-info-card, #shifts-list .dk-shift-card").forEach(function(card) {
+    card.querySelectorAll(".hz-sc-inj").forEach(function(n){ n.remove(); });
+    card.querySelectorAll(".hz-sc-off").forEach(function(n){ n.classList.remove("hz-sc-off"); n.removeAttribute("data-sc-title"); });
+    var nameEl = card.querySelector(".m-info-name, .dk-shift-name"); if (!nameEl) return;
+    var nm = (nameEl.textContent || "").trim().toLowerCase(), dow = -1;   // "FridayCurrently on call" → Friday
+    HZ_SC_DAYS.forEach(function(d, i){ if (dow < 0 && nm.indexOf(d.toLowerCase()) === 0) dow = i; });
+    if (dow < 0) return;
+    var d = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + ((dow - t0.getDay() + 7) % 7)), ymd = hzScYmd(d), ch = hzScOn(ymd);
+    if (!ch.length) return;
+    var chips = card.querySelectorAll("[data-u]"), row = chips.length ? chips[0].parentNode : null;
+    ch.forEach(function(x) {
+      Array.prototype.forEach.call(chips, function(b){ if (String(b.getAttribute("data-u")).toUpperCase() === String(x["for"]).toUpperCase()) { b.classList.add("hz-sc-off"); b.title = x.by + " is covering " + hzScLabel(ymd); } });
+      if (row) { var add = document.createElement("button"); add.type = "button"; add.className = "hz-sc-inj hz-sc-onchip"; add.setAttribute("data-u", x.by);
+        add.innerHTML = hzScEsc(x.by) + ' <small>covering</small>'; add.onclick = function(){ if (typeof hzUnitContactModal === "function") hzUnitContactModal(x.by); }; row.appendChild(add); }
+    });
+    var info = document.createElement("div"); info.className = "hz-sc-inj hz-sc-cardline";
+    info.innerHTML = '🔁 ' + hzScEsc(hzScLabel(ymd)) + (ymd === today ? ' (tonight)' : '') + ': ' + ch.map(function(x){ return '<b>' + hzScEsc(x.by) + '</b> covering for <b>' + hzScEsc(x["for"]) + '</b>'; }).join(" · ")
+      + ch.map(function(x){ var c = (HZ_SC.list || []).filter(function(y){ return y.id === x.id; })[0]; if (!c) return "";
+          return c.fromUid === uid ? ' <button class="hz-sc-x" onclick="hzScCancel(\'' + c.id + '\')">↩ I\'m available after all — cancel</button>' : (HZ_SC.isAdmin ? ' <button class="hz-sc-x" onclick="hzScCancel(\'' + c.id + '\')">Undo</button>' : ''); }).join("");
+    card.appendChild(info);
+  });
+}
+function hzScRefresh() {
+  [["m-shifts-content", "m"], ["shifts-list", "d"]].forEach(function(x) {
+    var host = document.getElementById(x[0]); if (!host) return;
+    var slot = host.parentNode && host.parentNode.querySelector(":scope > .hz-sc-slot");
+    if (!slot) { slot = document.createElement("div"); slot.className = "hz-sc-slot"; host.parentNode.insertBefore(slot, host); }
+    slot.innerHTML = hzScPanelHtml();
+  });
+  try { hzScMarkCards(); } catch (e) {}
+}
+// re-read the schedule when Night Shifts opens (admins may have changed it)
+function hzScReloadShifts() {
+  db.collection("appdata").doc("shifts").get().then(function(s){ HZ_SC.shifts = (s.exists && s.data().shifts) || []; hzScRefresh(); }).catch(function(){ hzScRefresh(); });
+}
+function hzScHook(name) {
+  var f = window[name]; if (typeof f !== "function" || f.__hzSc) return;
+  var w = function() { var r = f.apply(this, arguments); try { hzScReloadShifts(); } catch (e) {} return r; };
+  w.__hzSc = true; window[name] = w;
+}
+(function() {
+  var css = document.createElement("style");
+  css.textContent = ".hz-sc{border:1px solid var(--card-border);border-radius:12px;padding:12px;margin:0 0 14px;background:rgba(var(--gold-rgb),.05)}"
+    + ".hz-sc-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.hz-sc-top b{font-family:'Oswald',sans-serif;letter-spacing:.04em;color:var(--white)}"
+    + ".hz-sc-sub{font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin:12px 0 6px}"
+    + ".hz-sc-tonight{margin-top:10px;border-radius:9px;padding:8px 10px;background:rgba(var(--gold-rgb),.14);border:1px solid rgba(var(--gold-rgb),.5);font-size:.86rem;color:var(--white)}"
+    + ".hz-sc-card{border:1px solid var(--card-border);border-radius:9px;padding:9px 10px;margin-bottom:6px;font-size:.84rem;color:var(--white);line-height:1.45}.hz-sc-card.warn{border-color:rgba(255,200,74,.6);background:rgba(255,200,74,.08)}"
+    + ".hz-sc-note{color:var(--gray);font-size:.8rem;margin-top:2px}.hz-sc-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}"
+    + ".hz-sc-btn{min-height:38px;padding:0 14px;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,.05);color:var(--white);font-family:'Oswald',sans-serif;font-size:.84rem;letter-spacing:.03em;cursor:pointer}"
+    + ".hz-sc-btn.go{background:var(--gold);color:var(--navy);border-color:var(--gold)}.hz-sc-call{display:inline-flex;align-items:center;text-decoration:none;flex:1 1 120px;justify-content:center}.hz-sc-btn.red{color:#ff9090;border-color:rgba(224,85,85,.5)}"
+    + ".hz-sc-pill{font-size:.7rem;border-radius:10px;padding:1px 8px;border:1px solid var(--card-border);white-space:nowrap}.hz-sc-pill.ok{color:#7dedb5;border-color:rgba(76,175,128,.6)}.hz-sc-pill.warn{color:#ffc84a;border-color:rgba(255,200,74,.6)}.hz-sc-pill.bad{color:#ff9090;border-color:rgba(224,85,85,.5)}"
+    + ".hz-sc-line{font-size:.84rem;color:var(--white);padding:4px 0;border-bottom:1px solid var(--card-border)}.hz-sc-date{display:inline-block;min-width:72px;font-family:'Oswald',sans-serif;color:var(--gold)}"
+    + ".hz-sc-off{opacity:.45;text-decoration:line-through}.hz-sc-onchip{cursor:pointer;font-family:'Oswald',sans-serif;font-size:.78rem;font-weight:700;color:var(--navy);background:var(--gold);border:1px solid var(--gold);border-radius:7px;padding:4px 10px}.hz-sc-onchip small{font-weight:400;opacity:.8;margin-left:2px}"
+    + ".hz-sc-cardline{margin-top:8px;font-size:.78rem;color:var(--white);line-height:1.5;border-top:1px dashed var(--card-border);padding-top:6px}"
+    + ".hz-sc-muted{color:var(--gray);font-size:.8rem}.hz-sc-x{margin-left:6px;font-size:.7rem;border:1px solid var(--card-border);border-radius:6px;background:none;color:var(--gray);cursor:pointer;padding:2px 6px}"
+    + ".hz-sc-form{margin-top:12px;border-top:1px solid var(--card-border);padding-top:10px}.hz-sc-form>label{display:block;font-family:'Oswald',sans-serif;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin:10px 0 4px}"
+    + ".hz-sc-in{width:100%!important;box-sizing:border-box;min-height:42px;font-size:16px!important;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,.06);color:var(--white);padding:0 10px!important;margin:0!important}"
+    + ".hz-sc-radio{display:flex!important;gap:6px;align-items:center;font-size:.84rem!important;color:var(--white)!important;text-transform:none!important;letter-spacing:0!important;cursor:pointer;flex:1 1 200px}.hz-sc-radio input{width:auto!important;margin:0}"
+    + "html[data-theme=basic] .hz-sc-pill.ok{color:#167a3e}html[data-theme=basic] .hz-sc-pill.warn{color:#8a5a00}html[data-theme=basic] .hz-sc-pill.bad,html[data-theme=basic] .hz-sc-btn.red{color:#b42318}";
+  document.head.appendChild(css);
+  var go = function(){ hzScInit(); hzScHook("mLoadShifts"); hzScHook("renderShifts");
+    // whenever the night cards are (re)drawn, mark the changes on them
+    ["m-shifts-content", "shifts-list"].forEach(function(id){ var el = document.getElementById(id); if (el && window.MutationObserver) new MutationObserver(function(){ try { hzScMarkCards(); } catch (e) {} }).observe(el, { childList: true }); });
+  };
+  window.addEventListener("hashchange", function(){ if (HZ_SC.me) hzScFromLink(); });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go); else go();
 })();
 </script>
 </body>
