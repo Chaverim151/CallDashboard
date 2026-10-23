@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.66"; window.M_BUILD = BUILD;
+  var BUILD = "5.68"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1129,7 +1129,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
         </div>
       </button>
       <button class="m-tile" data-sec="directory" onclick="mGoTo('directory')">
-        <div class="m-tile-inner"><span class="m-tile-icon">📒</span><span class="m-tile-label">Directory</span><span class="m-tile-sub">RMA · Contacts · Regional</span></div>
+        <div class="m-tile-inner"><span class="m-tile-icon">📒</span><span class="m-tile-label">Directory</span><span class="m-tile-sub">RMA · Members · Regional</span></div>
       </button>
       <button class="m-tile" data-sec="codes" id="m-codes-tile" onclick="mGoTo('codes')">
         <div class="m-tile-inner">
@@ -1201,13 +1201,6 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
           <span class="m-tile-sub">How to use the app · PDF</span>
         </div>
       </button>
-      <a class="m-tile" data-sec="edispatches" href="https://chmc.myesched.com/schedule/logon.asp" target="_blank">
-        <div class="m-tile-inner">
-          <span class="m-tile-icon">🗓️</span>
-          <span class="m-tile-label">eScheduler</span>
-          <span class="m-tile-sub">chmc.myesched.com</span>
-        </div>
-      </a>
       <a class="m-tile" data-sec="diverts" href="https://njdivert.juvare.com/" target="_blank">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🏥</span>
@@ -1258,7 +1251,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
       <button class="m-tile" data-sec="contacts" onclick="mGoTo('contacts')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">👥</span>
-          <span class="m-tile-label">Contacts</span>
+          <span class="m-tile-label">Member Directory</span>
           <span class="m-tile-sub">Member directory</span>
         </div>
       </button>
@@ -1469,7 +1462,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
 <div class="page" id="m-pg-contacts">
   <div class="m-subpage-header">
     <button class="m-back-btn" onclick="mGoTo('directory')">← Directory</button>
-    <span class="m-page-title">Contacts</span>
+    <span class="m-page-title">Member Directory</span>
   </div>
   <div class="m-scroll">
     <input type="search" id="m-ct-q" class="m-disp-input" placeholder="Search name, unit or phone…" oninput="mRenderContacts()" autocomplete="off" style="margin-bottom:10px;width:100%;box-sizing:border-box">
@@ -1861,9 +1854,9 @@ function paiShowEntry(elId, isAdminUser, rolesLower) {
 // A tile with saved roles shows only to members who have one of those roles; admins always see every tile.
 // Tiles with nothing saved keep the built-in rules (hzTileDefault mirrors them for the admin grid).
 var HZ_TILES = [
-  { k: "directory", l: "📒 Directory (RMA · Contacts · Regional)" }, { k: "rma", l: "RMA Hotline" }, { k: "codes", l: "Access Codes" }, { k: "epcr", l: "ePCR" }, { k: "shifts", l: "Night Shifts" },
-  { k: "contacts", l: "Contacts" }, { k: "regional", l: "Regional Hatzolah" }, { k: "maps", l: "Dispatch Console" }, { k: "education", l: "Education" }, { k: "portal", l: "MC Portal" },
-  { k: "service", l: "Service Helpdesk" }, { k: "guide", l: "User Guide" }, { k: "edispatches", l: "eScheduler" },
+  { k: "directory", l: "📒 Directory (RMA · Member Directory · Regional)" }, { k: "rma", l: "RMA Hotline" }, { k: "codes", l: "Access Codes" }, { k: "epcr", l: "ePCR" }, { k: "shifts", l: "Night Shifts" },
+  { k: "contacts", l: "Member Directory" }, { k: "regional", l: "Regional Hatzolah" }, { k: "maps", l: "Dispatch Console" }, { k: "education", l: "Education" }, { k: "portal", l: "MC Portal" },
+  { k: "service", l: "Service Helpdesk" }, { k: "guide", l: "User Guide" },
   { k: "diverts", l: "Hospital Diverts" }, { k: "hospital", l: "Hospitals" }, { k: "buildings", l: "Buildings" }, { k: "shuls", l: "Shuls" }, { k: "storage", l: "Storage Room" }
 ];
 var HZ_TILE_ACCESS = null;   // { sec: [roles] } once loaded
@@ -2183,6 +2176,8 @@ function mDirUrl(lat, lng) {
 function mApplyTilePrefs() {
   var grid = document.getElementById("m-home-grid"), order = mPrefs.tilesPhone;
   if (!grid || !Array.isArray(order) || !order.length) return;
+  // 12.112: a saved order from before 📒 Directory existed → Directory goes to the top (right after New Call)
+  if (order.indexOf("directory") === -1) { order = order.filter(function(k){ return ["rma", "contacts", "regional", "calllogs"].indexOf(k) === -1; }); var at = order[0] === "newcall" ? 1 : 0; order.splice(at, 0, "directory"); mPrefs.tilesPhone = order; }
   var by = {}; Array.prototype.forEach.call(grid.querySelectorAll(".m-tile"), function(t) { by[t.getAttribute("data-sec")] = t; });
   order.forEach(function(k) { if (by[k]) { grid.appendChild(by[k]); delete by[k]; } });
   Object.keys(by).forEach(function(k) { grid.appendChild(by[k]); });   // tiles added since — at the end
@@ -11834,6 +11829,11 @@ function mCloseAllSheets() {
         <span class="m-dash-txt"><span class="m-dash-t">Call Logs</span><span class="m-dash-s">Completed &amp; cancelled calls (HIPAA-secured)</span></span>
         <span class="m-dash-go">›</span>
       </button>
+      <button class="m-dash-row" onclick="window.open('https://chmc.myesched.com/schedule/logon.asp','_blank')">
+        <span class="m-dash-ic">🗓️</span>
+        <span class="m-dash-txt"><span class="m-dash-t">eScheduler</span><span class="m-dash-s">Dispatch schedule (opens the eScheduler site)</span></span>
+        <span class="m-dash-go">↗</span>
+      </button>
     </div>
     <!-- Active calls list -->
     <div id="m-disp-calls-view" style="display:none">
@@ -11964,6 +11964,7 @@ function mCloseAllSheets() {
     <button onclick="mDrawerGoTo('dispatch-map')" class="m-drawer-item">🗺️ Map View</button>
     <button onclick="mDrawerGoTo('dispatch-rigs')" class="m-drawer-item">🚐 Rigs &amp; Vehicles</button>
     <button onclick="mCloseDispDrawer();mGoTo('calllogs')" class="m-drawer-item" id="m-drawer-calllogs" style="display:none">📁 Call Logs</button>
+    <button onclick="mCloseDispDrawer();window.open('https://chmc.myesched.com/schedule/logon.asp','_blank')" class="m-drawer-item">🗓️ eScheduler ↗</button>
     <div id="m-drawer-call-section" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--card-border)">
       <div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);padding:0 12px 8px;font-family:'Oswald',sans-serif;font-weight:700" id="m-drawer-call-label">Current Call</div>
       <button onclick="mDrawerJump('info')" class="m-drawer-item">📍 Call Info</button>
