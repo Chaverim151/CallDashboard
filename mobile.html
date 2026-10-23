@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.54"; window.M_BUILD = BUILD;
+  var BUILD = "5.56"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3321,6 +3321,8 @@ function mCloseDetail() {
 }
 
 // ── SUBPAGE LOADERS ──
+// 12.101 / 5.56: entries named "Private home…" never show on the Access Codes screens — admins only (they still fill in on calls)
+function hzIsPrivHome(it) { return /^\s*private\s+home\b/i.test(String((it && it.name) || "")); }
 function mLoadHospital() {
   var el = document.getElementById("m-hospital-content");
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
@@ -3329,7 +3331,7 @@ function mLoadHospital() {
       el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No hospital codes found.</div>';
       return;
     }
-    var items = snap.data().sections.hospital;
+    var items = snap.data().sections.hospital.filter(function(x){ return !hzIsPrivHome(x); });
     if (!items.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No hospital codes found.</div>'; return; }
     el.innerHTML = items.map(function(item) {
       return '<div class="m-info-card">' +
@@ -3348,7 +3350,7 @@ function mLoadBuildings() {
   var el = document.getElementById("m-buildings-content");
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
   db.collection("appdata").doc("codes").get().then(function(snap) {
-    var items = (snap.exists && snap.data().sections && snap.data().sections.buildings) || [];
+    var items = (snap.exists && snap.data().sections && snap.data().sections.buildings) || []; items = items.filter(function(x){ return !hzIsPrivHome(x); });
     if (!items.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No buildings on file.</div>'; return; }
     el.innerHTML = items.map(function(b) {
       return '<div class="m-info-card">' +
@@ -3365,7 +3367,7 @@ function mLoadShuls() {
   var el = document.getElementById("m-shuls-content");
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
   db.collection("appdata").doc("codes").get().then(function(snap) {
-    var items = (snap.exists && snap.data().sections && snap.data().sections.shuls) || [];
+    var items = (snap.exists && snap.data().sections && snap.data().sections.shuls) || []; items = items.filter(function(x){ return !hzIsPrivHome(x); });
     if (!items.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No shuls on file.</div>'; return; }
     el.innerHTML = items.map(function(s) {
       return '<div class="m-info-card">' +
@@ -3425,7 +3427,7 @@ function mCtMatches(u, f) {
 }
 function mSetContactsFilter(f) { mContactsFilter = f; mRenderContacts(); }
 // 12.96 / 5.51: 👤 Save contact — downloads a .vcf card for one member (name + unit, cell, email, roles).
-// iPhone/iPad: opens the card (Create New Contact); Android & computers: a download that opens in Contacts.
+// iPhone/iPad: the share sheet; Android & computers: a download that opens in Contacts.
 var HZ_VCF = {}, HZ_VCF_N = 0;
 function hzVcfKey(u) { var k = "c" + (++HZ_VCF_N); HZ_VCF[k] = u; return k; }
 function hzVcfEsc(t) { return String(t == null ? "" : t).replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\;"); }
@@ -3449,14 +3451,8 @@ function hzVcfSave(k) {
   try {
     var file = new File([blob], name + ".vcf", { type: "text/vcard" });
   } catch (e) { file = null; }
-  // 12.99 / 5.54: iPhone/iPad — open the card itself, which shows iOS's "Create New Contact / Add to Existing Contact";
-  // the share sheet only if that window can't open
-  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-    var url = URL.createObjectURL(blob), win = window.open(url, "_blank");
-    if (win) { setTimeout(function(){ URL.revokeObjectURL(url); }, 60000); return; }
-    URL.revokeObjectURL(url);
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(function(){}); return; }
-  }
+  // iPhone/iPad: the share sheet (12.100: back from 12.99's new-window try — in the installed app that page loaded slowly or blank)
+  if (/iPhone|iPad|iPod/i.test(navigator.userAgent) && file && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(function(){}); return; }
   var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name + ".vcf";
   document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
@@ -5833,7 +5829,7 @@ function mLoadStorage() {
   var el = document.getElementById("m-storage-content");
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
   db.collection("appdata").doc("codes").get().then(function(snap) {
-    var items = (snap.exists && snap.data().sections && snap.data().sections.storage) || [];
+    var items = (snap.exists && snap.data().sections && snap.data().sections.storage) || []; items = items.filter(function(x){ return !hzIsPrivHome(x); });
     if (!items.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No storage locations on file.</div>'; return; }
     el.innerHTML = items.map(function(s) {
       return '<div class="m-info-card">' +
@@ -12263,9 +12259,12 @@ function hzErvHidden(t) {
   var uid = HZ_ERV.uid || (typeof firebase !== "undefined" && firebase.auth && firebase.auth().currentUser ? firebase.auth().currentUser.uid : "");
   return !uid || t.submittedByUid !== uid;
 }
-// requests that hold the ERV: approved ones block a time; pending ones are shown but don't block
+// 12.100 / 5.55: a shift ends when the driver checks out — returned early, the rest of the time is open for someone else
+function hzErvEnd(t) { return t.checkedOutAt && +t.checkedOutAt < t.endMs ? Math.max(+t.checkedOutAt, t.startMs) : t.endMs; }
+function hzErvEff(t) { var e = hzErvEnd(t); return e === t.endMs ? t : Object.assign({}, t, { endMs: e, earlyFrom: t.endMs }); }
+// requests that hold the vehicle: approved ones block a time (until it's returned); pending ones are shown but don't block
 function hzErvBlocking(ervId, exceptId) {
-  return HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && t.id !== exceptId && hzErvStatus(t) === "approved"; });
+  return HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && t.id !== exceptId && hzErvStatus(t) === "approved" && hzErvEnd(t) > t.startMs; }).map(hzErvEff);
 }
 function hzErvOverlaps(list, a, b) { return list.filter(function(t){ return t.startMs < b && t.endMs > a; }); }
 
@@ -12290,17 +12289,18 @@ function hzErvCheckBtns(t) {
   return "";
 }
 function hzErvCheckLine(t) {
-  if (t.checkedOutAt) return '<div class="hz-erv-muted">✅ Checked in ' + hzErvDay(t.checkedInAt) + ' ' + hzErvTime(t.checkedInAt) + ' · 🏁 checked out ' + hzErvTime(t.checkedOutAt) + '</div>';
+  if (t.checkedOutAt) return '<div class="hz-erv-muted">✅ Checked in ' + hzErvDay(t.checkedInAt) + ' ' + hzErvTime(t.checkedInAt) + ' · 🏁 checked out ' + hzErvTime(t.checkedOutAt) + (+t.checkedOutAt < t.endMs ? ' — returned early, the rest of the shift is open again' : '') + '</div>';
   if (t.checkedInAt) return '<div class="hz-erv-muted" style="color:#7dedb5">✅ Checked in ' + hzErvDay(t.checkedInAt) + ' ' + hzErvTime(t.checkedInAt) + ' — the vehicle is theirs on calls until they check out</div>';
   return "";
 }
 function hzErvCheckInOut(id, kind) {
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
   if (kind === "in" && !hzErvCanIn(t)) { hzErvToast("You can check in from 30 minutes before the shift until it ends.", true); return; }
-  if (kind === "out" && !confirm("Check out and return " + t.ervUnit + "?")) return;
+  var early = kind === "out" && Date.now() < t.endMs - 5 * 60000;
+  if (kind === "out" && !confirm("Check out and return " + t.ervUnit + "?" + (early ? "\nYour shift ends " + hzErvTime(t.endMs) + " — the rest of it will be open for someone else to request." : ""))) return;
   var upd = { lastActionByUid: HZ_ERV.uid }; upd[kind === "in" ? "checkedInAt" : "checkedOutAt"] = Date.now();
   db.collection("tickets").doc(id).update(upd)
-    .then(function(){ hzErvToast(kind === "in" ? "✅ Checked in — " + t.ervUnit + " is yours on calls until you check out" : "🏁 Checked out — " + t.ervUnit + " returned"); hzErvRefreshTicket(id); })
+    .then(function(){ hzErvToast(kind === "in" ? "✅ Checked in — " + t.ervUnit + " is yours on calls until you check out" : "🏁 Checked out — " + t.ervUnit + " returned" + (early ? "; the rest of the shift is open again" : "")); hzErvRefreshTicket(id); })
     .catch(function(e){ hzErvToast("Not saved: " + e.message + (/permission/i.test(e.message) ? " — the database rules need publishing" : ""), true); });
 }
 // a unit with the ERV stops holding it once they're clear of the call
@@ -12432,7 +12432,7 @@ function hzErvFree(dayMs, taken) {
 function hzErvScheduleHtml() {
   var ws = HZ_ERV.weekStart, now = Date.now(), ervId = HZ_ERV.ervId;
   var mine = function(t){ return hzErvIsMine(t); };
-  var list = HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && (["approved", "pending"].indexOf(hzErvStatus(t)) >= 0 || (mine(t) && hzErvStatus(t) === "denied")); });
+  var list = HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && (["approved", "pending"].indexOf(hzErvStatus(t)) >= 0 || (mine(t) && hzErvStatus(t) === "denied")); }).map(hzErvEff);
   var approved = list.filter(function(t){ return hzErvStatus(t) === "approved"; });
   var h = '<div class="hz-erv-row">' + hzErvErvSelect("hz-erv-pick", "hzErvPick(this.value)")
     + '<button class="hz-erv-btn" onclick="hzErvWeek(-1)">‹ Prev</button><button class="hz-erv-btn" onclick="hzErvWeek(0)">This week</button><button class="hz-erv-btn" onclick="hzErvWeek(1)">Next ›</button>'
@@ -12515,7 +12515,7 @@ function hzErvMineHtml() {
 }
 function hzErvApproveHtml() {
   var pend = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; });
-  var upcoming = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "approved" && t.endMs > Date.now(); });
+  var upcoming = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "approved" && !t.checkedOutAt && t.endMs > Date.now(); });
   var h = '<div class="hz-erv-sub">Waiting for a decision</div>' + (pend.length ? pend.map(function(t){
       var clash = hzErvOverlaps(hzErvBlocking(t.ervUnit, t.id), t.startMs, t.endMs);
       return hzErvCard(t, (clash.length ? '<span class="hz-erv-pill bad">Clashes with ' + clash.map(function(x){ return hzErvEsc(x.submittedBy || ""); }).join(", ") + '</span>' : '')
@@ -12530,7 +12530,7 @@ function hzErvAdminRender() {
   var el = document.getElementById("adm-erv"); if (!el) return;
   hzErvListen();
   if (!HZ_ERV.isAdmin) { el.innerHTML = '<div class="hz-erv-muted">Only admins approve vehicle shifts.</div>'; return; }
-  var now = Date.now(), recent = HZ_ERV.tickets.filter(function(t){ var st = hzErvStatus(t); return (st === "denied" || st === "cancelled" || (st === "approved" && t.endMs <= now)) && t.endMs > now - 14 * 86400000; })
+  var now = Date.now(), recent = HZ_ERV.tickets.filter(function(t){ var st = hzErvStatus(t); return (st === "denied" || st === "cancelled" || (st === "approved" && (t.checkedOutAt || t.endMs <= now))) && t.endMs > now - 14 * 86400000; })
     .sort(function(a, b){ return b.startMs - a.startMs; }).slice(0, 15);
   el.innerHTML = '<div class="hz-erv-row" style="margin:0 0 10px"><button class="hz-erv-btn" onclick="hzErvOpen(\'schedule\')">🗓 Open the schedule</button>'
     + (HZ_ERV.access !== "drivers" ? '<span class="hz-erv-pill warn">Testing — admins only (open it to drivers in Notifications &amp; Permissions)</span>' : '') + '</div>'
