@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.84"; window.M_BUILD = BUILD;
+  var BUILD = "5.89"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2154,7 +2154,7 @@ function mGoTo(page) {
   var pg = document.getElementById("m-pg-" + page);
   if (pg) pg.classList.add("active");
   window.scrollTo(0, 0);
-  // 12.118 / 5.73: 🔒 Access Codes screens need the quick check (once per 14 days per device)
+  // 12.118 / 5.73: 🔒 Access Codes screens need the quick check (once an hour)
   if (pg && ["codes", "hospital", "buildings", "shuls", "storage"].indexOf(page) !== -1) {
     var codeLoad = { buildings: mLoadBuildings, shuls: mLoadShuls, storage: mLoadStorage, hospital: mLoadHospital }[page];
     if (!hzCodesGate(pg, function(){ if (codeLoad) codeLoad(); })) return;
@@ -5974,15 +5974,15 @@ function hzSaveFile(blob, filename) {
 function hzCLDayStartISO(d) { return d ? new Date(d + "T00:00:00").toISOString() : ""; }
 function hzCLDayEndISO(d)   { return d ? new Date(d + "T23:59:59.999").toISOString() : ""; }
 // ── 12.115 / 5.70: 🔒 two-step check for Call Logs. Text or email a 6-digit code (server logsCodeStart /
-// logsCodeVerify); then this device skips it for 14 days. The server enforces it: calls closed more than 24 hours
+// logsCodeVerify); then it skips it for 1 hour (12.133). The server enforces it: calls closed more than 24 hours
 // ago can only be read with a valid pass (database rules), so if the pass runs out the code screen comes back.
 var HZ_LG = { el: null, retry: null, sent: "" };
 function hzLgRelay(fn, data) { var r = typeof hzRelay === "function" ? hzRelay : mRelay; return r(fn, data); }
 function hzLgKey() { var u = firebase.auth().currentUser; return "hzLogsOk_" + (u ? u.uid : ""); }
 function hzLgOk() { try { return +(localStorage.getItem(hzLgKey()) || 0) > Date.now(); } catch (e) { return false; } }
-var HZ_LG_LOGS = { title: "Call Logs", head: "📁 Call Logs", text: "Call records are protected health information. We'll send you a 6-digit code; after that this device won't ask again for 14 days (it also unlocks Access Codes).",
+var HZ_LG_LOGS = { title: "Call Logs", head: "📁 Call Logs", text: "Call records are protected health information. We'll send you a 6-digit code; after that it won't ask again for 1 hour (it also unlocks Access Codes).",
   phoneBack: ["← Console", "mGoTo('dispatch');mDispView('dash')"], deskBack: ["← Console", "openDispatchConsole()"] };
-var HZ_LG_CODES = { title: "Access Codes", head: "🔑 Access Codes", text: "Door codes are private. We'll send you a 6-digit code; after that this device won't ask again for 14 days (it also unlocks Call Logs).",
+var HZ_LG_CODES = { title: "Access Codes", head: "🔑 Access Codes", text: "Door codes are private. We'll send you a 6-digit code; after that it won't ask again for 1 hour (it also unlocks Call Logs).",
   phoneBack: ["← Back", "mGoTo('home')"], deskBack: ["← Home", "goHome()"] };
 function hzLogsGate(el, go) { HZ_LG.el = el; HZ_LG.retry = go; HZ_LG.ctx = HZ_LG_LOGS; if (hzLgOk()) { hzLgUnlock(); return true; } hzLgShow(); return false; }
 // 12.118 / 5.73: the same check guards the Access Codes screens (Hospitals / Buildings / Shuls / Storage) for every member.
@@ -6024,7 +6024,7 @@ function hzLgVerify() {
   if (code.length !== 6) { hzLgMsg("Enter the 6 digits from the message.", true); return; }
   hzLgMsg("Checking…");
   hzLgRelay("logsCodeVerify", { code: code }).then(function(r) {
-    var until = Math.min((r && r.until) || 0, Date.now() + 14 * 86400000) || Date.now() + 14 * 86400000;
+    var until = Math.min((r && r.until) || 0, Date.now() + 3600000) || Date.now() + 3600000;
     try { localStorage.setItem(hzLgKey(), String(until)); } catch (e) {}
     hzLgUnlock();
     if (typeof HZ_LG.retry === "function") HZ_LG.retry();
@@ -6033,9 +6033,25 @@ function hzLgVerify() {
 // the database said no (pass ran out, or this device was trusted but the server pass wasn't): back to the code screen
 function hzLgLocked() {
   try { localStorage.removeItem(hzLgKey()); } catch (e) {}
-  setTimeout(function(){ hzLgShow("Your 14-day check has run out — please verify again."); }, 0);
+  setTimeout(function(){ hzLgShow("Your 1-hour check has run out — please verify again."); }, 0);
 }
 function hzLgIsDenied(e) { return /permission|insufficient/i.test((e && (e.code || e.message)) || ""); }
+// 12.134 / 5.89 (Sam): log out of Call Logs / Access Codes on their own — when the 1-hour check runs out, or after 1 hour with no
+// taps / typing / scrolling, the open page covers itself with the code screen and the pass on this device is cleared.
+var HZ_LG_IDLE_MS = 60 * 60 * 1000;
+HZ_LG.lastAct = Date.now();
+["pointerdown", "keydown", "scroll", "touchstart"].forEach(function(ev) { document.addEventListener(ev, function() { HZ_LG.lastAct = Date.now(); }, { passive: true, capture: true }); });
+function hzLgWatch() {
+  try {
+    var pg = hzLgPage(); if (!pg || pg.classList.contains("hz-lg-lock")) return;
+    var open = pg.classList.contains("active") || pg.offsetParent !== null; if (!open) return;
+    var idle = Date.now() - (HZ_LG.lastAct || 0) >= HZ_LG_IDLE_MS;
+    if (idle) { try { localStorage.removeItem(hzLgKey()); } catch (e) {} hzLgShow("Logged out after 1 hour with no activity — please verify again."); return; }
+    if (!hzLgOk()) hzLgShow("Your 1-hour check has run out — please verify again.");
+  } catch (e) {}
+}
+setInterval(hzLgWatch, 20000);
+document.addEventListener("visibilitychange", function() { if (!document.hidden) hzLgWatch(); });
 (function() {
   var css = document.createElement("style");
   css.textContent = ".page.hz-lg-lock>*:not(.hz-lg-over){display:none!important}.hz-lg-over{min-height:100%;display:flex;flex-direction:column}.hz-lg-wrap{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px 24px}"
@@ -13366,33 +13382,10 @@ function hzScWhat(c, mineView) {
 }
 function hzScPanelHtml() {
   var me = HZ_SC.me || {}, myUnit = String(me.unit || "").toUpperCase(), uid = HZ_SC.uid; if (!uid) return "";
-  var today = hzScTonight(), list = HZ_SC.list || [];
-  var live = function(c){ return c.date >= today || (c.swapDate && c.swapDate >= today); };
-  var h = '<div class="hz-sc"><div class="hz-sc-top"><b>🔁 Covers &amp; swaps</b><span style="flex:1"></span>'
-    + (hzScNightsOf(myUnit).length ? '<button class="hz-sc-btn go" onclick="hzScOpenForm()">Submit coverage</button>' : '') + '</div>'
-    + (hzScNightsOf(myUnit).length ? '<div class="hz-sc-muted" style="margin:2px 0 4px">If you are unable to cover your shift please submit for coverage.</div>' : '');
-  // tonight
-  var tn = hzScOn(today);
-  if (tn.length) h += '<div class="hz-sc-tonight">🌙 <b>Tonight:</b> ' + tn.map(function(x){ return '<b>' + hzScEsc(x.by) + '</b> covering for <b>' + hzScEsc(x["for"]) + '</b>'; }).join(" · ") + '</div>';
-  // my requests
-  // mine — ones I asked for, or I'm covering
-  var mine = list.filter(function(c){ return (c.fromUid === uid || c.toUid === uid) && live(c) && (c.status === "accepted" || c.status === "pending"); });
-  if (mine.length) h += '<div class="hz-sc-sub">Yours</div>' + mine.map(function(c) {
-    return '<div class="hz-sc-card"><div>' + hzScWhat(c) + (c.note ? '<div class="hz-sc-note">“' + hzScEsc(c.note) + '”</div>' : '') + '</div>'
-      + '<div class="hz-sc-row"><button class="hz-sc-btn" onclick="hzScCancel(\'' + c.id + '\')">' + (c.fromUid === uid ? "↩ I'm available after all — cancel" : "Cancel") + '</button></div></div>';
-  }).join("");
-  // coming up — everyone's accepted changes in the next 14 days
-  var lim = hzScYmd(new Date(hzScDate(today).getTime() + 14 * 86400000)), rows = [];
-  list.forEach(function(c) {
-    if (c.status !== "accepted") return;
-    if (c.date >= today && c.date <= lim) rows.push({ d: c.date, t: '<b>' + hzScEsc(c.toUnit) + '</b> covering for <b>' + hzScEsc(c.fromUnit) + '</b>', c: c });
-    if (c.type === "swap" && c.swapDate && c.swapDate >= today && c.swapDate <= lim) rows.push({ d: c.swapDate, t: '<b>' + hzScEsc(c.fromUnit) + '</b> covering for <b>' + hzScEsc(c.toUnit) + '</b>', c: c });
-  });
-  rows.sort(function(a, b){ return a.d.localeCompare(b.d); });
-  h += '<div class="hz-sc-sub">Coming up (next 2 weeks)</div>' + (rows.length ? rows.map(function(r) {
-    return '<div class="hz-sc-line"><span class="hz-sc-date">' + hzScEsc(hzScLabel(r.d)) + '</span> ' + r.t + (r.c.type === "swap" ? ' <span class="hz-sc-muted">(swap)</span>' : '')
-      + (HZ_SC.isAdmin ? ' <button class="hz-sc-x" title="Undo (admin)" onclick="hzScCancel(\'' + r.c.id + '\')">Undo</button>' : '') + '</div>';
-  }).join("") : '<div class="hz-sc-muted">No covers or swaps.</div>');
+  // 12.130 (Sam): covers / swaps show only on that night's card — up here is just the Submit coverage button (and the form)
+  if (!hzScNightsOf(myUnit).length && !HZ_SC.form) return "";
+  var h = '<div class="hz-sc' + (HZ_SC.form ? '' : ' slim') + '"><div class="hz-sc-top"><span class="hz-sc-ask">If you are unable to cover your shift please submit for coverage.</span>'
+    + (HZ_SC.form ? '' : '<button class="hz-sc-btn go hz-sc-sm" onclick="hzScOpenForm()">Submit coverage</button>') + '</div>';
   return h + (HZ_SC.form ? hzScFormHtml() : '') + '</div>';
 }
 function hzScOpenForm() {
@@ -13442,7 +13435,7 @@ function hzScCancel(id) {
 }
 // 12.124 / 5.79: the night cards themselves show the change for their next date (tonight first, then the coming week):
 // the member being covered is struck through, the one covering is added ("covering"), with a line under the card —
-// and the member who asked can cancel it there ("↩ I'm available after all"). After that night it's back to normal.
+// and the member who asked can cancel it there ("Cancel coverage"). After that night it's back to normal.
 function hzScMarkCards() {
   var today = hzScTonight(), t0 = hzScDate(today), uid = HZ_SC.uid;
   document.querySelectorAll("#m-shifts-content .m-info-card, #shifts-list .dk-shift-card").forEach(function(card) {
@@ -13463,7 +13456,9 @@ function hzScMarkCards() {
     var info = document.createElement("div"); info.className = "hz-sc-inj hz-sc-cardline";
     info.innerHTML = '🔁 ' + hzScEsc(hzScLabel(ymd)) + (ymd === today ? ' (tonight)' : '') + ': ' + ch.map(function(x){ return '<b>' + hzScEsc(x.by) + '</b> covering for <b>' + hzScEsc(x["for"]) + '</b>'; }).join(" · ")
       + ch.map(function(x){ var c = (HZ_SC.list || []).filter(function(y){ return y.id === x.id; })[0]; if (!c) return "";
-          return c.fromUid === uid ? ' <button class="hz-sc-x" onclick="hzScCancel(\'' + c.id + '\')">↩ I\'m available after all — cancel</button>' : (HZ_SC.isAdmin ? ' <button class="hz-sc-x" onclick="hzScCancel(\'' + c.id + '\')">Undo</button>' : ''); }).join("");
+          return c.fromUid === uid ? ' <button class="hz-sc-x" onclick="hzScCancel(\'' + c.id + '\')">Cancel coverage</button>'
+            : c.toUid === uid ? ' <button class="hz-sc-x" onclick="hzScCancel(\'' + c.id + '\')">Cancel</button>'
+            : (HZ_SC.isAdmin ? ' <button class="hz-sc-x" onclick="hzScCancel(\'' + c.id + '\')">Undo</button>' : ''); }).join("");
     card.appendChild(info);
   });
 }
@@ -13487,7 +13482,8 @@ function hzScHook(name) {
 }
 (function() {
   var css = document.createElement("style");
-  css.textContent = ".hz-sc{border:1px solid var(--card-border);border-radius:12px;padding:12px;margin:0 0 14px;background:rgba(var(--gold-rgb),.05)}"
+  css.textContent = ".hz-sc.slim{padding:5px 6px 5px 10px;margin:0 0 8px;border-radius:9px}.hz-sc.slim .hz-sc-top{flex-wrap:nowrap;gap:8px}.hz-sc-ask{flex:1;min-width:0;font-size:.72rem;line-height:1.25;color:var(--gray)}.hz-sc-btn.hz-sc-sm{min-height:30px;padding:0 10px;font-size:.76rem;white-space:nowrap;flex:0 0 auto}"   // 12.132 (Sam): compact
+    + ".hz-sc{border:1px solid var(--card-border);border-radius:12px;padding:8px 10px;margin:0 0 12px;background:rgba(var(--gold-rgb),.05)}"
     + ".hz-sc-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.hz-sc-top b{font-family:'Oswald',sans-serif;letter-spacing:.04em;color:var(--white)}"
     + ".hz-sc-sub{font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin:12px 0 6px}"
     + ".hz-sc-tonight{margin-top:10px;border-radius:9px;padding:8px 10px;background:rgba(var(--gold-rgb),.14);border:1px solid rgba(var(--gold-rgb),.5);font-size:.86rem;color:var(--white)}"
