@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.63"; window.M_BUILD = BUILD;
+  var BUILD = "5.64"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12858,6 +12858,19 @@ function hzAvAdminRender() {
         + (anyPart ? '<tr class="hz-av-tot"><td colspan="2"><b>Intermittent</b></td>' + parts.map(function(n){ return '<td>' + (n || "") + '</td>'; }).join("") + '</tr>' : '')
         + users.map(function(u){ return '<tr><td><b>' + hzAvEsc(u.unit) + '</b></td><td>' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + (hzAvDaytime(u) ? ' <span title="Daytime Responder">☀️</span>' : '') + '</td>' + HZ_AV_DAYS.map(function(d){ return cell(u, d[0]); }).join("") + '</tr>'; }).join("")
         + '</tbody></table></div>';
+      // 12.109 / 5.64: under the grid — each day's people in the order Available, Intermittent, Unsure, Unavailable
+      var grp = [[true, "✓ Available", "hz-av-yes"], ["intermittent", "≈ Intermittent", "hz-av-part"], ["unsure", "? Unsure", "hz-av-maybe"], [false, "✕ Unavailable", "hz-av-no"]];
+      h += '<div class="hz-av-sum">' + HZ_AV_DAYS.map(function(d) {
+        var head = '<div class="hz-av-sum-h">' + d[1] + '</div>';
+        if (yt[d[0]]) return '<div class="hz-av-sum-d">' + head + '<div class="hz-erv-muted">🕯️ Yom Tov — not in the weekday poll</div></div>';
+        var body = grp.map(function(g) {
+          var who = users.filter(function(u){ return inPoll(u, d[0]) && (by[u.uid] || {})[d[0]] === g[0]; });
+          if (!who.length) return "";
+          return '<div class="hz-av-sum-g"><div class="' + g[2] + '">' + g[1] + ' (' + who.length + ')</div>'
+            + who.map(function(u){ return '<div class="hz-av-sum-n"><b>' + hzAvEsc(u.unit) + '</b> ' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + '</div>'; }).join("") + '</div>';
+        }).join("");
+        return '<div class="hz-av-sum-d">' + head + (body || '<div class="hz-erv-muted">No answers yet</div>') + '</div>';
+      }).join("") + '</div>';
       var mode = hzAvMode(), rt = S.resetTime || (mode === "sunTime" ? "08:00" : "21:00");
       h += '<div class="add-user-form" style="max-width:900px;margin-top:16px"><div class="admin-label" style="margin-bottom:6px">🔄 When the week resets</div>'
         + '<div class="hz-erv-muted" style="margin-bottom:8px">Both polls start a new week (Monday – Shabbos) at this moment; everyone\'s answers start blank.</div>'
@@ -13043,6 +13056,9 @@ function hzAvSaveSettings() {
     + ".hz-av-rc-t td{vertical-align:top;text-align:left!important}.hz-av-rc-t th{text-align:left!important}.hz-av-rc-flag td{background:rgba(224,85,85,.06)}"
     + ".hz-av-rc-off{display:flex!important;gap:6px;align-items:center;cursor:pointer;white-space:nowrap;text-transform:none!important;letter-spacing:0!important;font-size:.84rem!important;color:var(--white)!important}.hz-av-rc-off input{width:auto!important;margin:0}"
     + ".hz-av-rc-note{margin-top:5px;width:100%!important;min-width:140px}.hz-erv-box.hz-av-rc-box{max-width:980px;width:100%}"
+    + ".hz-av-sum{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;max-width:900px;margin-top:14px}.hz-av-sum-d{border:1px solid var(--card-border);border-radius:10px;padding:10px;min-width:0;background:rgba(255,255,255,.02)}"
+    + ".hz-av-sum-h{font-family:'Oswald',sans-serif;font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;color:var(--white);border-bottom:1px solid var(--card-border);padding-bottom:5px;margin-bottom:6px}"
+    + ".hz-av-sum-g{margin-bottom:8px;font-size:.8rem}.hz-av-sum-g>div:first-child{font-weight:700;margin-bottom:2px}.hz-av-sum-n{color:var(--white);line-height:1.45;overflow-wrap:anywhere}"
     + ".hz-av-set{margin-bottom:12px}.hz-av-set>label{display:block;font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin-bottom:5px}"
     + "#hz-av-pop{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}"
     + "@media (max-width:600px){#hz-av-pop{padding:0;align-items:stretch}}"
