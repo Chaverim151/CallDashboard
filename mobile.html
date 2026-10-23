@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.57"; window.M_BUILD = BUILD;
+  var BUILD = "5.58"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3463,17 +3463,23 @@ function hzVcfSave(k) {
     setTimeout(function(){ document.removeEventListener("visibilitychange", onHide); if (!left) hzVcfDownload(u); }, 1800);   // nothing opened → the file instead
     return;
   }
-  // 12.102 / 5.57 — iPhone/iPad: a short-lived web link to the card, which iOS opens as its own "Create New Contact" screen
-  var relay = typeof hzRelay === "function" ? hzRelay : typeof mRelay === "function" ? mRelay : null;
-  if (/iPhone|iPad|iPod/i.test(ua) && relay && u.unit) {
-    if (typeof showToast === "function") showToast("Opening contact…"); else if (typeof mToast === "function") mToast("Opening contact…");
-    relay("vcardLink", { unit: u.unit }).then(function(r) {
-      if (!r || !r.url) throw new Error("no link");
-      location.href = r.url;
-    }).catch(function(){ hzVcfDownload(u); });
+  // 12.103 / 5.58 — iPhone/iPad: open the card from the web link fetched when Contacts opened (iOS shows its own
+  // "Create New Contact" screen). It must open right on the tap — iPhone blocks anything that waits for the server first.
+  // No link (server not updated / offline) → the share sheet, also right on the tap.
+  if (/iPhone|iPad|iPod/i.test(ua) && u.unit && HZ_VCF_LINK.url && HZ_VCF_LINK.exp - Date.now() > 60000) {
+    location.href = HZ_VCF_LINK.url + "&u=" + encodeURIComponent(u.unit);
     return;
   }
   hzVcfDownload(u);
+}
+// 12.103: get the Contacts-page link ahead of time (iPhone only; valid 30 minutes, renewed when Contacts opens again)
+var HZ_VCF_LINK = { url: "", exp: 0, busy: false };
+function hzVcfPrime() {
+  if (!/iPhone|iPad|iPod/i.test(navigator.userAgent || "") || HZ_VCF_LINK.busy || HZ_VCF_LINK.exp - Date.now() > 5 * 60000) return;
+  var relay = typeof hzRelay === "function" ? hzRelay : typeof mRelay === "function" ? mRelay : null; if (!relay) return;
+  HZ_VCF_LINK.busy = true;
+  relay("vcardLink", {}).then(function(r){ if (r && r.url) { HZ_VCF_LINK.url = r.url; HZ_VCF_LINK.exp = r.exp || Date.now() + 1500000; } })
+    .catch(function(){}).then(function(){ HZ_VCF_LINK.busy = false; });
 }
 // the .vcf file itself — computers, and the fallback on phones (iPhone: share sheet)
 function hzVcfDownload(u) {
@@ -3491,6 +3497,7 @@ function hzVcfFile(blob, name) {
   document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
 function mRenderContacts() {
+  hzVcfPrime();
   var el = document.getElementById("m-contacts-content"); if (!el) return;
   // Pills: All, Responder, Dispatcher, then every other role in use, then titles (Captain, Chief…)
   var titles = hzTitleList().map(function(x) { return String(x).toLowerCase(); });
@@ -12625,7 +12632,7 @@ function hzErvRefreshTicket(id) {
   css.textContent = "#hz-erv{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}"
     + ".hz-erv-box{background:var(--navy-mid,#122040);color:var(--white,#f4f6fa);border:1px solid var(--card-border);border-radius:12px;width:min(980px,100%);max-height:94vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)}"
     + ".hz-erv-top{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--card-border);font-family:'Oswald',sans-serif;font-size:1rem;letter-spacing:.04em}"
-    + ".hz-erv-x{background:none;border:none;color:var(--gray);font-size:1.2rem;cursor:pointer}"
+    + ".hz-erv-x{background:none;border:none;color:var(--gray);font-size:1.2rem;cursor:pointer;min-width:36px;min-height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;flex:0 0 auto;margin:-6px -6px -6px 4px}.hz-erv-x:hover{background:rgba(127,127,127,.12)}"   // 12.103: big enough to tap
     + ".hz-erv-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0}"
     + ".hz-erv-tabs button{background:transparent;border:1px solid var(--card-border);color:var(--gray);border-radius:7px;padding:7px 12px;font-family:'Oswald',sans-serif;font-size:.74rem;letter-spacing:.05em;cursor:pointer}"
     + ".hz-erv-tabs button.on{background:rgba(var(--gold-rgb),.18);border-color:var(--gold);color:var(--gold)}"
@@ -12671,7 +12678,7 @@ function hzErvRefreshTicket(id) {
     + ".hz-erv-in[type=datetime-local]::-webkit-date-and-time-value{text-align:left;margin:0}"
     + ".hz-erv-box{max-height:94vh;max-height:94dvh;overflow:hidden}.hz-erv-body{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;flex:1;min-height:0}"
     + "@media (max-width:600px){#hz-erv{padding:0;align-items:stretch}.hz-erv-box{width:100%;max-height:none;height:100%;border-radius:0;border:none;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}"
-    + ".hz-erv-top{flex-wrap:wrap}.hz-erv-tabs button{flex:1 1 auto}}";
+    + ".hz-erv-top{flex-wrap:nowrap;gap:6px}.hz-erv-top>b{white-space:nowrap}.hz-erv-top .hz-erv-pill{white-space:normal;line-height:1.2;font-size:.66rem}.hz-erv-tabs button{flex:1 1 auto}}";
   document.head.appendChild(css);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hzErvInit); else hzErvInit();
 })();

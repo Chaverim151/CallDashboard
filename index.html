@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.102">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.103">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2388,7 +2388,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.102</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.103</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7983,17 +7983,23 @@ function hzVcfSave(k) {
     setTimeout(function(){ document.removeEventListener("visibilitychange", onHide); if (!left) hzVcfDownload(u); }, 1800);   // nothing opened → the file instead
     return;
   }
-  // 12.102 / 5.57 — iPhone/iPad: a short-lived web link to the card, which iOS opens as its own "Create New Contact" screen
-  var relay = typeof hzRelay === "function" ? hzRelay : typeof mRelay === "function" ? mRelay : null;
-  if (/iPhone|iPad|iPod/i.test(ua) && relay && u.unit) {
-    if (typeof showToast === "function") showToast("Opening contact…"); else if (typeof mToast === "function") mToast("Opening contact…");
-    relay("vcardLink", { unit: u.unit }).then(function(r) {
-      if (!r || !r.url) throw new Error("no link");
-      location.href = r.url;
-    }).catch(function(){ hzVcfDownload(u); });
+  // 12.103 / 5.58 — iPhone/iPad: open the card from the web link fetched when Contacts opened (iOS shows its own
+  // "Create New Contact" screen). It must open right on the tap — iPhone blocks anything that waits for the server first.
+  // No link (server not updated / offline) → the share sheet, also right on the tap.
+  if (/iPhone|iPad|iPod/i.test(ua) && u.unit && HZ_VCF_LINK.url && HZ_VCF_LINK.exp - Date.now() > 60000) {
+    location.href = HZ_VCF_LINK.url + "&u=" + encodeURIComponent(u.unit);
     return;
   }
   hzVcfDownload(u);
+}
+// 12.103: get the Contacts-page link ahead of time (iPhone only; valid 30 minutes, renewed when Contacts opens again)
+var HZ_VCF_LINK = { url: "", exp: 0, busy: false };
+function hzVcfPrime() {
+  if (!/iPhone|iPad|iPod/i.test(navigator.userAgent || "") || HZ_VCF_LINK.busy || HZ_VCF_LINK.exp - Date.now() > 5 * 60000) return;
+  var relay = typeof hzRelay === "function" ? hzRelay : typeof mRelay === "function" ? mRelay : null; if (!relay) return;
+  HZ_VCF_LINK.busy = true;
+  relay("vcardLink", {}).then(function(r){ if (r && r.url) { HZ_VCF_LINK.url = r.url; HZ_VCF_LINK.exp = r.exp || Date.now() + 1500000; } })
+    .catch(function(){}).then(function(){ HZ_VCF_LINK.busy = false; });
 }
 // the .vcf file itself — computers, and the fallback on phones (iPhone: share sheet)
 function hzVcfDownload(u) {
@@ -8012,6 +8018,7 @@ function hzVcfFile(blob, name) {
 }
 function renderContacts(list) {
   var el = document.getElementById("g-contacts"); if (!el) return;
+  hzVcfPrime();
   if (!list.length) { el.innerHTML = '<div style="color:var(--gray);text-align:center;padding:40px">No contacts found.</div>'; return; }
   var html = "";
   list.forEach(function(u, i) {
@@ -18473,7 +18480,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   <div style="background:#122040;border:1px solid var(--card-border);border-radius:14px;width:100%;max-width:440px;animation:fadeUp 0.2s ease both">
     <div style="padding:16px 20px;border-bottom:1px solid var(--card-border);display:flex;justify-content:space-between;align-items:center">
       <span style="font-family:'Oswald',sans-serif;font-size:0.88rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#ff9090">✗ Deny CE Hours</span>
-      <button onclick="window.closeDenyModal()" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer;line-height:1">×</button>
+      <button onclick="window.closeDenyModal()" aria-label="Close" style="background:none;border:none;color:var(--gray);font-size:1.4rem;cursor:pointer;line-height:1;min-width:36px;min-height:36px">×</button>
     </div>
     <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
       <div id="ce-deny-member-info" style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:10px 14px;font-size:0.82rem;color:var(--white)"></div>
@@ -18884,7 +18891,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.102";
+var DESKTOP_VERSION = "12.103";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -19194,6 +19201,7 @@ function mLoadShifts() {
   }).catch(function(e) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; });
 }
 function mLoadContacts() {
+  hzVcfPrime();
   db.collection("users").orderBy("unit").get().then(function(snap) {
     var el = document.getElementById("m-contacts-content");
     if (snap.empty) { el.innerHTML = '<div style="color:var(--gray)">No contacts found.</div>'; return; }
@@ -26706,7 +26714,7 @@ function hzErvRefreshTicket(id) {
   css.textContent = "#hz-erv{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}"
     + ".hz-erv-box{background:var(--navy-mid,#122040);color:var(--white,#f4f6fa);border:1px solid var(--card-border);border-radius:12px;width:min(980px,100%);max-height:94vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.5)}"
     + ".hz-erv-top{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--card-border);font-family:'Oswald',sans-serif;font-size:1rem;letter-spacing:.04em}"
-    + ".hz-erv-x{background:none;border:none;color:var(--gray);font-size:1.2rem;cursor:pointer}"
+    + ".hz-erv-x{background:none;border:none;color:var(--gray);font-size:1.2rem;cursor:pointer;min-width:36px;min-height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;flex:0 0 auto;margin:-6px -6px -6px 4px}.hz-erv-x:hover{background:rgba(127,127,127,.12)}"   // 12.103: big enough to tap
     + ".hz-erv-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0}"
     + ".hz-erv-tabs button{background:transparent;border:1px solid var(--card-border);color:var(--gray);border-radius:7px;padding:7px 12px;font-family:'Oswald',sans-serif;font-size:.74rem;letter-spacing:.05em;cursor:pointer}"
     + ".hz-erv-tabs button.on{background:rgba(var(--gold-rgb),.18);border-color:var(--gold);color:var(--gold)}"
@@ -26752,7 +26760,7 @@ function hzErvRefreshTicket(id) {
     + ".hz-erv-in[type=datetime-local]::-webkit-date-and-time-value{text-align:left;margin:0}"
     + ".hz-erv-box{max-height:94vh;max-height:94dvh;overflow:hidden}.hz-erv-body{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;flex:1;min-height:0}"
     + "@media (max-width:600px){#hz-erv{padding:0;align-items:stretch}.hz-erv-box{width:100%;max-height:none;height:100%;border-radius:0;border:none;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}"
-    + ".hz-erv-top{flex-wrap:wrap}.hz-erv-tabs button{flex:1 1 auto}}";
+    + ".hz-erv-top{flex-wrap:nowrap;gap:6px}.hz-erv-top>b{white-space:nowrap}.hz-erv-top .hz-erv-pill{white-space:normal;line-height:1.2;font-size:.66rem}.hz-erv-tabs button{flex:1 1 auto}}";
   document.head.appendChild(css);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hzErvInit); else hzErvInit();
 })();
