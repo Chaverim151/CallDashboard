@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.48"; window.M_BUILD = BUILD;
+  var BUILD = "5.49"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12810,6 +12810,7 @@ function hzAvAdminRender() {
         var v = (by[u.uid] || {})[k];
         return v === true ? '<td class="hz-av-yes" title="Available">✓</td>' : v === "intermittent" ? '<td class="hz-av-part" title="Intermittent">≈</td>' : v === "unsure" ? '<td class="hz-av-maybe" title="Unsure">?</td>' : v === false ? '<td class="hz-av-no" title="Unavailable">✕</td>' : '<td class="hz-av-nil">—</td>'; };
       var h = '<div class="hz-erv-row"><button class="hz-erv-btn" onclick="HZ_AV.admWeek--;hzAvAdminRender()">‹ Prev</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek=0;hzAvAdminRender()">This week</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek++;hzAvAdminRender()">Next ›</button>'
+        + '<button class="hz-erv-btn" style="border-color:var(--gold);color:var(--gold)" onclick="hzAvRollCall()">🕯️ Shabbos roll call</button>'
         + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ≈ intermittent · ? unsure · ✕ unavailable · — no answer · blank = not in that poll</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' answered everything · ☀️ = Daytime Responder (Mon–Fri poll; set in Users ▸ Edit) · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
         + '<div class="tbl-wrap" style="max-width:900px"><table class="hz-av-tbl"><thead><tr><th>Unit</th><th>Name</th>' + HZ_AV_DAYS.map(function(d){ return '<th>' + d[1] + (yt[d[0]] ? '<br><span class="hz-av-ytl">🕯️ Yom Tov</span>' : '') + '</th>'; }).join("") + '</tr></thead><tbody>'
         + '<tr class="hz-av-tot"><td colspan="2"><b>Available</b></td>' + counts.map(function(n, i){ return '<td><b>' + (yt[HZ_AV_DAYS[i][0]] ? "" : n) + '</b></td>'; }).join("") + '</tr>'
@@ -12827,6 +12828,93 @@ function hzAvAdminRender() {
       el.innerHTML = h;
     });
   }).catch(function(e){ el.innerHTML = '<div style="color:#ff9090">Couldn\'t load: ' + hzAvEsc(e.message) + '</div>'; });
+}
+// ── 12.94: 🕯️ Shabbos roll call (Admin ▸ 📅 Availability) ──
+// Who isn't here for Shabbos (marked Unavailable on the Shabbos poll for the week shown) + vehicles that need attention:
+// out of service (reason, expected back), on a vehicle shift over Shabbos (approved ERV/rig shift), or marked "not at base"
+// right here (vehicles/<id>.offBase + offBaseNote — stays until unticked). Print / Copy.
+var HZ_AV_RC = { text: "", html: "" };
+function hzAvRollCall() {
+  var el = document.getElementById("hz-av-pop");
+  if (!el) { el = document.createElement("div"); el.id = "hz-av-pop"; document.body.appendChild(el); }
+  el.innerHTML = '<div class="hz-erv-box hz-av-rc-box" role="dialog" aria-label="Shabbos roll call"><div class="hz-erv-top"><b>🕯️ Shabbos roll call</b><span style="flex:1"></span>'
+    + '<button class="hz-erv-btn" onclick="hzAvRcPrint()">🖨 Print</button><button class="hz-erv-btn" onclick="hzAvRcCopy()">📋 Copy</button>'
+    + '<button class="hz-erv-x" onclick="hzAvClose()" aria-label="Close">✕</button></div><div class="hz-erv-body" id="hz-av-rc"><div class="hz-erv-muted">Loading…</div></div></div>';
+  hzAvRcLoad();
+}
+function hzAvRcLoad() {
+  var box = document.getElementById("hz-av-rc"); if (!box) return;
+  Promise.all([
+    hzAvWeek(HZ_AV.admWeek),
+    db.collection("users").get(),
+    db.collection("vehicles").get(),
+    db.collection("tickets").where("category", "==", "erv").get().catch(function(){ return { forEach: function(){} }; })
+  ]).then(function(r) {
+    var w = r[0], users = [], vehs = [], shifts = [];
+    r[1].forEach(function(d){ var u = d.data() || {}; if (u.unit && hzAvCanFill(u)) users.push(Object.assign({ uid: d.id }, u)); });
+    r[2].forEach(function(d){ var v = d.data() || {}, id = v.id || d.id, ty = String(v.type || "").toLowerCase();
+      if (/bag|kit|storage|other/.test(ty) || /bag|kit/i.test(id)) return;
+      if (ty === "vehicle" || ty === "erv" || /^ERV/i.test(id) || (!ty && /^MC-?9\d\d$/i.test(id))) vehs.push(Object.assign({ docId: d.id, id: id, kind: ty === "erv" || /^ERV/i.test(id) ? "erv" : "rig" }, v)); });
+    vehs.sort(function(a, b){ return (a.kind === b.kind ? 0 : a.kind === "rig" ? -1 : 1) || a.id.localeCompare(b.id, undefined, { numeric: true }); });
+    // Shabbos = Friday noon → Motzei Shabbos midnight
+    var fri = new Date(w.shab.getFullYear(), w.shab.getMonth(), w.shab.getDate() - 1, 12).getTime(), end = new Date(w.shab.getFullYear(), w.shab.getMonth(), w.shab.getDate() + 1).getTime();
+    r[3].forEach(function(d){ var t = d.data() || {}; if ((t.ervStatus || "") === "approved" && !t.checkedOutAt && t.startMs < end && t.endMs > fri) shifts.push(t); });
+    return db.collection("availability").where("weekKey", "==", w.key).get().then(function(q) {
+      var by = {}; q.forEach(function(d){ var x = d.data() || {}; if (x.uid) by[x.uid] = x.days || {}; });
+      users.sort(function(a, b){ return String(a.unit).localeCompare(String(b.unit), undefined, { numeric: true }); });
+      var nm = function(u){ return (u.unit + " " + ((u.firstName || "") + " " + (u.lastName || "")).trim()).trim(); };
+      var g = function(val){ return users.filter(function(u){ return (by[u.uid] || {}).shabbos === val; }); };
+      var away = g(false), yes = g(true), part = g("intermittent"), uns = g("unsure"), none = users.filter(function(u){ return !hzAvAnswered((by[u.uid] || {}).shabbos); });
+      var oosOf = function(v){ return v.serviceStatus === "out" && !(v.outUntil && new Date(v.outUntil).getTime() < Date.now()); };
+      var shiftOf = function(v){ return shifts.filter(function(t){ return t.ervUnit === v.id; })[0]; };
+      var stamp = new Date(), title = "Shabbos roll call — Shabbos " + hzAvMd(w.shab) + "/" + w.shab.getFullYear();
+      // ── on screen ──
+      var h = '<div class="hz-av-rc-h">' + hzAvEsc(title) + '<span class="hz-erv-muted"> · made ' + hzAvEsc(stamp.toLocaleString([], { weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })) + '</span></div>'
+        + '<div class="hz-erv-sub">👤 Away for Shabbos — marked Unavailable (' + away.length + ')</div>'
+        + (away.length ? '<ol class="hz-av-rc-list">' + away.map(function(u){ return '<li><b>' + hzAvEsc(u.unit) + '</b> ' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + '</li>'; }).join("") + '</ol>' : '<div class="hz-erv-muted">Nobody has marked themselves unavailable.</div>')
+        + '<div class="hz-erv-muted" style="margin-top:6px">Also: ✓ ' + yes.length + ' available · ≈ ' + part.length + ' intermittent · ? ' + uns.length + ' unsure · — ' + none.length + ' haven\'t answered (of ' + users.length + ' responders)</div>'
+        + '<div class="hz-erv-sub">🚑 Vehicles</div><div class="tbl-wrap"><table class="hz-av-tbl hz-av-rc-t"><thead><tr><th>Vehicle</th><th>Service</th><th>Shift over Shabbos</th><th>Not at home base</th><th>Home base</th></tr></thead><tbody>'
+        + vehs.map(function(v){ var o = oosOf(v), sh = shiftOf(v);
+            return '<tr' + (o || v.offBase || sh ? ' class="hz-av-rc-flag"' : '') + '><td><b>' + (v.kind === "erv" ? "🚙 " : "🚑 ") + hzAvEsc(v.id) + '</b></td>'
+              + '<td>' + (o ? '<span class="hz-av-no">⛔ Out of service</span>' + (v.outReason ? '<br><span class="hz-erv-muted">' + hzAvEsc(v.outReason) + '</span>' : '') + (v.outUntil ? '<br><span class="hz-erv-muted">back ' + hzAvEsc(new Date(v.outUntil).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })) + '</span>' : '') : '<span class="hz-av-yes">✓ In service</span>') + '</td>'
+              + '<td>' + (sh ? hzAvEsc((sh.driverUnit || sh.submittedBy || "") + " · " + (sh.shiftText || "")) : '<span class="hz-erv-muted">—</span>') + '</td>'
+              + '<td><label class="hz-av-rc-off"><input type="checkbox"' + (v.offBase ? " checked" : "") + ' onchange="hzAvRcOff(\'' + hzAvEsc(v.docId) + '\', this.checked)"> Not at base</label>'
+              + '<input class="hz-erv-in hz-av-rc-note" placeholder="Where is it?" value="' + hzAvEsc(v.offBaseNote || "") + '"' + (v.offBase ? '' : ' style="display:none"') + ' onchange="hzAvRcNote(\'' + hzAvEsc(v.docId) + '\', this.value)" data-doc="' + hzAvEsc(v.docId) + '"></td>'
+              + '<td class="hz-erv-muted">' + hzAvEsc(v.baseAddress || "not set (Fleet ▸ Home Base Map)") + '</td></tr>'; }).join("")
+        + '</tbody></table></div><div class="hz-erv-muted" style="margin-top:6px">Tick "Not at base" for a vehicle that won\'t be at its home base over Shabbos and say where — it stays marked until you untick it. Out of service comes from the rig status; shifts from 🚙 Vehicle Shifts.</div>';
+      box.innerHTML = h;
+      // ── text for Copy / Print ──
+      var flagged = vehs.filter(function(v){ return oosOf(v) || v.offBase || shiftOf(v); }), ok = vehs.filter(function(v){ return flagged.indexOf(v) < 0; });
+      var t = [title, "", "AWAY FOR SHABBOS (" + away.length + "):"].concat(away.length ? away.map(function(u, i){ return (i + 1) + ". " + nm(u); }) : ["None"])
+        .concat(["", "Also: " + yes.length + " available, " + part.length + " intermittent, " + uns.length + " unsure, " + none.length + " no answer", "", "VEHICLES:"])
+        .concat(flagged.map(function(v){ var o = oosOf(v), sh = shiftOf(v), bits = [];
+          if (o) bits.push("OUT OF SERVICE" + (v.outReason ? " (" + v.outReason + ")" : ""));
+          if (v.offBase) bits.push("NOT AT BASE" + (v.offBaseNote ? " — " + v.offBaseNote : ""));
+          if (sh) bits.push("on shift: " + (sh.driverUnit || sh.submittedBy || "") + " " + (sh.shiftText || ""));
+          return "• " + v.id + ": " + bits.join("; "); }))
+        .concat(ok.length ? ["• In service and at base: " + ok.map(function(v){ return v.id; }).join(", ")] : []);
+      HZ_AV_RC.text = t.join("\n");
+    });
+  }).catch(function(e){ box.innerHTML = '<div style="color:#ff9090">Couldn\'t load: ' + hzAvEsc(e.message) + '</div>'; });
+}
+function hzAvRcOff(docId, on) {
+  var me = HZ_AV.me || {}, data = { offBase: !!on, offBaseAt: new Date().toISOString(), offBaseBy: me.unit || "" };
+  if (!on) data.offBaseNote = "";
+  db.collection("vehicles").doc(docId).set(data, { merge: true }).then(hzAvRcLoad).catch(function(e){ hzAvToast("Not saved: " + e.message, true); });
+}
+function hzAvRcNote(docId, val) {
+  db.collection("vehicles").doc(docId).set({ offBaseNote: String(val || "").trim().slice(0, 120) }, { merge: true }).then(hzAvRcLoad).catch(function(e){ hzAvToast("Not saved: " + e.message, true); });
+}
+function hzAvRcCopy() {
+  var t = HZ_AV_RC.text; if (!t) return;
+  (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ hzAvToast("✓ Copied — paste it into a text or email"); })
+    .catch(function(){ var ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); hzAvToast("✓ Copied"); } catch (e) {} ta.remove(); });
+}
+function hzAvRcPrint() {
+  var t = HZ_AV_RC.text; if (!t) return;
+  var w = window.open("", "_blank"); if (!w) { hzAvToast("Allow pop-ups to print", true); return; }
+  w.document.write('<!doctype html><title>Shabbos roll call</title><pre style="font:15px/1.5 Arial,sans-serif;white-space:pre-wrap;margin:24px">' + hzAvEsc(t) + '</pre>');
+  w.document.close(); w.focus(); setTimeout(function(){ w.print(); }, 250);
 }
 // 12.87: the reminder / summary timing lives in Notification Settings ▸ 📅 Availability · 12.91: one compact table
 function hzAvSettingsRender() {
@@ -12916,6 +13004,10 @@ function hzAvSaveSettings() {
     + ".hz-av-s-chs{display:flex;gap:4px}.hz-av-ch{font-size:.68rem;padding:2px 7px;border-radius:10px;border:1px solid var(--card-border);color:var(--gray);opacity:.6;text-decoration:line-through}"
     + ".hz-av-ch.on{opacity:1;text-decoration:none;color:#7dedb5;border-color:rgba(76,175,128,.6);background:rgba(76,175,128,.12)}html[data-theme=basic] .hz-av-ch.on{color:#167a3e}"
     + ".hz-av-s-foot{margin:12px 0 8px}"
+    + ".hz-av-rc-h{font-family:'Oswald',sans-serif;font-size:1.05rem;color:var(--white);margin-bottom:6px}.hz-av-rc-list{margin:4px 0 0 20px;padding:0;columns:2;column-gap:28px;font-size:.9rem;line-height:1.7}"
+    + "@media (max-width:600px){.hz-av-rc-list{columns:1}}.hz-av-rc-t td{vertical-align:top;text-align:left!important}.hz-av-rc-t th{text-align:left!important}.hz-av-rc-flag td{background:rgba(224,85,85,.06)}"
+    + ".hz-av-rc-off{display:flex!important;gap:6px;align-items:center;cursor:pointer;white-space:nowrap;text-transform:none!important;letter-spacing:0!important;font-size:.84rem!important;color:var(--white)!important}.hz-av-rc-off input{width:auto!important;margin:0}"
+    + ".hz-av-rc-note{margin-top:5px;width:100%!important;min-width:140px}.hz-erv-box.hz-av-rc-box{max-width:980px;width:100%}"
     + ".hz-av-set{margin-bottom:12px}.hz-av-set>label{display:block;font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--gray);margin-bottom:5px}"
     + "#hz-av-pop{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}"
     + "@media (max-width:600px){#hz-av-pop{padding:0;align-items:stretch}}"
