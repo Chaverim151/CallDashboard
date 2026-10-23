@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.58"; window.M_BUILD = BUILD;
+  var BUILD = "5.60"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3460,7 +3460,7 @@ function hzVcfSave(k) {
     var left = false, onHide = function(){ if (document.visibilityState === "hidden") left = true; };
     document.addEventListener("visibilitychange", onHide);
     location.href = intent;
-    setTimeout(function(){ document.removeEventListener("visibilitychange", onHide); if (!left) hzVcfDownload(u); }, 1800);   // nothing opened → the file instead
+    setTimeout(function(){ document.removeEventListener("visibilitychange", onHide); if (!left) { hzVcfDownload(u); hzVcfSay("Contacts didn't open — the card was downloaded instead. Tap it in your notifications or Downloads to add it."); } }, 1800);   // nothing opened → the file instead
     return;
   }
   // 12.103 / 5.58 — iPhone/iPad: open the card from the web link fetched when Contacts opened (iOS shows its own
@@ -3473,23 +3473,31 @@ function hzVcfSave(k) {
   hzVcfDownload(u);
 }
 // 12.103: get the Contacts-page link ahead of time (iPhone only; valid 30 minutes, renewed when Contacts opens again)
-var HZ_VCF_LINK = { url: "", exp: 0, busy: false };
+var HZ_VCF_LINK = { url: "", exp: 0, busy: false, err: "" };
 function hzVcfPrime() {
   if (!/iPhone|iPad|iPod/i.test(navigator.userAgent || "") || HZ_VCF_LINK.busy || HZ_VCF_LINK.exp - Date.now() > 5 * 60000) return;
   var relay = typeof hzRelay === "function" ? hzRelay : typeof mRelay === "function" ? mRelay : null; if (!relay) return;
   HZ_VCF_LINK.busy = true;
   relay("vcardLink", {}).then(function(r){ if (r && r.url) { HZ_VCF_LINK.url = r.url; HZ_VCF_LINK.exp = r.exp || Date.now() + 1500000; } })
-    .catch(function(){}).then(function(){ HZ_VCF_LINK.busy = false; });
+    .catch(function(e){ HZ_VCF_LINK.err = (e && e.message) || "error"; }).then(function(){ HZ_VCF_LINK.busy = false; });
 }
 // the .vcf file itself — computers, and the fallback on phones (iPhone: share sheet)
+function hzVcfSay(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); }
 function hzVcfDownload(u) {
   var name = ((u.unit ? u.unit + " " : "") + ((u.firstName || "") + " " + (u.lastName || "")).trim()).trim().replace(/[^\w .-]+/g, "") || "contact";
   var txt = hzVcfText(u), blob = new Blob([txt], { type: "text/vcard" });
-  try {
-    var file = new File([blob], name + ".vcf", { type: "text/vcard" });
-  } catch (e) { file = null; }
-  // iPhone/iPad: the share sheet (12.100: back from 12.99's new-window try — in the installed app that page loaded slowly or blank)
-  if (/iPhone|iPad|iPod/i.test(navigator.userAgent) && file && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file] }).catch(function(e){ if (e && e.name === "NotAllowedError") hzVcfFile(blob, name); }); return; }
+  var ios = /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+  if (ios) {
+    // 12.104: say why the native screen didn't open (shown under the share sheet)
+    if (HZ_VCF_LINK.err) hzVcfSay("Contact link not available (" + HZ_VCF_LINK.err + ") — using Share instead", true);
+    // try the two names iPhone uses for a contact card, then share the card as text
+    var files = [];
+    ["text/vcard", "text/x-vcard"].forEach(function(t){ try { var f = new File([txt], name + ".vcf", { type: t }); if (navigator.canShare && navigator.canShare({ files: [f] })) files.push(f); } catch (e) {} });
+    var fail = function(e) { if (e && e.name === "AbortError") return; hzVcfSay("Couldn't open the contact on this iPhone (" + ((e && (e.name + ": " + e.message)) || "no share") + ")", true); };
+    if (files.length) { navigator.share({ files: [files[0]] }).catch(function(e){ if (e && e.name === "NotAllowedError") hzVcfFile(blob, name); else fail(e); }); return; }
+    if (navigator.share) { navigator.share({ title: name, text: txt }).catch(fail); return; }
+    fail(null); return;
+  }
   hzVcfFile(blob, name);
 }
 function hzVcfFile(blob, name) {
@@ -11559,6 +11567,8 @@ function mAddDispNote() {
 }
 
 // ── TIMELINE (simplified mobile version, multi-crew aware) ──
+// 12.105: HH:MM for the timeline (toLocaleTimeString with hour12:false can say "24:05" after midnight)
+function hzTlHm(iso) { var d = new Date(iso); return isNaN(d) ? "" : (d.getHours() < 10 ? "0" : "") + d.getHours() + ":" + (d.getMinutes() < 10 ? "0" : "") + d.getMinutes(); }
 function mBuildDispTimeline(call) {
   var t = call.times || {};
   var events = (call.callEvents || []).filter(function(ev){ return ev && ev.text; });
@@ -11567,9 +11577,10 @@ function mBuildDispTimeline(call) {
     // TRUE RUNNING LOG — every action, in the order it happened, with who did it
     events.forEach(function(ev) { entries.push({ time: ev.time || "", icon: ev.icon || "⚡", text: hzAvailEv(call, ev.text), color: ev.color || "var(--gray)", by: ev.by || "", at: ev.createdAt || "" }); });
     try { hzMsgTimelineEntries(call).forEach(function(x) { entries.push(x); }); } catch (e) {}   // 12.77 / 5.35: 💬 messages
-    (call.callNotes || []).forEach(function(nn) { if (nn && nn.text) entries.push({ time: nn.time || "", icon: "📝", text: nn.text, color: "var(--gray)", by: nn.by || "", at: nn.createdAt || "" }); });
-    if (call.status === "cancelled") entries.push({ time: call.cancelledAt ? new Date(call.cancelledAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "✕", text: "Call Cancelled" + (call.cancelReason ? " — " + call.cancelReason : ""), color: "#ff9090", by: call.cancelledBy || "", at: call.cancelledAt || "" });
-    if (call.status === "complete") entries.push({ time: call.completedAt ? new Date(call.completedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false}) : "", icon: "🏁", text: "Call Complete", color: "#7dedb5", by: call.completedBy || "", at: call.completedAt || "" });
+    // 12.105 / 5.60: the cancel note is the same as the ✕ "Call Cancelled" line below — show it once
+    (call.callNotes || []).forEach(function(nn) { if (nn && nn.text && !(call.status === "cancelled" && /^Call Cancelled — /.test(nn.text))) entries.push({ time: nn.time || "", icon: "📝", text: nn.text, color: "var(--gray)", by: nn.by || "", at: nn.createdAt || "" }); });
+    if (call.status === "cancelled") entries.push({ time: call.cancelledAt ? hzTlHm(call.cancelledAt) : "", icon: "✕", text: "Call Cancelled" + (call.cancelReason ? " — " + call.cancelReason : "") + (call.cancelNote ? ": " + call.cancelNote : ""), color: "#ff9090", by: call.cancelledBy || "", at: call.cancelledAt || "" });
+    if (call.status === "complete") entries.push({ time: call.completedAt ? hzTlHm(call.completedAt) : "", icon: "🏁", text: "Call Complete", color: "#7dedb5", by: call.completedBy || "", at: call.completedAt || "" });
     entries.sort(function(a, b) { var ta = (a.time||"").slice(0,5), tb = (b.time||"").slice(0,5); if (ta !== tb && ta && tb) return ta.localeCompare(tb); return (a.at||"").localeCompare(b.at||""); });
   } else {
     // Snapshot fallback (calls created before the running log existed)
@@ -11709,7 +11720,7 @@ function mConfirmCancelCall() {
     return db.collection("activeCalls").doc(callId).set({
       status: "cancelled", cancelReason: reason, cancelNote: extraNote, cancelledBy: cancelledBy,
       cancelledAt: now.toISOString(), completedAt: now.toISOString(), completedByUid: mCurrentUser.uid,
-      callNotes: notes, unitDetails: unitDetails, "disposition.type": "cancelled", updatedAt: now.toISOString()
+      callNotes: notes, unitDetails: unitDetails, disposition: { type: "cancelled" }, updatedAt: now.toISOString()
     }, { merge: true });
   }).then(function() {
     mCloseAllSheets(); mToast("✕ Call cancelled — " + reason); mCloseDispatchDetail();
