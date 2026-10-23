@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.114">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.115">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2038,6 +2038,8 @@ html[data-theme="basic"] .m-cld-info{background:#f8f9fa !important}
 html[data-theme="basic"] .m-cld-box{background:#f8f9fa !important}
 html[data-theme="basic"] .m-cld-unit{color:#0b5cad !important}
 /* injected by scripts */
+html[data-theme="basic"] .hz-lg-note{color:#8a5a00 !important}
+html[data-theme="basic"] .hz-lg-in{background:#f3f4f6 !important}
 html[data-theme="basic"] :is(#adm-code-subs,html[data-theme="basic"] #adm-codes) .cs-card{background:#f8f9fa !important}
 html[data-theme="basic"] :is(#adm-code-subs,html[data-theme="basic"] #adm-codes) .cs-pending{color:#8a5a00 !important}
 html[data-theme="basic"] :is(#adm-code-subs,html[data-theme="basic"] #adm-codes) .cs-approved{color:#167a3e !important}
@@ -2400,7 +2402,7 @@ html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Home</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.114</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.115</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -5777,7 +5779,7 @@ function completeCallGo(callId) {
   db.collection("users").doc(currentUser.uid).get().then(function(snap) {
     var d = snap.exists ? snap.data() : {};
     var completedBy = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim();
-    return db.collection("activeCalls").doc(callId).set({ status:"complete", completedAt:new Date().toISOString(), completedBy:completedBy, completedByUid:currentUser.uid }, { merge:true });
+    return db.collection("activeCalls").doc(callId).set({ status:"complete", completedAt:new Date().toISOString(), completedBy:completedBy, completedByUid:currentUser.uid, closedTs: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true });
   }).then(function() {
     showToast("✓ Call marked complete");
     if (ddSelectedCallId === callId) {
@@ -6570,7 +6572,7 @@ window.confirmCancelCall = function() {
       cancelReason: reason,
       cancelNote: extraNote,
       cancelledBy: cancelledBy,
-      cancelledAt: new Date().toISOString(),
+      cancelledAt: new Date().toISOString(), closedTs: firebase.firestore.FieldValue.serverTimestamp(),
       completedAt: new Date().toISOString(), completedByUid: currentUser.uid,
       callNotes: notes,
       unitDetails: unitDetails,
@@ -11863,6 +11865,7 @@ function loadCallLogs() {
   var listEl = document.getElementById("cl-list");
   var statsEl = document.getElementById("cl-stats");
   if (!listEl) return;
+  if (!hzLogsGate(listEl, loadCallLogs)) { if (statsEl) statsEl.innerHTML = ""; return; }   // 12.115: 🔒 code first
   listEl.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0">Loading...</div>';
 
   hzClFreshDates("cl-from", "cl-to");   // filled-in dates follow today (12.57)
@@ -12421,6 +12424,61 @@ function hzSaveFile(blob, filename) {
 // there, all completed calls are read and filtered here — either way the WHOLE range is covered, not just the newest 500.
 function hzCLDayStartISO(d) { return d ? new Date(d + "T00:00:00").toISOString() : ""; }
 function hzCLDayEndISO(d)   { return d ? new Date(d + "T23:59:59.999").toISOString() : ""; }
+// ── 12.115 / 5.70: 🔒 two-step check for Call Logs. Text or email a 6-digit code (server logsCodeStart /
+// logsCodeVerify); then this device skips it for 14 days. The server enforces it: calls closed more than 24 hours
+// ago can only be read with a valid pass (database rules), so if the pass runs out the code screen comes back.
+var HZ_LG = { el: null, retry: null, sent: "" };
+function hzLgRelay(fn, data) { var r = typeof hzRelay === "function" ? hzRelay : mRelay; return r(fn, data); }
+function hzLgKey() { var u = firebase.auth().currentUser; return "hzLogsOk_" + (u ? u.uid : ""); }
+function hzLgOk() { try { return +(localStorage.getItem(hzLgKey()) || 0) > Date.now(); } catch (e) { return false; } }
+function hzLogsGate(el, go) { HZ_LG.el = el; HZ_LG.retry = go; if (hzLgOk()) return true; hzLgShow(); return false; }
+function hzLgEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function hzLgShow(note) {
+  var el = HZ_LG.el; if (!el) return;
+  el.innerHTML = '<div class="hz-lg"><div class="hz-lg-h">🔒 Call Logs — quick check</div>'
+    + '<div class="hz-lg-p">Call records are protected health information. We\'ll send you a 6-digit code; after that this device won\'t ask again for 14 days.</div>'
+    + (note ? '<div class="hz-lg-note">' + hzLgEsc(note) + '</div>' : '')
+    + '<div class="hz-lg-row"><button class="hz-lg-btn" onclick="hzLgSend(\'sms\')">📱 Text me a code</button><button class="hz-lg-btn" onclick="hzLgSend(\'email\')">✉️ Email me a code</button></div>'
+    + '<div id="hz-lg-code" style="display:none"><div class="hz-lg-sent" id="hz-lg-sent"></div>'
+    + '<div class="hz-lg-row"><input id="hz-lg-in" class="hz-lg-in" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" onkeydown="if(event.key===\'Enter\')hzLgVerify()"><button class="hz-lg-btn go" onclick="hzLgVerify()">Unlock</button></div></div>'
+    + '<div class="hz-lg-msg" id="hz-lg-msg"></div></div>';
+}
+function hzLgMsg(t, bad) { var m = document.getElementById("hz-lg-msg"); if (m) { m.textContent = t || ""; m.className = "hz-lg-msg" + (bad ? " bad" : ""); } }
+function hzLgSend(via) {
+  hzLgMsg("Sending…");
+  hzLgRelay("logsCodeStart", { via: via }).then(function(r) {
+    var box = document.getElementById("hz-lg-code"); if (box) box.style.display = "";
+    var s = document.getElementById("hz-lg-sent"); if (s) s.textContent = (via === "email" ? "✉️ Emailed to " : "📱 Texted to ") + ((r && r.sentTo) || "you") + " — it works for 10 minutes.";
+    hzLgMsg(""); var i = document.getElementById("hz-lg-in"); if (i) { i.value = ""; i.focus(); }
+  }).catch(function(e) { hzLgMsg((e && e.message) || "Couldn't send the code", true); });
+}
+function hzLgVerify() {
+  var code = ((document.getElementById("hz-lg-in") || {}).value || "").replace(/\D/g, "");
+  if (code.length !== 6) { hzLgMsg("Enter the 6 digits from the message.", true); return; }
+  hzLgMsg("Checking…");
+  hzLgRelay("logsCodeVerify", { code: code }).then(function(r) {
+    var until = Math.min((r && r.until) || 0, Date.now() + 14 * 86400000) || Date.now() + 14 * 86400000;
+    try { localStorage.setItem(hzLgKey(), String(until)); } catch (e) {}
+    if (typeof HZ_LG.retry === "function") HZ_LG.retry();
+  }).catch(function(e) { hzLgMsg((e && e.message) || "That didn't work — try again", true); });
+}
+// the database said no (pass ran out, or this device was trusted but the server pass wasn't): back to the code screen
+function hzLgLocked() {
+  try { localStorage.removeItem(hzLgKey()); } catch (e) {}
+  setTimeout(function(){ hzLgShow("Your 14-day check has run out — please verify again."); }, 0);
+}
+function hzLgIsDenied(e) { return /permission|insufficient/i.test((e && (e.code || e.message)) || ""); }
+(function() {
+  var css = document.createElement("style");
+  css.textContent = ".hz-lg{max-width:460px;margin:16px auto;border:1px solid var(--card-border);border-radius:12px;padding:16px;background:rgba(var(--gold-rgb),.05)}"
+    + ".hz-lg-h{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:.04em;color:var(--white);margin-bottom:6px}.hz-lg-p{font-size:.84rem;color:var(--gray);line-height:1.5;margin-bottom:12px}"
+    + ".hz-lg-note{font-size:.82rem;color:#ffc84a;margin-bottom:10px}html[data-theme=basic] .hz-lg-note{color:#8a5a00}"
+    + ".hz-lg-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.hz-lg-btn{flex:1 1 150px;min-height:44px;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,.05);color:var(--white);font-family:'Oswald',sans-serif;font-size:.9rem;letter-spacing:.03em;cursor:pointer}"
+    + ".hz-lg-btn.go{background:var(--gold);color:var(--navy);border-color:var(--gold);flex:0 0 auto;padding:0 20px}"
+    + ".hz-lg-in{flex:1 1 150px;min-height:44px;font-size:22px;letter-spacing:.3em;text-align:center;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,.06);color:var(--white);padding:0 10px}"
+    + ".hz-lg-sent{font-size:.82rem;color:var(--gray);margin:2px 0 8px}.hz-lg-msg{font-size:.82rem;color:var(--gray);min-height:1.2em}.hz-lg-msg.bad{color:#ff9090}html[data-theme=basic] .hz-lg-msg.bad{color:#b42318}";
+  document.head.appendChild(css);
+})();
 function hzFetchCallLogs(from, to) {
   if (from && to && from > to) { var _sw = from; from = to; to = _sw; }   // From after To → use them the other way round (12.56)
   var fromISO = hzCLDayStartISO(from), toISO = hzCLDayEndISO(to);
@@ -12434,7 +12492,8 @@ function hzFetchCallLogs(from, to) {
   if (fromISO) q = q.where("createdAt", ">=", fromISO);
   if (toISO) q = q.where("createdAt", "<=", toISO);
   return q.orderBy("createdAt", "desc").limit(5000).get().then(keep)
-    .catch(function() { return db.collection("activeCalls").where("status", "in", ["complete", "cancelled"]).get().then(keep); });
+    .catch(function(e) { if (hzLgIsDenied(e)) throw e; return db.collection("activeCalls").where("status", "in", ["complete", "cancelled"]).get().then(keep); })
+    .catch(function(e) { if (hzLgIsDenied(e)) hzLgLocked(); throw e; });   // 12.115
 }
 // Free-text search across a call: address, nature, units, rigs, hospital, notes, who created it, call ID…
 function hzCallLogText(l) {
@@ -18872,7 +18931,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.114";
+var DESKTOP_VERSION = "12.115";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -20931,6 +20990,7 @@ function mLoadStorage() {
 var mAllCallLogs = [];
 function mLoadCallLogs() {
   var el = document.getElementById("m-cl-list");
+  if (!hzLogsGate(el, mLoadCallLogs)) return;   // 12.115: 🔒 code first
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading...</div>';
   var from = document.getElementById("m-cl-from").value;
   var to = document.getElementById("m-cl-to").value;
@@ -20959,7 +21019,7 @@ function mLoadCallLogs() {
     .catch(function() {
       db.collection("activeCalls").where("status","==","complete").get()
         .then(process)
-        .catch(function(e) { el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
+        .catch(function(e) { if (hzLgIsDenied(e)) { hzLgLocked(); return; } el.innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
     });
 }
 function mPopulateCLNatureFilter() {
@@ -25393,7 +25453,7 @@ function mCompleteCallGo(away, why) {
   db.collection("users").doc(mCurrentUser.uid).get().then(function(snap) {
     var d = snap.exists ? snap.data() : {};
     var completedBy = ((d.unit||"") + " " + (d.firstName||"") + " " + (d.lastName||"")).trim() || mCurrentUserUnit || "";
-    var upd = { status: "complete", completedAt: new Date().toISOString(), completedBy: completedBy, completedByUid: mCurrentUser.uid };
+    var upd = { status: "complete", completedAt: new Date().toISOString(), completedBy: completedBy, completedByUid: mCurrentUser.uid, closedTs: firebase.firestore.FieldValue.serverTimestamp() };
     if (why) upd.callEvents = mEvtUnion(mEvt("Closed without " + away.join(", ") + " back at base — " + why, "⚠️", "#ffc84a", "event"));
     return db.collection("activeCalls").doc(callId).set(upd, { merge: true });
   }).then(function() { mToast("✓ Call complete"); mCloseDispatchDetail(); }).catch(function(e){ mToast("Error: "+e.message, true); });
@@ -26254,7 +26314,7 @@ function mConfirmCancelCall() {
     });
     return db.collection("activeCalls").doc(callId).set({
       status: "cancelled", cancelReason: reason, cancelNote: extraNote, cancelledBy: cancelledBy,
-      cancelledAt: now.toISOString(), completedAt: now.toISOString(), completedByUid: mCurrentUser.uid,
+      cancelledAt: now.toISOString(), completedAt: now.toISOString(), completedByUid: mCurrentUser.uid, closedTs: firebase.firestore.FieldValue.serverTimestamp(),
       callNotes: notes, unitDetails: unitDetails, disposition: { type: "cancelled" }, updatedAt: now.toISOString()
     }, { merge: true });
   }).then(function() {
