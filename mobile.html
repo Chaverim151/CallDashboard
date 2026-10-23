@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.91"; window.M_BUILD = BUILD;
+  var BUILD = "5.92"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -13392,12 +13392,14 @@ function hzScPanelHtml() {
     + (HZ_SC.form ? '' : '<button class="hz-sc-btn go hz-sc-sm" onclick="hzScOpenForm()">Submit coverage</button>') + '</div>';
   return h + (HZ_SC.form ? hzScFormHtml() : '') + '</div>';
 }
+// 12.137 (Sam): "Who is covering" lists only Responder / Captain / Chief / Backup (no dispatcher-only, logistics-only, driver-only)
+function hzScCrew(u) { var r = (u.roles || []).concat(u.role ? [u.role] : []).map(function(x){ return String(x).toLowerCase(); }); return r.indexOf("observer") < 0 && r.some(function(x){ return ["responder", "captain", "chief", "backup"].indexOf(x) >= 0; }); }   // observers can't cover (Sam)
 function hzScOpenForm() {
   HZ_SC.form = { date: "", to: "", type: "cover", swapDate: "", note: "" };
   var go = function(){ hzScRefresh(); var el = document.getElementById("hz-sc-form"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" }); };
   if (HZ_SC.users) { go(); return; }
   db.collection("users").get().then(function(q) {
-    var l = []; q.forEach(function(d){ var u = d.data() || {}; if (u.unit && d.id !== HZ_SC.uid && !(typeof hzPureDispatcher === "function" && hzPureDispatcher(u))) l.push({ uid: d.id, unit: String(u.unit).toUpperCase(), name: ((u.firstName || "") + " " + (u.lastName || "")).trim(), phone: String(u.phone || "").split(/[\/|]/)[0].replace(/\D/g, "") }); });
+    var l = []; q.forEach(function(d){ var u = d.data() || {}; if (u.unit && d.id !== HZ_SC.uid && hzScCrew(u)) l.push({ uid: d.id, unit: String(u.unit).toUpperCase(), name: ((u.firstName || "") + " " + (u.lastName || "")).trim(), phone: String(u.phone || "").split(/[\/|]/)[0].replace(/\D/g, "") }); });
     l.sort(function(a, b){ return a.unit.localeCompare(b.unit, undefined, { numeric: true }); });
     HZ_SC.users = l; go();
   }).catch(function(e){ hzScToast("Couldn't load members: " + e.message, true); });
