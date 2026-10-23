@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.99"; window.M_BUILD = BUILD;
+  var BUILD = "6.00"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -982,6 +982,7 @@ html[data-theme="basic"] .hz-erv-hq{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-av-rig.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-av-no2{color:#b42318 !important}
 html[data-theme="basic"] .hz-av-todo{color:#8a5a00 !important}
 html[data-theme="basic"] .hz-av-oos-pill{color:#b42318 !important}
 html[data-theme="basic"] .hz-av-yes{color:#167a3e !important}
@@ -13018,13 +13019,32 @@ function hzAvCardHtml(big) {
   // 12.129 (Sam): compact — one line of header, rig status right under it, weekdays + Shabbos in one row (phone too), one small note
   var dtOn = hzAvDaytime(me), shOn = hzAvCanFill(me);
   var h = '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>📅 My availability</b><span class="hz-av-sub">' + hzAvEsc(hzAvMd(mon) + " – " + hzAvMd(w.shab)) + ' · ' + (done === mine.length ? '<span class="hz-av-ok">✓ all answered</span>' : done + ' of ' + mine.length + ' answered') + '</span></div>'
+    // 12.145 (Sam): how to mark it, in plain steps
+    + '<div class="hz-av-how"><b>How to mark your availability</b><ol>'
+    +   '<li>Tap a day once → <span class="hz-av-ok">✓ Available</span></li>'
+    +   '<li>Tap it again → <span class="hz-av-no2">✕ Unavailable</span></li>'
+    +   '<li>Tap it once more to clear it (–)</li></ol>'
+    +   '<span>It saves by itself. ' + (dtOn && shOn ? 'Mark every weekday and Shabbos.' : dtOn ? 'Mark every weekday.' : 'Mark Shabbos.') + '</span></div>'
     + (dtOn ? '<div class="hz-av-qual hz-av-qual-full">☀️ ' + hzAvEsc(HZ_AV_QUALIFY) + '</div>' : '')   // 12.144: the weekday rule, full width above the days
     + '<div class="hz-av-row' + (dtOn && shOn ? ' two' : '') + '">';
   if (dtOn) h += '<div class="hz-av-grp"><div class="hz-av-grp-h">☀️ Weekdays <span>' + hzAvMd(mon) + '–' + hzAvMd(fri) + '</span></div><div class="hz-av-days">' + HZ_AV_WEEK.map(btn).join("") + '</div></div>';
   if (shOn) h += '<div class="hz-av-grp shab"><div class="hz-av-grp-h">🕯️ <span class="hz-av-lg">Shabbos </span><span class="hz-av-dt">' + hzAvMd(w.shab) + '</span></div><div class="hz-av-days one">' + btn(["shabbos", "Shabbos"]) + '</div></div>';
   h += '</div><div class="hz-av-note">'   // 12.144 (Sam): the weekday rule is back in full under ☀️ Weekdays
-    + 'Tap a day: – → ✓ Available → ✕ Unavailable · saves itself · resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</div>';
+    + 'Starts fresh ' + hzAvEsc(hzAvResetText(w.reset)) + '.</div>';
   return h + hzAvWhoHtml(w) + '</div>';
+}
+// 12.145 (Sam): ✅ who marked themselves available TODAY (weekday poll Mon–Fri; Shabbos on Saturday). Tap a unit → call / text / WhatsApp.
+function hzAvTodayHtml() {
+  var w = HZ_AV.week, all = HZ_AV.all; if (!w || !all) return "";
+  var now = new Date(), dow = now.getDay(), k = dow >= 1 && dow <= 5 ? HZ_AV_WEEK[dow - 1][0] : dow === 6 ? "shabbos" : "";
+  var lbl = now.toLocaleDateString([], { weekday: "short", month: "numeric", day: "numeric" });
+  if (!k || hzAvYmd(now) < hzAvYmd(new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 1))) return '<div class="hz-av-today"><div class="hz-av-today-h">✅ Available today <span>' + hzAvEsc(lbl) + '</span></div><div class="hz-erv-muted">No poll today.</div></div>';
+  if ((w.yt || {})[k]) return '<div class="hz-av-today"><div class="hz-av-today-h">✅ Available today <span>' + hzAvEsc(lbl) + '</span></div><div class="hz-erv-muted">🕯️ Yom Tov</div></div>';
+  var who = all.filter(function(x){ return (k === "shabbos" || x.dt === true) && (x.days || {})[k] === true; })
+    .sort(function(a, b){ return String(a.unit || "").localeCompare(String(b.unit || ""), undefined, { numeric: true }); });
+  return '<div class="hz-av-today' + (who.length ? '' : ' none') + '"><div class="hz-av-today-h">✅ Available today <span>' + hzAvEsc(lbl) + ' · ' + who.length + '</span></div>'
+    + (who.length ? '<div class="hz-av-today-l">' + who.map(function(x){ return '<button type="button" class="hz-av-tchip" onclick="typeof hzUnitContactModal===\'function\'&&hzUnitContactModal(\'' + hzAvEsc(x.unit || "") + '\')"><b>' + hzAvEsc(x.unit || "") + '</b> ' + hzAvEsc(x.name || "") + '</button>'; }).join("") + '</div>'
+      : '<div class="hz-erv-muted">Nobody has marked themselves available today yet.</div>') + '</div>';
 }
 // 👥 Who's available — from this week's answers (each answer carries the member's unit and name).
 // 12.121: weekdays list only who is ✓ Available; Shabbos lists only who is ✕ Unavailable (away); rigs out of service on top.
@@ -13096,7 +13116,7 @@ function hzAvRefreshCards() {
   // 12.140 (Sam): 📅 Availability is its own home tile — 🚑 rig status, my availability (if I'm in a poll), 👥 who's available, 🗓️ eScheduler (dispatchers)
   var pop = document.getElementById("hz-av-pop-body");
   if (pop) { var big = hzAvCardHtml(true), me = HZ_AV.me || {};
-    pop.innerHTML = hzAvRigsHtml() + (big || (HZ_AV.week ? '<div class="hz-av-card big hz-av-only">' + hzAvWhoHtml(HZ_AV.week).replace('<details class="hz-av-who"', '<details open class="hz-av-who"') + '</div>' : '<div class="hz-erv-muted">Loading…</div>'))
+    pop.innerHTML = hzAvRigsHtml() + hzAvTodayHtml() + (big || (HZ_AV.week ? '<div class="hz-av-card big hz-av-only">' + hzAvWhoHtml(HZ_AV.week).replace('<details class="hz-av-who"', '<details open class="hz-av-who"') + '</div>' : '<div class="hz-erv-muted">Loading…</div>'))
       + (hzAvDispatcher(me) ? '<a class="hz-av-esched" href="https://chmc.myesched.com/schedule/logon.asp" target="_blank" rel="noopener">🗓️ eScheduler <small>Dispatch schedule — opens the eScheduler site ↗</small></a>' : ''); }
   var sub = HZ_AV.week ? (hzAvDoneText() || "") : "", oo = (HZ_AV.rigs || []).filter(function(v){ return v.isOut; }).length;
   document.querySelectorAll(".hz-av-tile-sub").forEach(function(el) { el.innerHTML = (sub ? sub : "Who's around this week") + (oo ? ' · <span class="hz-av-oos-pill">🚑 ' + oo + ' out</span>' : ''); });
@@ -13351,6 +13371,12 @@ function hzAvSaveSettings() {
     + ".hz-av-rig-why{font-size:.76rem;color:var(--white);margin-top:5px;line-height:1.35}.hz-av-rig-why b{color:#ff9090}html[data-theme=basic] .hz-av-rig-why b{color:#b42318}"
     + ".hz-av-esched{display:flex;flex-direction:column;gap:2px;margin-top:12px;padding:12px 14px;border-radius:10px;border:1px solid var(--card-border);background:rgba(74,144,217,.08);color:var(--white);text-decoration:none;font-family:'Oswald',sans-serif;font-size:.95rem;letter-spacing:.04em}.hz-av-esched small{font-family:inherit;letter-spacing:0;font-size:.74rem;color:var(--gray)}"
     + "#hz-av-pop-body .hz-av-rigs{margin-bottom:10px}"
+    + ".hz-av-how{border:1px solid rgba(74,144,217,.4);background:rgba(74,144,217,.07);border-radius:9px;padding:8px 11px;margin:0 0 9px;font-size:.8rem;color:var(--white);line-height:1.45}.hz-av-how b{font-family:'Oswald',sans-serif;letter-spacing:.03em}.hz-av-how ol{margin:3px 0 3px 18px;padding:0}.hz-av-how>span{color:var(--gray);font-size:.76rem}"
+    + ".hz-av-no2{color:#ff9090;font-weight:700}html[data-theme=basic] .hz-av-no2{color:#b42318}"
+    + ".hz-av-today{border:1px solid rgba(76,175,128,.5);background:rgba(76,175,128,.08);border-radius:9px;padding:8px 10px;margin:0 0 10px}.hz-av-today.none{border-color:var(--card-border);background:transparent}"
+    + ".hz-av-today-h{font-family:'Oswald',sans-serif;font-size:.85rem;letter-spacing:.04em;color:var(--white);margin-bottom:5px}.hz-av-today-h span{font-family:inherit;letter-spacing:0;font-size:.76rem;color:var(--gray);margin-left:6px}"
+    + ".hz-av-today-l{display:flex;flex-wrap:wrap;gap:5px}.hz-av-tchip{border:1px solid rgba(76,175,128,.55);background:rgba(76,175,128,.12);color:var(--white);border-radius:7px;padding:4px 8px;font-size:.78rem;cursor:pointer}.hz-av-tchip b{font-family:'Oswald',sans-serif;letter-spacing:.03em}"
+    + "html[data-theme=basic] .hz-av-tchip{background:#eaf6ef!important;color:#1f2328!important;border:1px solid #9fd3b4!important}"
     + ".hz-av-qual.hz-av-qual-full{max-width:none!important;margin:0 0 8px;font-weight:600}"
     + ".hz-av-only .hz-av-who{margin-top:0;border-top:0;padding-top:0}"
     + ".hz-set-v-home>:not(.hz-av-slot),.hz-set-v-avail>:not(.hz-av-slot){display:none!important}"
