@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.92"; window.M_BUILD = BUILD;
+  var BUILD = "5.93"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -978,6 +978,7 @@ html[data-theme="basic"] .hz-erv-chip.warn{color:#8a5a00 !important}
 html[data-theme="basic"] .hz-erv-chip.bad{color:#b42318 !important}
 html[data-theme="basic"] .hz-erv-req{color:#b42318 !important}
 html[data-theme="basic"] .hz-erv-note.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-erv-hq{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-av-rig.ok{color:#167a3e !important}
@@ -12661,12 +12662,35 @@ function hzErvAdminRender() {
   var el = document.getElementById("adm-erv"); if (!el) return;
   hzErvListen();
   if (!HZ_ERV.isAdmin) { el.innerHTML = '<div class="hz-erv-muted">Only admins approve vehicle shifts.</div>'; return; }
-  var now = Date.now(), recent = HZ_ERV.tickets.filter(function(t){ var st = hzErvStatus(t); return (st === "denied" || st === "cancelled" || (st === "approved" && (t.checkedOutAt || t.endMs <= now))) && t.endMs > now - 14 * 86400000; })
-    .sort(function(a, b){ return b.startMs - a.startMs; }).slice(0, 15);
-  el.innerHTML = '<div class="hz-erv-row" style="margin:0 0 10px"><button class="hz-erv-btn" onclick="hzErvOpen(\'schedule\')">🗓 Open the schedule</button>'
-    + (HZ_ERV.access !== "drivers" ? '<span class="hz-erv-pill warn">Testing — admins only (open it to drivers in Notifications &amp; Permissions)</span>' : '') + '</div>'
+  el.innerHTML = '<div class="hz-erv-row" style="margin:0 0 10px"><button class="hz-erv-btn" onclick="hzErvOpen(\'schedule\')">🗓 Open the schedule</button></div>'
     + '<div class="hz-erv-adm">' + hzErvApproveHtml()
-    + '<div class="hz-erv-sub">Past 2 weeks — done, denied or cancelled</div>' + (recent.length ? recent.map(function(t){ return hzErvCard(t, ""); }).join("") : '<div class="hz-erv-muted">Nothing yet.</div>') + '</div>';
+    + '<div class="hz-erv-sub">📜 Shift history <span class="hz-erv-muted" style="font-weight:400">— every past shift, newest first</span></div>'
+    + '<input id="hz-erv-hq" class="hz-erv-hq" type="search" placeholder="Search a unit, vehicle or name…" value="' + hzErvEsc(HZ_ERV.histQ || "") + '" oninput="HZ_ERV.histQ=this.value;HZ_ERV.histN=50;hzErvHistDraw()">'
+    + '<div id="hz-erv-hist"></div></div>';
+  hzErvHistDraw();
+}
+// 12.138 (Sam): Admin ▸ 🚙 Vehicle Shifts ▸ 📜 Shift history — everything that's over (ended, returned early, denied, cancelled), newest first
+function hzErvHistDraw() {
+  var box = document.getElementById("hz-erv-hist"); if (!box) return;
+  var now = Date.now(), q = String(HZ_ERV.histQ || "").trim().toLowerCase(), n = HZ_ERV.histN || 50;
+  var tm = function(ms) { return ms ? new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""; };
+  var dt = function(ms) { return new Date(ms).toLocaleString([], { weekday: "short", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }); };
+  var list = HZ_ERV.tickets.filter(function(t){ var st = hzErvStatus(t); return st === "denied" || st === "cancelled" || (st === "approved" && (t.checkedOutAt || t.endMs <= now)); })
+    .filter(function(t){ return !q || [t.ervUnit, t.submittedBy, t.driverUnit, t.details, t.ervDecidedBy].join(" ").toLowerCase().indexOf(q) >= 0; })
+    .sort(function(a, b){ return b.startMs - a.startMs; });
+  if (!list.length) { box.innerHTML = '<div class="hz-erv-muted">' + (q ? "Nothing matches." : "No past shifts yet.") + '</div>'; return; }
+  box.innerHTML = '<div class="hz-erv-hl">' + list.slice(0, n).map(function(t) {
+    var st = hzErvStatus(t), what, cls;
+    if (st === "cancelled") { what = "Cancelled" + (t.ervDecidedBy ? " by " + hzErvEsc(t.ervDecidedBy) : ""); cls = "bad"; }
+    else if (st === "denied") { what = "Denied" + (t.ervDecidedBy ? " by " + hzErvEsc(t.ervDecidedBy) : "") + (t.ervReason ? " — “" + hzErvEsc(t.ervReason) + "”" : ""); cls = "bad"; }
+    else if (t.checkedInAt) { what = "✅ In " + tm(t.checkedInAt) + (t.checkedOutAt ? " · Out " + tm(t.checkedOutAt) + (t.checkedOutAt < t.endMs ? " (early)" : "") : " · no check-out"); cls = "ok"; }
+    else { what = "Never checked in"; cls = "warn"; }
+    return '<div class="hz-erv-hr"><div class="hz-erv-hd"><b>' + hzErvEsc(dt(t.startMs)) + '</b> → ' + hzErvEsc(tm(t.endMs)) + (new Date(t.endMs).toDateString() !== new Date(t.startMs).toDateString() ? ' <span class="hz-erv-muted">(' + hzErvEsc(new Date(t.endMs).toLocaleDateString([], { month: "numeric", day: "numeric" })) + ')</span>' : '') + '</div>'
+      + '<div class="hz-erv-hw"><span class="hz-erv-hv">' + (t.vehKind === "rig" ? "🚑 " : "🚙 ") + hzErvEsc(t.ervUnit) + '</span> ' + hzErvEsc(t.submittedBy || "") + '</div>'
+      + '<div class="hz-erv-hs ' + cls + '">' + what + '</div>'
+      + (t.details ? '<div class="hz-erv-muted hz-erv-hx">Reason: “' + hzErvEsc(t.details) + '”' + (st === "approved" && t.ervDecidedBy ? ' · approved by ' + hzErvEsc(t.ervDecidedBy) : '') + '</div>' : '') + '</div>';
+  }).join("") + '</div>'
+    + (list.length > n ? '<button class="hz-erv-btn" style="margin-top:8px" onclick="HZ_ERV.histN=' + (n + 50) + ';hzErvHistDraw()">Show more (' + (list.length - n) + ' older)</button>' : '<div class="hz-erv-muted" style="margin-top:6px">' + list.length + ' shift' + (list.length === 1 ? '' : 's') + '</div>');
 }
 function hzErvAdminRefresh() {
   var n = HZ_ERV.isAdmin ? HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; }).length : 0;
@@ -12755,6 +12779,11 @@ function hzErvRefreshTicket(id) {
     + ".hz-erv-adv{margin-top:10px;font-size:.84rem;line-height:1.4;border-radius:7px;padding:9px 11px;border:1px solid rgba(255,200,74,.6);background:rgba(255,200,74,.10);color:var(--white);font-weight:600}"
     + ".hz-erv-note{margin-top:10px;font-size:.82rem;border-radius:7px;padding:8px 10px;border:1px solid var(--card-border)}"
     + ".hz-erv-note.ok{color:#7dedb5;border-color:rgba(76,175,128,.5)}.hz-erv-note.warn{color:#ffc84a;border-color:rgba(255,200,74,.5)}.hz-erv-note.bad{color:#ff9090;border-color:rgba(224,85,85,.45)}"
+    + ".hz-erv-hq{width:100%;max-width:360px;box-sizing:border-box;margin:0 0 8px;padding:8px 10px;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,.05);color:var(--white);font-size:16px}"
+    + ".hz-erv-hl{border:1px solid var(--card-border);border-radius:9px;overflow:hidden}.hz-erv-hr{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(150px,1.3fr) minmax(150px,1.4fr);gap:2px 12px;padding:7px 10px;border-top:1px solid var(--card-border);font-size:.8rem;align-items:baseline}.hz-erv-hr:first-child{border-top:0}.hz-erv-hr:nth-child(even){background:rgba(255,255,255,.025)}"
+    + ".hz-erv-hd,.hz-erv-hw{color:var(--white)}.hz-erv-hv{font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:.03em}.hz-erv-hs{font-weight:600}.hz-erv-hs.ok{color:#4caf80}.hz-erv-hs.bad{color:#ff9090}.hz-erv-hs.warn{color:#ffc84a}.hz-erv-hx{grid-column:1/-1;font-size:.74rem}"
+    + "html[data-theme=basic] .hz-erv-hs.ok{color:#167a3e}html[data-theme=basic] .hz-erv-hs.bad{color:#b42318}html[data-theme=basic] .hz-erv-hs.warn{color:#8a5a00}"
+    + "@media (max-width:640px){.hz-erv-hr{grid-template-columns:1fr}}"
     + ".hz-erv-card{border:1px solid var(--card-border);border-radius:9px;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,.02)}"
     + ".hz-erv-pill{display:inline-block;border-radius:10px;padding:2px 9px;font-size:.66rem;font-family:'Oswald',sans-serif;letter-spacing:.05em;border:1px solid}"
     + ".hz-erv-pill.ok{color:#7dedb5;border-color:rgba(76,175,128,.5)}.hz-erv-pill.warn{color:#ffc84a;border-color:rgba(255,200,74,.5)}.hz-erv-pill.bad{color:#ff9090;border-color:rgba(224,85,85,.45)}"
