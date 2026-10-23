@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "5.90"; window.M_BUILD = BUILD;
+  var BUILD = "5.91"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12445,7 +12445,7 @@ function hzErvOnCall(call) {
 function hzErvApplyAccess() {
   var me = HZ_ERV.me || {};
   HZ_ERV.isAdmin = me.role === "admin" || (me.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; });
-  HZ_ERV.allowed = HZ_ERV.isAdmin || (HZ_ERV.access === "drivers" && (me.ervDriver === true || me.rigDriver === true));   // 12.90: or rig shifts
+  HZ_ERV.allowed = HZ_ERV.isAdmin || (HZ_ERV.access === "drivers" && (me.ervDriver === true || me.rigDriver === true) && !(typeof hzPureDispatcher === "function" && hzPureDispatcher(me)));   // 12.136: not for dispatchers   // 12.90: or rig shifts
   document.querySelectorAll(".hz-erv-entry").forEach(function(el){ el.style.display = HZ_ERV.allowed ? "" : "none"; });
   document.querySelectorAll(".hz-erv-testing").forEach(function(el){ el.style.display = HZ_ERV.allowed && HZ_ERV.access !== "drivers" ? "" : "none"; });
   ["renderTickets", "mRenderTickets"].forEach(function(f){ try { if (typeof window[f] === "function") window[f](); } catch (e) {} });   // 12.89: re-filter denied ERV requests now that we know who this is
@@ -12804,8 +12804,12 @@ function hzAvPad(n) { return (n < 10 ? "0" : "") + n; }
 function hzAvYmd(d) { return d.getFullYear() + "-" + hzAvPad(d.getMonth() + 1) + "-" + hzAvPad(d.getDate()); }
 function hzAvMd(d) { return (d.getMonth() + 1) + "/" + d.getDate(); }
 function hzAvTime(ms) { var d = new Date(ms), h = d.getHours(), m = d.getMinutes(); return ((h % 12) || 12) + ":" + hzAvPad(m) + " " + (h < 12 ? "AM" : "PM"); }
-function hzAvCanFill(u) { u = u || {}; return (u.roles || []).some(function(r){ return HZ_AV_ROLES.indexOf(String(r).toLowerCase()) >= 0; }); }   // the Shabbos poll
-function hzAvDaytime(u) { return !!(u && u.daytimeResponder === true); }                                                                          // the weekday poll
+function hzAvCanFill(u) { u = u || {}; if (hzPureDispatcher(u)) return false; return (u.roles || []).some(function(r){ return HZ_AV_ROLES.indexOf(String(r).toLowerCase()) >= 0; }); }   // the Shabbos poll
+if (typeof hzPureDispatcher !== "function") { window.hzPureDispatcher = function(u) {   // 12.136 (Sam): "dispatchers don't do night shifts" — Dispatcher role with no Responder / Captain / Chief / Backup
+    u = u || {}; var r = (u.roles || []).concat(u.role ? [u.role] : []).map(function(x){ return String(x).toLowerCase(); });
+    return r.indexOf("dispatcher") >= 0 && !r.some(function(x){ return ["responder", "captain", "chief", "backup"].indexOf(x) >= 0; });
+  }; }
+function hzAvDaytime(u) { return !!(u && u.daytimeResponder === true) && !hzPureDispatcher(u); }                                                                          // the weekday poll
 function hzAvAny(u) { return hzAvCanFill(u) || hzAvDaytime(u); }
 function hzAvMyDays(u, w) { var yt = (w && w.yt) || {}; return (hzAvDaytime(u) ? HZ_AV_WEEK.filter(function(d){ return !yt[d[0]]; }) : []).concat(hzAvCanFill(u) ? [["shabbos", "Shabbos"]] : []); }
 // all four answers count as answered
@@ -13383,7 +13387,7 @@ function hzScWhat(c, mineView) {
 function hzScPanelHtml() {
   var me = HZ_SC.me || {}, myUnit = String(me.unit || "").toUpperCase(), uid = HZ_SC.uid; if (!uid) return "";
   // 12.130 (Sam): covers / swaps show only on that night's card — up here is just the Submit coverage button (and the form)
-  if (!hzScNightsOf(myUnit).length && !HZ_SC.form) return "";
+  if ((!hzScNightsOf(myUnit).length || (typeof hzPureDispatcher === "function" && hzPureDispatcher(me))) && !HZ_SC.form) return "";   // 12.136: not for dispatchers
   var h = '<div class="hz-sc' + (HZ_SC.form ? '' : ' slim') + '"><div class="hz-sc-top"><span class="hz-sc-ask">If you are unable to cover your shift please submit for coverage.</span>'
     + (HZ_SC.form ? '' : '<button class="hz-sc-btn go hz-sc-sm" onclick="hzScOpenForm()">Submit coverage</button>') + '</div>';
   return h + (HZ_SC.form ? hzScFormHtml() : '') + '</div>';
@@ -13393,7 +13397,7 @@ function hzScOpenForm() {
   var go = function(){ hzScRefresh(); var el = document.getElementById("hz-sc-form"); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" }); };
   if (HZ_SC.users) { go(); return; }
   db.collection("users").get().then(function(q) {
-    var l = []; q.forEach(function(d){ var u = d.data() || {}; if (u.unit && d.id !== HZ_SC.uid) l.push({ uid: d.id, unit: String(u.unit).toUpperCase(), name: ((u.firstName || "") + " " + (u.lastName || "")).trim(), phone: String(u.phone || "").split(/[\/|]/)[0].replace(/\D/g, "") }); });
+    var l = []; q.forEach(function(d){ var u = d.data() || {}; if (u.unit && d.id !== HZ_SC.uid && !(typeof hzPureDispatcher === "function" && hzPureDispatcher(u))) l.push({ uid: d.id, unit: String(u.unit).toUpperCase(), name: ((u.firstName || "") + " " + (u.lastName || "")).trim(), phone: String(u.phone || "").split(/[\/|]/)[0].replace(/\D/g, "") }); });
     l.sort(function(a, b){ return a.unit.localeCompare(b.unit, undefined, { numeric: true }); });
     HZ_SC.users = l; go();
   }).catch(function(e){ hzScToast("Couldn't load members: " + e.message, true); });
