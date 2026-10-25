@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.18"; window.M_BUILD = BUILD;
+  var BUILD = "6.19"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12580,9 +12580,9 @@ function hzErvDraw() {
   var pend = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; }).length;
   var tabs = [["schedule", "🗓 Schedule"], ["request", "➕ Request a shift"], ["mine", "📋 My requests"]].concat(HZ_ERV.isAdmin ? [["approve", "✅ Approve" + (pend ? " (" + pend + ")" : "")]] : []);
   var body = HZ_ERV.tab === "request" ? hzErvRequestHtml() : HZ_ERV.tab === "mine" ? hzErvMineHtml() : HZ_ERV.tab === "approve" && HZ_ERV.isAdmin ? hzErvApproveHtml() : hzErvScheduleHtml();
-  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="Vehicle shifts"><div class="hz-erv-top"><b>🚙 Vehicle Shifts</b>'
+  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="Vehicle shifts"><div class="hz-erv-top"><button class="hz-pop-back" onclick="hzErvClose()">← Back</button><b>🚙 Vehicle Shifts</b>'
     + (HZ_ERV.access !== "drivers" ? '<span class="hz-erv-pill warn" title="Only admins can see this until it is opened to drivers in Admin ▸ Notifications & Permissions">Testing — admins only</span>' : '')
-    + '<span style="flex:1"></span><button class="hz-erv-x" onclick="hzErvClose()" aria-label="Close">✕</button></div>'
+    + '<span style="flex:1"></span></div>'
     + '<div class="hz-erv-tabs">' + tabs.map(function(t){ return '<button class="' + (HZ_ERV.tab === t[0] ? "on" : "") + '" onclick="hzErvTab(\'' + t[0] + '\')">' + t[1] + '</button>'; }).join("") + '</div>'
     + '<div class="hz-erv-body">' + hzErvNowBanner() + body + '</div></div>';
   if (HZ_ERV.tab === "request") hzErvCheck();
@@ -12930,7 +12930,7 @@ function hzDvDraw() {
     return '<div class="hz-dv-row"><div><b>' + hzDvEsc(h.name) + '</b>' + (why ? '<em class="hz-dv-why">' + hzDvEsc(why) + '</em>' : '') + (h.city || note ? '<span>' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + '</div>' + pill + '</div>';
   }).join("");
   var busy = HZ_DV.busy ? '<div class="hz-dv-when hz-dv-busy">🔄 Checking the NJ divert feed now…</div>' : (HZ_DV.err ? '<div class="hz-dv-warn" style="margin-bottom:8px">Couldn\'t check just now: ' + hzDvEsc(HZ_DV.err) + '</div>' : (HZ_DV.fresh ? '<div class="hz-dv-when hz-dv-busy">✓ Already up to date — checked in the last 30 seconds</div>' : ''));
-  o.innerHTML = '<div class="hz-dv-box" role="dialog" aria-label="Hospital Diversion Status"><div class="hz-dv-top"><b class="hz-dv-ttl">🏥 Hospital Diversion Status</b><button class="hz-dv-rf" onclick="hzDvCheck()"' + (HZ_DV.busy ? ' disabled' : '') + ' aria-label="Refresh">' + (HZ_DV.busy ? '🔄<span class="hz-dv-lg"> Checking…</span>' : '🔄<span class="hz-dv-lg"> Refresh</span>') + '</button><button class="hz-dv-x" onclick="hzDvClose()" aria-label="Close">✕</button></div>'
+  o.innerHTML = '<div class="hz-dv-box" role="dialog" aria-label="Hospital Diversion Status"><div class="hz-dv-top"><button class="hz-pop-back" onclick="hzDvClose()">← Back</button><b class="hz-dv-ttl">🏥 Hospital Diversion Status</b><button class="hz-dv-rf" onclick="hzDvCheck()"' + (HZ_DV.busy ? ' disabled' : '') + ' aria-label="Refresh">' + (HZ_DV.busy ? '🔄<span class="hz-dv-lg"> Checking…</span>' : '🔄<span class="hz-dv-lg"> Refresh</span>') + '</button></div>'
     + '<div class="hz-dv-body">'
     + busy
     + (!d || !d.hospitals ? (HZ_DV.busy ? '' : '<div class="hz-dv-warn">No statuses yet — the server reads the NJ divert feed every 5 minutes. Until then, check the official page.</div>')
@@ -12960,7 +12960,10 @@ function hzDvDraw() {
   var n = 0, t = setInterval(function() { hzDvApply(); if (++n > 90 || HZ_DV.unsub) clearInterval(t); }, 1000);
   // 12.164: the phone's yellow Test Mode banner sits on top of the screen — full-screen pop-ups start below it
   var css3 = document.createElement("style");
-  css3.textContent = "#hz-dv-pop,#hz-av-pop,#hz-erv,#hz-av-howpop{padding-top:var(--hz-tb-h,0px)!important}";
+  css3.textContent = "#hz-dv-pop,#hz-av-pop,#hz-erv,#hz-av-howpop{padding-top:var(--hz-tb-h,0px)!important}"
+    // 12.165 (Sam): pop-ups close with "← Back" on the left, like every other screen (was ✕ on the right)
+    + ".hz-pop-back{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;padding:7px 12px;margin-right:4px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--white);font-weight:700;font-size:.85rem;white-space:nowrap;cursor:pointer}"
+    + ".hz-pop-back:active{transform:scale(.97)}html[data-theme=basic] .hz-pop-back{color:#1d3f72!important;border-color:#c8d0dc!important;background:#fff!important}";
   document.head.appendChild(css3);
   var tb = function() { var b = document.getElementById("m-test-global-banner"), h = 0;
     if (b && getComputedStyle(b).display !== "none") { var r = b.getBoundingClientRect(); h = Math.max(0, Math.round(r.bottom)); }
@@ -13304,7 +13307,7 @@ function hzAvOpen() {
   var el = document.getElementById("hz-av-pop");
   if (!el) { el = document.createElement("div"); el.id = "hz-av-pop"; document.body.appendChild(el); }
   if (!HZ_AV.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "av" }), ""); HZ_AV.hist = true; } catch (e) {} }   // 12.93: Back closes it
-  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="Availability"><div class="hz-erv-top"><b>📅 Availability</b><span style="flex:1"></span><button class="hz-erv-x" onclick="hzAvClose()" aria-label="Close">✕</button></div><div class="hz-erv-body" id="hz-av-pop-body"></div></div>';
+  el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="Availability"><div class="hz-erv-top"><button class="hz-pop-back" onclick="hzAvClose()">← Back</button><b>📅 Availability</b><span style="flex:1"></span></div><div class="hz-erv-body" id="hz-av-pop-body"></div></div>';
   hzAvRefreshCards();
 }
 function hzAvClose(fromBack) {
@@ -13387,9 +13390,9 @@ var HZ_AV_RC = { text: "", html: "" };
 function hzAvRollCall() {
   var el = document.getElementById("hz-av-pop");
   if (!el) { el = document.createElement("div"); el.id = "hz-av-pop"; document.body.appendChild(el); }
-  el.innerHTML = '<div class="hz-erv-box hz-av-rc-box" role="dialog" aria-label="Shabbos roll call"><div class="hz-erv-top"><b>🕯️ Shabbos roll call</b><span style="flex:1"></span>'
+  el.innerHTML = '<div class="hz-erv-box hz-av-rc-box" role="dialog" aria-label="Shabbos roll call"><div class="hz-erv-top"><button class="hz-pop-back" onclick="hzAvClose()">← Back</button><b>🕯️ Shabbos roll call</b><span style="flex:1"></span>'
     + '<button class="hz-erv-btn" onclick="hzAvRcCopy()">📋 Copy</button>'
-    + '<button class="hz-erv-x" onclick="hzAvClose()" aria-label="Close">✕</button></div><div class="hz-erv-body" id="hz-av-rc"><div class="hz-erv-muted">Loading…</div></div></div>';
+    + '</div><div class="hz-erv-body" id="hz-av-rc"><div class="hz-erv-muted">Loading…</div></div></div>';
   hzAvRcLoad();
 }
 function hzAvRcLoad() {
