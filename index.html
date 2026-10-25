@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.152">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.155">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2098,6 +2098,10 @@ html[data-theme="basic"] .hz-av-todo{color:#8a5a00 !important}
 html[data-theme="basic"] .hz-av-oos-pill{color:#b42318 !important}
 html[data-theme="basic"] .hz-av-yes{color:#167a3e !important}
 html[data-theme="basic"] .hz-av-ch.on{color:#167a3e !important}
+html[data-theme="basic"] #hz-av-pop-body .hz-av-rigs-big.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-av-howbtn{color:#0b5cad !important}
+html[data-theme="basic"] .hz-av-howbox b.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-av-howrule{color:#806719 !important}
 html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
 <!--HZ-BASIC-END-->
 </head>
@@ -2390,7 +2394,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.152</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.155</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2686,8 +2690,13 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
         <label>Confirm Password</label>
         <input type="password" id="fp-confirm" placeholder="Re-enter password">
       </div>
+      <div class="form-group" id="fp-cur-wrap" style="display:none">
+        <label>Current Password</label>
+        <input type="password" id="fp-cur" placeholder="The password you just signed in with" autocomplete="current-password">
+      </div>
       <button class="login-btn" id="fp-btn" onclick="window.submitForcedPasswordChange()">Set New Password</button>
       <div class="form-msg" id="fp-msg" style="margin-top:14px"></div>
+      <div style="text-align:center;margin-top:14px"><a href="javascript:void(0)" onclick="doLogout()" style="color:var(--gray);font-size:.82rem">Sign out</a></div>
     </div>
   </div>
 </div>
@@ -4003,16 +4012,7 @@ window.submitForcedPasswordChange = function() {
   if (p1 !== p2) { msg.className = "form-msg error"; msg.textContent = "Passwords do not match."; return; }
   if (orgWeakPassword(p1)) { msg.className = "form-msg error"; msg.textContent = "Choose a stronger password — at least 8 characters, and not the organization’s name."; return; }
   btn.disabled = true; btn.textContent = "Updating…";
-  currentUser.updatePassword(p1).then(function() {
-    return db.collection("users").doc(currentUser.uid).set({ mustChangePassword: false }, { merge: true });
-  }).then(function() {
-    showToast("✓ Password updated!");
-    enterHomeScreen();
-  }).catch(function(e) {
-    msg.className = "form-msg error";
-    msg.textContent = e.code === "auth/requires-recent-login" ? "Please sign out and sign back in, then try again." : "Error: " + e.message;
-    btn.disabled = false; btn.textContent = "Set New Password";
-  });
+  hzForcedPwDo(p1, msg, btn);
 };
 
 // ── FIREBASE ──
@@ -5159,20 +5159,7 @@ auth.onAuthStateChanged(function(user) {
         showForcedPasswordChange();
         return;
       }
-      enterHomeScreen();
-      updatePushBtn();
-      hzDevLimitCheck(user.uid, currentRole === "admin" || user.email === SUPER_ADMIN, hzMe && hzMe.maxDevices).then(function(lim) {
-        if (!lim.ok) {
-          var why = hzDevBlockedMsg(lim);
-          sessionStorage.removeItem("hzmc_fresh_login"); try { localStorage.removeItem("hzmc_remember"); } catch (e) {}
-          auth.signOut().then(function() { setTimeout(function() { showPage("login"); showErr(why); }, 50); });
-          return;
-        }
-        hzDevStart(user.uid, function(why) {
-          showToast(why === "all" ? "You were signed out on all devices by an admin" : "This computer was signed out by an admin", true);
-          setTimeout(function() { doLogout(); }, 1200);
-        });
-      });
+      hzAfterLogin(user);
     }).catch(function(e) { showErr("Error: " + e.message); });
   } else {
     hzDevStop();
@@ -5450,6 +5437,52 @@ function enterHomeScreen() {
   hzApplyTilePrefs();
 }
 
+// 12.154: everything that runs once someone is in — shared by a normal sign-in and right after the forced password change
+// (before, the forced-change path skipped push, the device limit and remote sign-out)
+function hzAfterLogin(user) {
+  user = user || currentUser; if (!user) return;
+  enterHomeScreen();
+  updatePushBtn();
+  hzDevLimitCheck(user.uid, currentRole === "admin" || user.email === SUPER_ADMIN, hzMe && hzMe.maxDevices).then(function(lim) {
+    if (!lim.ok) {
+      var why = hzDevBlockedMsg(lim);
+      sessionStorage.removeItem("hzmc_fresh_login"); try { localStorage.removeItem("hzmc_remember"); } catch (e) {}
+      auth.signOut().then(function() { setTimeout(function() { showPage("login"); showErr(why); }, 50); });
+      return;
+    }
+    hzDevStart(user.uid, function(why) {
+      showToast(why === "all" ? "You were signed out on all devices by an admin" : "This computer was signed out by an admin", true);
+      setTimeout(function() { doLogout(); }, 1200);
+    });
+  });
+}
+// 12.154: set the new password; if Firebase wants a recent sign-in (the session was remembered from earlier), ask for the
+// current password once and confirm it here instead of "sign out and back in"
+function hzForcedPwDo(p1, msg, btn) {
+  var cw = document.getElementById("fp-cur-wrap"), cur = (document.getElementById("fp-cur") || {}).value || "";
+  var go = function() { return currentUser.updatePassword(p1); };
+  var first = (cw && cw.style.display !== "none" && cur) ? currentUser.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(currentUser.email, cur)).then(go) : go();
+  return first.then(function() {
+    return db.collection("users").doc(currentUser.uid).set({ mustChangePassword: false }, { merge: true });
+  }).then(function() {
+    if (hzMe) hzMe.mustChangePassword = false;
+    ["fp-new", "fp-confirm", "fp-cur"].forEach(function(id) { var e = document.getElementById(id); if (e) e.value = ""; });
+    if (cw) cw.style.display = "none";
+    // 12.155: say clearly that it worked, then go on in
+    msg.className = "form-msg success"; msg.textContent = "✓ Your new password is set. Opening the app…";
+    btn.textContent = "✓ Password set";
+    showToast("✓ New password saved");
+    setTimeout(function() { btn.disabled = false; btn.textContent = "Set New Password"; msg.className = "form-msg"; msg.textContent = ""; hzAfterLogin(currentUser); }, 1300);
+  }).catch(function(e) {
+    msg.className = "form-msg error";
+    if (e.code === "auth/requires-recent-login") { if (cw) cw.style.display = ""; msg.textContent = "To confirm it's you, type your current password too, then press Set New Password again."; var c = document.getElementById("fp-cur"); if (c) c.focus(); }
+    else if (e.code === "auth/wrong-password" || e.code === "auth/invalid-credential" || e.code === "auth/invalid-login-credentials") msg.textContent = "That current password isn't right — try again.";
+    else if (e.code === "auth/weak-password") msg.textContent = "That password is too weak — use at least 8 characters with a mix of letters and numbers.";
+    else if (e.code === "auth/network-request-failed") msg.textContent = "No connection — check your internet and try again.";
+    else msg.textContent = "Couldn't save the password: " + e.message;
+    btn.disabled = false; btn.textContent = "Set New Password";
+  });
+}
 function showForcedPasswordChange() {
   showPage("force-password");
 }
@@ -5464,16 +5497,7 @@ function submitForcedPasswordChange() {
   if (p1 !== p2) { msg.className = "form-msg error"; msg.textContent = "Passwords do not match."; return; }
   if (orgWeakPassword(p1)) { msg.className = "form-msg error"; msg.textContent = "Choose a stronger password — at least 8 characters, and not the organization’s name."; return; }
   btn.disabled = true; btn.textContent = "Updating…";
-  currentUser.updatePassword(p1).then(function() {
-    return db.collection("users").doc(currentUser.uid).set({ mustChangePassword: false }, { merge: true });
-  }).then(function() {
-    showToast("✓ Password updated!");
-    enterHomeScreen();
-  }).catch(function(e) {
-    msg.className = "form-msg error";
-    msg.textContent = e.code === "auth/requires-recent-login" ? "Please sign out and sign back in, then try again." : "Error: " + e.message;
-    btn.disabled = false; btn.textContent = "Set New Password";
-  });
+  hzForcedPwDo(p1, msg, btn);
 }
 
 
@@ -19018,7 +19042,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.152";
+var DESKTOP_VERSION = "12.155";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -27134,7 +27158,7 @@ function hzAvCardHtml(big) {
   var btn = function(d) {
     if (yt[d[0]]) return '<div class="hz-av-day yt" title="Yom Tov — not part of the weekday poll"><span>' + d[1] + '</span><i>🕯️ Yom Tov</i></div>';
     var v = days[d[0]], st = hzAvState(v), n = HZ_AV.counts ? (HZ_AV.counts[d[0]] || 0) : null, pn = HZ_AV.parts ? (HZ_AV.parts[d[0]] || 0) : 0;
-    return '<button class="hz-av-day ' + (st ? st[1] : "") + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (st ? st[3] : "not answered") + '"><span>' + d[1] + '</span><i><b class="hz-av-lg">' + (st ? st[2] : "–") + '</b><b class="hz-av-sm">' + (st ? st[4] : "–") + '</b></i>'
+    return '<button class="hz-av-day ' + (st ? st[1] : "") + '" onclick="hzAvTap(\'' + d[0] + '\')" aria-label="' + d[1] + ' — ' + (st ? st[3] : "not answered") + '"><span>' + d[1] + '</span><i><b class="hz-av-lg">' + (st ? st[2] : "Tap") + '</b><b class="hz-av-sm">' + (st ? st[4] : "Tap") + '</b></i>'
       + (n !== null ? '<em title="Marked available">👥 ' + n + '</em>' : '') + '</button>';
   };
   var mon = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 1), fri = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 5);
@@ -27142,7 +27166,7 @@ function hzAvCardHtml(big) {
   var dtOn = hzAvWeekday(me), shOn = hzAvCanFill(me);
   // 12.152 (Sam): minimal — "Your week", one-line how-to, the weekday rule small, plain day buttons, one footer line
   var h = '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>Your week</b><span class="hz-av-sub">' + hzAvEsc(hzAvMd(mon) + " – " + hzAvMd(w.shab)) + '</span><span class="hz-av-prog' + (done === mine.length ? ' done' : '') + '">' + (done === mine.length ? '✓ All set' : done + ' of ' + mine.length) + '</span></div>'
-    + '<div class="hz-av-how">Tap a day → <b class="ok">✓ Available</b> → <b class="no">✕ Unavailable</b> → clear. Saves automatically.</div>'
+    + '<button type="button" class="hz-av-howbtn" onclick="hzAvHow()">ⓘ How to mark your availability</button>'   // 12.153 (Sam): instructions behind a button
     + (dtOn ? '<div class="hz-av-qual hz-av-qual-full">' + hzAvEsc(HZ_AV_QUALIFY) + '</div>' : '')
     + '<div class="hz-av-row' + (dtOn && shOn ? ' two' : '') + '">';
   if (dtOn) h += '<div class="hz-av-grp"><div class="hz-av-grp-h">Weekdays</div><div class="hz-av-days">' + HZ_AV_WEEK.map(btn).join("") + '</div></div>';
@@ -27159,7 +27183,7 @@ function hzAvTodayHtml() {
   var who = all.filter(function(x){ return (k === "shabbos" || x.dt === true) && (x.days || {})[k] === true; })
     .sort(function(a, b){ return String(a.unit || "").localeCompare(String(b.unit || ""), undefined, { numeric: true }); });
   return '<div class="hz-av-today' + (who.length ? '' : ' none') + '"><div class="hz-av-today-h">Available today <span>' + hzAvEsc(lbl) + ' · ' + who.length + '</span></div>'
-    + (who.length ? '<div class="hz-av-today-l">' + who.map(function(x){ return '<button type="button" class="hz-av-tchip" onclick="typeof hzUnitContactModal===\'function\'&&hzUnitContactModal(\'' + hzAvEsc(x.unit || "") + '\')"><b>' + hzAvEsc(x.unit || "") + '</b> ' + hzAvEsc(x.name || "") + '</button>'; }).join("") + '</div>'
+    + (who.length ? '<div class="hz-av-today-l">' + who.map(function(x){ return '<button type="button" class="hz-av-tchip" onclick="typeof hzUnitContactModal===\'function\'&&hzUnitContactModal(\'' + hzAvEsc(x.unit || "") + '\')"">📞 <b>' + hzAvEsc(x.unit || "") + '</b> ' + hzAvEsc(x.name || "") + '</button>'; }).join("") + '</div>'
       : '<div class="hz-erv-muted">Nobody has marked themselves available today yet.</div>') + '</div>';
 }
 // 👥 Who's available — from this week's answers (each answer carries the member's unit and name).
@@ -27168,8 +27192,8 @@ function hzAvTodayHtml() {
 function hzAvRigsHtml() {
   var rigs = HZ_AV.rigs; if (!rigs) return "";
   var oos = rigs.filter(function(v){ return v.isOut; });
-  if (!oos.length) return '<div class="hz-av-rigs"><div class="hz-av-rigs-h">Rigs <span>✓ All in service</span></div></div>';
-  return '<div class="hz-av-rigs bad"><div class="hz-av-rigs-h">Rigs <span>' + oos.length + ' out of service</span></div>'
+  if (!oos.length) return '<div class="hz-av-rigs"><div class="hz-av-rigs-big ok">🚑 All rigs in service</div></div>';
+  return '<div class="hz-av-rigs bad"><div class="hz-av-rigs-big no">🚑 ' + oos.length + ' rig' + (oos.length === 1 ? '' : 's') + ' out of service</div>'
     + oos.map(function(v){ return '<div class="hz-av-rig-why"><span class="hz-av-rig out">✕ ' + hzAvEsc(v.id) + '</span> ' + (v.outReason ? hzAvEsc(v.outReason) : 'Out of service') + (v.outUntil ? ' <span class="hz-av-back">· back ' + hzAvEsc(new Date(v.outUntil).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })) + '</span>' : '') + '</div>'; }).join("")
     + '</div>';
 }
@@ -27209,6 +27233,19 @@ function hzAvAllSnap(q) {
   HZ_AV.counts = c; HZ_AV.parts = null; HZ_AV.all = all; hzAvRefreshCards();
 }
 function hzAvDispatcher(u) { u = u || {}; return u.role === "admin" || (u.roles || []).some(function(r){ return String(r).toLowerCase() === "dispatcher"; }); }
+// 12.153 (Sam): the how-to opens in its own small pop-up
+function hzAvHow() {
+  var me = HZ_AV.me || {}, dtOn = hzAvWeekday(me), shOn = hzAvCanFill(me);
+  var o = document.getElementById("hz-av-howpop"); if (o) o.remove();
+  o = document.createElement("div"); o.id = "hz-av-howpop"; o.onclick = function(e){ if (e.target === o) o.remove(); };
+  o.innerHTML = '<div class="hz-av-howbox" role="dialog" aria-label="How to mark your availability"><div class="hz-av-howt">How to mark your availability</div><ol>'
+    + '<li>Tap a day once → <b class="ok">✓ Available</b></li><li>Tap it again → <b class="no">✕ Unavailable</b></li><li>Tap it once more to clear it (–)</li></ol>'
+    + '<p>It saves by itself. ' + (dtOn && shOn ? 'Mark every weekday and Shabbos.' : dtOn ? 'Mark every weekday.' : 'Mark Shabbos.') + '</p>'
+    + (dtOn ? '<p class="hz-av-howrule">☀️ ' + hzAvEsc(HZ_AV_QUALIFY) + '</p>' : '')
+    + '<p class="hz-av-howsm">The 👥 number on each day is how many people are available that day. Everything starts fresh ' + hzAvEsc(hzAvResetText((HZ_AV.week || {}).reset)) + '.</p>'
+    + '<button type="button" class="hz-av-howok" onclick="document.getElementById(\'hz-av-howpop\').remove()">Got it</button></div>';
+  document.body.appendChild(o);
+}
 function hzAvDoneText() {
   var me = HZ_AV.me || {}, w = HZ_AV.week; if (!w || !hzAvAny(me)) return "";
   var days = (HZ_AV.mine && HZ_AV.mine.days) || {}, mine = hzAvMyDays(me, w), done = mine.filter(function(d){ return hzAvAnswered(days[d[0]]); }).length;
@@ -27577,6 +27614,29 @@ function hzAvSaveSettings() {
     + "#hz-av-pop-body .hz-av-who{margin-top:12px!important;padding-top:10px!important}"
     + "#hz-av-pop-body .hz-av-esched{display:flex!important;flex-direction:row!important;align-items:center;justify-content:space-between;font-family:inherit!important;font-size:.9rem!important;font-weight:600;letter-spacing:0!important}"
     + "#hz-av-pop-body .hz-av-esched small{font-size:.76rem;color:var(--gray)}";
+  css2.textContent += ""
+    // 12.153 (Sam): tappable things look tappable; rigs prominent; how-to behind a button
+    + "#hz-av-pop-body .hz-av-rigs-big{font-family:'Oswald',sans-serif;font-size:1.02rem;letter-spacing:.03em;font-weight:700;padding:10px 12px;border-radius:10px}"
+    + "#hz-av-pop-body .hz-av-rigs-big.ok{background:rgba(76,175,128,.13);color:#4caf80;border:1px solid rgba(76,175,128,.5)}#hz-av-pop-body .hz-av-rigs-big.no{background:#c73c3c;color:#fff}"
+    + "html[data-theme=basic] #hz-av-pop-body .hz-av-rigs-big.ok{background:#eaf6ef;color:#167a3e;border-color:#9fd3b4}"
+    + "#hz-av-pop-body .hz-av-rigs.bad .hz-av-rig-why{font-size:.9rem;margin-top:8px;padding:0 4px}#hz-av-pop-body .hz-av-rigs.bad .hz-av-rig.out{font-size:.8rem;padding:2px 8px}"
+    + "#hz-av-pop-body .hz-av-tchip{border:1.5px solid #4a90d9!important;color:var(--white)!important;font-weight:600}#hz-av-pop-body .hz-av-tchip:active{transform:scale(.97)}"
+    + "html[data-theme=basic] #hz-av-pop-body .hz-av-tchip{border-color:#1d5fb8!important;color:#1d3f72!important;background:#f3f8ff!important}"
+    + ".hz-av-howbtn{display:inline-flex;align-items:center;gap:4px;margin:2px 0 10px;padding:7px 12px;border-radius:999px;border:1.5px solid #4a90d9;background:rgba(74,144,217,.08);color:#4a90d9;font-weight:700;font-size:.8rem;cursor:pointer}"
+    + "html[data-theme=basic] .hz-av-howbtn{border-color:#1d5fb8!important;color:#1d5fb8!important;background:#f3f8ff!important}"
+    + "#hz-av-pop-body .hz-av-qual.hz-av-qual-full{display:none}"
+    + "#hz-av-pop-body .hz-av-day{border-width:1.5px!important;cursor:pointer}#hz-av-pop-body .hz-av-day:not(.yes):not(.no){border-style:dashed!important;border-color:#4a90d9!important}#hz-av-pop-body .hz-av-day:not(.yes):not(.no) i{color:#4a90d9!important;font-weight:700}"
+    + "html[data-theme=basic] #hz-av-pop-body .hz-av-day:not(.yes):not(.no){border-color:#1d5fb8!important}html[data-theme=basic] #hz-av-pop-body .hz-av-day:not(.yes):not(.no) i{color:#1d5fb8!important}"
+    + "#hz-av-pop-body .hz-av-who>summary{display:flex!important;align-items:center;gap:6px;border:1.5px solid var(--card-border);border-radius:10px;padding:10px 12px;cursor:pointer;list-style:none}#hz-av-pop-body .hz-av-who>summary::-webkit-details-marker{display:none}"
+    + "#hz-av-pop-body .hz-av-who>summary::after{content:'▾';margin-left:auto;font-size:.9rem}#hz-av-pop-body .hz-av-who[open]>summary::after{content:'▴'}"
+    + "#hz-av-pop-body .hz-av-esched{border:1.5px solid #4a90d9!important;border-radius:10px!important;padding:11px 14px!important;margin-top:12px!important;color:var(--white)}"
+    + "html[data-theme=basic] #hz-av-pop-body .hz-av-esched{border-color:#1d5fb8!important;background:#f3f8ff!important}"
+    + "#hz-av-howpop{position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px}"
+    + ".hz-av-howbox{background:var(--navy-mid,#13233d);border:1px solid var(--card-border);border-radius:14px;padding:18px;max-width:380px;width:100%;color:var(--white);font-size:.9rem;line-height:1.5}"
+    + "html[data-theme=basic] .hz-av-howbox{background:#fff}.hz-av-howt{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:.03em;margin-bottom:8px}.hz-av-howbox ol{margin:0 0 8px 20px;padding:0}.hz-av-howbox p{margin:6px 0}"
+    + ".hz-av-howbox b.ok{color:#4caf80}.hz-av-howbox b.no{color:#e05555}html[data-theme=basic] .hz-av-howbox b.ok{color:#167a3e}html[data-theme=basic] .hz-av-howbox b.no{color:#b42318}"
+    + ".hz-av-howrule{color:#c9a227;font-weight:600}html[data-theme=basic] .hz-av-howrule{color:#8a5a00}.hz-av-howsm{color:var(--gray);font-size:.8rem}"
+    + ".hz-av-howok{width:100%;margin-top:10px;padding:11px;border-radius:9px;border:0;background:var(--gold);color:var(--navy);font-weight:700;font-size:.95rem;cursor:pointer}";
   document.head.appendChild(css2);
   var go = function(){ hzAvInit(); hzAvHook("setRender"); hzAvHook("mSettingsRender"); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go); else go();
