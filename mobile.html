@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.12"; window.M_BUILD = BUILD;
+  var BUILD = "6.13"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1258,7 +1258,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
         <div class="m-tile-inner">
           <span class="m-tile-icon">🏥</span>
           <span class="m-tile-label">Divert Status</span>
-          <span class="m-tile-sub hz-dv-tile-sub">TEST · not connected yet</span>
+          <span class="m-tile-sub hz-dv-tile-sub">TEST · waiting for first check</span>
         </div>
       </button>
     </div>
@@ -12859,9 +12859,9 @@ function hzErvRefreshTicket(id) {
 /* ═══════════════════════════════════════
    12.157 / 6.12 — 🏥 DIVERT STATUS (TEST) — admins only (same code in index.html and mobile.html)
    Sam: the divert status of every Middlesex County hospital from the NJ divert page (njdivert.juvare.com).
-   The app reads appdata/divertStatus = { checkedAt, source, hospitals: { "<key>": { status, note, since } } },
-   written by the server once the page's data feed is connected (not yet — the feed address is still needed).
-   Until then the tile says "Not connected yet" and links to the official page.
+   12.158: the server (divertStatusTick, every 5 minutes) reads the public feed behind that page
+   (njdivert.juvare.com.json) and writes appdata/divertStatus = { checkedAt, feedUpdated, hospitals: { "<feed id>":
+   { name, status, color, comments } }, lastError } for every Middlesex County hospital in the feed.
    ═══════════════════════════════════════ */
 var HZ_DV = { unsub: null, data: null, open: false };
 var HZ_DV_HOSPITALS = [
@@ -12886,17 +12886,18 @@ function hzDvApply() {
   }
   hzDvTileSub();
 }
-function hzDvStatusOf(h) {
-  var d = (HZ_DV.data && HZ_DV.data.hospitals) || {}, x = d[h.k];
-  if (!x) return null;
-  var st = String(x.status || "").toLowerCase();
-  return { open: /^(open|normal|green|accepting)/.test(st), label: x.status || "Unknown", note: x.note || "", since: x.since || "" };
+function hzDvList() {   // the feed's Middlesex hospitals, A–Z (falls back to the built-in names while not connected)
+  var d = HZ_DV.data && HZ_DV.data.hospitals;
+  if (!d || !Object.keys(d).length) return HZ_DV_HOSPITALS.map(function(h){ return { name: h.n, city: h.c, s: null }; });
+  return Object.keys(d).map(function(k){ var x = d[k] || {}, st = String(x.status || "Unknown");
+    return { name: String(x.name || k).replace(/^(RWJBH|HMH)\s+/, ""), city: "", s: { open: x.color ? x.color === "green" : /^normal/i.test(st), closed: /closed/i.test(st), label: st, note: x.comments || "" } };
+  }).sort(function(a, b){ return a.name.localeCompare(b.name); });
 }
 function hzDvTileSub() {
   var el = document.querySelectorAll(".hz-dv-tile-sub"); if (!el.length) return;
   var txt;
-  if (!HZ_DV.data) txt = "TEST · not connected yet";
-  else { var n = HZ_DV_HOSPITALS.filter(function(h){ var s = hzDvStatusOf(h); return s && !s.open; }).length; txt = n ? "⚠️ " + n + " on divert" : "✓ All open"; }
+  if (!HZ_DV.data || !HZ_DV.data.hospitals) txt = "TEST · waiting for first check";
+  else { var n = hzDvList().filter(function(h){ return h.s && !h.s.open; }).length; txt = n ? "⚠️ " + n + " not normal" : "✓ All normal"; }
   el.forEach(function(e) { e.textContent = txt; });
 }
 function hzDvOpen() {
@@ -12910,15 +12911,17 @@ function hzDvDraw() {
   var o = document.getElementById("hz-dv-pop"); if (!o) return;
   var d = HZ_DV.data, when = d && d.checkedAt ? new Date(d.checkedAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
   var stale = d && d.checkedAt && (Date.now() - new Date(d.checkedAt).getTime() > 20 * 60000);
-  var rows = HZ_DV_HOSPITALS.map(function(h) {
-    var s = hzDvStatusOf(h);
+  var rows = hzDvList().map(function(h) {
+    var s = h.s;
     var pill = !s ? '<span class="hz-dv-pill unk">—</span>' : s.open ? '<span class="hz-dv-pill ok">✓ ' + hzDvEsc(s.label) + '</span>' : '<span class="hz-dv-pill no">⛔ ' + hzDvEsc(s.label) + '</span>';
-    return '<div class="hz-dv-row"><div><b>' + hzDvEsc(h.n) + '</b><span>' + hzDvEsc(h.c) + (s && s.since ? ' · since ' + hzDvEsc(s.since) : '') + (s && s.note ? ' · ' + hzDvEsc(s.note) : '') + '</span></div>' + pill + '</div>';
+    var note = s && s.note && !/^\.?$/.test(s.note) ? s.note : "";
+    return '<div class="hz-dv-row"><div><b>' + hzDvEsc(h.name) + '</b>' + (h.city || note ? '<span>' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + '</div>' + pill + '</div>';
   }).join("");
   o.innerHTML = '<div class="hz-dv-box" role="dialog" aria-label="Divert status"><div class="hz-dv-top"><b>🏥 Divert Status</b><span class="hz-dv-test">TEST · admins only</span><span style="flex:1"></span><button class="hz-dv-x" onclick="hzDvClose()" aria-label="Close">✕</button></div>'
     + '<div class="hz-dv-body">'
-    + (!d ? '<div class="hz-dv-warn">Not connected yet — the live feed from the NJ divert page still has to be hooked up. Until then, check the official page.</div>'
-          : '<div class="hz-dv-when' + (stale ? ' stale' : '') + '">' + (stale ? '⚠️ Last checked ' : 'Checked ') + hzDvEsc(when) + (stale ? ' — may be out of date' : '') + '</div>')
+    + (!d || !d.hospitals ? '<div class="hz-dv-warn">Waiting for the first check — the server reads the NJ divert feed every 5 minutes. Until then, check the official page.</div>'
+          : '<div class="hz-dv-when' + (stale ? ' stale' : '') + '">' + (stale ? '⚠️ Last checked ' : 'Checked ') + hzDvEsc(when) + (stale ? ' — may be out of date' : ' · updates every 5 min') + (d.feedUpdated ? ' · state updated ' + hzDvEsc(new Date(d.feedUpdated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : '') + '</div>')
+    + (d && d.lastError && stale ? '<div class="hz-dv-warn" style="margin-top:8px">Last check failed: ' + hzDvEsc(d.lastError) + '</div>' : '')
     + '<div class="hz-dv-sub">Middlesex County hospitals</div>' + rows
     + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank" rel="noopener">Open the official NJ divert page ↗</a></div></div>';
 }
