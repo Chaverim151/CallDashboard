@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.11"; window.M_BUILD = BUILD;
+  var BUILD = "6.12"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -982,6 +982,8 @@ html[data-theme="basic"] .hz-erv-note.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-erv-hq{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}
+html[data-theme="basic"] .hz-dv-test{color:#8a5a00 !important}
+html[data-theme="basic"] .hz-dv-link{color:#0b5cad !important}
 html[data-theme="basic"] .hz-av-rig.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-av-no2{color:#b42318 !important}
 html[data-theme="basic"] .hz-av-todo{color:#8a5a00 !important}
@@ -1252,6 +1254,13 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
         </div>
       </a>
 
+      <button class="m-tile hz-dv-entry" data-sec="divertstatus" onclick="hzDvOpen()" style="display:none">
+        <div class="m-tile-inner">
+          <span class="m-tile-icon">🏥</span>
+          <span class="m-tile-label">Divert Status</span>
+          <span class="m-tile-sub hz-dv-tile-sub">TEST · not connected yet</span>
+        </div>
+      </button>
     </div>
   </div>
 </div>
@@ -12844,6 +12853,92 @@ function hzErvRefreshTicket(id) {
     + ".hz-erv-top{flex-wrap:nowrap;gap:6px}.hz-erv-top>b{white-space:nowrap}.hz-erv-top .hz-erv-pill{white-space:normal;line-height:1.2;font-size:.66rem}.hz-erv-tabs button{flex:1 1 auto}}";
   document.head.appendChild(css);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hzErvInit); else hzErvInit();
+})();
+</script>
+<script>
+/* ═══════════════════════════════════════
+   12.157 / 6.12 — 🏥 DIVERT STATUS (TEST) — admins only (same code in index.html and mobile.html)
+   Sam: the divert status of every Middlesex County hospital from the NJ divert page (njdivert.juvare.com).
+   The app reads appdata/divertStatus = { checkedAt, source, hospitals: { "<key>": { status, note, since } } },
+   written by the server once the page's data feed is connected (not yet — the feed address is still needed).
+   Until then the tile says "Not connected yet" and links to the official page.
+   ═══════════════════════════════════════ */
+var HZ_DV = { unsub: null, data: null, open: false };
+var HZ_DV_HOSPITALS = [
+  { k: "rwjuh", n: "Robert Wood Johnson University Hospital", c: "New Brunswick", m: /robert wood johnson.*new brunswick|rwj(uh)?\b.*new brunswick|rwjuh/i },
+  { k: "stpeters", n: "Saint Peter's University Hospital", c: "New Brunswick", m: /saint peter|st\.? peter/i },
+  { k: "jfk", n: "JFK University Medical Center", c: "Edison", m: /jfk/i },
+  { k: "rbmc_pa", n: "Raritan Bay Medical Center", c: "Perth Amboy", m: /raritan bay.*perth|perth amboy/i },
+  { k: "oldbridge", n: "Old Bridge Medical Center", c: "Old Bridge", m: /old bridge/i },
+  { k: "princeton", n: "Penn Medicine Princeton Medical Center", c: "Plainsboro", m: /princeton medical|penn medicine princeton|plainsboro/i }
+];
+function hzDvAdmin() {
+  if (typeof mCurrentRole !== "undefined" && mCurrentRole) return mCurrentRole === "admin";
+  if (typeof currentRole !== "undefined" && currentRole) return currentRole === "admin";
+  return false;
+}
+function hzDvEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function hzDvApply() {
+  var ok = hzDvAdmin();
+  document.querySelectorAll(".hz-dv-entry").forEach(function(t) { t.style.display = ok ? "" : "none"; });
+  if (ok && !HZ_DV.unsub && typeof db !== "undefined") {
+    HZ_DV.unsub = db.collection("appdata").doc("divertStatus").onSnapshot(function(s) { HZ_DV.data = s.exists ? s.data() : null; hzDvTileSub(); if (HZ_DV.open) hzDvDraw(); }, function() {});
+  }
+  hzDvTileSub();
+}
+function hzDvStatusOf(h) {
+  var d = (HZ_DV.data && HZ_DV.data.hospitals) || {}, x = d[h.k];
+  if (!x) return null;
+  var st = String(x.status || "").toLowerCase();
+  return { open: /^(open|normal|green|accepting)/.test(st), label: x.status || "Unknown", note: x.note || "", since: x.since || "" };
+}
+function hzDvTileSub() {
+  var el = document.querySelectorAll(".hz-dv-tile-sub"); if (!el.length) return;
+  var txt;
+  if (!HZ_DV.data) txt = "TEST · not connected yet";
+  else { var n = HZ_DV_HOSPITALS.filter(function(h){ var s = hzDvStatusOf(h); return s && !s.open; }).length; txt = n ? "⚠️ " + n + " on divert" : "✓ All open"; }
+  el.forEach(function(e) { e.textContent = txt; });
+}
+function hzDvOpen() {
+  HZ_DV.open = true;
+  var o = document.getElementById("hz-dv-pop"); if (!o) { o = document.createElement("div"); o.id = "hz-dv-pop"; document.body.appendChild(o); }
+  o.onclick = function(e) { if (e.target === o) hzDvClose(); };
+  hzDvDraw();
+}
+function hzDvClose() { HZ_DV.open = false; var o = document.getElementById("hz-dv-pop"); if (o) o.remove(); }
+function hzDvDraw() {
+  var o = document.getElementById("hz-dv-pop"); if (!o) return;
+  var d = HZ_DV.data, when = d && d.checkedAt ? new Date(d.checkedAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
+  var stale = d && d.checkedAt && (Date.now() - new Date(d.checkedAt).getTime() > 20 * 60000);
+  var rows = HZ_DV_HOSPITALS.map(function(h) {
+    var s = hzDvStatusOf(h);
+    var pill = !s ? '<span class="hz-dv-pill unk">—</span>' : s.open ? '<span class="hz-dv-pill ok">✓ ' + hzDvEsc(s.label) + '</span>' : '<span class="hz-dv-pill no">⛔ ' + hzDvEsc(s.label) + '</span>';
+    return '<div class="hz-dv-row"><div><b>' + hzDvEsc(h.n) + '</b><span>' + hzDvEsc(h.c) + (s && s.since ? ' · since ' + hzDvEsc(s.since) : '') + (s && s.note ? ' · ' + hzDvEsc(s.note) : '') + '</span></div>' + pill + '</div>';
+  }).join("");
+  o.innerHTML = '<div class="hz-dv-box" role="dialog" aria-label="Divert status"><div class="hz-dv-top"><b>🏥 Divert Status</b><span class="hz-dv-test">TEST · admins only</span><span style="flex:1"></span><button class="hz-dv-x" onclick="hzDvClose()" aria-label="Close">✕</button></div>'
+    + '<div class="hz-dv-body">'
+    + (!d ? '<div class="hz-dv-warn">Not connected yet — the live feed from the NJ divert page still has to be hooked up. Until then, check the official page.</div>'
+          : '<div class="hz-dv-when' + (stale ? ' stale' : '') + '">' + (stale ? '⚠️ Last checked ' : 'Checked ') + hzDvEsc(when) + (stale ? ' — may be out of date' : '') + '</div>')
+    + '<div class="hz-dv-sub">Middlesex County hospitals</div>' + rows
+    + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank" rel="noopener">Open the official NJ divert page ↗</a></div></div>';
+}
+(function() {
+  var css = document.createElement("style");
+  css.textContent = "#hz-dv-pop{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}"
+    + ".hz-dv-box{background:var(--navy-mid,#13233d);border:1px solid var(--card-border);border-radius:14px;width:100%;max-width:560px;max-height:92vh;overflow:auto;color:var(--white)}html[data-theme=basic] .hz-dv-box{background:#fff}"
+    + ".hz-dv-top{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--card-border)}.hz-dv-top b{font-family:'Oswald',sans-serif;font-size:1.05rem;letter-spacing:.03em}"
+    + ".hz-dv-test{font-size:.66rem;font-weight:700;letter-spacing:.06em;color:#f0a500;border:1px solid rgba(240,165,0,.5);border-radius:5px;padding:2px 6px}"
+    + ".hz-dv-x{border:1px solid var(--card-border);background:transparent;color:var(--white);border-radius:9px;width:40px;height:40px;font-size:1.1rem;cursor:pointer}"
+    + ".hz-dv-body{padding:12px 16px 16px}.hz-dv-sub{font-size:.7rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--gray);margin:10px 0 6px}"
+    + ".hz-dv-warn{border:1px solid rgba(240,165,0,.5);background:rgba(240,165,0,.08);border-radius:9px;padding:10px 12px;font-size:.84rem;line-height:1.45}"
+    + ".hz-dv-when{font-size:.8rem;color:var(--gray)}.hz-dv-when.stale{color:#f0a500;font-weight:700}"
+    + ".hz-dv-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--card-border)}.hz-dv-row>div{flex:1;min-width:0}.hz-dv-row b{display:block;font-size:.92rem}.hz-dv-row span{font-size:.76rem;color:var(--gray)}"
+    + ".hz-dv-pill{flex:0 0 auto;font-weight:700;font-size:.78rem;border-radius:999px;padding:4px 10px;white-space:nowrap}.hz-dv-pill.ok{background:rgba(76,175,128,.14);color:#4caf80}.hz-dv-pill.no{background:#c73c3c;color:#fff!important}.hz-dv-pill.unk{background:rgba(127,127,127,.14);color:var(--gray)!important}"
+    + "html[data-theme=basic] .hz-dv-pill.ok{color:#167a3e}"
+    + ".hz-dv-link{display:block;text-align:center;margin-top:14px;padding:11px;border-radius:10px;border:1.5px solid #4a90d9;color:#4a90d9;font-weight:700;text-decoration:none}html[data-theme=basic] .hz-dv-link{color:#1d5fb8;border-color:#1d5fb8}"
+    + "@media (max-width:600px){#hz-dv-pop{padding:0;align-items:stretch}.hz-dv-box{max-width:none;max-height:none;border-radius:0}}";
+  document.head.appendChild(css);
+  var n = 0, t = setInterval(function() { hzDvApply(); if (++n > 90 || HZ_DV.unsub) clearInterval(t); }, 1000);
 })();
 </script>
 <script>
