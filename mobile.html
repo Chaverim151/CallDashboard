@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.13"; window.M_BUILD = BUILD;
+  var BUILD = "6.14"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12902,6 +12902,15 @@ function hzDvTileSub() {
 }
 function hzDvOpen() {
   HZ_DV.open = true;
+  // 12.159 (Sam): check the feed now (the server skips it if the last check is under 30 s old)
+  var d = HZ_DV.data, age = d && d.checkedAt ? Date.now() - new Date(d.checkedAt).getTime() : Infinity;
+  if (age > 30000 && !HZ_DV.busy) {
+    HZ_DV.busy = true;
+    var rel = typeof hzRelay === "function" ? hzRelay : (typeof mRelay === "function" ? mRelay : null);
+    if (rel) rel("divertStatusNow", {}).then(function(r){ HZ_DV.busy = false; HZ_DV.err = r && r.ok === false ? r.error : ""; if (HZ_DV.open) hzDvDraw(); })
+      .catch(function(e){ HZ_DV.busy = false; HZ_DV.err = (e && e.message) || "couldn't reach the server"; if (HZ_DV.open) hzDvDraw(); });
+    else HZ_DV.busy = false;
+  }
   var o = document.getElementById("hz-dv-pop"); if (!o) { o = document.createElement("div"); o.id = "hz-dv-pop"; document.body.appendChild(o); }
   o.onclick = function(e) { if (e.target === o) hzDvClose(); };
   hzDvDraw();
@@ -12917,9 +12926,11 @@ function hzDvDraw() {
     var note = s && s.note && !/^\.?$/.test(s.note) ? s.note : "";
     return '<div class="hz-dv-row"><div><b>' + hzDvEsc(h.name) + '</b>' + (h.city || note ? '<span>' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + '</div>' + pill + '</div>';
   }).join("");
+  var busy = HZ_DV.busy ? '<div class="hz-dv-when hz-dv-busy">🔄 Checking the NJ divert feed now…</div>' : (HZ_DV.err ? '<div class="hz-dv-warn" style="margin-bottom:8px">Couldn\'t check just now: ' + hzDvEsc(HZ_DV.err) + '</div>' : '');
   o.innerHTML = '<div class="hz-dv-box" role="dialog" aria-label="Divert status"><div class="hz-dv-top"><b>🏥 Divert Status</b><span class="hz-dv-test">TEST · admins only</span><span style="flex:1"></span><button class="hz-dv-x" onclick="hzDvClose()" aria-label="Close">✕</button></div>'
     + '<div class="hz-dv-body">'
-    + (!d || !d.hospitals ? '<div class="hz-dv-warn">Waiting for the first check — the server reads the NJ divert feed every 5 minutes. Until then, check the official page.</div>'
+    + busy
+    + (!d || !d.hospitals ? (HZ_DV.busy ? '' : '<div class="hz-dv-warn">No statuses yet — the server reads the NJ divert feed every 5 minutes. Until then, check the official page.</div>')
           : '<div class="hz-dv-when' + (stale ? ' stale' : '') + '">' + (stale ? '⚠️ Last checked ' : 'Checked ') + hzDvEsc(when) + (stale ? ' — may be out of date' : ' · updates every 5 min') + (d.feedUpdated ? ' · state updated ' + hzDvEsc(new Date(d.feedUpdated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : '') + '</div>')
     + (d && d.lastError && stale ? '<div class="hz-dv-warn" style="margin-top:8px">Last check failed: ' + hzDvEsc(d.lastError) + '</div>' : '')
     + '<div class="hz-dv-sub">Middlesex County hospitals</div>' + rows
@@ -12934,7 +12945,7 @@ function hzDvDraw() {
     + ".hz-dv-x{border:1px solid var(--card-border);background:transparent;color:var(--white);border-radius:9px;width:40px;height:40px;font-size:1.1rem;cursor:pointer}"
     + ".hz-dv-body{padding:12px 16px 16px}.hz-dv-sub{font-size:.7rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--gray);margin:10px 0 6px}"
     + ".hz-dv-warn{border:1px solid rgba(240,165,0,.5);background:rgba(240,165,0,.08);border-radius:9px;padding:10px 12px;font-size:.84rem;line-height:1.45}"
-    + ".hz-dv-when{font-size:.8rem;color:var(--gray)}.hz-dv-when.stale{color:#f0a500;font-weight:700}"
+    + ".hz-dv-when{font-size:.8rem;color:var(--gray)}.hz-dv-busy{color:#4a90d9;font-weight:700;margin-bottom:6px}.hz-dv-when.stale{color:#f0a500;font-weight:700}"
     + ".hz-dv-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--card-border)}.hz-dv-row>div{flex:1;min-width:0}.hz-dv-row b{display:block;font-size:.92rem}.hz-dv-row span{font-size:.76rem;color:var(--gray)}"
     + ".hz-dv-pill{flex:0 0 auto;font-weight:700;font-size:.78rem;border-radius:999px;padding:4px 10px;white-space:nowrap}.hz-dv-pill.ok{background:rgba(76,175,128,.14);color:#4caf80}.hz-dv-pill.no{background:#c73c3c;color:#fff!important}.hz-dv-pill.unk{background:rgba(127,127,127,.14);color:var(--gray)!important}"
     + "html[data-theme=basic] .hz-dv-pill.ok{color:#167a3e}"
