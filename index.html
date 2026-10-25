@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.146">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.148">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2390,7 +2390,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.146</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.148</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -4853,7 +4853,10 @@ function setAdminTab(tab) {
   if (tab === "users") setUsrTab(usrTab);
   if (tab === "users" && typeof hzRolesLoad === "function") hzRolesLoad();
   if (tab === "imagetrend" && typeof itrLoad === "function") itrLoad();
-  if (tab === "codes" && typeof renderCodesEditor === "function") renderCodesEditor();
+  if (tab === "codes" && typeof renderCodesEditor === "function") {   // 12.147: 🔒 code check first
+    var apg = document.getElementById("pg-admin");
+    if (!apg || typeof hzAdminCodesGate !== "function" || hzAdminCodesGate(apg, function(){ renderCodesEditor(); })) renderCodesEditor();
+  } else if (typeof HZ_LG !== "undefined" && HZ_LG.ctx === HZ_LG_ADMIN) { var apg2 = document.getElementById("pg-admin"); if (apg2 && apg2.classList.contains("hz-lg-lock")) hzLgUnlock(); }
   if (tab === "protocols" && dsTab === "locations") lrStart(); else lrStop();
   if (tab === "notifsettings") setNsTab(nsTab, true);
   if (tab === "notifsettings" && nsTab === "templates" && typeof loadTemplateEditor === "function") loadTemplateEditor();
@@ -12472,6 +12475,11 @@ function hzLogsGate(el, go) { HZ_LG.el = el; HZ_LG.retry = go; HZ_LG.ctx = HZ_LG
 // 12.118 / 5.73: the same check guards the Access Codes screens (Hospitals / Buildings / Shuls / Storage) for every member.
 // New Call still fills in building codes without it.
 function hzCodesGate(pageEl, go) { HZ_LG.el = pageEl; HZ_LG.retry = go; HZ_LG.ctx = HZ_LG_CODES; if (hzLgOk()) { hzLgUnlock(); return true; } hzLgShow(); return false; }
+// 12.147 / Sam: Admin ▸ 🔑 Codes & Locations needs the same hourly check (same pass as Access Codes / Call Logs)
+var HZ_LG_ADMIN = { title: "Codes & Locations", head: "🔑 Codes & Locations", text: "Door codes are private. We'll send you a 6-digit code; after that it won't ask again for 1 hour (it also unlocks Access Codes and Call Logs).",
+  phoneBack: ["← Back", "goHome()"], deskBack: ["← Back", "setAdminTab('users')"],
+  isOn: function() { var b = document.querySelector("#admin-tabbar .admin-tab.active"); return !!b && b.getAttribute("data-tab") === "codes"; } };
+function hzAdminCodesGate(pageEl, go) { HZ_LG.el = pageEl; HZ_LG.retry = go; HZ_LG.ctx = HZ_LG_ADMIN; if (hzLgOk()) { hzLgUnlock(); return true; } hzLgShow(); return false; }
 function hzLgEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 // 12.116 / 5.71: the check takes over the whole Call Logs page (filters, totals, export hidden) with its own back button
 function hzLgPage() { return HZ_LG.el && HZ_LG.el.closest ? (HZ_LG.el.classList && HZ_LG.el.classList.contains("page") ? HZ_LG.el : HZ_LG.el.closest(".page")) : null; }
@@ -12531,6 +12539,7 @@ function hzLgWatch() {
     // 12.140: locked but a good pass is here now (the page opened before sign-in finished, or the code was entered in another tab) → open it
     if (pg.classList.contains("hz-lg-lock")) { if (hzLgOk()) { hzLgUnlock(); if (typeof HZ_LG.retry === "function") HZ_LG.retry(); } return; }
     var open = pg.classList.contains("active") || pg.offsetParent !== null; if (!open) return;
+    if (HZ_LG.ctx && typeof HZ_LG.ctx.isOn === "function" && !HZ_LG.ctx.isOn()) return;   // 12.147: e.g. Admin is open but not on Codes & Locations
     var idle = Date.now() - (HZ_LG.lastAct || 0) >= HZ_LG_IDLE_MS;
     if (idle) { try { localStorage.removeItem(hzLgKey()); } catch (e) {} hzLgShow("Logged out after 1 hour with no activity — please verify again."); return; }
     if (!hzLgOk()) hzLgShow("Your 1-hour check has run out — please verify again.");
@@ -19007,7 +19016,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.146";
+var DESKTOP_VERSION = "12.148";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -27016,8 +27025,11 @@ if (typeof hzPureDispatcher !== "function") { window.hzPureDispatcher = function
     return r.indexOf("dispatcher") >= 0 && !r.some(function(x){ return ["responder", "captain", "chief", "backup"].indexOf(x) >= 0; });
   }; }
 function hzAvDaytime(u) { return !!(u && u.daytimeResponder === true) && !hzPureDispatcher(u); }                                                                          // the weekday poll
-function hzAvAny(u) { return hzAvCanFill(u) || hzAvDaytime(u); }
-function hzAvMyDays(u, w) { var yt = (w && w.yt) || {}; return (hzAvDaytime(u) ? HZ_AV_WEEK.filter(function(d){ return !yt[d[0]]; }) : []).concat(hzAvCanFill(u) ? [["shabbos", "Shabbos"]] : []); }
+// 12.148 (Sam): ANY responder can mark weekdays — Responder / Captain / Chief / Backup / Observer, plus anyone ticked Daytime Responder.
+// Daytime Responder (hzAvDaytime) now only decides who gets the weekday REMINDERS.
+function hzAvWeekday(u) { u = u || {}; if (hzPureDispatcher(u)) return false; return u.daytimeResponder === true || (u.roles || []).some(function(r){ return ["responder", "captain", "chief", "backup", "observer"].indexOf(String(r).toLowerCase()) >= 0; }); }
+function hzAvAny(u) { return hzAvCanFill(u) || hzAvWeekday(u); }
+function hzAvMyDays(u, w) { var yt = (w && w.yt) || {}; return (hzAvWeekday(u) ? HZ_AV_WEEK.filter(function(d){ return !yt[d[0]]; }) : []).concat(hzAvCanFill(u) ? [["shabbos", "Shabbos"]] : []); }
 // all four answers count as answered
 function hzAvAnswered(v) { return !!hzAvState(v); }
 function hzAvIsAdmin(u) { u = u || {}; return u.role === "admin" || (u.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; }); }
@@ -27125,7 +27137,7 @@ function hzAvCardHtml(big) {
   };
   var mon = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 1), fri = new Date(w.sun.getFullYear(), w.sun.getMonth(), w.sun.getDate() + 5);
   // 12.129 (Sam): compact — one line of header, rig status right under it, weekdays + Shabbos in one row (phone too), one small note
-  var dtOn = hzAvDaytime(me), shOn = hzAvCanFill(me);
+  var dtOn = hzAvWeekday(me), shOn = hzAvCanFill(me);
   var h = '<div class="hz-av-card' + (big ? ' big' : '') + '"><div class="hz-av-head"><b>📅 My availability</b><span class="hz-av-sub">' + hzAvEsc(hzAvMd(mon) + " – " + hzAvMd(w.shab)) + ' · ' + (done === mine.length ? '<span class="hz-av-ok">✓ all answered</span>' : done + ' of ' + mine.length + ' answered') + '</span></div>'
     // 12.145 (Sam): how to mark it, in plain steps
     + '<div class="hz-av-how"><b>How to mark your availability</b><ol>'
@@ -27234,7 +27246,7 @@ function hzAvTap(day) {
   var cur = ((HZ_AV.mine && HZ_AV.mine.days) || {})[day], st = hzAvState(cur), i = st ? HZ_AV_STATES.indexOf(st) : -1;
   var next = i === -1 ? true : i === 0 ? false : null;   // 12.140: – → Available → Unavailable → –
   HZ_AV.mine = HZ_AV.mine || { days: {} }; HZ_AV.mine.days = HZ_AV.mine.days || {}; HZ_AV.mine.days[day] = next; hzAvRefreshCards();
-  var data = { uid: HZ_AV.uid, unit: me.unit || "", name: ((me.firstName || "") + " " + (me.lastName || "")).trim(), weekKey: w.key, dt: hzAvDaytime(me), updatedAt: Date.now(), days: {} };
+  var data = { uid: HZ_AV.uid, unit: me.unit || "", name: ((me.firstName || "") + " " + (me.lastName || "")).trim(), weekKey: w.key, dt: hzAvWeekday(me), updatedAt: Date.now(), days: {} };
   HZ_AV_DAYS.forEach(function(d){ var x = HZ_AV.mine.days[d[0]]; if (hzAvAnswered(x)) data.days[d[0]] = x; });   // the whole week, so nothing is lost
   if (next === null) data.days[day] = firebase.firestore.FieldValue.delete();   // back to – (no answer)
   db.collection("availability").doc(w.key + "_" + HZ_AV.uid).set(data, { merge: true })
@@ -27280,7 +27292,7 @@ function hzAvAdminRender() {
     return db.collection("availability").where("weekKey", "==", w.key).get().then(function(q) {
       var by = {}; q.forEach(function(d){ var x = d.data() || {}; if (x.uid) by[x.uid] = x.days || {}; });
       // 12.89: weekdays count only Daytime Responders, Shabbos counts every responder; intermittent counted on its own row
-      var yt = w.yt || {}, inPoll = function(u, k){ return k === "shabbos" ? hzAvCanFill(u) : hzAvDaytime(u) && !yt[k]; };
+      var yt = w.yt || {}, inPoll = function(u, k){ return k === "shabbos" ? hzAvCanFill(u) : hzAvWeekday(u) && !yt[k]; };
       var tally = function(val){ return HZ_AV_DAYS.map(function(d){ return users.filter(function(u){ return inPoll(u, d[0]) && (by[u.uid] || {})[d[0]] === val; }).length; }); };
       var counts = tally(true);
       var answered = users.filter(function(u){ var dd = by[u.uid] || {}; return hzAvMyDays(u, w).every(function(d){ return hzAvAnswered(dd[d[0]]); }); }).length;
@@ -27289,10 +27301,10 @@ function hzAvAdminRender() {
         return v === true ? '<td class="hz-av-yes" title="Available">✓</td>' : v === false ? '<td class="hz-av-no" title="Unavailable">✕</td>' : '<td class="hz-av-nil">—</td>'; };
       var h = '<div class="hz-erv-row"><button class="hz-erv-btn" onclick="HZ_AV.admWeek--;hzAvAdminRender()">‹ Previous</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek=0;hzAvAdminRender()">This week</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek++;hzAvAdminRender()">Next ›</button>'
         + '<button class="hz-erv-btn" style="border-color:var(--gold);color:var(--gold)" onclick="hzAvRollCall()">🕯️ Shabbos roll call</button>'
-        + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ✕ unavailable · — no answer · blank = not in that poll</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' answered everything · ☀️ = Daytime Responder (Mon–Fri poll; set in Users ▸ Edit) · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
+        + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ✕ unavailable · — no answer · blank = not in that poll</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' answered everything · ☀️ = Daytime Responder (gets the weekday reminders; set in Users ▸ Edit) · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
         + '<div class="tbl-wrap" style="max-width:none;width:100%"><table class="hz-av-tbl"><thead><tr><th>Unit</th><th>Name</th>' + HZ_AV_DAYS.map(function(d){ return '<th>' + d[1] + (yt[d[0]] ? '<br><span class="hz-av-ytl">🕯️ Yom Tov</span>' : '') + '</th>'; }).join("") + '</tr></thead><tbody>'
         + '<tr class="hz-av-tot"><td colspan="2"><b>Available</b></td>' + counts.map(function(n, i){ return '<td><b>' + (yt[HZ_AV_DAYS[i][0]] ? "" : n) + '</b></td>'; }).join("") + '</tr>'
-        + users.map(function(u){ return '<tr><td><b>' + hzAvEsc(u.unit) + '</b></td><td>' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + (hzAvDaytime(u) ? ' <span title="Daytime Responder">☀️</span>' : '') + '</td>' + HZ_AV_DAYS.map(function(d){ return cell(u, d[0]); }).join("") + '</tr>'; }).join("")
+        + users.map(function(u){ return '<tr><td><b>' + hzAvEsc(u.unit) + '</b></td><td>' + hzAvEsc(((u.firstName || "") + " " + (u.lastName || "")).trim()) + (hzAvDaytime(u) ? ' <span title="Daytime Responder — gets the weekday reminders">☀️</span>' : '') + '</td>' + HZ_AV_DAYS.map(function(d){ return cell(u, d[0]); }).join("") + '</tr>'; }).join("")
         + '</tbody></table></div>';
       // 12.109 / 5.64: under the grid — each day's people in the order Available, Intermittent, Unsure, Unavailable
       var grp = [[true, "✓ Available", "yes", "✓ Avail."], [false, "✕ Unavailable", "no", "✕ Unavail."]];
@@ -27421,7 +27433,7 @@ function hzAvSettingsRender() {
       ["📅 Morning on-call summary", sumN ? sumN + " on the list <span class=\"hz-erv-muted\">(Who Receives What)</span>" : "<span style=\"color:#ff9090\">Nobody yet</span> <span class=\"hz-erv-muted\">— add in Who Receives What</span>", '<span class="hz-av-s-fix">Mon – Fri</span>' + tm("av-sum-time", S.summaryTime || "07:00"), '<span class="hz-erv-muted">—</span>', ch("availSummary")]
     ];
     var reset = HZ_AV.week ? hzAvResetText(HZ_AV.week.reset) : "Motzei Shabbos";
-    el.innerHTML = '<div class="hz-av-s-top">Each week (Mon – Shabbos) has <b>two polls</b>, filled in on the 📅 Availability home tile: <b>☀️ weekdays</b> (Daytime Responders only) and <b>🕯️ Shabbos</b> (every responder). '
+    el.innerHTML = '<div class="hz-av-s-top">Each week (Mon – Shabbos) has <b>two polls</b>, filled in on the 📅 Availability home tile: <b>☀️ weekdays</b> (any responder or observer can answer; only ☀️ Daytime Responders get the weekday reminders) and <b>🕯️ Shabbos</b> (every responder). '
         + 'The week resets <b>' + hzAvEsc(reset) + '</b> — change that and see the answers in ⚙ Admin ▸ 📅 Availability.</div>'
       + '<div class="tbl-wrap" style="max-width:980px"><table class="hz-av-s"><thead><tr><th>Message</th><th>Goes to</th><th>When</th><th title="Only to those who haven\'t answered yet">Only unanswered</th><th>Sent by</th></tr></thead><tbody>'
       + rows.map(function(x){ return '<tr><td><b>' + x[0] + '</b></td><td>' + x[1] + '</td><td><div class="hz-av-s-when">' + x[2] + '</div></td><td style="text-align:center">' + x[3] + '</td><td><div class="hz-av-s-chs">' + x[4] + '</div></td></tr>'; }).join("")
