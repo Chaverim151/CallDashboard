@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.22"; window.M_BUILD = BUILD;
+  var BUILD = "6.23"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -715,6 +715,10 @@ html[data-theme="basic"] .m-cld-unit{color:#0b5cad !important}
 .m-cld-meta{font-size:0.7rem;color:var(--gray);line-height:1.6;border-top:1px solid var(--card-border);padding-top:8px;margin-top:4px}
 .m-cld-meta b{color:var(--white)}
 </style>
+<style id="hz-tile-plain">/* 12.170 (Sam): all home tiles have a black border, no colored topper */
+html .m-tile,html[data-theme] .m-tile,html .big-btn,html[data-theme] .big-btn,html .hz-more-m,html[data-theme] .hz-more-m,html .hz-more-tile,html[data-theme] .hz-more-tile,html[data-theme] #m-home-grid>.hz-more-tile{border-color:#000 !important;border-width:1px !important}
+html .m-tile::before,html[data-theme] .m-tile::before,html .big-btn::before,html[data-theme] .big-btn::before{display:none !important}
+</style>
 <!--HZ-BASIC-START-->
 <script>/* App look for EVERYONE — set by an admin in Admin ▸ Organization (appdata/org.uiTheme):
    "basic" = white background, simple buttons; anything else = the classic dark look.
@@ -999,10 +1003,6 @@ html[data-theme="basic"] .hz-av-howbox b.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-av-howrule{color:#806719 !important}
 html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
 <!--HZ-BASIC-END-->
-<style id="hz-tile-plain">/* 12.170 (Sam): all home tiles have a black border, no colored topper */
-html .m-tile,html[data-theme] .m-tile,html .big-btn,html[data-theme] .big-btn,html .hz-more-m,html[data-theme] .hz-more-m,html .hz-more-tile,html[data-theme] .hz-more-tile,html[data-theme] #m-home-grid>.hz-more-tile{border-color:#000 !important;border-width:1px !important}
-html .m-tile::before,html[data-theme] .m-tile::before,html .big-btn::before,html[data-theme] .big-btn::before{display:none !important}
-</style>
 </head>
 <body>
 <div id="m-app" style="height:100%;display:flex;flex-direction:column;overflow:hidden;position:relative;">
@@ -11995,6 +11995,12 @@ function mCloseAllSheets() {
         <span class="m-dash-txt"><span class="m-dash-t">Rigs &amp; Vehicles</span><span class="m-dash-s" id="m-dash-rigs-sub">Status of every rig — take one out of service or put it back</span></span>
         <span class="m-dash-badge red" id="m-dash-rigs-oos" style="display:none">0</span><span class="m-dash-go">›</span>
       </button>
+      <!-- 12.171 (Sam): hospital diverts in the dispatcher console -->
+      <button class="m-dash-row" id="m-dash-diverts" onclick="hzDvOpen()">
+        <span class="m-dash-ic">🏥</span>
+        <span class="m-dash-txt"><span class="m-dash-t">Hospital Diversion Status</span><span class="m-dash-s hz-dv-tile-sub">Middlesex County hospitals</span></span>
+        <span class="m-dash-badge red hz-dv-count" style="display:none">0</span><span class="m-dash-go">›</span>
+      </button>
       <button class="m-dash-row" id="m-calllogs-tile" onclick="mGoTo('calllogs')" style="display:none">
         <span class="m-dash-ic">📁</span>
         <span class="m-dash-txt"><span class="m-dash-t">Call Logs</span><span class="m-dash-s">Completed &amp; cancelled calls (HIPAA-secured)</span></span>
@@ -12893,11 +12899,13 @@ function hzDvList() {   // the feed's Middlesex hospitals, A–Z (falls back to 
   }).sort(function(a, b){ return a.name.localeCompare(b.name); });
 }
 function hzDvTileSub() {
-  var el = document.querySelectorAll(".hz-dv-tile-sub"); if (!el.length) return;
+  var el = document.querySelectorAll(".hz-dv-tile-sub"); if (!el.length && !document.querySelector(".hz-dv-count")) return;
   var txt;
   if (!HZ_DV.data || !HZ_DV.data.hospitals) txt = "Middlesex County hospitals";
   else { var n = hzDvList().filter(function(h){ return h.s && !h.s.open; }).length; txt = n ? "⚠️ " + n + (n === 1 ? " Hospital is On Divert" : " Hospitals are On Divert") : "✓ All normal"; }
-  el.forEach(function(e) { e.textContent = txt; });
+  var bad = /On Divert/.test(txt);   // 12.171: on divert → red
+  document.querySelectorAll(".hz-dv-count").forEach(function(c) { var k = bad ? parseInt(txt.replace(/\D+/, ""), 10) || 0 : 0; c.textContent = k; c.style.display = k ? "" : "none"; });   // 12.171: console badges
+  el.forEach(function(e) { e.textContent = txt; e.style.color = bad ? (document.documentElement.getAttribute("data-theme") === "basic" ? "#b42318" : "#ff6b6b") : ""; e.style.fontWeight = bad ? "700" : ""; });
 }
 function hzDvOpen() {
   HZ_DV.open = true;
