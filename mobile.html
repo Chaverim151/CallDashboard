@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.50"; window.M_BUILD = BUILD;
+  var BUILD = "6.52"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2310,6 +2310,7 @@ function mSettingsRender() {
     mSetCard('⚙️ App',
       line('🔔 Push Notifications', '<button class="m-set-mini" onclick="mSetTestAlert()">Test</button>' + sw(on, "mRequestPush();setTimeout(mSettingsRender,1500)", "Push Notifications"), '<span id="m-set-devs" style="color:var(--gray)"></span>') +
       (canTest ? line('🧪 Test Mode', sw(!!MSysTestingMode, "mToggleTestMode();setTimeout(mSettingsRender,900)", "Test Mode"), MSysTestingMode ? "ON — only you get what you trigger" : "") : '') +
+      (typeof hzLocToggle === "function" ? line('📍 Location', sw(hzLocOn(), "hzLocToggle()", "Location"), hzLocSub()) : '') +   // 12.197
       line('🗺️ Maps', '<span class="m-set-seg m-set-seg-s">' + [["google", "Google"], ["waze", "Waze"]].concat(hzIsApple() ? [["apple", "Apple"]] : []).map(function(o) {
         return '<label' + (map === o[0] ? ' class="on"' : '') + '><input type="radio" name="m-set-map" value="' + o[0] + '"' + (map === o[0] ? " checked" : "") + ' onchange="mSetMap(this.value)">' + o[1] + '</label>'; }).join("") + '</span>') +
       (pk ? line('👆 ' + mEscHtml(face), sw(mPasskeyStored(), mPasskeyStored() ? "mRemovePasskey();mSettingsRender()" : "mSetFlow.pw=\'face\';mSettingsRender()", face)) : '') +
@@ -5741,6 +5742,14 @@ function rigHistBlock(docId, elId) {
   return '<button type="button" class="m-rig-histbtn" onclick="rigToggleHistory(\'' + rigEsc(docId) + '\',\'' + elId + '\')">' + (open ? "▴ Hide history" : "🕘 History") + '</button>' +
     '<div id="' + elId + '" class="m-rig-hist" style="' + (open ? "" : "display:none") + '">' + (open ? (rigHistHtml[elId] || '<div class="m-rig-hist-empty">Loading history…</div>') : "") + '</div>';
 }
+// 12.198 (Sam, TEST): per-vehicle colors for the out-of-service button — black with a gold border; lettering 902 gold, 903 white, ERV red. Others: the standard blue.
+var HZ_RIG_TEST = { "902": "#d4a017", "903": "#ffffff", "ERV": "#e53935" };
+function hzRigTest(id) { id = String(id || "").toUpperCase(); var k = null; Object.keys(HZ_RIG_TEST).some(function(x) { if (x === "ERV" ? /^ERV/.test(id) : id.replace(/\D/g, "").slice(-3) === x) { k = x; return true; } return false; }); return k; }
+function hzRigBtnStyle(id) {
+  var k = hzRigTest(id);
+  if (!k) return "background:#0b5cad !important;border:1px solid #0b5cad !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff";
+  var c = HZ_RIG_TEST[k]; return "background:#000000 !important;border:2px solid #d4a017 !important;color:" + c + " !important;-webkit-text-fill-color:" + c;
+}
 function mRenderRigStatus() {
   var el = document.getElementById("m-rig-status-list"); if (!el) return;
   if (!mRigStatusDocs.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.8rem;padding:10px 0">No rigs found. An admin adds them in Admin ▸ Fleet.</div>'; return; }
@@ -5781,14 +5790,14 @@ function mRenderRigStatus() {
           ['', '1', '4', '8', '24', 'at'].map(function(d) { var lbl = d === '' ? 'Not sure' : d === 'at' ? 'At a time…' : 'In ' + d + ' h';
             return '<button type="button" class="m-rig-dur' + (d === '' ? ' on' : '') + '" data-dur="' + d + '" onclick="mRigPickDur(this)">' + lbl + '</button>'; }).join('') +
         '</div><input type="datetime-local" id="m-rig-until" style="display:none;margin-top:8px">' +
-        '<button class="m-rig-btn out" style="background:#0b5cad !important;border:1px solid #0b5cad !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff" onclick="mRigSetOut(\'' + key + '\')">Take ' + id + ' out of service</button>' +
+        '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigSetOut(\'' + key + '\')">Take ' + id + ' out of service</button>' +
         '<button class="m-rig-btn" style="background:none;border:1px solid var(--card-border);color:var(--gray)" onclick="mRigOpenForm=null;mRenderRigStatus()">Cancel</button>' +
       '</div>';
     }
-    return '<div class="m-rig-card"><div class="m-rig-top"><div class="m-rig-id">' + (v.kind === "erv" ? "🚙 " : "🚑 ") + id + '</div>' + pill + '</div>' +
+    return '<div class="m-rig-card" data-rig="' + mEscHtml(String(id)) + '" data-kind="' + (v.kind === "erv" ? "erv" : "rig") + '"><div class="m-rig-top"><div class="m-rig-id">' + (v.kind === "erv" ? "🚙 " : "🚑 ") + id + '</div>' + pill + '</div>' +
       (sub ? '<div class="m-rig-sub">' + sub + '</div>' : '') +
-      (st.s === "out" ? '<button class="m-rig-btn in" onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
-                      : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="background:#0b5cad !important;border:1px solid #0b5cad !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take out of service…</button>')) +
+      (st.s === "out" ? '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigBtnStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
+                      : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take out of service…</button>')) +
       rigHistBlock(v.docId, "m-rig-hist-" + v.docId) +
     '</div>';
   }).join("") + '<div style="font-size:0.7rem;color:var(--gray);margin-top:4px;line-height:1.5">Taking a rig out of service or putting it back texts the members, the same as from Admin ▸ Fleet (in Test Mode only you get the text). Your unit number and the reason are recorded in the rig\'s History.</div>';
@@ -13153,7 +13162,33 @@ function hzDvNavUrl(pl) {
   if (app === "apple" && /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent || "")) return "https://maps.apple.com/?daddr=" + q + "&dirflg=d";
   return "https://www.google.com/maps/dir/?api=1&destination=" + q + "&travelmode=driving";
 }
-function hzDvLocate() {   // where am I (for the distances) — asks once per opening, uses a fix up to 2 minutes old
+// ── 12.197 (Sam): 📍 Location switch in My Settings — turning it on asks the phone / browser for location permission ──
+function hzLocPref() { try { return localStorage.getItem("hzLoc"); } catch (e) { return null; } }   // "1" on, "0" off, null = not chosen (on)
+function hzLocOn() { return hzLocPref() !== "0" && HZ_DV.perm !== "denied"; }
+function hzLocPerm(cb) {
+  try { navigator.permissions.query({ name: "geolocation" }).then(function(p) { HZ_DV.perm = p.state; p.onchange = function() { HZ_DV.perm = p.state; hzLocRerender(); }; if (cb) cb(); }).catch(function() { if (cb) cb(); }); }
+  catch (e) { if (cb) cb(); }
+}
+function hzLocRerender() { if (typeof mSettingsRender === "function" && document.getElementById("m-set-content")) mSettingsRender(); if (typeof setRender === "function" && document.getElementById("set-content")) setRender(); }
+function hzLocSub() {
+  if (HZ_DV.perm === "denied") return '<span style="color:#b42318">Blocked for this app — allow Location for it in your ' + (/iPhone|iPad|iPod/.test(navigator.userAgent) ? "iPhone Settings ▸ Privacy ▸ Location Services" : /Android/.test(navigator.userAgent) ? "phone's Settings ▸ Apps ▸ (your browser) ▸ Permissions ▸ Location" : "browser's site settings (the icon left of the address)") + ', then switch it on again</span>';
+  return hzLocOn() ? "On — hospital distances are from where you are" : "Off — hospital distances are from the base";
+}
+function hzLocToggle() {
+  if (hzLocOn()) { try { localStorage.setItem("hzLoc", "0"); } catch (e) {} HZ_DV.me = null; hzLocRerender(); return; }
+  try { localStorage.setItem("hzLoc", "1"); } catch (e) {}
+  if (!navigator.geolocation) { HZ_DV.perm = "denied"; hzLocRerender(); return; }
+  navigator.geolocation.getCurrentPosition(function(p) {   // this is what makes the phone / browser ask
+    HZ_DV.perm = "granted"; HZ_DV.me = { lat: p.coords.latitude, lng: p.coords.longitude }; HZ_DV.meErr = ""; hzLocRerender();
+  }, function(e) {
+    if (e && e.code === 1) { HZ_DV.perm = "denied"; try { localStorage.setItem("hzLoc", "0"); } catch (x) {} }
+    hzLocRerender();
+  }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 120000 });
+  hzLocRerender();
+}
+try { hzLocPerm(); } catch (e) {}
+function hzDvLocate() {
+  if (hzLocPref() === "0") { HZ_DV.me = null; HZ_DV.meErr = "off"; return; }   // 12.197: switched off in My Settings   // where am I (for the distances) — asks once per opening, uses a fix up to 2 minutes old
   if (!navigator.geolocation) { HZ_DV.meErr = "no-gps"; return; }
   navigator.geolocation.getCurrentPosition(function(p) { HZ_DV.me = { lat: p.coords.latitude, lng: p.coords.longitude }; HZ_DV.meErr = ""; if (HZ_DV.open) hzDvDraw(); },
     function(e) { HZ_DV.meErr = e && e.code === 1 ? "denied" : "unavailable"; if (HZ_DV.open) hzDvDraw(); },
@@ -13253,7 +13288,7 @@ function hzDvDraw() {
           : '<div class="hz-dv-when' + (stale ? ' stale' : '') + '">' + (stale ? '⚠️ Last checked ' : 'Checked ') + hzDvEsc(when) + (stale ? ' — may be out of date' : ' · updates every 5 min') + (d.feedUpdated ? ' · state updated ' + hzDvEsc(new Date(d.feedUpdated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : '') + '</div>')
     + (d && d.lastError && stale ? '<div class="hz-dv-warn" style="margin-top:8px">Last check failed: ' + hzDvEsc(d.lastError) + '</div>' : '')
     + '<div class="hz-dv-sub">Middlesex County hospitals</div>'
-    + (HZ_DV.meErr === "denied" ? '<div class="hz-dv-locmsg">📍 Location is off for this app — distances are from the base. Turn it on to see how far each hospital is from you.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
+    + (HZ_DV.meErr === "denied" || HZ_DV.meErr === "off" ? '<div class="hz-dv-locmsg">📍 Location is off — distances are from the base. Turn it on in My Settings ▸ 📍 Location to see how far each hospital is from you.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
     + '<div class="hz-dv-tapmsg">Tap a hospital to navigate there.</div>'
     + '<div class="hz-dv-tapmsg hz-dv-disc">🚗 Drive times are Google Maps estimates with current traffic, from ' + (HZ_DV.me ? 'where you were when this opened' : 'the base') + '. They refresh every 5 minutes, so your navigation app may show a slightly different time.</div>'
     + rows
