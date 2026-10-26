@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.38"; window.M_BUILD = BUILD;
+  var BUILD = "6.41"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4675,8 +4675,11 @@ var M_CALL_NATURES = [
 ];
 var M_HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"]; // matches desktop's exact hardcoded HOSPITALS list — same source, not a live query
 function mHospitalOptionsHTML() {
+  var dv = typeof hzDvTransportOptions === "function" ? hzDvTransportOptions() : "";   // 12.186: the divert list is the Transport Hospitals list
+  if (dv) return dv;
   // 12.184: live divert status beside each hospital an admin linked to the divert list
-  return M_HOSPITALS.map(function(h){ var s = typeof hzDvTransportStatus === "function" ? hzDvTransportStatus(h) : null; return '<option value="' + h.replace(/"/g,"&quot;") + '"' + (s && !s.open ? ' style="color:#b42318;font-weight:700"' : '') + '>' + h + (s ? hzDvSuffix(s) : '') + '</option>'; }).join("");
+  var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;   // 12.185: distance from the call
+  return M_HOSPITALS.map(function(h){ var s = typeof hzDvTransportStatus === "function" ? hzDvTransportStatus(h, M_HOSPITALS) : null; return '<option value="' + h.replace(/"/g,"&quot;") + '" data-hz-hosp="' + h.replace(/"/g,"&quot;") + '"' + (s && !s.open ? ' style="color:#b42318;font-weight:700"' : '') + '>' + mEscHtml(typeof hzDvOptionText === "function" ? hzDvOptionText(h, M_HOSPITALS, call) : h) + '</option>'; }).join("");
 }
 
 // ── Live rig/vehicle fleet cache (mirrors desktop's loadAmbulancesCache) ──
@@ -12899,12 +12902,12 @@ var HZ_DV_HOSPITALS = [
 // A hospital nobody verified still navigates — by its name — but shows no distance.
 function hzDvLoadPlaces() {
   if (typeof db === "undefined") return;
-  db.collection("appdata").doc("divertPlaces").get().then(function(d) { HZ_DV.places = (d.exists && d.data().places) || {}; if (HZ_DV.open) hzDvDraw(); }).catch(function() {});
+  db.collection("appdata").doc("divertPlaces").get().then(function(d) { HZ_DV.places = (d.exists && d.data().places) || {}; HZ_DV.custom = (d.exists && d.data().custom) || []; if (HZ_DV.open) hzDvDraw(); }).catch(function() {});
 }
 function hzDvPlace(h) {
-  var p = (HZ_DV.places || {})[h.id] || null;
-  var ok = p && p.lat && p.lng;   // only a verified location is used
-  return { q: ok && p.address ? p.address : h.name + ", NJ", lat: ok ? p.lat : null, lng: ok ? p.lng : null };
+  var p = (HZ_DV.places || {})[h.id] || null, ok = p && p.lat && p.lng;   // an admin-verified location first
+  var g = ok ? null : (h.id ? hzDvFeedCoords(h.id) : null);                // 12.185: otherwise Google's location for the name
+  return { q: ok && p.address ? p.address : h.name + ", NJ", lat: ok ? p.lat : g && g.lat, lng: ok ? p.lng : g && g.lng };
 }
 // ── 12.184 (Sam): divert status in the call's Transport disposition ──
 // The Hospital dropdown: each Transport Hospital that an admin linked to a divert-list hospital
@@ -12915,14 +12918,30 @@ function hzDvStatusFor(id) {
   var st = String(x.status || "Unknown");
   return { id: id, open: x.color ? x.color === "green" : /^normal/i.test(st), label: st, reason: String(x.reason || "").trim() };
 }
-function hzDvTransportStatus(name) {
+var HZ_DV_MX = hzDvWords("new brunswick edison perth amboy old bridge plainsboro woodbridge piscataway highland park metuchen sayreville south amboy east north monroe jamesburg milltown dunellen middlesex carteret spotswood helmetta cranbury plainfield river princeton");
+function hzDvTransportStatus(name, all) {
   var P = HZ_DV.places || {}, id = null; name = String(name || "").trim(); if (!name) return null;
   Object.keys(P).some(function(k) { if (P[k] && P[k].transport === name) { id = k; return true; } return false; });
-  return id ? hzDvStatusFor(id) : null;
+  if (id) return hzDvStatusFor(id);
+  // 12.185 (Sam): not linked by an admin → match the name to the divert list by its words ("RWJ" = Robert Wood Johnson).
+  var d = HZ_DV.data && HZ_DV.data.hospitals; if (!d) return null;
+  var fit = function(nm) {
+    var have = hzDvWords(nm), best = null, bestN = 0, extra = [];
+    Object.keys(d).forEach(function(k) {
+      var need = hzDvWords(d[k].name); if (!need.length || !need.every(function(w) { return have.indexOf(w) !== -1; })) return;
+      if (need.length > bestN) { bestN = need.length; best = k; extra = have.filter(function(w) { return need.indexOf(w) === -1; }); }
+    });
+    return best ? { id: best, extra: extra } : null;
+  };
+  var me = fit(name); if (!me) return null;
+  // extra words in the dropdown name (e.g. a town) must be a Middlesex town or in the verified address — "RWJ Somerset" ≠ RWJ New Brunswick
+  var pl = P[me.id], addr = pl && pl.lat && pl.formatted ? hzDvWords(pl.formatted) : [];
+  if (!me.extra.every(function(w) { return HZ_DV_MX.indexOf(w) !== -1 || addr.indexOf(w) !== -1; })) return null;
+  return hzDvStatusFor(me.id);
 }
 function hzDvWords(t) {
   var STOP = { hospital: 1, hospitals: 1, medical: 1, center: 1, centre: 1, university: 1, the: 1, of: 1, and: 1, health: 1, healthcare: 1, rwjbh: 1, hmh: 1, regional: 1, general: 1, campus: 1, nj: 1, at: 1, inc: 1, system: 1, penn: 1, medicine: 1 };
-  return String(t || "").toLowerCase().replace(/[’']/g, "").replace(/\bsaint\b/g, "st").split(/[^a-z0-9]+/).map(function(w) { return w.length > 3 ? w.replace(/s$/, "") : w; }).filter(function(w) { return w && !STOP[w]; });
+  return String(t || "").toLowerCase().replace(/[’']/g, "").replace(/\bsaint\b/g, "st").replace(/\brwj(uh|bh)?\b/g, "robert wood johnson").split(/[^a-z0-9]+/).map(function(w) { return w.length > 3 ? w.replace(/s$/, "") : w; }).filter(function(w) { return w && !STOP[w]; });
 }
 function hzDvKeywordStatus(name, city) {   // every distinctive word of the divert-list name is in the search result's name
   var d = HZ_DV.data && HZ_DV.data.hospitals; if (!d) return null;
@@ -12937,6 +12956,79 @@ function hzDvKeywordStatus(name, city) {   // every distinctive word of the dive
   return best ? hzDvStatusFor(best) : null;
 }
 function hzDvSuffix(s) { return !s ? "" : s.open ? " — ✓ " + s.label : " — ⛔ " + s.label + (s.reason ? " (" + s.reason + ")" : ""); }
+// 12.185 (Sam): a distance for every hospital — an admin-verified location first, otherwise Google's location for the
+// hospital's name (looked up once per device, kept in localStorage hzDvGeo2).
+function hzDvGeoGet(q) {
+  if (!HZ_DV.gc) { try { HZ_DV.gc = JSON.parse(localStorage.getItem("hzDvGeo2") || "{}"); } catch (e) { HZ_DV.gc = {}; } HZ_DV.gq = {}; }
+  if (HZ_DV.gc[q]) return HZ_DV.gc[q];
+  if (!HZ_DV.gq[q]) { HZ_DV.gq[q] = 1; HZ_DV.gwait = (HZ_DV.gwait || []).concat([q]); hzDvGeoRun(); }
+  return null;
+}
+function hzDvGeoRun() {
+  if (!(window.google && google.maps && google.maps.Geocoder)) {
+    if (HZ_DV.mapsLoading) return; HZ_DV.mapsLoading = true;
+    if (![].some.call(document.querySelectorAll("script[src*='maps.googleapis.com/maps/api/js']"), function() { return true; })) {
+      window.hzDvMapsReady = function() { HZ_DV.mapsLoading = false; hzDvGeoRun(); };
+      var sc = document.createElement("script"); sc.async = true;
+      sc.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=hzDvMapsReady";
+      document.head.appendChild(sc);
+    } else setTimeout(function() { HZ_DV.mapsLoading = false; hzDvGeoRun(); }, 1500);
+    return;
+  }
+  var list = HZ_DV.gwait || []; HZ_DV.gwait = []; if (!list.length) return;
+  var gc = new google.maps.Geocoder();
+  list.forEach(function(q) {
+    gc.geocode({ address: q, region: "us" }, function(res, st) {
+      if (st !== "OK" || !res || !res[0]) return;
+      var l = res[0].geometry.location; HZ_DV.gc[q] = { lat: l.lat(), lng: l.lng() };
+      try { localStorage.setItem("hzDvGeo2", JSON.stringify(HZ_DV.gc)); } catch (e) {}
+      clearTimeout(HZ_DV.gt); HZ_DV.gt = setTimeout(function() { if (HZ_DV.open) hzDvDraw(); hzDvRefreshOptions(); }, 150);
+    });
+  });
+}
+function hzDvFeedCoords(id) {   // verified → else Google's location for the feed name
+  var p = (HZ_DV.places || {})[id]; if (p && p.lat && p.lng) return { lat: p.lat, lng: p.lng, verified: true };
+  var cu = (HZ_DV.custom || []).filter(function(c) { return c.id === id; })[0]; if (cu) return hzDvGeoGet(cu.name + ", NJ");
+  var x = HZ_DV.data && HZ_DV.data.hospitals && HZ_DV.data.hospitals[id]; if (!x) return null;
+  return hzDvGeoGet(String(x.name || "").replace(/^(RWJBH|HMH)\s+/, "") + ", NJ");
+}
+function hzDvFmtMi(mi) { return (mi < 10 ? mi.toFixed(1) : Math.round(mi)) + " mi"; }
+// A Transport dropdown option: "JFK Medical Center — ✓ Normal · 3.2 mi" (distance from the call's location)
+function hzDvOptionText(h, all, call) {
+  var s = hzDvTransportStatus(h, all), t = h + hzDvSuffix(s);
+  if (call && call.lat && call.lng && h !== "Other") {
+    var c = s ? hzDvFeedCoords(s.id) : hzDvGeoGet(h + ", NJ");
+    if (c && c.lat) t += " · " + hzDvFmtMi(hzDvMiles({ lat: +call.lat, lng: +call.lng }, c));
+  }
+  return t;
+}
+// 12.186 (Sam): the Transport Hospitals list IS the divert list (Middlesex) — one list, + "Other" (search).
+function hzDvTransportList() {
+  var d = HZ_DV.data && HZ_DV.data.hospitals; if (!d) return [];
+  return Object.keys(d).map(function(id) { return { id: id, name: String(d[id].name || id).replace(/^(RWJBH|HMH)\s+/, "").trim() }; })
+    .sort(function(a, b) { var x = !!(d[a.id] || {}).added, y = !!(d[b.id] || {}).added; return x !== y ? (x ? 1 : -1) : a.name.localeCompare(b.name); })   // Middlesex, then added NJ hospitals
+    .concat((HZ_DV.custom || []).map(function(c) { return { id: c.id, name: c.name, custom: true }; }));   // 12.187: not on the NJ list — no divert status
+}
+function hzDvTransportOptions() {   // the Transport dropdown's options; "" when the divert list hasn't loaded (then the saved list is used)
+  var L = hzDvTransportList(); if (!L.length) return "";
+  var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;
+  var esc = function(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+  return L.map(function(h) { var s = hzDvStatusFor(h.id);
+    return '<option value="' + esc(h.name) + '" data-hz-id="' + esc(h.id) + '"' + (s && !s.open ? ' style="color:#b42318;font-weight:700"' : '') + '>' + esc(hzDvIdText(h, call)) + '</option>'; }).join("")
+    + '<option value="Other">Other</option>';
+}
+function hzDvIdText(h, call) {
+  var t = h.name + (h.custom ? " — no divert status" : hzDvSuffix(hzDvStatusFor(h.id)));
+  if (call && call.lat && call.lng) { var c = hzDvFeedCoords(h.id); if (c && c.lat) t += " · " + hzDvFmtMi(hzDvMiles({ lat: +call.lat, lng: +call.lng }, c)); }
+  return t;
+}
+function hzDvRefreshOptions() {   // update the open Transport dropdowns once a location arrives
+  var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;
+  var all = typeof M_HOSPITALS !== "undefined" ? M_HOSPITALS : [];
+  document.querySelectorAll("option[data-hz-hosp]").forEach(function(o) { o.textContent = hzDvOptionText(o.getAttribute("data-hz-hosp"), all, call); });
+  var L = hzDvTransportList(), by = {}; L.forEach(function(h) { by[h.id] = h; });
+  document.querySelectorAll("option[data-hz-id]").forEach(function(o) { var h = by[o.getAttribute("data-hz-id")]; if (h) o.textContent = hzDvIdText(h, call); });
+}
 function hzDvMiles(a, b) {
   var R = 3958.8, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lng - a.lng) * r;
   var h = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
@@ -12974,9 +13066,10 @@ function hzDvApply() {
 function hzDvList() {   // the feed's Middlesex hospitals, A–Z (falls back to the built-in names while not connected)
   var d = HZ_DV.data && HZ_DV.data.hospitals;
   if (!d || !Object.keys(d).length) return HZ_DV_HOSPITALS.map(function(h){ return { name: h.n, city: h.c, s: null }; });
+  var cust = (HZ_DV.custom || []).map(function(c) { return { id: c.id, name: c.name, city: "", s: null, custom: true }; });   // 12.187
   return Object.keys(d).map(function(k){ var x = d[k] || {}, st = String(x.status || "Unknown");
-    return { id: k, name: String(x.name || k).replace(/^(RWJBH|HMH)\s+/, ""), city: "", s: { open: x.color ? x.color === "green" : /^normal/i.test(st), closed: /closed/i.test(st), label: st, note: x.comments || "", reason: x.reason || "", details: x.details || "" } };
-  }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+    return { id: k, added: !!x.added, county: x.county || "", name: String(x.name || k).replace(/^(RWJBH|HMH)\s+/, ""), city: x.added && x.county ? x.county + " County" : "", s: { open: x.color ? x.color === "green" : /^normal/i.test(st), closed: /closed/i.test(st), label: st, note: x.comments || "", reason: x.reason || "", details: x.details || "" } };
+  }).sort(function(a, b){ return a.added !== b.added ? (a.added ? 1 : -1) : a.name.localeCompare(b.name); }).concat(cust);
 }
 function hzDvTileSub() {
   var el = document.querySelectorAll(".hz-dv-tile-sub"); if (!el.length && !document.querySelector(".hz-dv-count")) return;
@@ -13019,15 +13112,17 @@ function hzDvDraw() {
   var o = document.getElementById("hz-dv-pop"); if (!o) return;
   var d = HZ_DV.data, when = d && d.checkedAt ? new Date(d.checkedAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
   var stale = d && d.checkedAt && (Date.now() - new Date(d.checkedAt).getTime() > 20 * 60000);
+  var grp = "";
   var rows = hzDvList().map(function(h) {
-    var s = h.s;
-    var pill = !s ? '<span class="hz-dv-pill unk">—</span>' : s.open ? '<span class="hz-dv-pill ok">✓ ' + hzDvEsc(s.label) + '</span>' : '<span class="hz-dv-pill no">⛔ ' + hzDvEsc(s.label) + '</span>';
+    var s = h.s, g = h.custom ? "c" : h.added ? "a" : "m", head = "";   // 12.187: Middlesex · added NJ hospitals · not on the NJ list
+    if (g !== grp) { if (grp || g !== "m") head = '<div class="hz-dv-sub" style="margin-top:12px">' + (g === "a" ? "Other NJ hospitals" : g === "c" ? "Not on the NJ divert list — no divert status available" : "Middlesex County hospitals") + '</div>'; grp = g; }
+    var pill = h.custom ? '<span class="hz-dv-pill unk">No divert status</span>' : !s ? '<span class="hz-dv-pill unk">—</span>' : s.open ? '<span class="hz-dv-pill ok">✓ ' + hzDvEsc(s.label) + '</span>' : '<span class="hz-dv-pill no">⛔ ' + hzDvEsc(s.label) + '</span>';
     var note = s && s.note && !/^\.?$/.test(s.note) ? s.note : "";
     // 12.160: what the divert is for (the page's Reason column) shows in bold red under the name
     var why = s && !s.open ? [s.reason, s.details].filter(Boolean).join(" · ") : "";
     var pl = hzDvPlace(h), mi = HZ_DV.me && pl.lat && pl.lng ? hzDvMiles(HZ_DV.me, pl) : null;
     var dist = mi === null ? '' : '<span class="hz-dv-mi">📍 ' + (mi < 10 ? mi.toFixed(1) : Math.round(mi)) + ' mi away</span>';
-    return '<a class="hz-dv-row hz-dv-nav" href="' + hzDvEsc(hzDvNavUrl(pl)) + '" target="_blank" rel="noopener" aria-label="Navigate to ' + hzDvEsc(h.name) + '"><div><b>' + hzDvEsc(h.name) + '</b>' + (why ? '<em class="hz-dv-why">' + hzDvEsc(why) + '</em>' : '') + (h.city || note ? '<span>' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + dist + '</div><div class="hz-dv-right">' + pill + '<span class="hz-dv-go">🧭 Navigate ›</span></div></a>';
+    return head + '<a class="hz-dv-row hz-dv-nav" href="' + hzDvEsc(hzDvNavUrl(pl)) + '" target="_blank" rel="noopener" aria-label="Navigate to ' + hzDvEsc(h.name) + '"><div><b>' + hzDvEsc(h.name) + '</b>' + (why ? '<em class="hz-dv-why">' + hzDvEsc(why) + '</em>' : '') + (h.city || note ? '<span>' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + dist + '</div><div class="hz-dv-right">' + pill + '<span class="hz-dv-go">🧭 Navigate ›</span></div></a>';
   }).join("");
   var busy = HZ_DV.busy ? '<div class="hz-dv-when hz-dv-busy">🔄 Checking the NJ divert feed now…</div>' : (HZ_DV.err ? '<div class="hz-dv-warn" style="margin-bottom:8px">Couldn\'t check just now: ' + hzDvEsc(HZ_DV.err) + '</div>' : (HZ_DV.fresh ? '<div class="hz-dv-when hz-dv-busy">✓ Already up to date — checked in the last 30 seconds</div>' : ''));
   o.innerHTML = '<div class="hz-dv-box" role="dialog" aria-label="Hospital Diversion Status"><div class="hz-dv-top"><button class="hz-pop-back" onclick="hzDvClose()">← Back</button><b class="hz-dv-ttl">🏥 Hospital Diversion Status</b><button class="hz-dv-rf" onclick="hzDvCheck()"' + (HZ_DV.busy ? ' disabled' : '') + ' aria-label="Refresh">' + (HZ_DV.busy ? '🔄<span class="hz-dv-lg"> Checking…</span>' : '🔄<span class="hz-dv-lg"> Refresh</span>') + '</button></div>'
@@ -13039,13 +13134,12 @@ function hzDvDraw() {
     + '<div class="hz-dv-sub">Middlesex County hospitals</div>'
     + (HZ_DV.meErr === "denied" ? '<div class="hz-dv-locmsg">📍 Location is off for this app — turn it on to see how far each hospital is.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
     + '<div class="hz-dv-tapmsg">Tap a hospital to navigate there.</div>'
-    + (HZ_DV.places && !Object.keys(HZ_DV.places).some(function(k) { return HZ_DV.places[k] && HZ_DV.places[k].lat; }) && hzDvAdmin() ? '<div class="hz-dv-locmsg">Admin: no hospital locations are verified yet — Admin ▸ Protocols &amp; Dispatch ▸ 📍 Divert Hospital Locations.</div>' : '')
     + rows
     + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank" rel="noopener">Open the official NJ divert page ↗</a></div></div>';
 }
 (function() {
   var css = document.createElement("style");
-  css.textContent = ".hz-dv-nav{display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:10px 12px !important;border:1.5px solid #0b5cad !important;border-radius:10px;text-decoration:none !important;color:inherit !important;cursor:pointer;background:rgba(11,92,173,.06)}"
+  css.textContent = ".hz-dv-nav{display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:10px 12px !important;border:2px solid #0b5cad !important;border-radius:10px;text-decoration:none !important;color:inherit !important;cursor:pointer;background:transparent}html[data-theme=basic] .hz-dv-nav{background:#ffffff !important}"
     + ".hz-dv-nav:active{transform:scale(.99)}.hz-dv-nav .hz-dv-mi{display:block;font-size:.76rem;color:#0b5cad !important;font-weight:700;margin-top:2px}html:not([data-theme=basic]) .hz-dv-nav .hz-dv-mi{color:#8cbcff !important}"
     + ".hz-dv-right{flex:0 0 auto !important;display:flex;flex-direction:column;align-items:flex-end;gap:5px}.hz-dv-go{font-size:.72rem !important;font-weight:700;color:#0b5cad !important;white-space:nowrap}html:not([data-theme=basic]) .hz-dv-go{color:#8cbcff !important}"
     + ".hz-dv-locmsg,.hz-dv-tapmsg{font-size:.76rem;color:var(--gray);margin:2px 0 8px}"

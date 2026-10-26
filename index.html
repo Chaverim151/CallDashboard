@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.184">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.187">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2406,7 +2406,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.184</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.187</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -3357,7 +3357,6 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
         <button class="ticket-tab" data-ds="zones" onclick="setDsTab('zones')">🗺️ Coverage Areas</button>
         <button class="ticket-tab" data-ds="mutualAid" onclick="setDsTab('mutualAid')">🚔 Mutual Aid Directory</button>
         <button class="ticket-tab" data-ds="hospitals" onclick="setDsTab('hospitals')">🏥 Transport Hospitals</button>
-        <button class="ticket-tab" data-ds="dvplaces" onclick="setDsTab('dvplaces')">📍 Divert Hospital Locations</button>
         <button class="ticket-tab" data-ds="outside" onclick="setDsTab('outside')">📞 Outside-Coverage Contacts</button>
         <button class="ticket-tab" data-ds="regional" onclick="setDsTab('regional')">☎️ Regional Hatzolah</button>
         <button class="ticket-tab" data-ds="locations" onclick="setDsTab('locations')">📍 Location Requests</button>
@@ -13906,7 +13905,7 @@ function renderDispatchSettings() {
   if (sr) sr.style.display = isLr ? "none" : "";
   el.style.display = isLr ? "none" : "";
   if (isLr) return;
-  if (dsTab === "dvplaces") { if (sr) sr.style.display = "none"; hzDvpRender(el); return; }   // 12.183: own Save
+  if (dsTab === "dvplaces" || dsTab === "hospitals") { if (sr) sr.style.display = "none"; hzDvpRender(el); return; }   // 12.186: Transport Hospitals = the divert list (own Save)
   if (dsTab === "traffic") { renderDsTraffic(el); return; }
   var inp = function(v, ph, oninput, extra) { return '<input value="' + String(v||"").replace(/"/g,"&quot;") + '" placeholder="' + ph + '" oninput="' + oninput + '" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;padding:8px 10px;color:var(--white);font-size:0.85rem;' + (extra||"") + '">'; };
   if (dsTab === "natures") {
@@ -14152,6 +14151,8 @@ function hzDvpRender(el) {
     HZ_DVP.loading = true;
     Promise.all([db.collection("appdata").doc("divertPlaces").get(), db.collection("appdata").doc("divertStatus").get()]).then(function(r) {
       HZ_DVP.places = JSON.parse(JSON.stringify((r[0].exists && r[0].data().places) || {}));
+      HZ_DVP.extra = ((r[0].exists && r[0].data().extra) || []).map(String);   // 12.187: NJ hospitals the admin added
+      HZ_DVP.custom = JSON.parse(JSON.stringify((r[0].exists && r[0].data().custom) || []));   // 12.187: hospitals not on the NJ list [{ id, name }]
       if (r[1].exists && typeof HZ_DV !== "undefined") HZ_DV.data = r[1].data();
       HZ_DVP.loading = false; hzDvpRender();
     }).catch(function(e) { HZ_DVP.loading = false; el.innerHTML = '<div style="color:#b42318">Couldn\'t load: ' + orgEsc(e.message) + '</div>'; });
@@ -14159,35 +14160,71 @@ function hzDvpRender(el) {
   }
   if (!HZ_DVP.places) return;
   var feed = (typeof HZ_DV !== "undefined" && HZ_DV.data && HZ_DV.data.hospitals) || {};
-  var ids = Object.keys(feed).sort(function(a, b) { return String(feed[a].name).localeCompare(String(feed[b].name)); });
+  var nj = (typeof HZ_DV !== "undefined" && HZ_DV.data && HZ_DV.data.nj) || {}, ex = HZ_DVP.extra || [];
+  var cu = HZ_DVP.custom || [], cuName = {}; cu.forEach(function(c) { cuName[c.id] = c.name; });
+  var nameOf = function(id) { return String(cuName[id] || (feed[id] && feed[id].name) || (nj[id] && nj[id].name) || id).replace(/^(RWJBH|HMH)\s+/, ""); };
+  // 12.187: Middlesex hospitals (automatic) + the ones the admin added from the NJ list; an added hospital the server hasn't picked up yet shows too
+  var ids = Object.keys(feed).filter(function(id) { return !feed[id].added || ex.indexOf(id) !== -1; });
+  ex.forEach(function(id) { if (ids.indexOf(id) === -1) ids.push(id); });
+  ids.sort(function(a, b) { var x = ex.indexOf(a) !== -1, y = ex.indexOf(b) !== -1; return x !== y ? (x ? 1 : -1) : nameOf(a).localeCompare(nameOf(b)); });
+  cu.forEach(function(c) { ids.push(c.id); });   // then the ones that aren't on the NJ list
   var trList = ((typeof DISPATCH_HOSPITALS !== "undefined" && DISPATCH_HOSPITALS) || []).filter(function(h) { return h && h !== "Other"; });   // 12.184
   var trOpts = function(cur) { var l = trList.slice(); if (cur && l.indexOf(cur) === -1) l.push(cur);
     return '<option value="">— none —</option>' + l.map(function(h) { return '<option value="' + orgEsc(h) + '"' + (h === cur ? " selected" : "") + '>' + orgEsc(h) + '</option>'; }).join(""); };
   var rows = ids.map(function(id) {
-    var h = feed[id] || {}, p = HZ_DVP.places[id] || {}, ok = p.lat && p.lng, nm = String(h.name || id).replace(/^(RWJBH|HMH)\s+/, "");
+    var h = feed[id] || {}, p = HZ_DVP.places[id] || {}, ok = p.lat && p.lng, nm = nameOf(id), isCu = !!cuName[id], isEx = ex.indexOf(id) !== -1 || isCu;
+    var cty = (h.county || (nj[id] && nj[id].county) || "");
     var st = ok
       ? '<span style="color:#167a3e;font-weight:700">✓ Verified</span> <span style="color:var(--gray)">' + orgEsc(p.formatted || p.address || "") + '</span> · <a href="https://www.google.com/maps/search/?api=1&query=' + p.lat + "," + p.lng + '" target="_blank" rel="noopener" style="color:#0b5cad;font-weight:700">Check the pin ↗</a>' + (p.verifiedBy ? ' <span style="color:var(--gray)">· ' + orgEsc(p.verifiedBy) + '</span>' : '')
-      : (p.err ? '<span style="color:#b42318;font-weight:700">⚠ ' + orgEsc(p.err) + '</span>' : '<span style="color:var(--gray)">Not verified yet — no distance or navigation pin for this hospital</span>');
+      : (p.err ? '<span style="color:#b42318;font-weight:700">⚠ ' + orgEsc(p.err) + '</span>' : '<span style="color:var(--gray)">Not verified yet — Google\'s best guess for the name is used until you verify an address</span>');
     return '<div style="margin-bottom:12px;padding:10px 12px;border:1.5px solid #0b5cad;border-radius:10px">' +
-      '<div style="font-weight:800;color:#0b5cad;margin-bottom:6px">' + orgEsc(nm) + '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-weight:800;color:#0b5cad;flex:1">' + orgEsc(nm) +
+        (cty ? ' <span style="font-weight:400;color:var(--gray);font-size:0.78rem">· ' + orgEsc(cty) + ' County' + (isEx ? ' · added' : '') + '</span>' : '') +
+        (isCu ? ' <span style="font-weight:400;color:#8a5a00;font-size:0.78rem">· not on the NJ divert list — no divert status available</span>' : (isEx && !feed[id] ? ' <span style="font-weight:400;color:#8a5a00;font-size:0.78rem">· status shows after you Save</span>' : '')) + '</b>' +
+        (isEx ? '<button type="button" onclick="hzDvpRemove(\'' + orgEsc(id) + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid #e3b4ae;background:#fff;color:#b42318;font:inherit;font-size:0.78rem;cursor:pointer">✕ Remove</button>' : '') + '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:0.8rem">' +
       '<input type="text" placeholder="Address — street, town, NJ" value="' + orgEsc(p.address || "") + '" oninput="hzDvpAddr(\'' + orgEsc(id) + '\',this.value)" style="flex:1 1 320px;min-width:220px;padding:8px 10px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:inherit;font:inherit">' +
       '<button type="button" onclick="hzDvpVerify(\'' + orgEsc(id) + '\')" style="padding:8px 14px;border-radius:7px;background:#0b5cad;color:#fff;border:1px solid #0b5cad;font:inherit;font-weight:700;cursor:pointer">' + (p.busy ? "Checking…" : (ok ? "📍 Re-verify" : "📍 Verify")) + '</button>' +
       '<span style="flex:1 1 100%">' + st + '</span>' +
-      '<label style="flex:1 1 100%;display:flex;align-items:center;gap:6px;flex-wrap:wrap">🚑 Transport hospital: <select onchange="hzDvpPlace(\'' + orgEsc(id) + '\').transport=this.value" style="padding:6px 9px;border-radius:7px;border:1px solid var(--card-border);font:inherit;max-width:360px">' + trOpts(p.transport) + '</select>' +
-      '<span style="color:var(--gray)">its divert status shows beside it in a call\'s Transport disposition</span></label></div></div>';
+      '</div></div>';
   }).join("");
-  el.innerHTML = '<div style="font-size:0.8rem;color:var(--gray);margin-bottom:12px;line-height:1.6">The hospitals below are pulled from the NJ divert list. For each one, type its address and press <b>📍 Verify</b>, check the pin, then <b>💾 Save hospital locations</b>. ' +
-      'Verified hospitals show each member\'s distance and open navigation when tapped in 🏥 Hospital Diversion Status.</div>' +
+  el.innerHTML = '<div style="font-size:0.8rem;color:var(--gray);margin-bottom:12px;line-height:1.6">This is the <b>Transport Hospitals</b> list — it comes straight from the NJ divert list (Middlesex County), so the Hospital dropdown in a call\'s Transport disposition shows each one\'s live divert status and distance. "Other" (search any hospital) is always at the end.<br>' +
+      'For each hospital, type its address and press <b>📍 Verify</b>, check the pin, then <b>💾 Save hospital locations</b> — that location is used for distances and navigation.</div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button type="button" class="edit-mode-btn" onclick="hzDvpPull()">🔄 Pull the divert list now</button></div>' +
-    (ids.length ? rows : '<div style="color:var(--gray);font-size:0.82rem;margin-bottom:12px">The divert list hasn\'t been pulled yet — press 🔄 Pull the divert list now.</div>') +
+    (ids.length ? rows + hzDvpAddBox(nj, ids) + '<div style="margin:0 0 14px;padding:10px 12px;border:1.5px dashed var(--card-border);border-radius:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:0.82rem"><b>＋ Not on the NJ list</b><input id="dvp-add-custom" type="text" placeholder="Hospital name — no divert status for it" style="flex:1 1 280px;padding:7px 9px;border-radius:7px;border:1px solid var(--card-border);background:transparent;color:inherit;font:inherit"><button type="button" onclick="hzDvpAddCustom()" style="padding:8px 14px;border-radius:7px;background:#0b5cad;color:#fff;border:1px solid #0b5cad;font:inherit;font-weight:700;cursor:pointer">Add</button></div>' : '<div style="color:var(--gray);font-size:0.82rem;margin-bottom:12px">The divert list hasn\'t been pulled yet — press 🔄 Pull the divert list now.</div>') +
     '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="submit-btn" style="width:auto;padding:10px 22px" onclick="hzDvpSave()">💾 Save hospital locations</button><span class="form-msg" id="dvp-msg"></span></div>';
 }
+function hzDvpAddBox(nj, have) {   // 12.187: + Add a hospital — any hospital on the NJ divert list, grouped by county
+  var ids = Object.keys(nj).filter(function(id) { return have.indexOf(id) === -1; });
+  if (!ids.length) return Object.keys(nj).length ? '' : '<div style="font-size:0.8rem;color:#8a5a00;margin:4px 0 12px">To add hospitals from other counties, deploy the latest server code, then press 🔄 Pull the divert list now.</div>';
+  var by = {}; ids.forEach(function(id) { var c = nj[id].county || "Other"; (by[c] = by[c] || []).push(id); });
+  var opts = Object.keys(by).sort().map(function(c) {
+    return '<optgroup label="' + orgEsc(c) + ' County">' + by[c].sort(function(a, b) { return String(nj[a].name).localeCompare(String(nj[b].name)); })
+      .map(function(id) { return '<option value="' + orgEsc(id) + '">' + orgEsc(String(nj[id].name).replace(/^(RWJBH|HMH)\s+/, "")) + '</option>'; }).join("") + '</optgroup>'; }).join("");
+  return '<div style="margin:4px 0 14px;padding:10px 12px;border:1.5px dashed #0b5cad;border-radius:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:0.82rem">' +
+    '<b style="color:#0b5cad">＋ Add a hospital</b><select id="dvp-add" style="flex:1 1 320px;padding:7px 9px;border-radius:7px;border:1px solid var(--card-border);font:inherit"><option value="">Pick from the NJ divert list…</option>' + opts + '</select>' +
+    '<button type="button" onclick="hzDvpAdd()" style="padding:8px 14px;border-radius:7px;background:#0b5cad;color:#fff;border:1px solid #0b5cad;font:inherit;font-weight:700;cursor:pointer">Add</button></div>';
+}
+function hzDvpAddCustom() {   // 12.187: a hospital that isn't on the NJ divert list
+  var el = document.getElementById("dvp-add-custom"), v = String((el || {}).value || "").trim(); if (!v) return;
+  HZ_DVP.custom = HZ_DVP.custom || [];
+  if (!HZ_DVP.custom.some(function(c) { return c.name.toLowerCase() === v.toLowerCase(); })) HZ_DVP.custom.push({ id: "c_" + Date.now().toString(36), name: v });
+  hzDvpRender();
+}
+function hzDvpAdd() { var v = (document.getElementById("dvp-add") || {}).value; if (!v) return; HZ_DVP.extra = HZ_DVP.extra || []; if (HZ_DVP.extra.indexOf(v) === -1) HZ_DVP.extra.push(v); hzDvpRender(); }
+function hzDvpRemove(id) { HZ_DVP.extra = (HZ_DVP.extra || []).filter(function(x) { return x !== id; }); HZ_DVP.custom = (HZ_DVP.custom || []).filter(function(c) { return c.id !== id; }); if (HZ_DVP.places) delete HZ_DVP.places[id]; hzDvpRender(); }
 function hzDvpPlace(id) { var P = HZ_DVP.places = HZ_DVP.places || {}; return (P[id] = P[id] || {}); }
 function hzDvpAddr(id, v) { var p = hzDvpPlace(id); if (p.address !== v) { p.address = v; delete p.lat; delete p.lng; delete p.formatted; delete p.err; } }
+function hzDvpSyncNames() {   // the saved Transport Hospitals list (Call Logs, and the fallback) follows the live list
+  var names = (typeof hzDvTransportList === "function" ? hzDvTransportList() : []).map(function(h) { return h.name; });
+  if (!names.length || currentRole !== "admin") return;
+  db.collection("appdata").doc("dispatchSettings").set({ hospitals: names }, { merge: true }).catch(function() {});
+  if (typeof DISPATCH_SETTINGS !== "undefined" && DISPATCH_SETTINGS) DISPATCH_SETTINGS.hospitals = names.slice();
+  if (typeof DS_EDIT !== "undefined" && DS_EDIT) DS_EDIT.hospitals = names.slice();
+}
 function hzDvpPull() {
   if (typeof hzDvCheck !== "function") return;
-  hzDvCheck(); var n = 0, t = setInterval(function() { if (!HZ_DV.busy || ++n > 40) { clearInterval(t); if (dsTab === "dvplaces") hzDvpRender(); } }, 500);
+  hzDvCheck(); var n = 0, t = setInterval(function() { if (!HZ_DV.busy || ++n > 40) { clearInterval(t); hzDvpSyncNames(); if (dsTab === "dvplaces" || dsTab === "hospitals") hzDvpRender(); } }, 500);
 }
 function hzDvpVerify(id) {
   var p = hzDvpPlace(id), h = ((HZ_DV.data || {}).hospitals || {})[id] || {};
@@ -14206,8 +14243,19 @@ function hzDvpVerify(id) {
 }
 function hzDvpSave() {
   var msg = document.getElementById("dvp-msg"), out = {};
-  Object.keys(HZ_DVP.places || {}).forEach(function(id) { var p = Object.assign({}, HZ_DVP.places[id]); delete p.busy; delete p.err; if (p.address || p.transport) out[id] = p; });
-  db.collection("appdata").doc("divertPlaces").set({ places: out, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" }).then(function() {
+  Object.keys(HZ_DVP.places || {}).forEach(function(id) { var p = Object.assign({}, HZ_DVP.places[id]); delete p.busy; delete p.err; if (p.address && (!/^c_/.test(id) || (HZ_DVP.custom || []).some(function(c) { return c.id === id; }))) out[id] = p; });
+  // 12.186: the saved Transport Hospitals list follows the divert list (used when the divert list can't load, and by Call Logs)
+  if (typeof HZ_DV !== "undefined") HZ_DV.custom = (HZ_DVP.custom || []).slice();
+  var names = (typeof hzDvTransportList === "function" ? hzDvTransportList() : []).map(function(h) { return h.name; });
+  if (names.length) {
+    db.collection("appdata").doc("dispatchSettings").set({ hospitals: names }, { merge: true }).catch(function() {});
+    if (typeof DISPATCH_SETTINGS !== "undefined" && DISPATCH_SETTINGS) DISPATCH_SETTINGS.hospitals = names.slice();
+    if (typeof DS_EDIT !== "undefined" && DS_EDIT) DS_EDIT.hospitals = names.slice();
+    if (typeof DISPATCH_HOSPITALS !== "undefined") DISPATCH_HOSPITALS = names.concat(["Other"]);
+    if (typeof M_HOSPITALS !== "undefined") M_HOSPITALS = names.concat(["Other"]);
+  }
+  db.collection("appdata").doc("divertPlaces").set({ places: out, extra: (HZ_DVP.extra || []).slice(), custom: (HZ_DVP.custom || []).map(function(c) { return { id: c.id, name: c.name }; }), updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" }).then(function() {
+    if (typeof hzDvpPull === "function") hzDvpPull();   // 12.187: the server picks up added hospitals right away
     if (typeof HZ_DV !== "undefined") HZ_DV.places = out;
     if (msg) { msg.className = "form-msg success"; msg.textContent = "✓ Saved — members see distances and navigation next time they open Hospital Diversion Status."; }
   }).catch(function(e) { if (msg) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; } });
@@ -19155,7 +19203,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.184";
+var DESKTOP_VERSION = "12.187";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -20459,8 +20507,11 @@ var M_CALL_NATURES = [
 ];
 var M_HOSPITALS = ["RWJ New Brunswick","RWJ Somerset","St. Peters University Hospital","JFK Medical Center","Overlook Medical Center","Morristown Medical Center","Clara Maass Medical Center","Other"];
 function mHospitalOptionsHTML() {
+  var dv = typeof hzDvTransportOptions === "function" ? hzDvTransportOptions() : "";   // 12.186: the divert list is the Transport Hospitals list
+  if (dv) return dv;
   // 12.184: live divert status beside each hospital an admin linked to the divert list
-  return M_HOSPITALS.map(function(h){ var s = typeof hzDvTransportStatus === "function" ? hzDvTransportStatus(h) : null; return '<option value="' + h.replace(/"/g,"&quot;") + '"' + (s && !s.open ? ' style="color:#b42318;font-weight:700"' : '') + '>' + h + (s ? hzDvSuffix(s) : '') + '</option>'; }).join("");
+  var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;   // 12.185: distance from the call
+  return M_HOSPITALS.map(function(h){ var s = typeof hzDvTransportStatus === "function" ? hzDvTransportStatus(h, M_HOSPITALS) : null; return '<option value="' + h.replace(/"/g,"&quot;") + '" data-hz-hosp="' + h.replace(/"/g,"&quot;") + '"' + (s && !s.open ? ' style="color:#b42318;font-weight:700"' : '') + '>' + mEscHtml(typeof hzDvOptionText === "function" ? hzDvOptionText(h, M_HOSPITALS, call) : h) + '</option>'; }).join("");
 }
 var mLiveRigs = [];
 var mActiveCallsLive = [], mRigsCache = null, mRigsCacheAt = 0, mRigsInFlight = null;
@@ -27113,12 +27164,12 @@ var HZ_DV_HOSPITALS = [
 // A hospital nobody verified still navigates — by its name — but shows no distance.
 function hzDvLoadPlaces() {
   if (typeof db === "undefined") return;
-  db.collection("appdata").doc("divertPlaces").get().then(function(d) { HZ_DV.places = (d.exists && d.data().places) || {}; if (HZ_DV.open) hzDvDraw(); }).catch(function() {});
+  db.collection("appdata").doc("divertPlaces").get().then(function(d) { HZ_DV.places = (d.exists && d.data().places) || {}; HZ_DV.custom = (d.exists && d.data().custom) || []; if (HZ_DV.open) hzDvDraw(); }).catch(function() {});
 }
 function hzDvPlace(h) {
-  var p = (HZ_DV.places || {})[h.id] || null;
-  var ok = p && p.lat && p.lng;   // only a verified location is used
-  return { q: ok && p.address ? p.address : h.name + ", NJ", lat: ok ? p.lat : null, lng: ok ? p.lng : null };
+  var p = (HZ_DV.places || {})[h.id] || null, ok = p && p.lat && p.lng;   // an admin-verified location first
+  var g = ok ? null : (h.id ? hzDvFeedCoords(h.id) : null);                // 12.185: otherwise Google's location for the name
+  return { q: ok && p.address ? p.address : h.name + ", NJ", lat: ok ? p.lat : g && g.lat, lng: ok ? p.lng : g && g.lng };
 }
 // ── 12.184 (Sam): divert status in the call's Transport disposition ──
 // The Hospital dropdown: each Transport Hospital that an admin linked to a divert-list hospital
@@ -27129,14 +27180,30 @@ function hzDvStatusFor(id) {
   var st = String(x.status || "Unknown");
   return { id: id, open: x.color ? x.color === "green" : /^normal/i.test(st), label: st, reason: String(x.reason || "").trim() };
 }
-function hzDvTransportStatus(name) {
+var HZ_DV_MX = hzDvWords("new brunswick edison perth amboy old bridge plainsboro woodbridge piscataway highland park metuchen sayreville south amboy east north monroe jamesburg milltown dunellen middlesex carteret spotswood helmetta cranbury plainfield river princeton");
+function hzDvTransportStatus(name, all) {
   var P = HZ_DV.places || {}, id = null; name = String(name || "").trim(); if (!name) return null;
   Object.keys(P).some(function(k) { if (P[k] && P[k].transport === name) { id = k; return true; } return false; });
-  return id ? hzDvStatusFor(id) : null;
+  if (id) return hzDvStatusFor(id);
+  // 12.185 (Sam): not linked by an admin → match the name to the divert list by its words ("RWJ" = Robert Wood Johnson).
+  var d = HZ_DV.data && HZ_DV.data.hospitals; if (!d) return null;
+  var fit = function(nm) {
+    var have = hzDvWords(nm), best = null, bestN = 0, extra = [];
+    Object.keys(d).forEach(function(k) {
+      var need = hzDvWords(d[k].name); if (!need.length || !need.every(function(w) { return have.indexOf(w) !== -1; })) return;
+      if (need.length > bestN) { bestN = need.length; best = k; extra = have.filter(function(w) { return need.indexOf(w) === -1; }); }
+    });
+    return best ? { id: best, extra: extra } : null;
+  };
+  var me = fit(name); if (!me) return null;
+  // extra words in the dropdown name (e.g. a town) must be a Middlesex town or in the verified address — "RWJ Somerset" ≠ RWJ New Brunswick
+  var pl = P[me.id], addr = pl && pl.lat && pl.formatted ? hzDvWords(pl.formatted) : [];
+  if (!me.extra.every(function(w) { return HZ_DV_MX.indexOf(w) !== -1 || addr.indexOf(w) !== -1; })) return null;
+  return hzDvStatusFor(me.id);
 }
 function hzDvWords(t) {
   var STOP = { hospital: 1, hospitals: 1, medical: 1, center: 1, centre: 1, university: 1, the: 1, of: 1, and: 1, health: 1, healthcare: 1, rwjbh: 1, hmh: 1, regional: 1, general: 1, campus: 1, nj: 1, at: 1, inc: 1, system: 1, penn: 1, medicine: 1 };
-  return String(t || "").toLowerCase().replace(/[’']/g, "").replace(/\bsaint\b/g, "st").split(/[^a-z0-9]+/).map(function(w) { return w.length > 3 ? w.replace(/s$/, "") : w; }).filter(function(w) { return w && !STOP[w]; });
+  return String(t || "").toLowerCase().replace(/[’']/g, "").replace(/\bsaint\b/g, "st").replace(/\brwj(uh|bh)?\b/g, "robert wood johnson").split(/[^a-z0-9]+/).map(function(w) { return w.length > 3 ? w.replace(/s$/, "") : w; }).filter(function(w) { return w && !STOP[w]; });
 }
 function hzDvKeywordStatus(name, city) {   // every distinctive word of the divert-list name is in the search result's name
   var d = HZ_DV.data && HZ_DV.data.hospitals; if (!d) return null;
@@ -27151,6 +27218,79 @@ function hzDvKeywordStatus(name, city) {   // every distinctive word of the dive
   return best ? hzDvStatusFor(best) : null;
 }
 function hzDvSuffix(s) { return !s ? "" : s.open ? " — ✓ " + s.label : " — ⛔ " + s.label + (s.reason ? " (" + s.reason + ")" : ""); }
+// 12.185 (Sam): a distance for every hospital — an admin-verified location first, otherwise Google's location for the
+// hospital's name (looked up once per device, kept in localStorage hzDvGeo2).
+function hzDvGeoGet(q) {
+  if (!HZ_DV.gc) { try { HZ_DV.gc = JSON.parse(localStorage.getItem("hzDvGeo2") || "{}"); } catch (e) { HZ_DV.gc = {}; } HZ_DV.gq = {}; }
+  if (HZ_DV.gc[q]) return HZ_DV.gc[q];
+  if (!HZ_DV.gq[q]) { HZ_DV.gq[q] = 1; HZ_DV.gwait = (HZ_DV.gwait || []).concat([q]); hzDvGeoRun(); }
+  return null;
+}
+function hzDvGeoRun() {
+  if (!(window.google && google.maps && google.maps.Geocoder)) {
+    if (HZ_DV.mapsLoading) return; HZ_DV.mapsLoading = true;
+    if (![].some.call(document.querySelectorAll("script[src*='maps.googleapis.com/maps/api/js']"), function() { return true; })) {
+      window.hzDvMapsReady = function() { HZ_DV.mapsLoading = false; hzDvGeoRun(); };
+      var sc = document.createElement("script"); sc.async = true;
+      sc.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo&libraries=places&callback=hzDvMapsReady";
+      document.head.appendChild(sc);
+    } else setTimeout(function() { HZ_DV.mapsLoading = false; hzDvGeoRun(); }, 1500);
+    return;
+  }
+  var list = HZ_DV.gwait || []; HZ_DV.gwait = []; if (!list.length) return;
+  var gc = new google.maps.Geocoder();
+  list.forEach(function(q) {
+    gc.geocode({ address: q, region: "us" }, function(res, st) {
+      if (st !== "OK" || !res || !res[0]) return;
+      var l = res[0].geometry.location; HZ_DV.gc[q] = { lat: l.lat(), lng: l.lng() };
+      try { localStorage.setItem("hzDvGeo2", JSON.stringify(HZ_DV.gc)); } catch (e) {}
+      clearTimeout(HZ_DV.gt); HZ_DV.gt = setTimeout(function() { if (HZ_DV.open) hzDvDraw(); hzDvRefreshOptions(); }, 150);
+    });
+  });
+}
+function hzDvFeedCoords(id) {   // verified → else Google's location for the feed name
+  var p = (HZ_DV.places || {})[id]; if (p && p.lat && p.lng) return { lat: p.lat, lng: p.lng, verified: true };
+  var cu = (HZ_DV.custom || []).filter(function(c) { return c.id === id; })[0]; if (cu) return hzDvGeoGet(cu.name + ", NJ");
+  var x = HZ_DV.data && HZ_DV.data.hospitals && HZ_DV.data.hospitals[id]; if (!x) return null;
+  return hzDvGeoGet(String(x.name || "").replace(/^(RWJBH|HMH)\s+/, "") + ", NJ");
+}
+function hzDvFmtMi(mi) { return (mi < 10 ? mi.toFixed(1) : Math.round(mi)) + " mi"; }
+// A Transport dropdown option: "JFK Medical Center — ✓ Normal · 3.2 mi" (distance from the call's location)
+function hzDvOptionText(h, all, call) {
+  var s = hzDvTransportStatus(h, all), t = h + hzDvSuffix(s);
+  if (call && call.lat && call.lng && h !== "Other") {
+    var c = s ? hzDvFeedCoords(s.id) : hzDvGeoGet(h + ", NJ");
+    if (c && c.lat) t += " · " + hzDvFmtMi(hzDvMiles({ lat: +call.lat, lng: +call.lng }, c));
+  }
+  return t;
+}
+// 12.186 (Sam): the Transport Hospitals list IS the divert list (Middlesex) — one list, + "Other" (search).
+function hzDvTransportList() {
+  var d = HZ_DV.data && HZ_DV.data.hospitals; if (!d) return [];
+  return Object.keys(d).map(function(id) { return { id: id, name: String(d[id].name || id).replace(/^(RWJBH|HMH)\s+/, "").trim() }; })
+    .sort(function(a, b) { var x = !!(d[a.id] || {}).added, y = !!(d[b.id] || {}).added; return x !== y ? (x ? 1 : -1) : a.name.localeCompare(b.name); })   // Middlesex, then added NJ hospitals
+    .concat((HZ_DV.custom || []).map(function(c) { return { id: c.id, name: c.name, custom: true }; }));   // 12.187: not on the NJ list — no divert status
+}
+function hzDvTransportOptions() {   // the Transport dropdown's options; "" when the divert list hasn't loaded (then the saved list is used)
+  var L = hzDvTransportList(); if (!L.length) return "";
+  var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;
+  var esc = function(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+  return L.map(function(h) { var s = hzDvStatusFor(h.id);
+    return '<option value="' + esc(h.name) + '" data-hz-id="' + esc(h.id) + '"' + (s && !s.open ? ' style="color:#b42318;font-weight:700"' : '') + '>' + esc(hzDvIdText(h, call)) + '</option>'; }).join("")
+    + '<option value="Other">Other</option>';
+}
+function hzDvIdText(h, call) {
+  var t = h.name + (h.custom ? " — no divert status" : hzDvSuffix(hzDvStatusFor(h.id)));
+  if (call && call.lat && call.lng) { var c = hzDvFeedCoords(h.id); if (c && c.lat) t += " · " + hzDvFmtMi(hzDvMiles({ lat: +call.lat, lng: +call.lng }, c)); }
+  return t;
+}
+function hzDvRefreshOptions() {   // update the open Transport dropdowns once a location arrives
+  var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;
+  var all = typeof M_HOSPITALS !== "undefined" ? M_HOSPITALS : [];
+  document.querySelectorAll("option[data-hz-hosp]").forEach(function(o) { o.textContent = hzDvOptionText(o.getAttribute("data-hz-hosp"), all, call); });
+  var L = hzDvTransportList(), by = {}; L.forEach(function(h) { by[h.id] = h; });
+  document.querySelectorAll("option[data-hz-id]").forEach(function(o) { var h = by[o.getAttribute("data-hz-id")]; if (h) o.textContent = hzDvIdText(h, call); });
+}
 function hzDvMiles(a, b) {
   var R = 3958.8, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lng - a.lng) * r;
   var h = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
@@ -27188,9 +27328,10 @@ function hzDvApply() {
 function hzDvList() {   // the feed's Middlesex hospitals, A–Z (falls back to the built-in names while not connected)
   var d = HZ_DV.data && HZ_DV.data.hospitals;
   if (!d || !Object.keys(d).length) return HZ_DV_HOSPITALS.map(function(h){ return { name: h.n, city: h.c, s: null }; });
+  var cust = (HZ_DV.custom || []).map(function(c) { return { id: c.id, name: c.name, city: "", s: null, custom: true }; });   // 12.187
   return Object.keys(d).map(function(k){ var x = d[k] || {}, st = String(x.status || "Unknown");
-    return { id: k, name: String(x.name || k).replace(/^(RWJBH|HMH)\s+/, ""), city: "", s: { open: x.color ? x.color === "green" : /^normal/i.test(st), closed: /closed/i.test(st), label: st, note: x.comments || "", reason: x.reason || "", details: x.details || "" } };
-  }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+    return { id: k, added: !!x.added, county: x.county || "", name: String(x.name || k).replace(/^(RWJBH|HMH)\s+/, ""), city: x.added && x.county ? x.county + " County" : "", s: { open: x.color ? x.color === "green" : /^normal/i.test(st), closed: /closed/i.test(st), label: st, note: x.comments || "", reason: x.reason || "", details: x.details || "" } };
+  }).sort(function(a, b){ return a.added !== b.added ? (a.added ? 1 : -1) : a.name.localeCompare(b.name); }).concat(cust);
 }
 function hzDvTileSub() {
   var el = document.querySelectorAll(".hz-dv-tile-sub"); if (!el.length && !document.querySelector(".hz-dv-count")) return;
@@ -27233,15 +27374,17 @@ function hzDvDraw() {
   var o = document.getElementById("hz-dv-pop"); if (!o) return;
   var d = HZ_DV.data, when = d && d.checkedAt ? new Date(d.checkedAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
   var stale = d && d.checkedAt && (Date.now() - new Date(d.checkedAt).getTime() > 20 * 60000);
+  var grp = "";
   var rows = hzDvList().map(function(h) {
-    var s = h.s;
-    var pill = !s ? '<span class="hz-dv-pill unk">—</span>' : s.open ? '<span class="hz-dv-pill ok">✓ ' + hzDvEsc(s.label) + '</span>' : '<span class="hz-dv-pill no">⛔ ' + hzDvEsc(s.label) + '</span>';
+    var s = h.s, g = h.custom ? "c" : h.added ? "a" : "m", head = "";   // 12.187: Middlesex · added NJ hospitals · not on the NJ list
+    if (g !== grp) { if (grp || g !== "m") head = '<div class="hz-dv-sub" style="margin-top:12px">' + (g === "a" ? "Other NJ hospitals" : g === "c" ? "Not on the NJ divert list — no divert status available" : "Middlesex County hospitals") + '</div>'; grp = g; }
+    var pill = h.custom ? '<span class="hz-dv-pill unk">No divert status</span>' : !s ? '<span class="hz-dv-pill unk">—</span>' : s.open ? '<span class="hz-dv-pill ok">✓ ' + hzDvEsc(s.label) + '</span>' : '<span class="hz-dv-pill no">⛔ ' + hzDvEsc(s.label) + '</span>';
     var note = s && s.note && !/^\.?$/.test(s.note) ? s.note : "";
     // 12.160: what the divert is for (the page's Reason column) shows in bold red under the name
     var why = s && !s.open ? [s.reason, s.details].filter(Boolean).join(" · ") : "";
     var pl = hzDvPlace(h), mi = HZ_DV.me && pl.lat && pl.lng ? hzDvMiles(HZ_DV.me, pl) : null;
     var dist = mi === null ? '' : '<span class="hz-dv-mi">📍 ' + (mi < 10 ? mi.toFixed(1) : Math.round(mi)) + ' mi away</span>';
-    return '<a class="hz-dv-row hz-dv-nav" href="' + hzDvEsc(hzDvNavUrl(pl)) + '" target="_blank" rel="noopener" aria-label="Navigate to ' + hzDvEsc(h.name) + '"><div><b>' + hzDvEsc(h.name) + '</b>' + (why ? '<em class="hz-dv-why">' + hzDvEsc(why) + '</em>' : '') + (h.city || note ? '<span>' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + dist + '</div><div class="hz-dv-right">' + pill + '<span class="hz-dv-go">🧭 Navigate ›</span></div></a>';
+    return head + '<a class="hz-dv-row hz-dv-nav" href="' + hzDvEsc(hzDvNavUrl(pl)) + '" target="_blank" rel="noopener" aria-label="Navigate to ' + hzDvEsc(h.name) + '"><div><b>' + hzDvEsc(h.name) + '</b>' + (why ? '<em class="hz-dv-why">' + hzDvEsc(why) + '</em>' : '') + (h.city || note ? '<span>' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + dist + '</div><div class="hz-dv-right">' + pill + '<span class="hz-dv-go">🧭 Navigate ›</span></div></a>';
   }).join("");
   var busy = HZ_DV.busy ? '<div class="hz-dv-when hz-dv-busy">🔄 Checking the NJ divert feed now…</div>' : (HZ_DV.err ? '<div class="hz-dv-warn" style="margin-bottom:8px">Couldn\'t check just now: ' + hzDvEsc(HZ_DV.err) + '</div>' : (HZ_DV.fresh ? '<div class="hz-dv-when hz-dv-busy">✓ Already up to date — checked in the last 30 seconds</div>' : ''));
   o.innerHTML = '<div class="hz-dv-box" role="dialog" aria-label="Hospital Diversion Status"><div class="hz-dv-top"><button class="hz-pop-back" onclick="hzDvClose()">← Back</button><b class="hz-dv-ttl">🏥 Hospital Diversion Status</b><button class="hz-dv-rf" onclick="hzDvCheck()"' + (HZ_DV.busy ? ' disabled' : '') + ' aria-label="Refresh">' + (HZ_DV.busy ? '🔄<span class="hz-dv-lg"> Checking…</span>' : '🔄<span class="hz-dv-lg"> Refresh</span>') + '</button></div>'
@@ -27253,13 +27396,12 @@ function hzDvDraw() {
     + '<div class="hz-dv-sub">Middlesex County hospitals</div>'
     + (HZ_DV.meErr === "denied" ? '<div class="hz-dv-locmsg">📍 Location is off for this app — turn it on to see how far each hospital is.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
     + '<div class="hz-dv-tapmsg">Tap a hospital to navigate there.</div>'
-    + (HZ_DV.places && !Object.keys(HZ_DV.places).some(function(k) { return HZ_DV.places[k] && HZ_DV.places[k].lat; }) && hzDvAdmin() ? '<div class="hz-dv-locmsg">Admin: no hospital locations are verified yet — Admin ▸ Protocols &amp; Dispatch ▸ 📍 Divert Hospital Locations.</div>' : '')
     + rows
     + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank" rel="noopener">Open the official NJ divert page ↗</a></div></div>';
 }
 (function() {
   var css = document.createElement("style");
-  css.textContent = ".hz-dv-nav{display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:10px 12px !important;border:1.5px solid #0b5cad !important;border-radius:10px;text-decoration:none !important;color:inherit !important;cursor:pointer;background:rgba(11,92,173,.06)}"
+  css.textContent = ".hz-dv-nav{display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:10px 12px !important;border:2px solid #0b5cad !important;border-radius:10px;text-decoration:none !important;color:inherit !important;cursor:pointer;background:transparent}html[data-theme=basic] .hz-dv-nav{background:#ffffff !important}"
     + ".hz-dv-nav:active{transform:scale(.99)}.hz-dv-nav .hz-dv-mi{display:block;font-size:.76rem;color:#0b5cad !important;font-weight:700;margin-top:2px}html:not([data-theme=basic]) .hz-dv-nav .hz-dv-mi{color:#8cbcff !important}"
     + ".hz-dv-right{flex:0 0 auto !important;display:flex;flex-direction:column;align-items:flex-end;gap:5px}.hz-dv-go{font-size:.72rem !important;font-weight:700;color:#0b5cad !important;white-space:nowrap}html:not([data-theme=basic]) .hz-dv-go{color:#8cbcff !important}"
     + ".hz-dv-locmsg,.hz-dv-tapmsg{font-size:.76rem;color:var(--gray);margin:2px 0 8px}"
