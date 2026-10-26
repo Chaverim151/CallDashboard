@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.47"; window.M_BUILD = BUILD;
+  var BUILD = "6.50"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12914,23 +12914,38 @@ function hzDvPlace(h) {
 // 12.189 (Sam): approximate drive time + road distance from Google Maps (Distance Matrix), one request for the whole list,
 // refreshed at most every 5 minutes or when you've moved; until it answers (or if it can't) the straight-line distance shows.
 function hzDvEtaKey(o) { return o.lat.toFixed(3) + "," + o.lng.toFixed(3); }
-function hzDvEta(from, list, traffic) {   // 12.192: cached per starting point (you / the base in the pop-up; the incident in the Transport picker)
+function hzDvEta(from, list, traffic) {   // cached per starting point (you / the base in the pop-up; the incident in the Transport picker)
   var key = hzDvEtaKey(from) + (traffic ? "|t" : ""), C = HZ_DV.etaC = HZ_DV.etaC || {}, E = C[key];
   if (E && Date.now() - E.at < 300000) return E.res;
   if ((HZ_DV.etaBusy || {})[key] || HZ_DV.etaOff) return E ? E.res : null;
-  if (!(window.google && google.maps && google.maps.DistanceMatrixService)) { hzDvGeoRun(); return E ? E.res : null; }
   var dest = list.filter(function(x) { return x.lat && x.lng; }).slice(0, 25); if (!dest.length) return E ? E.res : null;
   (HZ_DV.etaBusy = HZ_DV.etaBusy || {})[key] = true;
-  new google.maps.DistanceMatrixService().getDistanceMatrix({ origins: [{ lat: from.lat, lng: from.lng }], destinations: dest.map(function(x) { return { lat: +x.lat, lng: +x.lng }; }),
-    travelMode: "DRIVING", unitSystem: google.maps.UnitSystem ? google.maps.UnitSystem.IMPERIAL : 1,
-    drivingOptions: traffic ? { departureTime: new Date(), trafficModel: "bestguess" } : undefined }, function(r, st) {   // 12.193 (Sam): live traffic for the pop-up's drive times
-    HZ_DV.etaBusy[key] = false;
-    if (st !== "OK" || !r || !r.rows || !r.rows[0]) { HZ_DV.etaOff = st === "REQUEST_DENIED"; return; }
-    var res = {}; r.rows[0].elements.forEach(function(el, i) { if (el && el.status === "OK") res[dest[i].id] = { min: Math.round(((el.duration_in_traffic || el.duration).value) / 60), mi: el.distance.value / 1609.34, traffic: !!el.duration_in_traffic }; });
-    C[key] = { at: Date.now(), res: res }; if (HZ_DV.open) hzDvDraw(); try { hzHpAll(); } catch (x) {}
+  var done = function(res) { HZ_DV.etaBusy[key] = false; if (!res) return; C[key] = { at: Date.now(), res: res }; if (HZ_DV.open) hzDvDraw(); try { hzHpAll(); } catch (x) {} };
+  // 12.196 (Sam): Google's Routes API (Compute Route Matrix) — the Distance Matrix API can't be turned on for new projects any more.
+  // Falls back to the Maps JavaScript DistanceMatrixService if Routes isn't enabled on the key.
+  var ll = function(p) { return { waypoint: { location: { latLng: { latitude: +p.lat, longitude: +p.lng } } } }; };
+  fetch("https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix", { method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": HZ_DV_MAPS_KEY, "X-Goog-FieldMask": "originIndex,destinationIndex,duration,distanceMeters,condition" },
+    body: JSON.stringify({ origins: [ll(from)], destinations: dest.map(ll), travelMode: "DRIVE", routingPreference: traffic ? "TRAFFIC_AWARE" : "TRAFFIC_UNAWARE", units: "IMPERIAL" })
+  }).then(function(r) { if (!r.ok) throw new Error("routes " + r.status); return r.json(); }).then(function(arr) {
+    var res = {}; (Array.isArray(arr) ? arr : []).forEach(function(el) {
+      if (!el || el.condition !== "ROUTE_EXISTS" || el.destinationIndex == null) return;
+      res[dest[el.destinationIndex].id] = { min: Math.round(parseFloat(String(el.duration || "0").replace("s", "")) / 60), mi: (el.distanceMeters || 0) / 1609.34, traffic: !!traffic };
+    });
+    done(res);
+  }).catch(function() {
+    if (!(window.google && google.maps && google.maps.DistanceMatrixService)) { HZ_DV.etaBusy[key] = false; hzDvGeoRun(); return; }
+    new google.maps.DistanceMatrixService().getDistanceMatrix({ origins: [{ lat: from.lat, lng: from.lng }], destinations: dest.map(function(x) { return { lat: +x.lat, lng: +x.lng }; }),
+      travelMode: "DRIVING", unitSystem: google.maps.UnitSystem ? google.maps.UnitSystem.IMPERIAL : 1,
+      drivingOptions: traffic ? { departureTime: new Date(), trafficModel: "bestguess" } : undefined }, function(r, st) {
+      if (st !== "OK" || !r || !r.rows || !r.rows[0]) { HZ_DV.etaOff = st === "REQUEST_DENIED"; done(null); return; }
+      var res = {}; r.rows[0].elements.forEach(function(el, i) { if (el && el.status === "OK") res[dest[i].id] = { min: Math.round(((el.duration_in_traffic || el.duration).value) / 60), mi: el.distance.value / 1609.34, traffic: !!el.duration_in_traffic }; });
+      done(res);
+    });
   });
   return E ? E.res : null;
 }
+var HZ_DV_MAPS_KEY = "AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo";   // the same browser key the app's Google Maps uses
 // ── 12.184 (Sam): divert status in the call's Transport disposition ──
 // The Hospital dropdown: each Transport Hospital that an admin linked to a divert-list hospital
 // (Admin ▸ Protocols & Dispatch ▸ 📍 Divert Hospital Locations ▸ "Transport hospital") shows its live status.
@@ -13063,7 +13078,7 @@ function hzHpDraw(sel) {
     if (other && sel.id === "m-tr-hospital" && document.getElementById("m-tr-hosp-search")) return "";   // 12.189: the search box under the list is the "Other" — no duplicate
     if (other) return '<button type="button" class="hz-hp-row hz-hp-other' + (on ? ' on' : '') + '" data-i="' + i + '"><span class="hz-hp-n">🔍 Other… <small>search any hospital</small></span></button>';
     var id = o.getAttribute("data-hz-id"), h = id ? by[id] : null, s = id && !(h && h.custom) ? hzDvStatusFor(id) : null, mi = "";
-    // 12.192 (Sam): road (travel) distance from the incident to the facility — Google Maps; no straight line, no drive time
+    // 12.192 (Sam): road (travel) distance from the incident to the facility — Google Maps; no straight line, no drive time (12.194 drive time undone)
     var et = id && incEta ? incEta[id] : null; if (et) mi = hzDvFmtMi(et.mi) + " from the incident";
     var pill = h && h.custom ? '<span class="hz-hp-pill unk">No divert status</span>' : !s ? "" : s.open ? '<span class="hz-hp-pill ok">✓ ' + esc(s.label) + '</span>' : '<span class="hz-hp-pill no">' + esc(s.label) + '</span>';
     var sub = [mi, s && !s.open ? s.reason : ""].filter(Boolean).join(" · ");
