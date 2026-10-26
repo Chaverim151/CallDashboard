@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.31"; window.M_BUILD = BUILD;
+  var BUILD = "6.32"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -719,6 +719,7 @@ html[data-theme="basic"] .m-cld-unit{color:#0b5cad !important}
 html .m-tile,html[data-theme] .m-tile,html .big-btn,html[data-theme] .big-btn,html .hz-more-m,html[data-theme] .hz-more-m,html .hz-more-tile,html[data-theme] .hz-more-tile,html[data-theme] #m-home-grid>.hz-more-tile{border-color:#000 !important;border-width:1px !important}
 html .m-tile::before,html[data-theme] .m-tile::before,html .big-btn::before,html[data-theme] .big-btn::before{display:none !important}
 </style>
+<style>/* 12.178 (Sam): the header ← Back is the only Back on Active Calls / Rigs & Vehicles; the title is in the header */#m-pg-dispatch .m-dash-back,#m-pg-dispatch .m-dash-h{display:none !important}</style>
 <!--HZ-BASIC-START-->
 <script>/* App look for EVERYONE — set by an admin in Admin ▸ Organization (appdata/org.uiTheme):
    "basic" = white background, simple buttons; anything else = the classic dark look.
@@ -5564,7 +5565,9 @@ function mDispView(v) {
   if (v === "rigs") rigEnsureRoster(function() { if (mRigOpenForm && mDispViewCur === "rigs") mRenderRigStatus(); });   // unit tiles for "who took it out"
   if (v === "rigs") mRenderRigStatus();
   var rb = document.getElementById("desk-console-rigs"); if (rb) rb.classList.toggle("on", v === "rigs");
+  var ht = document.getElementById("m-disp-hdr-title"); if (ht) ht.textContent = v === "calls" ? "Active Calls" : v === "rigs" ? "Rigs & Vehicles" : "Dispatch";   // 12.178
 }
+function mDispHdrBack() { if (mDispViewCur && mDispViewCur !== "dash") mDispView("dash"); else mGoTo("home"); }   // 12.178: one Back per screen
 function mDashUpdateCalls(calls) {
   var n = calls.length, c = document.getElementById("m-dash-calls-count"), sub = document.getElementById("m-dash-calls-sub");
   if (c) { c.textContent = n; c.className = "m-dash-badge" + (n ? " hot" : ""); }
@@ -11968,9 +11971,9 @@ function mCloseAllSheets() {
 <div class="page" id="m-pg-dispatch">
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
-      <button class="m-back-btn" onclick="mGoTo('home')">← Back</button><!-- 12.172 (Sam): back to the home menu -->
+      <button class="m-back-btn" id="m-disp-hdr-back" onclick="mDispHdrBack()">← Back</button><!-- 12.178 (Sam): Home from the Dispatch list; back to the list from Active Calls / Rigs & Vehicles -->
       <button onclick="mOpenDispDrawer()" class="m-disp-burger-main" style="display:none !important;background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
-      <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400" class="m-build-lbl">v3.01</span></span>
+      <span class="m-page-title"><span id="m-disp-hdr-title">Dispatch</span> <span style="font-size:0.5rem;color:var(--gray);font-weight:400" class="m-build-lbl">v3.01</span></span>
     </div>
     <!-- 12.174 (Sam): "+ New Call" removed from the Dispatch top bar (New Call row is on the dashboard) -->
   </div>
@@ -12029,6 +12032,7 @@ function mCloseAllSheets() {
 <!-- ═══ DISPATCH: New Call Form ═══ -->
 <div class="page" id="m-pg-dispatch-newcall">
   <div class="m-subpage-header">
+    <button class="m-back-btn" onclick="mDrawerGoTo('dispatch-dash')">← Back</button><!-- 12.178: back to the Dispatch list -->
     <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
     <span class="m-page-title">New Call</span>
   </div>
@@ -12097,7 +12101,8 @@ function mCloseAllSheets() {
 <div class="page" id="m-pg-dispatch-detail">
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px;min-width:0">
-      <span class="m-page-title" id="m-dd-header-addr" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100vw - 150px)">Call</span>
+      <button class="m-back-btn" onclick="mDrawerGoTo('dispatch')">← Back</button><!-- 12.178: back to Active Calls -->
+      <span class="m-page-title" id="m-dd-header-addr" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100vw - 240px)">Call</span>
     </div>
     <button onclick="mOpenDispDrawer()" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px 10px;cursor:pointer">Jump to…</button>
   </div>
@@ -12982,7 +12987,8 @@ function hzDvDraw() {
   var css3 = document.createElement("style");
   // 12.167 (Sam's iPhone screenshot): in the installed app the clock / battery sit over the top of the screen — start below
   // them (same 1.6 × safe-area the app's own headers use) or below the Test Mode banner, whichever is lower
-  css3.textContent = "#hz-dv-pop,#hz-av-pop,#hz-av-howpop{padding-top:max(var(--hz-tb-h,0px),calc(env(safe-area-inset-top,0px) * 1.6))!important}#hz-erv{padding-top:var(--hz-tb-h,0px)!important}"
+  css3.textContent = "@media (max-width:600px){#hz-dv-pop,#hz-av-pop,#hz-erv{background:var(--navy,#0a1628)!important}html[data-theme=basic] #hz-dv-pop,html[data-theme=basic] #hz-av-pop,html[data-theme=basic] #hz-erv{background:#ffffff!important}}"   /* Sam 10/25: the band above a full-screen pop-up (status bar / Test Mode) is page-colored, not grey */
+    + "#hz-dv-pop,#hz-av-pop,#hz-av-howpop{padding-top:max(var(--hz-tb-h,0px),calc(env(safe-area-inset-top,0px) * 1.6))!important}#hz-erv{padding-top:var(--hz-tb-h,0px)!important}"
     // 12.165 (Sam): pop-ups close with "← Back" on the left, like every other screen (was ✕ on the right)
     + ".hz-pop-back{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;padding:7px 12px;margin-right:4px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--white);font-weight:700;font-size:.85rem;white-space:nowrap;cursor:pointer}"
     + ".hz-pop-back:active{transform:scale(.97)}html[data-theme=basic] .hz-pop-back{color:#1d3f72!important;border-color:#c8d0dc!important;background:#fff!important}";
