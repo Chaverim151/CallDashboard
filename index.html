@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.189">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.192">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2406,7 +2406,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.189</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.192</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -2892,7 +2892,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <div class="add-user-form" style="max-width:none">
         <p style="color:var(--gray);font-size:0.82rem;margin-bottom:12px;line-height:1.6">
           Tick which roles see each tile on the home screen (phone and computer). A member sees a tile if <b>any</b> of their roles is ticked.
-          Admins always see every tile. Protocol Search has its own setting in the Protocol Search tab.
+          The <b>Admin</b> column is for admins — untick a tile there to hide it from admins too. Protocol Search has its own setting in the Protocol Search tab.
         </p>
         <div id="tile-access-grid" style="overflow-x:auto"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
@@ -5199,6 +5199,7 @@ var HZ_TILES = [
 var HZ_TILE_ACCESS = null;   // { sec: [roles] } once loaded
 function hzTileDefault(sec, role) {
   role = String(role || "").toLowerCase();
+  if (role === "admin") return true;   // 12.192: the Admin column starts with every tile
   if (hzTitleList().indexOf(role) !== -1) role = "responder";   // titles have Responder access
   if (["rma", "epcr", "portal", "hospital", "storage"].indexOf(sec) !== -1) return role !== "dispatcher";
   if (sec === "maps" || sec === "calllogs") return role === "dispatcher";   // Captain / Chief are titles now (11.65)
@@ -5206,9 +5207,10 @@ function hzTileDefault(sec, role) {
   if (sec === "edispatches" || sec === "diverts") return role === "dispatcher";
   return true;
 }
+var HZ_TILE_ACCESS_ADMIN = false;   // 12.192 (Sam): the grid has an Admin column — admins follow it too
 function hzApplyTileAccess(isAdmin, roles) {
-  if (isAdmin || !HZ_TILE_ACCESS) return;
-  var mine = (roles || []).map(function(r) { return String(r).toLowerCase(); });
+  if (!HZ_TILE_ACCESS || (isAdmin && !HZ_TILE_ACCESS_ADMIN)) return;
+  var mine = isAdmin ? ["admin"] : (roles || []).map(function(r) { return String(r).toLowerCase(); });
   Object.keys(HZ_TILE_ACCESS).forEach(function(sec) {
     var allowed = HZ_TILE_ACCESS[sec]; if (!Array.isArray(allowed)) return;
     var ok = allowed.some(function(r) { return mine.indexOf(String(r).toLowerCase()) !== -1; });
@@ -5216,9 +5218,9 @@ function hzApplyTileAccess(isAdmin, roles) {
   });
 }
 function hzLoadTileAccess(isAdmin, roles) {
-  if (isAdmin) return;
   db.collection("appdata").doc("tileAccess").get().then(function(s) {
     var t = s.exists && s.data().tiles;
+    HZ_TILE_ACCESS_ADMIN = !!(s.exists && s.data().adminColumn);
     HZ_TILE_ACCESS = (t && typeof t === "object" && Object.keys(t).length) ? t : null;
     hzApplyTileAccess(isAdmin, roles);
   }).catch(function() {});
@@ -5233,7 +5235,8 @@ var HZ_TILE_ROLE_GROUPS = { responder: ["responder"] };   // + every title, fill
 function hzTileGroupOf(r) { var g = null; Object.keys(HZ_TILE_ROLE_GROUPS).forEach(function(k) { if (HZ_TILE_ROLE_GROUPS[k].indexOf(r) !== -1) g = k; }); return g; }
 function hzTileGridRoles() {
   HZ_TILE_ROLE_GROUPS.responder = ["responder"].concat(hzTitleList());
-  return (HZ_ROLES || ["responder", "dispatcher", "driver", "logistics"]).filter(function(r) { return hzTitleList().indexOf(r) === -1; });
+  var rs = (HZ_ROLES || ["responder", "dispatcher", "driver", "logistics"]).filter(function(r) { return hzTitleList().indexOf(r) === -1 && String(r).toLowerCase() !== "admin"; });
+  return rs.concat(["admin"]);   // 12.192 (Sam): an Admin column — admins see a tile only if it's ticked there
 }
 function hzTileGridLoad() {
   var box = document.getElementById("tile-access-grid"); if (!box) return;
@@ -5241,6 +5244,7 @@ function hzTileGridLoad() {
   box.innerHTML = '<div style="color:var(--gray);font-size:0.8rem">Loading…</div>';
   db.collection("appdata").doc("tileAccess").get().then(function(snap) {
     var saved = (snap.exists && snap.data().tiles) || {};
+    if (snap.exists && !snap.data().adminColumn) Object.keys(saved).forEach(function(k) { if (Array.isArray(saved[k]) && saved[k].indexOf("admin") === -1) saved[k] = saved[k].concat(["admin"]); });   // grids saved before the Admin column: admins kept every tile
     HZ_TILE_GRID = {};
     var roles = (function() { HZ_TILE_GRID = saved; return hzTileGridRoles(); })();
     HZ_TILE_GRID = {};
@@ -5326,7 +5330,7 @@ function hzTileGridTick(sec, role, on) {
 })();
 function hzTileGridSave() {
   var msg = document.getElementById("tile-access-msg");
-  db.collection("appdata").doc("tileAccess").set({ tiles: HZ_TILE_GRID, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" })
+  db.collection("appdata").doc("tileAccess").set({ tiles: HZ_TILE_GRID, adminColumn: true, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" })
     .then(function() { msg.className = "form-msg success"; msg.textContent = "✓ Saved — members see the change next time they open the app."; })
     .catch(function(e) { msg.className = "form-msg error"; msg.textContent = "Error: " + e.message; });
 }
@@ -19246,7 +19250,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.189";
+var DESKTOP_VERSION = "12.192";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -27218,21 +27222,21 @@ function hzDvPlace(h) {
 // 12.189 (Sam): approximate drive time + road distance from Google Maps (Distance Matrix), one request for the whole list,
 // refreshed at most every 5 minutes or when you've moved; until it answers (or if it can't) the straight-line distance shows.
 function hzDvEtaKey(o) { return o.lat.toFixed(3) + "," + o.lng.toFixed(3); }
-function hzDvEta(from, list) {
-  var key = hzDvEtaKey(from), E = HZ_DV.eta;
-  if (E && E.key === key && Date.now() - E.at < 300000) return E.res;
-  if (HZ_DV.etaBusy || HZ_DV.etaOff) return E && E.key === key ? E.res : null;
-  if (!(window.google && google.maps && google.maps.DistanceMatrixService)) { hzDvGeoRun(); return null; }
-  var dest = list.filter(function(x) { return x.lat && x.lng; }).slice(0, 25); if (!dest.length) return null;
-  HZ_DV.etaBusy = true;
+function hzDvEta(from, list) {   // 12.192: cached per starting point (you / the base in the pop-up; the incident in the Transport picker)
+  var key = hzDvEtaKey(from), C = HZ_DV.etaC = HZ_DV.etaC || {}, E = C[key];
+  if (E && Date.now() - E.at < 300000) return E.res;
+  if ((HZ_DV.etaBusy || {})[key] || HZ_DV.etaOff) return E ? E.res : null;
+  if (!(window.google && google.maps && google.maps.DistanceMatrixService)) { hzDvGeoRun(); return E ? E.res : null; }
+  var dest = list.filter(function(x) { return x.lat && x.lng; }).slice(0, 25); if (!dest.length) return E ? E.res : null;
+  (HZ_DV.etaBusy = HZ_DV.etaBusy || {})[key] = true;
   new google.maps.DistanceMatrixService().getDistanceMatrix({ origins: [{ lat: from.lat, lng: from.lng }], destinations: dest.map(function(x) { return { lat: +x.lat, lng: +x.lng }; }),
     travelMode: "DRIVING", unitSystem: google.maps.UnitSystem ? google.maps.UnitSystem.IMPERIAL : 1 }, function(r, st) {
-    HZ_DV.etaBusy = false;
+    HZ_DV.etaBusy[key] = false;
     if (st !== "OK" || !r || !r.rows || !r.rows[0]) { HZ_DV.etaOff = st === "REQUEST_DENIED"; return; }
     var res = {}; r.rows[0].elements.forEach(function(el, i) { if (el && el.status === "OK") res[dest[i].id] = { min: Math.round(el.duration.value / 60), mi: el.distance.value / 1609.34 }; });
-    HZ_DV.eta = { key: key, at: Date.now(), res: res }; if (HZ_DV.open) hzDvDraw();
+    C[key] = { at: Date.now(), res: res }; if (HZ_DV.open) hzDvDraw(); try { hzHpAll(); } catch (x) {}
   });
-  return E && E.key === key ? E.res : null;
+  return E ? E.res : null;
 }
 // ── 12.184 (Sam): divert status in the call's Transport disposition ──
 // The Hospital dropdown: each Transport Hospital that an admin linked to a divert-list hospital
@@ -27344,7 +27348,7 @@ function hzDvTransportOptions() {   // the Transport dropdown's options; "" when
 }
 function hzDvIdText(h, call) {
   var t = h.name + (h.custom ? " — no divert status" : hzDvSuffix(hzDvStatusFor(h.id)));
-  if (call && call.lat && call.lng) { var c = hzDvFeedCoords(h.id); if (c && c.lat) t += " · " + hzDvFmtMi(hzDvMiles({ lat: +call.lat, lng: +call.lng }, c)); }
+
   return t;
 }
 // ── 12.188 (Sam): the Transport hospital picker is the app's own list, not the system pop-up ──
@@ -27358,14 +27362,17 @@ function hzHpDraw(sel) {
   var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;
   var esc = function(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
   var L = hzDvTransportList(), by = {}; L.forEach(function(h) { by[h.id] = h; });
+  var inc = call && call.lat && call.lng ? { lat: +call.lat, lng: +call.lng } : null;
+  var incEta = inc ? hzDvEta(inc, Array.prototype.map.call(sel.options, function(o) { var id = o.getAttribute("data-hz-id"); var c = id ? hzDvFeedCoords(id) : null; return { id: id, lat: c && c.lat, lng: c && c.lng }; }).filter(function(x) { return x.id; })) : null;
   var rowsHtml = Array.prototype.map.call(sel.options, function(o, i) {
     if (!o.value || o.value === "__none__") return "";
     var on = sel.value === o.value, other = o.value === "Other";
     if (other && sel.id === "m-tr-hospital" && document.getElementById("m-tr-hosp-search")) return "";   // 12.189: the search box under the list is the "Other" — no duplicate
     if (other) return '<button type="button" class="hz-hp-row hz-hp-other' + (on ? ' on' : '') + '" data-i="' + i + '"><span class="hz-hp-n">🔍 Other… <small>search any hospital</small></span></button>';
     var id = o.getAttribute("data-hz-id"), h = id ? by[id] : null, s = id && !(h && h.custom) ? hzDvStatusFor(id) : null, mi = "";
-    if (call && call.lat && call.lng) { var c = id ? hzDvFeedCoords(id) : hzDvGeoGet(o.value + ", NJ"); if (c && c.lat) mi = hzDvFmtMi(hzDvMiles({ lat: +call.lat, lng: +call.lng }, c)); }
-    var pill = h && h.custom ? '<span class="hz-hp-pill unk">No divert status</span>' : !s ? "" : s.open ? '<span class="hz-hp-pill ok">✓ ' + esc(s.label) + '</span>' : '<span class="hz-hp-pill no">⛔ ' + esc(s.label) + '</span>';
+    // 12.192 (Sam): road (travel) distance from the incident to the facility — Google Maps; no straight line, no drive time
+    var et = id && incEta ? incEta[id] : null; if (et) mi = hzDvFmtMi(et.mi) + " from the incident";
+    var pill = h && h.custom ? '<span class="hz-hp-pill unk">No divert status</span>' : !s ? "" : s.open ? '<span class="hz-hp-pill ok">✓ ' + esc(s.label) + '</span>' : '<span class="hz-hp-pill no">' + esc(s.label) + '</span>';
     var sub = [mi, s && !s.open ? s.reason : ""].filter(Boolean).join(" · ");
     return '<button type="button" class="hz-hp-row' + (on ? ' on' : '') + (s && !s.open ? ' dv' : '') + '" data-i="' + i + '"><span class="hz-hp-n">' + esc(h ? h.name : o.value) +
       (sub ? '<small' + (s && !s.open ? ' class="dv"' : '') + '>' + esc(sub) + '</small>' : '') + '</span>' + pill + '</button>';
@@ -27376,7 +27383,10 @@ function hzHpDraw(sel) {
   var curRow = cur ? tmp.querySelector('[data-i="' + cur.index + '"]') : null;
   var head = '<button type="button" class="hz-hp-head' + (box._open ? ' open' : '') + (curRow ? ' picked' : '') + '" data-head="1">' +
     (curRow ? curRow.innerHTML : '<span class="hz-hp-n hz-hp-ph">Select hospital…</span>') + '<span class="hz-hp-car">' + (box._open ? '▴' : '▾') + '</span></button>';
-  box.innerHTML = head + '<div class="hz-hp-list"' + (box._open ? '' : ' style="display:none"') + '>' + rowsHtml + '</div>';
+  // 12.190 (Sam): when the divert statuses were last checked
+  var ck = HZ_DV.data && HZ_DV.data.checkedAt ? new Date(HZ_DV.data.checkedAt) : null, old = ck && Date.now() - ck.getTime() > 20 * 60000;
+  var upd = ck ? '<div class="hz-hp-upd' + (old ? ' old' : '') + '">🏥 Divert status ' + (old ? '⚠️ last checked ' : 'updated ') + ck.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + (old ? ' — may be out of date' : '') + '</div>' : '';
+  box.innerHTML = upd + head + '<div class="hz-hp-list"' + (box._open ? '' : ' style="display:none"') + '>' + rowsHtml + '</div>';
   box.onclick = function(e) {
     var hd = e.target.closest ? e.target.closest(".hz-hp-head") : null;
     if (hd) { box._open = !box._open; hzHpDraw(sel); return; }
@@ -27398,6 +27408,7 @@ function hzHpAll() { document.querySelectorAll("select").forEach(function(s) { i
     + ".hz-hp-pill{flex:0 0 auto;font-size:.72rem;font-weight:800;border-radius:999px;padding:4px 10px;white-space:nowrap}.hz-hp-pill.ok{background:#e6f4ea;color:#167a3e}.hz-hp-pill.no{background:#c62828;color:#fff}.hz-hp-pill.unk{background:#eef0f3;color:#57606a}"
     + ".hz-hp-head{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px !important;border:2px solid #0b5cad !important;border-radius:10px !important;background:#fff !important;color:#1f2328 !important;font:inherit;cursor:pointer;box-shadow:none !important;min-height:0 !important}"
     + "html:not([data-theme=basic]) .hz-hp-head{background:transparent !important;color:var(--white) !important}.hz-hp-head.open{border-bottom-left-radius:4px !important;border-bottom-right-radius:4px !important}"
+    + ".hz-hp-upd{font-size:.74rem;font-weight:700;color:#0b5cad;margin:0 0 2px}.hz-hp-upd.old{color:#b42318}"
     + ".hz-hp-ph{color:#57606a;font-weight:600}.hz-hp-car{flex:0 0 auto;color:#0b5cad;font-size:.9rem;margin-left:2px}.hz-hp-list{display:flex;flex-direction:column;gap:6px}"
     + ".hz-hp-other .hz-hp-n{font-weight:700;color:#0b5cad}.hz-hp-other small{display:inline !important;color:var(--gray) !important;font-weight:400 !important;margin-left:4px}";
   document.head.appendChild(css);
@@ -27449,7 +27460,7 @@ function hzDvEsc(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").r
 function hzDvApply() {
   var ok = !!((typeof mCurrentUser !== "undefined" && mCurrentUser) || (typeof currentUser !== "undefined" && currentUser));   // 12.161: anyone signed in (the tile's own rules decide who sees it)
   if (ok && !HZ_DV.unsub && typeof db !== "undefined") {
-    HZ_DV.unsub = db.collection("appdata").doc("divertStatus").onSnapshot(function(s) { HZ_DV.data = s.exists ? s.data() : null; hzDvTileSub(); if (HZ_DV.open) hzDvDraw(); }, function() {});
+    HZ_DV.unsub = db.collection("appdata").doc("divertStatus").onSnapshot(function(s) { HZ_DV.data = s.exists ? s.data() : null; hzDvTileSub(); if (HZ_DV.open) hzDvDraw(); try { hzHpAll(); } catch (x) {} }, function() {});
     hzDvLoadPlaces();   // 12.184: the Transport dropdown uses them too
   }
   hzDvTileSub();
@@ -27506,10 +27517,15 @@ function hzDvDraw() {
   var grp = "", L0 = hzDvList();
   var from0 = HZ_DV.me || (function() { var B = typeof M_BASE !== "undefined" && M_BASE && M_BASE.lat ? M_BASE : { lat: 40.5077036, lng: -74.4133431 }; return { lat: +B.lat, lng: +B.lng }; })();
   var etas = hzDvEta(from0, L0.map(function(h) { var q = hzDvPlace(h); return { id: h.id, lat: q.lat, lng: q.lng }; }));
+  // 12.191 (Sam): closest first (drive time when Google has it, else straight-line miles) — within each group; unknown last
+  var gOf = function(h) { return h.custom ? 2 : h.added ? 1 : 0; };
+  var dOf = function(h) { var e = etas && h.id ? etas[h.id] : null; if (e) return e.min * 1000; var q = hzDvPlace(h); return q.lat && q.lng ? hzDvMiles(from0, q) * 1000 / 0.5 + 0.1 : Infinity; };
+  L0 = L0.map(function(h, i) { return { h: h, g: gOf(h), d: dOf(h), i: i }; })
+    .sort(function(a, b) { return a.g - b.g || a.d - b.d || a.i - b.i; }).map(function(x) { return x.h; });
   var rows = L0.map(function(h) {
     var s = h.s, g = h.custom ? "c" : h.added ? "a" : "m", head = "";   // 12.187: Middlesex · added NJ hospitals · not on the NJ list
     if (g !== grp) { if (grp || g !== "m") head = '<div class="hz-dv-sub" style="margin-top:12px">' + (g === "a" ? "Other NJ hospitals" : g === "c" ? "Not on the NJ divert list — no divert status available" : "Middlesex County hospitals") + '</div>'; grp = g; }
-    var pill = h.custom ? '<span class="hz-dv-pill unk">No divert status</span>' : !s ? '<span class="hz-dv-pill unk">—</span>' : s.open ? '<span class="hz-dv-pill ok">✓ ' + hzDvEsc(s.label) + '</span>' : '<span class="hz-dv-pill no">⛔ ' + hzDvEsc(s.label) + '</span>';
+    var pill = h.custom ? '<span class="hz-dv-pill unk">No divert status</span>' : !s ? '<span class="hz-dv-pill unk">—</span>' : s.open ? '<span class="hz-dv-pill ok">✓ ' + hzDvEsc(s.label) + '</span>' : '<span class="hz-dv-pill no">' + hzDvEsc(s.label) + '</span>';
     var note = s && s.note && !/^\.?$/.test(s.note) ? s.note : "";
     // 12.160: what the divert is for (the page's Reason column) shows in bold red under the name
     var why = s && !s.open ? [s.reason, s.details].filter(Boolean).join(" · ") : "";
@@ -27529,7 +27545,7 @@ function hzDvDraw() {
           : '<div class="hz-dv-when' + (stale ? ' stale' : '') + '">' + (stale ? '⚠️ Last checked ' : 'Checked ') + hzDvEsc(when) + (stale ? ' — may be out of date' : ' · updates every 5 min') + (d.feedUpdated ? ' · state updated ' + hzDvEsc(new Date(d.feedUpdated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : '') + '</div>')
     + (d && d.lastError && stale ? '<div class="hz-dv-warn" style="margin-top:8px">Last check failed: ' + hzDvEsc(d.lastError) + '</div>' : '')
     + '<div class="hz-dv-sub">Middlesex County hospitals</div>'
-    + (HZ_DV.meErr === "denied" ? '<div class="hz-dv-locmsg">📍 Location is off for this app — turn it on to see how far each hospital is.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
+    + (HZ_DV.meErr === "denied" ? '<div class="hz-dv-locmsg">📍 Location is off for this app — distances are from the base. Turn it on to see how far each hospital is from you.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
     + '<div class="hz-dv-tapmsg">Tap a hospital to navigate there.</div>'
     + rows
     + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank" rel="noopener">Open the official NJ divert page ↗</a></div></div>';
@@ -27540,6 +27556,8 @@ function hzDvDraw() {
     + ".hz-dv-nav:active{transform:scale(.99)}.hz-dv-nav .hz-dv-mi{display:block;font-size:.76rem;color:#0b5cad !important;font-weight:700;margin-top:2px}html:not([data-theme=basic]) .hz-dv-nav .hz-dv-mi{color:#8cbcff !important}"
     + ".hz-dv-right{flex:0 0 auto !important;display:flex;flex-direction:column;align-items:flex-end;gap:5px}.hz-dv-go{font-size:.72rem !important;font-weight:700;color:#0b5cad !important;white-space:nowrap}html:not([data-theme=basic]) .hz-dv-go{color:#8cbcff !important}"
     + ".hz-dv-box .hz-dv-pill.ok,.hz-hp-pill.ok{background:#34c759 !important;color:#000 !important;border:0 !important}.hz-dv-box .hz-dv-pill.no,.hz-hp-pill.no{background:#c62828 !important;color:#fff !important;border:0 !important}"   // 12.189 (Sam): solid pills
+    + ".hz-dv-box .hz-dv-pill,.hz-hp-pill{display:inline-flex !important;align-items:center;justify-content:center;min-width:86px;padding:6px 12px !important;font-size:.8rem !important;font-weight:800 !important;line-height:1.1;border-radius:999px !important;text-align:center;white-space:nowrap;box-sizing:border-box}"   // 12.192: one size, no ⛔ on red
+    + ".hz-dv-box .hz-dv-pill.unk,.hz-hp-pill.unk{background:#e9ecef !important;color:#3d4248 !important}"
     + ".hz-dv-nav .hz-dv-addr{display:block;font-size:.74rem !important;color:var(--gray) !important;margin-top:1px;font-weight:400}"
     + ".hz-dv-locmsg,.hz-dv-tapmsg{font-size:.76rem;color:var(--gray);margin:2px 0 8px}"
     + ".hz-dv-box .hz-dv-sub{color:#0b5cad !important;font-weight:800 !important}html:not([data-theme=basic]) .hz-dv-box .hz-dv-sub{color:#8cbcff !important}"   // Sam: "Middlesex County hospitals" bold blue
