@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a1628">
-<title data-org-title="Protocols (beta) — {short}">Protocols (beta)</title>
+<title data-org-title="Protocols — {short}">Protocols</title>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -278,16 +278,18 @@ html[data-theme="basic"] #hq{background:#f3f4f6 !important}
 html[data-theme="basic"] #hq::placeholder,html[data-theme="basic"] #q::placeholder{color:#1b447e !important}
 html[data-theme="basic"] .chips button{background:#f8f9fa !important}
 html[data-theme="basic"] .browsebtn{background:#f8f9fa !important}
-html[data-theme="basic"] #modal .box{box-shadow:0 1px 3px rgba(0,0,0,0.12) !important}
-/* injected by scripts */
+html[data-theme="basic"] #modal .box{box-shadow:0 1px 3px rgba(0,0,0,0.12) !important}/* injected by scripts */
 </style>
 <!--HZ-BASIC-END-->
+<!-- 12.175 (Sam): opened inside the app → the app's own "← Back · 📘 Protocol Search" header is used, so this page's bar is hidden -->
+<script>if (window.parent !== window) document.documentElement.className += " embed";</script>
+<style>html.embed .top .bar{display:none}html.embed .top{border-bottom:0}</style>
 </head>
 <body>
 <div class="top">
   <div class="bar">
     <img data-org-logo src="https://i.ibb.co/j40wTVT/hatzolah-middelessex-county-final-removebg-preview-1-20231129-233435-0000.png" alt="">
-    <div class="h-title">Protocols</div><span class="beta">BETA</span>
+    <div class="h-title">Protocols</div>
     <a class="back" id="h-back" href="./">← App</a>
   </div>
   <div id="tools" style="display:none">
@@ -296,7 +298,7 @@ html[data-theme="basic"] #modal .box{box-shadow:0 1px 3px rgba(0,0,0,0.12) !impo
       <button class="lvl" data-l="EMT">EMT (BLS)</button><button class="lvl" data-l="ALS">Paramedic &amp; MICN</button>
     </div>
   </div>
-  <div class="warn">⚠ Beta, reference only — always read the official protocol and follow medical command.</div>
+  <div class="warn">⚠ Reference only — always read the official protocol and follow medical command.</div>
 </div>
 <main id="view"><div class="msg">Loading…</div></main>
 <script src="protocols-lib.js"></script>
@@ -520,7 +522,7 @@ auth.onAuthStateChanged(function(u) {
   }
   Promise.all([db.collection("users").doc(u.uid).get(), db.collection("appdata").doc("protocolAI").get()]).then(function(r) {
     var user = r[0].exists ? r[0].data() : {}, settings = r[1].exists ? r[1].data() : {};
-    if (!allowed(user, u.email, settings.access || "admins")) { gate("Not available yet", "Protocols is a beta that isn't turned on for your account yet."); return; }
+    if (!allowed(user, u.email, settings.access || "admins")) { gate("Not available yet", "Protocols isn't turned on for your account yet."); return; }
     showWarning(); loadIndex();
   }).catch(function(e) { gate("Couldn't load", esc(e.message)); });
 });
@@ -528,7 +530,7 @@ auth.onAuthStateChanged(function(u) {
 function showWarning() {
   if (document.getElementById("modal")) return;
   var m = document.createElement("div"); m.id = "modal";
-  m.innerHTML = '<div class="box" role="dialog" aria-modal="true" aria-labelledby="mtitle"><h2 id="mtitle">⚠ Beta — reference only <span class="beta">BETA</span></h2>' +
+  m.innerHTML = '<div class="box" role="dialog" aria-modal="true" aria-labelledby="mtitle"><h2 id="mtitle">⚠ Reference only</h2>' +
     '<ul><li>AI can pick the <b>wrong protocol</b> or highlight the <b>wrong steps</b> — always read the whole protocol yourself.</li>' +
     '<li>This is <b>not</b> medical direction and doesn\'t replace the official NJ protocol, your training, or medical command.</li>' +
     '<li>Always read the full protocol — check <b>Original pages</b> when it matters.</li>' +
@@ -582,7 +584,11 @@ function route() {
   if (h === "browse") { $("q").value = ""; return browse(); }
   $("q").value = ""; home();
 }
-function go(hash) { location.hash = hash; }
+function go(hash) {
+  // 12.175: inside the app, moving between protocol screens doesn't add steps to the phone's Back history
+  if (document.documentElement.classList.contains("embed")) { location.replace(location.pathname + location.search + "#" + String(hash).replace(/^#/, "")); return; }
+  location.hash = hash;
+}
 $("go").onclick = function() { var q = $("q").value.trim(); if (q) go("/s/" + encodeURIComponent(q)); };
 $("q").addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); $("go").onclick(); } });
 bindLevels();
@@ -728,7 +734,7 @@ function results(q) {
     var where = fr.text ? ' — ' + esc(fr.text) + (fr.pages.length ? ' (p. ' + fr.pages.join(", ") + ')' : '') : '';
     var related = res.related.length ? '<div class="sec-h">Related protocols</div>' + res.related.map(function(rk) { return card(rk, q, ''); }).join("") : '';
     var others = kwCards([k].concat(res.related));
-    show('<div class="frame"><div class="ans-h">✨ Protocol for your question <span class="tag t-AI">AI-PICKED · BETA</span></div>' +
+    show('<div class="frame"><div class="ans-h">✨ Protocol for your question <span class="tag t-AI">AI-PICKED</span></div>' +
       '<div class="frame-ref">Covered in <b>' + esc(pr.num + " " + titleCase(pr.title)) + '</b>' + where + '</div>' +
       (fr.als && PS.level === "EMT" ? '<div class="only" style="margin:8px 0 0">The highlighted steps are <b>Paramedic &amp; MICN only</b>.</div>' : '') +
       '<div class="ans-warn" style="margin-top:10px">⚠ <b>AI can make mistakes.</b> It chose this protocol and highlighted the steps it thinks answer your question. Read the whole protocol and double-check.</div>' +

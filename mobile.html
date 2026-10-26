@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.28"; window.M_BUILD = BUILD;
+  var BUILD = "6.30"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1217,10 +1217,10 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
           <span class="m-tile-sub">Manage active calls</span>
         </div>
       </button>
-      <a class="m-tile" data-sec="protocols" id="m-protocolai-tile" href="protocols.html" onclick="this.href='protocols.html?v=' + (window.M_BUILD||'') + '&t=' + Date.now()" style="display:none">
+      <a class="m-tile" data-sec="protocols" id="m-protocolai-tile" href="protocols.html" onclick="hzProtoOpen(event)" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon">📘</span>
-          <span class="m-tile-label">Protocol Search <span style="font-size:0.55rem;background:#f0a500;color:#0a1628;border-radius:3px;padding:1px 4px;vertical-align:2px">BETA</span></span>
+          <span class="m-tile-label">Protocol Search</span>
           <span class="m-tile-sub">Reference only</span>
         </div>
       </a>
@@ -2139,6 +2139,7 @@ function mNavRecord(key) {
 function mNavCloseOverlay() {
   // 12.93 / 5.48: the 🚙 Vehicle Shifts window and the 📅 availability pop-up added their own back step ("added")
   var ev = document.getElementById("hz-erv"); if (ev && typeof hzErvClose === "function") { var h1 = HZ_ERV.hist; HZ_ERV.hist = false; hzErvClose(true); return h1 ? "added" : true; }
+  var pp = document.getElementById("hz-proto-pop"); if (pp && typeof hzProtoClose === "function") { var h3 = HZ_PROTO.hist; HZ_PROTO.hist = false; hzProtoClose(true); return h3 ? "added" : true; }   // 12.175
   var ap = document.getElementById("hz-av-pop"); if (ap && typeof hzAvClose === "function") { var h2 = HZ_AV.hist; HZ_AV.hist = false; hzAvClose(true); return h2 ? "added" : true; }
   if (document.querySelector(".m-disp-sheet.show")) { mCloseAllSheets(); return true; }
   var om = document.getElementById("m-own-modal") || document.getElementById("m-ec-modal"); if (om) { om.remove(); return true; }
@@ -13904,5 +13905,44 @@ function hzScHook(name) {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go); else go();
 })();
 </script>
+<script>
+/* ═══ 📘 PROTOCOL SEARCH INSIDE THE APP (12.175, Sam) ═══
+   Opens protocols.html full-screen in a frame under the app's own "← Back · 📘 Protocol Search" header
+   (the page hides its own bar when framed). Back returns to where you were — no reload. */
+var HZ_PROTO = { hist: false };
+function hzProtoOpen(e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  hzProtoClose(true);
+  if (!document.getElementById("hz-proto-css")) {
+    var c = document.createElement("style"); c.id = "hz-proto-css";
+    c.textContent = "#hz-proto-pop{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;background:var(--navy,#0a1628);padding-top:max(var(--hz-tb-h,0px),calc(env(safe-area-inset-top,0px) * 1.6))}"
+      + "html[data-theme=basic] #hz-proto-pop{background:#fff}"
+      + ".hz-proto-top{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--card-border,#d0d7de)}"
+      + ".hz-proto-ttl{font-family:'Oswald',sans-serif;font-weight:700;font-size:1.02rem;letter-spacing:.04em;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+      + "html[data-theme=basic] .hz-proto-ttl{color:#1f2328}"
+      + ".hz-proto-beta{font-size:.58rem;background:#f0a500;color:#0a1628;border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:2px;letter-spacing:.06em}"
+      + "#hz-proto-pop iframe{flex:1 1 auto;width:100%;min-height:0;border:0;display:block;background:transparent}"
+      + ".hz-proto-back{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;padding:7px 12px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--white);font-weight:700;font-size:.85rem;cursor:pointer;font-family:inherit}"
+      + "html[data-theme=basic] .hz-proto-back{color:#1d3f72;border-color:#c8d0dc;background:#fff}";
+    document.head.appendChild(c);
+  }
+  var ver = window.M_BUILD || (typeof DESKTOP_VERSION !== "undefined" ? DESKTOP_VERSION : "");
+  var o = document.createElement("div"); o.id = "hz-proto-pop";
+  o.innerHTML = '<div class="hz-proto-top"><button class="hz-proto-back hz-pop-back" onclick="hzProtoClose()">← Back</button>'
+    + '<span class="hz-proto-ttl">📘 Protocol Search</span></div>'
+    + '<iframe title="Protocol Search" src="protocols.html?embed=1&v=' + encodeURIComponent(ver) + '&t=' + Date.now() + '"></iframe>';
+  document.body.appendChild(o); document.body.style.overflow = "hidden";
+  // phone Back key closes it (like the other full-screen pop-ups)
+  if (typeof mNav !== "undefined" && typeof mNavState === "function" && mNav.stack && mNav.stack.length) { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "proto" }), ""); HZ_PROTO.hist = true; } catch (x) {} }
+}
+function hzProtoClose(fromBack) {
+  var o = document.getElementById("hz-proto-pop"); if (!o) return;
+  o.remove(); document.body.style.overflow = "";
+  if (HZ_PROTO.hist) { HZ_PROTO.hist = false; if (!fromBack && history.state && history.state.hzOv === "proto" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
+}
+document.addEventListener("keydown", function(e) { if (e.key === "Escape" && document.getElementById("hz-proto-pop")) hzProtoClose(); });
+window.addEventListener("message", function(e) { if (e.data === "hz-close-overlay" && document.getElementById("hz-proto-pop")) hzProtoClose(); });
+</script>
+
 </body>
 </html>
