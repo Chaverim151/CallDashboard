@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.41"; window.M_BUILD = BUILD;
+  var BUILD = "6.42"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -13022,12 +13022,64 @@ function hzDvIdText(h, call) {
   if (call && call.lat && call.lng) { var c = hzDvFeedCoords(h.id); if (c && c.lat) t += " · " + hzDvFmtMi(hzDvMiles({ lat: +call.lat, lng: +call.lng }, c)); }
   return t;
 }
+// ── 12.188 (Sam): the Transport hospital picker is the app's own list, not the system pop-up ──
+// The <select> stays (hidden) and still holds the value; the list is drawn under it and kept in step.
+function hzHpIsSel(el) { return el && el.tagName === "SELECT" && /^m-tr-hosp(ital|-\d+)$/.test(el.id || ""); }
+function hzHpDraw(sel) {
+  if (!hzHpIsSel(sel)) return;
+  var box = sel.nextElementSibling && sel.nextElementSibling.classList.contains("hz-hp") ? sel.nextElementSibling : null;
+  if (!box) { box = document.createElement("div"); box.className = "hz-hp"; sel.parentNode.insertBefore(box, sel.nextSibling); }
+  sel.style.display = "none";
+  var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;
+  var esc = function(t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+  var L = hzDvTransportList(), by = {}; L.forEach(function(h) { by[h.id] = h; });
+  box.innerHTML = Array.prototype.map.call(sel.options, function(o, i) {
+    if (!o.value || o.value === "__none__") return "";
+    var on = sel.value === o.value, other = o.value === "Other";
+    if (other) return '<button type="button" class="hz-hp-row hz-hp-other' + (on ? ' on' : '') + '" data-i="' + i + '"><span class="hz-hp-n">🔍 Other… <small>search any hospital</small></span></button>';
+    var id = o.getAttribute("data-hz-id"), h = id ? by[id] : null, s = id && !(h && h.custom) ? hzDvStatusFor(id) : null, mi = "";
+    if (call && call.lat && call.lng) { var c = id ? hzDvFeedCoords(id) : hzDvGeoGet(o.value + ", NJ"); if (c && c.lat) mi = hzDvFmtMi(hzDvMiles({ lat: +call.lat, lng: +call.lng }, c)); }
+    var pill = h && h.custom ? '<span class="hz-hp-pill unk">No divert status</span>' : !s ? "" : s.open ? '<span class="hz-hp-pill ok">✓ ' + esc(s.label) + '</span>' : '<span class="hz-hp-pill no">⛔ ' + esc(s.label) + '</span>';
+    var sub = [mi, s && !s.open ? s.reason : ""].filter(Boolean).join(" · ");
+    return '<button type="button" class="hz-hp-row' + (on ? ' on' : '') + (s && !s.open ? ' dv' : '') + '" data-i="' + i + '"><span class="hz-hp-n">' + esc(h ? h.name : o.value) +
+      (sub ? '<small' + (s && !s.open ? ' class="dv"' : '') + '>' + esc(sub) + '</small>' : '') + '</span>' + pill + '</button>';
+  }).join("");
+  box.onclick = function(e) {
+    var r = e.target.closest ? e.target.closest(".hz-hp-row") : null; if (!r) return;
+    var o = sel.options[+r.getAttribute("data-i")]; if (!o) return;
+    if (o.value === "Other") { var q = document.getElementById("m-tr-hosp-search"); if (q && sel.id === "m-tr-hospital") { q.focus(); q.scrollIntoView({ block: "center" }); return; } }
+    sel.value = o.value; sel.dispatchEvent(new Event("change", { bubbles: true })); hzHpDraw(sel);
+  };
+}
+function hzHpAll() { document.querySelectorAll("select").forEach(function(s) { if (hzHpIsSel(s)) hzHpDraw(s); }); }
+(function() {
+  var css = document.createElement("style");
+  css.textContent = ".hz-hp{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}"
+    + ".hz-hp-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px !important;border:2px solid #0b5cad !important;border-radius:10px !important;background:#fff !important;color:#1f2328 !important;font:inherit;cursor:pointer;box-shadow:none !important;min-height:0 !important}"
+    + "html:not([data-theme=basic]) .hz-hp-row{background:transparent !important;color:var(--white) !important}"
+    + ".hz-hp-row.on{background:#e8f1fb !important;box-shadow:inset 0 0 0 1px #0b5cad !important}.hz-hp-row.on .hz-hp-n:before{content:'✓ ';color:#0b5cad;font-weight:800}"
+    + ".hz-hp-n{flex:1;min-width:0;font-weight:700;font-size:.9rem;line-height:1.25}.hz-hp-n small{display:block;font-weight:600;font-size:.74rem;color:#0b5cad;margin-top:2px}.hz-hp-n small.dv{color:#b42318}"
+    + ".hz-hp-pill{flex:0 0 auto;font-size:.72rem;font-weight:800;border-radius:999px;padding:4px 10px;white-space:nowrap}.hz-hp-pill.ok{background:#e6f4ea;color:#167a3e}.hz-hp-pill.no{background:#c62828;color:#fff}.hz-hp-pill.unk{background:#eef0f3;color:#57606a}"
+    + ".hz-hp-other .hz-hp-n{font-weight:700;color:#0b5cad}.hz-hp-other small{display:inline !important;color:var(--gray) !important;font-weight:400 !important;margin-left:4px}";
+  document.head.appendChild(css);
+  // draw the list whenever a Transport hospital <select> is filled or changed (search pick adds an option)
+  new MutationObserver(function(recs) {
+    var todo = [];
+    recs.forEach(function(r) {
+      if (hzHpIsSel(r.target) && todo.indexOf(r.target) === -1) todo.push(r.target);
+      Array.prototype.forEach.call(r.addedNodes || [], function(n) { if (n.nodeType !== 1) return; if (hzHpIsSel(n)) todo.push(n); else if (n.querySelectorAll) Array.prototype.forEach.call(n.querySelectorAll("select"), function(s) { if (hzHpIsSel(s) && todo.indexOf(s) === -1) todo.push(s); }); });
+    });
+    todo.forEach(function(s) { setTimeout(function() { hzHpDraw(s); }, 0); });
+  }).observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener("change", function(e) { if (hzHpIsSel(e.target)) hzHpDraw(e.target); }, true);
+})();
 function hzDvRefreshOptions() {   // update the open Transport dropdowns once a location arrives
   var call = typeof mDispCallCache !== "undefined" && typeof mDispSelectedCallId !== "undefined" ? mDispCallCache[mDispSelectedCallId] : null;
   var all = typeof M_HOSPITALS !== "undefined" ? M_HOSPITALS : [];
   document.querySelectorAll("option[data-hz-hosp]").forEach(function(o) { o.textContent = hzDvOptionText(o.getAttribute("data-hz-hosp"), all, call); });
   var L = hzDvTransportList(), by = {}; L.forEach(function(h) { by[h.id] = h; });
   document.querySelectorAll("option[data-hz-id]").forEach(function(o) { var h = by[o.getAttribute("data-hz-id")]; if (h) o.textContent = hzDvIdText(h, call); });
+  hzHpAll();   // 12.188
 }
 function hzDvMiles(a, b) {
   var R = 3958.8, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lng - a.lng) * r;
