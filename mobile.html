@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.30"; window.M_BUILD = BUILD;
+  var BUILD = "6.31"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2139,6 +2139,7 @@ function mNavRecord(key) {
 function mNavCloseOverlay() {
   // 12.93 / 5.48: the 🚙 Vehicle Shifts window and the 📅 availability pop-up added their own back step ("added")
   var ev = document.getElementById("hz-erv"); if (ev && typeof hzErvClose === "function") { var h1 = HZ_ERV.hist; HZ_ERV.hist = false; hzErvClose(true); return h1 ? "added" : true; }
+  var dvp = document.getElementById("hz-dv-pop"); if (dvp && typeof hzDvClose === "function") { var h4 = HZ_DV.hist; HZ_DV.hist = false; hzDvClose(true); return h4 ? "added" : true; }   // 12.177
   var pp = document.getElementById("hz-proto-pop"); if (pp && typeof hzProtoClose === "function") { var h3 = HZ_PROTO.hist; HZ_PROTO.hist = false; hzProtoClose(true); return h3 ? "added" : true; }   // 12.175
   var ap = document.getElementById("hz-av-pop"); if (ap && typeof hzAvClose === "function") { var h2 = HZ_AV.hist; HZ_AV.hist = false; hzAvClose(true); return h2 ? "added" : true; }
   if (document.querySelector(".m-disp-sheet.show")) { mCloseAllSheets(); return true; }
@@ -12916,6 +12917,7 @@ function hzDvOpen() {
   if (age > 30000) hzDvCheck();
   var o = document.getElementById("hz-dv-pop"); if (!o) { o = document.createElement("div"); o.id = "hz-dv-pop"; document.body.appendChild(o); }
   o.onclick = function(e) { if (e.target === o) hzDvClose(); };
+  if (!HZ_DV.hist && typeof mNav !== "undefined" && typeof mNavState === "function" && mNav.stack && mNav.stack.length) { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "dv" }), ""); HZ_DV.hist = true; } catch (x) {} }   // 12.177
   hzDvDraw();
 }
 // 12.160 (Sam): 🔄 Refresh button — asks the server to read the feed now
@@ -12930,7 +12932,11 @@ function hzDvCheck() {
     if (HZ_DV.open) hzDvDraw();
   }
 }
-function hzDvClose() { HZ_DV.open = false; var o = document.getElementById("hz-dv-pop"); if (o) o.remove(); }
+function hzDvClose(fromBack) {
+  HZ_DV.open = false; var o = document.getElementById("hz-dv-pop"); if (o) o.remove();
+  // 12.177: undo the Back step it added (phone Back key closes it instead of leaving the app)
+  if (HZ_DV.hist) { HZ_DV.hist = false; if (!fromBack && history.state && history.state.hzOv === "dv" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
+}
 function hzDvDraw() {
   var o = document.getElementById("hz-dv-pop"); if (!o) return;
   var d = HZ_DV.data, when = d && d.checkedAt ? new Date(d.checkedAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
