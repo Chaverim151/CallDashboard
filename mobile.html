@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.20"; window.M_BUILD = BUILD;
+  var BUILD = "6.22"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -999,6 +999,10 @@ html[data-theme="basic"] .hz-av-howbox b.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-av-howrule{color:#806719 !important}
 html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
 <!--HZ-BASIC-END-->
+<style id="hz-tile-plain">/* 12.170 (Sam): all home tiles have a black border, no colored topper */
+html .m-tile,html[data-theme] .m-tile,html .big-btn,html[data-theme] .big-btn,html .hz-more-m,html[data-theme] .hz-more-m,html .hz-more-tile,html[data-theme] .hz-more-tile,html[data-theme] #m-home-grid>.hz-more-tile{border-color:#000 !important;border-width:1px !important}
+html .m-tile::before,html[data-theme] .m-tile::before,html .big-btn::before,html[data-theme] .big-btn::before{display:none !important}
+</style>
 </head>
 <body>
 <div id="m-app" style="height:100%;display:flex;flex-direction:column;overflow:hidden;position:relative;">
@@ -12892,7 +12896,7 @@ function hzDvTileSub() {
   var el = document.querySelectorAll(".hz-dv-tile-sub"); if (!el.length) return;
   var txt;
   if (!HZ_DV.data || !HZ_DV.data.hospitals) txt = "Middlesex County hospitals";
-  else { var n = hzDvList().filter(function(h){ return h.s && !h.s.open; }).length; txt = n ? "⚠️ " + n + " not normal" : "✓ All normal"; }
+  else { var n = hzDvList().filter(function(h){ return h.s && !h.s.open; }).length; txt = n ? "⚠️ " + n + (n === 1 ? " Hospital is On Divert" : " Hospitals are On Divert") : "✓ All normal"; }
   el.forEach(function(e) { e.textContent = txt; });
 }
 function hzDvOpen() {
@@ -13266,6 +13270,22 @@ function hzAvHow() {
     + '<button type="button" class="hz-av-howok" onclick="document.getElementById(\'hz-av-howpop\').remove()">Got it</button></div>';
   document.body.appendChild(o);
 }
+// 12.169 (Sam): text the Daytime Responders who haven't finished their week, right now (server availRemindNow)
+function hzAvRemindNow() {
+  var rel = typeof hzRelay === "function" ? hzRelay : (typeof mRelay === "function" ? mRelay : null); if (!rel) return;
+  hzAvToast("Checking who hasn't answered…");
+  rel("availRemindNow", { mode: "preview" }).then(function(r) {
+    var list = (r && r.list) || [];
+    if (!list.length) { hzAvToast("✓ Every Daytime Responder has marked all of " + ((r && r.week) || "this week")); return; }
+    var names = list.map(function(x){ return x.unit + (x.name ? " " + x.name : ""); });
+    var msg = "Text the weekday availability reminder (" + r.week + ") to " + list.length + " Daytime Responder" + (list.length === 1 ? "" : "s") + " who haven't finished?\n\n" + names.slice(0, 25).join("\n") + (names.length > 25 ? "\n…and " + (names.length - 25) + " more" : "")
+      + (r.testMode ? "\n\n🧪 You're in Test Mode — the text goes only to YOU." : "");
+    if (!confirm(msg)) return;
+    return rel("availRemindNow", { mode: "run" }).then(function(x) {
+      hzAvToast(x && x.testMode ? "🧪 Test Mode: reminder texted only to you" : "✓ Reminder texted to " + ((x && x.sent) || 0) + " phone" + ((x && x.sent) === 1 ? "" : "s"));
+    });
+  }).catch(function(e) { hzAvToast("Couldn't send: " + ((e && e.message) || e) + (/not found|internal/i.test((e && e.message) || "") ? " — the server code may need deploying" : ""), true); });
+}
 function hzAvDoneText() {
   var me = HZ_AV.me || {}, w = HZ_AV.week; if (!w || !hzAvAny(me)) return "";
   var days = (HZ_AV.mine && HZ_AV.mine.days) || {}, mine = hzAvMyDays(me, w), done = mine.filter(function(d){ return hzAvAnswered(days[d[0]]); }).length;
@@ -13354,6 +13374,7 @@ function hzAvAdminRender() {
         return v === true ? '<td class="hz-av-yes" title="Available">✓</td>' : v === false ? '<td class="hz-av-no" title="Unavailable">✕</td>' : '<td class="hz-av-nil">—</td>'; };
       var h = '<div class="hz-erv-row"><button class="hz-erv-btn" onclick="HZ_AV.admWeek--;hzAvAdminRender()">‹ Previous</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek=0;hzAvAdminRender()">This week</button><button class="hz-erv-btn" onclick="HZ_AV.admWeek++;hzAvAdminRender()">Next ›</button>'
         + '<button class="hz-erv-btn" style="border-color:var(--gold);color:var(--gold)" onclick="hzAvRollCall()">🕯️ Shabbos roll call</button>'
+        + '<button class="hz-erv-btn" style="border-color:#4a90d9;color:#4a90d9" onclick="hzAvRemindNow()">📲 Text weekday reminder now</button>'
         + '<b style="margin-left:6px">Week of ' + hzAvEsc(w.label) + '</b><span class="hz-erv-muted">✓ available · ✕ unavailable · — no answer · blank = not in that poll</span><span class="hz-erv-muted">' + answered + ' of ' + users.length + ' answered everything · ☀️ = Daytime Responder (gets the weekday reminders; set in Users ▸ Edit) · this week resets ' + hzAvEsc(hzAvResetText(w.reset)) + '</span></div>'
         + '<div class="tbl-wrap" style="max-width:none;width:100%"><table class="hz-av-tbl"><thead><tr><th>Unit</th><th>Name</th>' + HZ_AV_DAYS.map(function(d){ return '<th>' + d[1] + (yt[d[0]] ? '<br><span class="hz-av-ytl">🕯️ Yom Tov</span>' : '') + '</th>'; }).join("") + '</tr></thead><tbody>'
         + '<tr class="hz-av-tot"><td colspan="2"><b>Available</b></td>' + counts.map(function(n, i){ return '<td><b>' + (yt[HZ_AV_DAYS[i][0]] ? "" : n) + '</b></td>'; }).join("") + '</tr>'
