@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.192">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.193">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2406,7 +2406,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.192</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.193</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -19250,7 +19250,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.192";
+var DESKTOP_VERSION = "12.193";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -27222,18 +27222,19 @@ function hzDvPlace(h) {
 // 12.189 (Sam): approximate drive time + road distance from Google Maps (Distance Matrix), one request for the whole list,
 // refreshed at most every 5 minutes or when you've moved; until it answers (or if it can't) the straight-line distance shows.
 function hzDvEtaKey(o) { return o.lat.toFixed(3) + "," + o.lng.toFixed(3); }
-function hzDvEta(from, list) {   // 12.192: cached per starting point (you / the base in the pop-up; the incident in the Transport picker)
-  var key = hzDvEtaKey(from), C = HZ_DV.etaC = HZ_DV.etaC || {}, E = C[key];
+function hzDvEta(from, list, traffic) {   // 12.192: cached per starting point (you / the base in the pop-up; the incident in the Transport picker)
+  var key = hzDvEtaKey(from) + (traffic ? "|t" : ""), C = HZ_DV.etaC = HZ_DV.etaC || {}, E = C[key];
   if (E && Date.now() - E.at < 300000) return E.res;
   if ((HZ_DV.etaBusy || {})[key] || HZ_DV.etaOff) return E ? E.res : null;
   if (!(window.google && google.maps && google.maps.DistanceMatrixService)) { hzDvGeoRun(); return E ? E.res : null; }
   var dest = list.filter(function(x) { return x.lat && x.lng; }).slice(0, 25); if (!dest.length) return E ? E.res : null;
   (HZ_DV.etaBusy = HZ_DV.etaBusy || {})[key] = true;
   new google.maps.DistanceMatrixService().getDistanceMatrix({ origins: [{ lat: from.lat, lng: from.lng }], destinations: dest.map(function(x) { return { lat: +x.lat, lng: +x.lng }; }),
-    travelMode: "DRIVING", unitSystem: google.maps.UnitSystem ? google.maps.UnitSystem.IMPERIAL : 1 }, function(r, st) {
+    travelMode: "DRIVING", unitSystem: google.maps.UnitSystem ? google.maps.UnitSystem.IMPERIAL : 1,
+    drivingOptions: traffic ? { departureTime: new Date(), trafficModel: "bestguess" } : undefined }, function(r, st) {   // 12.193 (Sam): live traffic for the pop-up's drive times
     HZ_DV.etaBusy[key] = false;
     if (st !== "OK" || !r || !r.rows || !r.rows[0]) { HZ_DV.etaOff = st === "REQUEST_DENIED"; return; }
-    var res = {}; r.rows[0].elements.forEach(function(el, i) { if (el && el.status === "OK") res[dest[i].id] = { min: Math.round(el.duration.value / 60), mi: el.distance.value / 1609.34 }; });
+    var res = {}; r.rows[0].elements.forEach(function(el, i) { if (el && el.status === "OK") res[dest[i].id] = { min: Math.round(((el.duration_in_traffic || el.duration).value) / 60), mi: el.distance.value / 1609.34, traffic: !!el.duration_in_traffic }; });
     C[key] = { at: Date.now(), res: res }; if (HZ_DV.open) hzDvDraw(); try { hzHpAll(); } catch (x) {}
   });
   return E ? E.res : null;
@@ -27516,7 +27517,7 @@ function hzDvDraw() {
   var stale = d && d.checkedAt && (Date.now() - new Date(d.checkedAt).getTime() > 20 * 60000);
   var grp = "", L0 = hzDvList();
   var from0 = HZ_DV.me || (function() { var B = typeof M_BASE !== "undefined" && M_BASE && M_BASE.lat ? M_BASE : { lat: 40.5077036, lng: -74.4133431 }; return { lat: +B.lat, lng: +B.lng }; })();
-  var etas = hzDvEta(from0, L0.map(function(h) { var q = hzDvPlace(h); return { id: h.id, lat: q.lat, lng: q.lng }; }));
+  var etas = hzDvEta(from0, L0.map(function(h) { var q = hzDvPlace(h); return { id: h.id, lat: q.lat, lng: q.lng }; }), true);
   // 12.191 (Sam): closest first (drive time when Google has it, else straight-line miles) — within each group; unknown last
   var gOf = function(h) { return h.custom ? 2 : h.added ? 1 : 0; };
   var dOf = function(h) { var e = etas && h.id ? etas[h.id] : null; if (e) return e.min * 1000; var q = hzDvPlace(h); return q.lat && q.lng ? hzDvMiles(from0, q) * 1000 / 0.5 + 0.1 : Infinity; };
@@ -27547,6 +27548,7 @@ function hzDvDraw() {
     + '<div class="hz-dv-sub">Middlesex County hospitals</div>'
     + (HZ_DV.meErr === "denied" ? '<div class="hz-dv-locmsg">📍 Location is off for this app — distances are from the base. Turn it on to see how far each hospital is from you.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
     + '<div class="hz-dv-tapmsg">Tap a hospital to navigate there.</div>'
+    + '<div class="hz-dv-tapmsg hz-dv-disc">🚗 Drive times are Google Maps estimates with current traffic, from ' + (HZ_DV.me ? 'where you were when this opened' : 'the base') + '. They refresh every 5 minutes, so your navigation app may show a slightly different time.</div>'
     + rows
     + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank" rel="noopener">Open the official NJ divert page ↗</a></div></div>';
 }
