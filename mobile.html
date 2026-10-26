@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.32"; window.M_BUILD = BUILD;
+  var BUILD = "6.33"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2134,7 +2134,9 @@ function mNavRecord(key) {
     return;
   }
   if (st.length >= 2 && st[st.length - 2] === key) { st.pop(); mNav.skipPop++; history.back(); return; }   // an on-screen ← Back
-  if (cur === "dispatch-newcall" && key === "dispatch-detail") { st[st.length - 1] = key; history.replaceState(mNavState(), ""); return; }   // a posted call replaces its form
+  var j = st.lastIndexOf(key, st.length - 2);   // 12.179: going back to a screen further down the history (e.g. a call → Dispatch Console home) unwinds to it
+  if (j > 0) { var k = st.length - 1 - j; mNav.stack = st.slice(0, j + 1); mNav.skipPop++; history.go(-k); return; }
+  if ((cur === "dispatch-newcall" || String(cur).indexOf("dispatch|") === 0) && key === "dispatch-detail") { st[st.length - 1] = key; history.replaceState(mNavState(), ""); return; }   // a posted call replaces its form; 12.179: an opened call replaces the Active Calls list, so Back goes to the Dispatch Console home
   st.push(key); history.pushState(mNavState(), "");
 }
 function mNavCloseOverlay() {
@@ -11915,6 +11917,7 @@ function mDrawerGoTo(page) {
   if (page === "dispatch" || page === "dispatch-dash" || page === "dispatch-rigs") {
     if (mDispatchDetailListener) { mDispatchDetailListener(); mDispatchDetailListener = null; }
     mDispSelectedCallId = null;
+    mDispViewCur = page === "dispatch" ? "calls" : page === "dispatch-rigs" ? "rigs" : "dash";   // 12.179: record the screen we're going to, not the one we left
     mGoTo("dispatch");
     mDispView(page === "dispatch" ? "calls" : page === "dispatch-rigs" ? "rigs" : "dash");
   }
@@ -12033,7 +12036,7 @@ function mCloseAllSheets() {
 <div class="page" id="m-pg-dispatch-newcall">
   <div class="m-subpage-header">
     <button class="m-back-btn" onclick="mDrawerGoTo('dispatch-dash')">← Back</button><!-- 12.178: back to the Dispatch list -->
-    <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
+    <button onclick="mOpenDispDrawer()" style="display:none !important;background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
     <span class="m-page-title">New Call</span>
   </div>
   <div class="m-scroll">
@@ -12101,7 +12104,7 @@ function mCloseAllSheets() {
 <div class="page" id="m-pg-dispatch-detail">
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px;min-width:0">
-      <button class="m-back-btn" onclick="mDrawerGoTo('dispatch')">← Back</button><!-- 12.178: back to Active Calls -->
+      <button class="m-back-btn" onclick="mDrawerGoTo('dispatch-dash')">← Back</button><!-- 12.179 (Sam): back to the Dispatch Console home -->
       <span class="m-page-title" id="m-dd-header-addr" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100vw - 240px)">Call</span>
     </div>
     <button onclick="mOpenDispDrawer()" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:7px;color:var(--gray);font-family:'Oswald',sans-serif;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:6px 10px;cursor:pointer">Jump to…</button>
