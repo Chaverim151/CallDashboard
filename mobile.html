@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.24"; window.M_BUILD = BUILD;
+  var BUILD = "6.27"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -7490,7 +7490,7 @@ function mAdminCopy(call, header, detail, key) {
   if (key && !hzSendOn(key, "admin")) return;   // Admin group box off for this message
   var already = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
-  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call already got it
+  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u] && u !== (call.dispatcherUnit || ""); });   /* 12.173: not the call's active dispatcher */   // units on the call already got it
   if (!units.length) return;
   // Only the "unit assigned" copy lists the units on the call so far ({units}); the rig is added once a
   // unit is responding to / with it. Every other copy leaves that line out. A template saved before this
@@ -7510,7 +7510,7 @@ function mRigAssignedCopy(call, crewIdx, rig, prevRig) {
   if (!smsOn && !pushOn) return;
   var already = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") already[cr[k]] = true; }); });
-  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u]; });   // units on the call follow it themselves
+  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !already[u] && u !== (call.dispatcherUnit || ""); });   /* 12.173: not the call's active dispatcher */   // units on the call follow it themselves
   if (!units.length) return;
   var crew = (call.crews || [])[crewIdx] || {};
   var crewUnits = Object.keys(crew).filter(function(k){ return k !== "rig" && crew[k] && crew[k] !== "__added__"; }).map(function(k){ return crew[k]; });
@@ -7548,7 +7548,7 @@ function mNotifyAdminUnits(call) {
   var assigned = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") assigned[cr[k]] = true; }); });
   (call.assignedUnits || []).forEach(function(u){ assigned[u] = true; });
-  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !assigned[u]; });   // if they're on the call they get the assignment text instead
+  var units = M_ADMIN_NOTIFY_UNITS.filter(function(u){ return !assigned[u] && u !== (call.dispatcherUnit || ""); });   /* 12.173: not the call's active dispatcher */   // if they're on the call they get the assignment text instead
   if (!units.length) return;
   mSmsEnqueue(function(){ return mPhonesForUnits(units).then(function(phones) {
     if (phones.length) return mSendClickSendSMS(phones, mCallDetailsSMS(call, "NOTIFICATION GROUP"));
@@ -11914,7 +11914,7 @@ function mDrawerGoTo(page) {
     mDispView(page === "dispatch" ? "calls" : page === "dispatch-rigs" ? "rigs" : "dash");
   }
   else if (page === "dispatch-newcall") mOpenNewCallForm();
-  else if (page === "dispatch-map") mOpenDispatchMap();
+  else if (page === "dispatch-map") { mGoTo("dispatch"); mDispView("dash"); }   // 12.173: map view removed
 }
 // Call screen sections that start collapsed (Additional Resources, Call Timeline) — open per call
 var mDdOpen = { resources: false, timeline: false }, mDdOpenFor = null;
@@ -11967,10 +11967,10 @@ function mCloseAllSheets() {
   <div class="m-subpage-header" style="display:flex;align-items:center;justify-content:space-between">
     <div style="display:flex;align-items:center;gap:6px">
       <button class="m-back-btn" onclick="mGoTo('home')">← Back</button><!-- 12.172 (Sam): back to the home menu -->
-      <button onclick="mOpenDispDrawer()" style="background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
+      <button onclick="mOpenDispDrawer()" class="m-disp-burger-main" style="display:none !important;background:none;border:none;color:var(--white);font-size:1.3rem;cursor:pointer;padding:4px 8px;line-height:1">☰</button>
       <span class="m-page-title">Dispatch <span style="font-size:0.5rem;color:var(--gray);font-weight:400" class="m-build-lbl">v3.01</span></span>
     </div>
-    <button onclick="mOpenNewCallForm()" style="background:linear-gradient(135deg,var(--gold),#e8960a);color:var(--navy);border:none;border-radius:7px;font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;padding:8px 12px;cursor:pointer">+ New Call</button>
+    <!-- 12.174 (Sam): "+ New Call" removed from the Dispatch top bar (New Call row is on the dashboard) -->
   </div>
   <div style="display:none;align-items:center;justify-content:flex-end;gap:8px;padding:8px 16px 0" onclick="mToggleTestMode()"><!-- moved to My Settings -->
     <span id="m-test-toggle-label" class="m-test-label" style="font-size:0.6rem;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray)">🧪 Test Mode</span>
@@ -12135,7 +12135,7 @@ function mCloseAllSheets() {
     <button onclick="mDrawerGoTo('dispatch-dash')" class="m-drawer-item"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> Dispatch Console</button>
     <button onclick="mDrawerGoTo('dispatch')" class="m-drawer-item">📋 Active Calls</button>
     <button onclick="mDrawerGoTo('dispatch-newcall')" class="m-drawer-item">➕ New Call</button>
-    <button onclick="mDrawerGoTo('dispatch-map')" class="m-drawer-item">🗺️ Map View</button>
+    <!-- 12.173 (Sam): 🗺️ Map View removed from the dispatcher console -->
     <button onclick="mDrawerGoTo('dispatch-rigs')" class="m-drawer-item">🚐 Rigs &amp; Vehicles</button>
     <button onclick="mCloseDispDrawer();mGoTo('calllogs')" class="m-drawer-item" id="m-drawer-calllogs" style="display:none">📁 Call Logs</button>
     <button onclick="mCloseDispDrawer();hzDvOpen()" class="m-drawer-item">🏥 Hospital Diversion Status</button>
@@ -13595,12 +13595,12 @@ function hzAvSaveSettings() {
     + ".hz-av-who{margin-top:10px;border-top:1px solid var(--card-border);padding-top:8px}.hz-av-who>summary{cursor:pointer;font-family:'Oswald',sans-serif;font-size:.82rem;letter-spacing:.04em;color:var(--white);list-style-position:inside}"
     + ".hz-av-who .hz-av-sum{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}"
     // 12.127 (Sam): on a phone the days stay side by side like the computer — 3 a row (Mon Tue Wed / Thu Fri Shabbos), names listed down (unit, then name under it)
-    + "@media (max-width:700px){.hz-av-sum,.hz-av-who .hz-av-sum{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:8px}.hz-av-sum-d{padding:5px 5px 3px;border-radius:8px}.hz-av-sum-h{font-size:.7rem;padding-bottom:3px;margin-bottom:4px}.hz-av-sum-g{padding:3px 4px;margin-bottom:4px;border-left-width:2px}.hz-av-sum-t{font-size:.6rem;line-height:1.25}.hz-av-sum-d .hz-av-sum-n{font-size:.64rem;line-height:1.25;padding:2px 0;opacity:.92}.hz-av-sum-d .hz-av-sum-n b{display:block;font-size:.7rem;opacity:1}.hz-av-sum-d .hz-av-sum-n+.hz-av-sum-n{border-top:1px dashed rgba(127,127,127,.25)}.hz-av-sum-d .hz-erv-muted{font-size:.62rem}.hz-av-who>summary{font-size:.76rem}.hz-av-sum-t .hz-av-lg{display:none}.hz-av-sum-t .hz-av-sm{display:inline}}"
+    + "@media (max-width:700px){.hz-av-sum,.hz-av-who .hz-av-sum{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:8px}.hz-av-sum-d{padding:5px 5px 3px;border-radius:8px}.hz-av-sum-h{font-size:.7rem;padding-bottom:3px;margin-bottom:4px}.hz-av-sum-g{padding:3px 4px;margin-bottom:4px;border-left-width:2px}.hz-av-sum-t{font-size:.6rem;line-height:1.25}.hz-av-sum-d .hz-av-sum-n{font-size:.64rem;line-height:1.25;padding:2px 0;opacity:.92}.hz-av-sum-d .hz-av-sum-n b{display:block;font-size:.7rem;opacity:1}.hz-av-sum-d .hz-av-sum-n+.hz-av-sum-n{border-top:1px solid rgba(127,127,127,.25)}.hz-av-sum-d .hz-erv-muted{font-size:.62rem}.hz-av-who>summary{font-size:.76rem}.hz-av-sum-t .hz-av-lg{display:none}.hz-av-sum-t .hz-av-sm{display:inline}}"
     + ".hz-av-oos{margin:8px 0 0;font-size:.8rem;border-radius:8px;padding:6px 9px;border-left:3px solid #4caf80;background:rgba(76,175,128,.10);color:var(--white)}.hz-av-oos.bad{border-color:#e05555;background:rgba(224,85,85,.10)}.hz-av-oos.bad>b{color:#ff9090}"
     + ".hz-av-oos-pill{color:#ff9090;font-family:inherit;letter-spacing:0;font-size:.76rem}html[data-theme=basic] .hz-av-oos.bad>b,html[data-theme=basic] .hz-av-oos-pill{color:#b42318}"
     + ".hz-av-sec{margin-bottom:12px}.hz-av-sec-h{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;margin-bottom:5px}.hz-av-sec-h b{font-size:.86rem;color:var(--white)}"
     + ".hz-av-qual{font-size:.7rem;color:var(--gold);margin-bottom:5px;line-height:1.3;max-width:440px}"
-    + ".hz-av-day.yt{cursor:default;opacity:.75;background:rgba(127,127,127,.08);border-style:dashed}.hz-av-ytl{font-size:.62rem;letter-spacing:0;text-transform:none;color:var(--gold)}"
+    + ".hz-av-day.yt{cursor:default;opacity:.75;background:rgba(127,127,127,.08);border-style:solid}.hz-av-ytl{font-size:.62rem;letter-spacing:0;text-transform:none;color:var(--gold)}"
     + ".hz-av-day.part{background:rgba(90,160,255,.12);border-color:rgba(90,160,255,.55)}.hz-av-day.part i,.hz-av-part,.hz-av-day em.hz-av-pn{color:#8cbcff}.hz-av-part{font-weight:700}"
     + "html[data-theme=basic] .hz-av-day.part i,html[data-theme=basic] .hz-av-part,html[data-theme=basic] .hz-av-day em.hz-av-pn{color:#1d5fb8}.hz-av-na{background:rgba(127,127,127,.06)}"
     + ".hz-av-day{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border-radius:9px;border:1px solid var(--card-border);background:rgba(255,255,255,.03);color:var(--white);cursor:pointer;font-family:'Oswald',sans-serif;min-width:0}"
@@ -13675,7 +13675,7 @@ function hzAvSaveSettings() {
     + ".hz-av-howbtn{display:inline-flex;align-items:center;gap:4px;margin:2px 0 10px;padding:7px 12px;border-radius:999px;border:1.5px solid #4a90d9;background:rgba(74,144,217,.08);color:#4a90d9;font-weight:700;font-size:.8rem;cursor:pointer}"
     + "html[data-theme=basic] .hz-av-howbtn{border-color:#1d5fb8!important;color:#1d5fb8!important;background:#f3f8ff!important}"
     + "#hz-av-pop-body .hz-av-qual.hz-av-qual-full{display:block!important;color:#c9a227!important;font-weight:600!important;font-size:.8rem!important;margin:0 0 10px!important}html[data-theme=basic] #hz-av-pop-body .hz-av-qual.hz-av-qual-full{color:#8a5a00!important}"   // 12.156 (Sam): the weekday rule stays on the page
-    + "#hz-av-pop-body .hz-av-day{border-width:1.5px!important;cursor:pointer}#hz-av-pop-body .hz-av-day:not(.yes):not(.no){border-style:dashed!important;border-color:#4a90d9!important}#hz-av-pop-body .hz-av-day:not(.yes):not(.no) i{color:#4a90d9!important;font-weight:700}"
+    + "#hz-av-pop-body .hz-av-day{border-width:1.5px!important;cursor:pointer}#hz-av-pop-body .hz-av-day:not(.yes):not(.no){border-style:solid!important;border-color:#4a90d9!important}#hz-av-pop-body .hz-av-day:not(.yes):not(.no) i{color:#4a90d9!important;font-weight:700}"
     + "html[data-theme=basic] #hz-av-pop-body .hz-av-day:not(.yes):not(.no){border-color:#1d5fb8!important}html[data-theme=basic] #hz-av-pop-body .hz-av-day:not(.yes):not(.no) i{color:#1d5fb8!important}"
     + "#hz-av-pop-body .hz-av-who>summary{display:flex!important;align-items:center;gap:6px;border:1.5px solid var(--card-border);border-radius:10px;padding:10px 12px;cursor:pointer;list-style:none}#hz-av-pop-body .hz-av-who>summary::-webkit-details-marker{display:none}"
     + "#hz-av-pop-body .hz-av-who>summary::after{content:'▾';margin-left:auto;font-size:.9rem}#hz-av-pop-body .hz-av-who[open]>summary::after{content:'▴'}"
