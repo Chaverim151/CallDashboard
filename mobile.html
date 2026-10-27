@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.86"; window.M_BUILD = BUILD;
+  var BUILD = "6.88"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -5844,10 +5844,10 @@ function mRenderRigStatus() {
     return '<div class="m-rig-card" data-rig="' + mEscHtml(String(id)) + '" data-kind="' + (v.kind === "erv" ? "erv" : "rig") + '"><div class="m-rig-top"><div class="m-rig-id">' + (v.kind === "erv" ? "🚑 " : "🚑 ") + id + '</div>' + pill + '</div>' +
       (sub ? '<div class="m-rig-sub">' + sub + '</div>' : '') +
       (st.s === "out" ? '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
-                      : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take out of service…</button>')) +
+                      : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take OOS</button>')) +
       rigHistBlock(v.docId, "m-rig-hist-" + v.docId) +
     '</div>';
-  }).join("") + '<div style="font-size:0.7rem;color:var(--gray);margin-top:4px;line-height:1.5">Taking a rig out of service or putting it back texts the members, the same as from Admin ▸ Fleet (in Test Mode only you get the text). Your unit number and the reason are recorded in the rig\'s History.</div>';
+  }).join("") + '<div style="font-size:0.7rem;color:var(--gray);margin-top:4px;line-height:1.5">Taking a rig out of service or putting it back texts the notification group (in Test Mode only you get the text). Your unit number and the reason are recorded in the rig\'s History.</div>';
   if (keep) {
     var r = document.getElementById("m-rig-reason"), u = document.getElementById("m-rig-until"), w = document.getElementById("m-rig-who");
     if (w) { w.value = keep.who; rigWhoOther["m-rig"] = keep.other; rigWhoFilter("m-rig"); }
@@ -7345,6 +7345,9 @@ function hzSmsPlain(s) {
 }
 // Admin ▸ Message Templates on/off boxes — appdata/smsTemplates._send[key] = { sms, push, admin }.
 // Anything not set is ON; only an explicit false turns that channel off for that message.
+// 12.235 (Sam): extra "📟 Notification group" boxes (rig responding, road closures, diverts) — off until an admin ticks them
+var HZ_GROUP_OPTIN = { rigResponse: 1, roadClosure: 1, roadReopened: 1, hospitalDivert: 1, offDivert: 1 };
+function hzGroupOn(key) { var s = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, k = s && s[key]; return !!(k && k.admin === true); }
 function hzSendOn(key, ch) {
   var s = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, k = s && s[key];
   return !(k && k[ch] === false);
@@ -11077,6 +11080,12 @@ function mRemoveCrew(crewIdx) {
 }
 // A unit sent to collect the rig gets the base address and directions to it.
 function mTextRigDirections(unitId, call) {
+  // 12.235 (Sam): Notification Settings ▸ 🏠 Unit responding to the rig ▸ 📟 box — the notification group hears about it too
+  if (call && typeof hzGroupOn === "function" && hzGroupOn("rigResponse")) {
+    try { mAdminCopy(call, "RESPONDING TO THE RIG", unitId + " is responding to the rig", null);
+      var gU = (M_ADMIN_NOTIFY_UNITS || []).filter(function(u) { return u !== unitId && u !== (call.dispatcherUnit || ""); });
+      if (gU.length) hzPushTo(gU, "rigResponse", "📟 " + unitId + " responding to the rig — " + hzPushStreet(call), "", call.id); } catch (x) {}
+  }
   var smsOn = hzSendOn("rigResponse", "sms");
   if (!smsOn && !hzSendOn("rigResponse", "push")) return;   // the push follows its own box (12.62)
   mSmsEnqueue(function() {

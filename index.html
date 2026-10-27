@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.233">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.235">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2443,7 +2443,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.233</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.235</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -4604,6 +4604,15 @@ function tcAllPhones() {
 // Send one message to every unit. Resolves with "test" when Test Mode kept it to the tester.
 function tcSendAll(body, key) {
   if (key) { var _ln = String(body || "").split("\n").filter(function(l) { return l.trim(); }); hzPushTo("all", key, _ln[0] || "", _ln.slice(1, 3).join(" · ")); }
+  // 12.235 (Sam): 📟 Notification group box — the group gets it even when the "every unit" text / push is switched off
+  if (key && typeof hzGroupOn === "function" && hzGroupOn(key)) {
+    var gUnits = tcTesting() ? [currentUserUnit].filter(Boolean) : (typeof M_ADMIN_NOTIFY_UNITS !== "undefined" ? M_ADMIN_NOTIFY_UNITS : []).slice();   // Test Mode: only you
+    if (gUnits.length) {
+      var _g = String(body || "").split("\n").filter(function(l) { return l.trim(); });
+      if (!hzSendOn(key, "push")) hzPushTo(gUnits, key, "📟 " + (_g[0] || ""), _g.slice(1, 3).join(" · "));
+      if (!hzSendOn(key, "sms")) return mPhonesForUnits(gUnits).then(function(ph) { return ph.length ? mSendClickSendSMS(ph, body).then(function() { return tcTesting() ? "test" : "group"; }) : (hzSendOn(key, "push") ? "pushonly" : "off"); });
+    }
+  }
   if (key && !hzSendOn(key, "sms")) return Promise.resolve(hzSendOn(key, "push") ? "pushonly" : "off");   // Text box off for this message
   var testing = tcTesting();
   return tcAllPhones().then(function(phones) {
@@ -4621,7 +4630,7 @@ function tcNotify(id) {
     if (how === "pushonly") tcStatus("tc-status", "Push notification sent (texts are turned off in Message Templates).");
     if (how === "test") { tcStatus("tc-status", "Test Mode — sent to you only. Not marked as sent.", "#ffc84a"); return; }
     return db.collection("trafficClosures").doc(id).set({ notifiedAt: new Date().toISOString(), notifiedBy: currentUserUnit || "" }, { merge: true })
-      .then(function() { tcStatus("tc-status", "Sent to every unit"); tcLoad(); });
+      .then(function() { tcStatus("tc-status", how === "group" ? "Sent to the 📟 notification group (texts to every unit are off)" : "Sent to every unit"); tcLoad(); });
   }).catch(function(e) { tcStatus("tc-status", "Error: " + e.message, "#ff9090"); });
 }
 function tcToggle(id, active) {
@@ -4629,7 +4638,7 @@ function tcToggle(id, active) {
   var update = { active: !!active };
   var tell = !active && c.notifiedAt && confirm("Mark as reopened.\n\nAlso text every unit that " + (c.resolved || c.road) + " has reopened?");
   (tell ? tcSendAll(tcReopenBody(c), "roadReopened") : Promise.resolve(null)).then(function(how) {
-    if (how === "sent") { update.reopenNotifiedAt = new Date().toISOString(); update.reopenNotifiedBy = currentUserUnit || ""; }
+    if (how === "sent" || how === "group") { update.reopenNotifiedAt = new Date().toISOString(); update.reopenNotifiedBy = currentUserUnit || ""; }
     if (how === "test") tcStatus("tc-status", "Test Mode — reopened text sent to you only.", "#ffc84a");
     return db.collection("trafficClosures").doc(id).set(update, { merge: true });
   }).then(tcLoad).catch(function(e) { tcStatus("tc-status", "Error: " + e.message, "#ff9090"); });
@@ -4723,7 +4732,7 @@ function hdNotify(id) {
     if (how === "pushonly") tcStatus("hd-status", "Push notification sent (texts are turned off in Message Templates).");
     if (how === "test") { tcStatus("hd-status", "Test Mode — sent to you only. Not marked as sent.", "#ffc84a"); return; }
     return db.collection("hospitalDiverts").doc(id).set({ notifiedAt: new Date().toISOString(), notifiedBy: currentUserUnit || "" }, { merge: true })
-      .then(function() { tcStatus("hd-status", "Sent to every unit"); hdLoad(); });
+      .then(function() { tcStatus("hd-status", how === "group" ? "Sent to the 📟 notification group (texts to every unit are off)" : "Sent to every unit"); hdLoad(); });
   }).catch(function(e) { tcStatus("hd-status", "Error: " + e.message, "#ff9090"); });
 }
 function hdOff(id) {
@@ -4732,7 +4741,7 @@ function hdOff(id) {
   if (!tell && !d.notifiedAt && !confirm("Mark " + d.hospital + " as off divert?")) return;
   var update = { active: false, endedAt: new Date().toISOString(), endedBy: currentUserUnit || "" };
   (tell ? tcSendAll(hdOffBody(d), "offDivert") : Promise.resolve(null)).then(function(how) {
-    if (how === "sent") update.offNotifiedAt = new Date().toISOString();
+    if (how === "sent" || how === "group") update.offNotifiedAt = new Date().toISOString();
     if (how === "test") tcStatus("hd-status", "Test Mode — off-divert text sent to you only.", "#ffc84a");
     return db.collection("hospitalDiverts").doc(id).set(update, { merge: true });
   }).then(hdLoad).catch(function(e) { tcStatus("hd-status", "Error: " + e.message, "#ff9090"); });
@@ -10765,7 +10774,7 @@ var TPL_HELP = {
   roadReopened: "Sent when a closure is marked reopened and you choose to text it.",
   hospitalDivert: "Sent from Admin ▸ Closure Notifications ▸ Hospital Diverts.",
   offDivert: "Sent when a divert is ended and you choose to text it.",
-  rigOut: "Sent by the server to everyone when a rig is taken out of service (switch it off in Admin ▸ Fleet). Changes apply within a minute. Like every text, it ends with the time sent.",
+  rigOut: "Texted by the server to the notification group (Who Receives What ▸ 📟 Notification group) when a rig is taken out of service — switch it off with its 📟 box in Notification Settings. Changes apply within a minute. Like every text, it ends with the time sent.",
   rigBack: "Sent by the server when a rig is back in service. Changes apply within a minute.",
   ticketPriority: "Sent by the server to logistics when an urgent or high-priority service request is submitted. Changes apply within a minute.",
   ticketNotice: "Sent by the server instead of an app notification, to members who don't have app notifications turned on. Changes apply within a minute.",
@@ -10782,8 +10791,8 @@ var TPL_SAMPLE_BYKEY = {
   availShabReminder: { date: "10/31", link: "https://chaverim151.github.io/CallDashboard/mobile.html#availability" },
   availSummary: { day: "Fri 10/30", count: "3", list: "MC-12 Avi Cohen, MC-23 David Klein, MC-44 Moshe Weiss", shabbos: "Shabbos (1): MC-12 Avi Cohen" },
   rigAssigned: { units: "MC-12, MC-05, MC-901", rig: "MC-901" },
-  roadClosure: { detail: "Water main break — one lane open" },
-  hospitalDivert: { detail: "Scanner down until repaired" },
+  roadClosure: { detail: "Water main break — one lane open"},
+  hospitalDivert: { detail: "Scanner down until repaired"},
   rigOut: { until: "10/02/2026 17:00" },
   passwordLink: { link: "https://hvac-ops.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=EXAMPLE" },
   codeVerify: { code: "482915" },
@@ -10824,15 +10833,15 @@ var TPL_SEND_CH = {
   callback:      { sms: "Text units on the call", push: "Push notification to units on the call", admin: "Notification group copy" },
   accessCodeChange: { sms: "Text units on the call", push: "Push notification to units on the call", admin: "Notification group copy" },
   addressChange: { sms: "Text units on the call", push: "Push notification to units on the call", admin: "Notification group copy" },
-  rigResponse:   { sms: "Text the unit", push: "Push notification to the unit" },
+  rigResponse:   { sms: "Text the unit", push: "Push notification to the unit" , admin: "📟 Notification group (off until ticked)"},
   rigAssigned:   { sms: "Text the notification group", push: "Push notification to the notification group" },
   locationUpdate:{ sms: "Text units on the call", push: "Push notification to units on the call", admin: "Notification group copy" },
-  roadClosure:   { sms: "Text every unit", push: "Push notification to every unit" },
-  roadReopened:  { sms: "Text every unit", push: "Push notification to every unit" },
-  hospitalDivert:{ sms: "Text every unit", push: "Push notification to every unit" },
-  offDivert:     { sms: "Text every unit", push: "Push notification to every unit" },
-  rigOut:        { sms: "Text every unit", push: "Push notification to every unit" },
-  rigBack:       { sms: "Text every unit", push: "Push notification to every unit" },
+  roadClosure:   { sms: "Text every unit", push: "Push notification to every unit" , admin: "📟 Notification group (off until ticked)"},
+  roadReopened:  { sms: "Text every unit", push: "Push notification to every unit" , admin: "📟 Notification group (off until ticked)"},
+  hospitalDivert:{ sms: "Text every unit", push: "Push notification to every unit" , admin: "📟 Notification group (off until ticked)"},
+  offDivert:     { sms: "Text every unit", push: "Push notification to every unit" , admin: "📟 Notification group (off until ticked)"},
+  rigOut:        { admin: "Text the notification group (Who Receives What ▸ 📟 Notification group)" },   // 12.234 (Sam): only a text, only to the notification group
+  rigBack:       { admin: "Text the notification group (Who Receives What ▸ 📟 Notification group)" },
   ticketPriority:{ sms: "Text", push: "Push notification (urgent / high requests)", email: "Email the people it goes to" },
   codeSubmitted: { push: "Push notification to admins", sms: "Text admins without push notifications" },
   codeApproved:  { sms: "Text the business", push: false },
@@ -10862,6 +10871,8 @@ function tplSendIsOn(which, ch) {
   if (which === "newCall" && ch === "push") { var sN = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send; if (!(sN && sN.newCall && typeof sN.newCall.push === "boolean")) return hzSendOn("assignment", "push"); }
   if (ch === "email") { var s0 = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, k0 = s0 && s0[which]; return !!(k0 && k0.email === true); }   // email is off until ticked
   if ((which === "rigOut" || which === "rigBack") && ch === "sms") return (fleetAlertCfg || {})[which === "rigOut" ? "oosSms" : "backSms"] !== false;
+  if (ch === "admin" && typeof HZ_GROUP_OPTIN !== "undefined" && HZ_GROUP_OPTIN[which]) return hzGroupOn(which);   // 12.235: off until ticked
+  if ((which === "rigOut" || which === "rigBack") && ch === "admin") { var sR = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, kR = sR && sR[which]; return !(kR && kR.admin === false); }   // 12.234: on unless switched off
   return hzSendOn(which, ch);
 }
 // One table of every message with its Text / Push / Notification group boxes (built from the picker's own list,
@@ -11930,7 +11941,7 @@ window.confirmVehOOS = function() {
     oosRecordedBy: currentUserUnit||"",
     oosByUid: currentUser ? currentUser.uid : ""
   }, { merge:true }).then(function() {
-    showToast(fleetAlertCfg.oosSms === false ? "Vehicle marked out of service" : "Vehicle marked out of service — members are being texted");
+    showToast(fleetAlertCfg.oosSms === false ? "Vehicle marked out of service" : "Vehicle marked out of service — the notification group is being texted");
     var form = document.getElementById("veh-oos-form");
     if (form) form.remove();
     loadVehicleStatusPanel();
@@ -19316,7 +19327,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.233";
+var DESKTOP_VERSION = "12.235";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -21306,10 +21317,10 @@ function mRenderRigStatus() {
     return '<div class="m-rig-card" data-rig="' + mEscHtml(String(id)) + '" data-kind="' + (v.kind === "erv" ? "erv" : "rig") + '"><div class="m-rig-top"><div class="m-rig-id">' + (v.kind === "erv" ? "🚑 " : "🚑 ") + id + '</div>' + pill + '</div>' +
       (sub ? '<div class="m-rig-sub">' + sub + '</div>' : '') +
       (st.s === "out" ? '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
-                      : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take out of service…</button>')) +
+                      : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take OOS</button>')) +
       rigHistBlock(v.docId, "m-rig-hist-" + v.docId) +
     '</div>';
-  }).join("") + '<div style="font-size:0.7rem;color:var(--gray);margin-top:4px;line-height:1.5">Taking a rig out of service or putting it back texts the members, the same as from Admin ▸ Fleet (in Test Mode only you get the text). Your unit number and the reason are recorded in the rig\'s History.</div>';
+  }).join("") + '<div style="font-size:0.7rem;color:var(--gray);margin-top:4px;line-height:1.5">Taking a rig out of service or putting it back texts the notification group (in Test Mode only you get the text). Your unit number and the reason are recorded in the rig\'s History.</div>';
   if (keep) {
     var r = document.getElementById("m-rig-reason"), u = document.getElementById("m-rig-until"), w = document.getElementById("m-rig-who");
     if (w) { w.value = keep.who; rigWhoOther["m-rig"] = keep.other; rigWhoFilter("m-rig"); }
@@ -21930,6 +21941,9 @@ function hzSmsPlain(s) {
 }
 // Admin ▸ Message Templates on/off boxes — appdata/smsTemplates._send[key] = { sms, push, admin }.
 // Anything not set is ON; only an explicit false turns that channel off for that message.
+// 12.235 (Sam): extra "📟 Notification group" boxes (rig responding, road closures, diverts) — off until an admin ticks them
+var HZ_GROUP_OPTIN = { rigResponse: 1, roadClosure: 1, roadReopened: 1, hospitalDivert: 1, offDivert: 1 };
+function hzGroupOn(key) { var s = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, k = s && s[key]; return !!(k && k.admin === true); }
 function hzSendOn(key, ch) {
   var s = M_SMS_TEMPLATES && M_SMS_TEMPLATES._send, k = s && s[key];
   return !(k && k[ch] === false);
@@ -25362,6 +25376,12 @@ function mRemoveCrew(crewIdx) {
 }
 // A unit sent to collect the rig gets the base address and directions to it.
 function mTextRigDirections(unitId, call) {
+  // 12.235 (Sam): Notification Settings ▸ 🏠 Unit responding to the rig ▸ 📟 box — the notification group hears about it too
+  if (call && typeof hzGroupOn === "function" && hzGroupOn("rigResponse")) {
+    try { mAdminCopy(call, "RESPONDING TO THE RIG", unitId + " is responding to the rig", null);
+      var gU = (M_ADMIN_NOTIFY_UNITS || []).filter(function(u) { return u !== unitId && u !== (call.dispatcherUnit || ""); });
+      if (gU.length) hzPushTo(gU, "rigResponse", "📟 " + unitId + " responding to the rig — " + hzPushStreet(call), "", call.id); } catch (x) {}
+  }
   var smsOn = hzSendOn("rigResponse", "sms");
   if (!smsOn && !hzSendOn("rigResponse", "push")) return;   // the push follows its own box (12.62)
   mSmsEnqueue(function() {
