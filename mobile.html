@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.75"; window.M_BUILD = BUILD;
+  var BUILD = "6.77"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1229,7 +1229,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="m-tile" data-sec="shifts" onclick="mGoTo('shifts')">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🌙</span>
-          <span class="m-tile-label">Night Shifts</span>
+          <span class="m-tile-label">Night Watch</span>
           <span class="m-tile-sub">Unit assignments</span>
         </div>
       </button>
@@ -1250,7 +1250,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="m-tile" data-sec="maps" id="m-dispatch-tile" onclick="mOpenDispatch()" style="display:none">
         <div class="m-tile-inner">
           <span class="m-tile-icon"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg></span>
-          <span class="m-tile-label">Dispatch Console</span>
+          <span class="m-tile-label">CAD</span>
           <span class="m-tile-sub">Manage active calls</span>
         </div>
       </button>
@@ -1292,7 +1292,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="m-tile" data-sec="diverts" onclick="hzDvOpen()">
         <div class="m-tile-inner">
           <span class="m-tile-icon">🏥</span>
-          <span class="m-tile-label">Hospital Diversion Status</span>
+          <span class="m-tile-label">Hospital Status</span>
           <span class="m-tile-sub hz-dv-tile-sub">Middlesex County hospitals</span>
         </div>
       </button>
@@ -1933,10 +1933,10 @@ function paiShowEntry(elId, isAdminUser, rolesLower) {
 // A tile with saved roles shows only to members who have one of those roles; admins always see every tile.
 // Tiles with nothing saved keep the built-in rules (hzTileDefault mirrors them for the admin grid).
 var HZ_TILES = [
-  { k: "rma", l: "RMA Hotline" }, { k: "codes", l: "Access Codes" }, { k: "epcr", l: "ePCR" }, { k: "shifts", l: "Night Shifts" }, { k: "avail", l: "Availability" },
-  { k: "contacts", l: "Member Directory" }, { k: "regional", l: "Regional Hatzolah" }, { k: "maps", l: "Dispatch Console" }, { k: "education", l: "Education" }, { k: "portal", l: "MC Portal" },
+  { k: "rma", l: "RMA Hotline" }, { k: "codes", l: "Access Codes" }, { k: "epcr", l: "ePCR" }, { k: "shifts", l: "Night Watch" }, { k: "avail", l: "Availability" },
+  { k: "contacts", l: "Member Directory" }, { k: "regional", l: "Regional Hatzolah" }, { k: "maps", l: "CAD" }, { k: "education", l: "Education" }, { k: "portal", l: "MC Portal" },
   { k: "service", l: "Service Helpdesk" }, { k: "guide", l: "User Guide" },
-  { k: "diverts", l: "Hospital Diversion Status" }, { k: "hospital", l: "Hospitals" }, { k: "buildings", l: "Buildings" }, { k: "shuls", l: "Shuls" }, { k: "storage", l: "Storage Room" }
+  { k: "diverts", l: "Hospital Status" }, { k: "hospital", l: "Hospitals" }, { k: "buildings", l: "Buildings" }, { k: "shuls", l: "Shuls" }, { k: "storage", l: "Storage Room" }
 ];
 var HZ_TILE_ACCESS = null;   // { sec: [roles] } once loaded
 function hzTileDefault(sec, role) {
@@ -1964,8 +1964,19 @@ function hzLoadTileAccess(isAdmin, roles) {
     HZ_TILE_ACCESS_ADMIN = !!(s.exists && s.data().adminColumn);
     HZ_TILE_ACCESS = (t && typeof t === "object" && Object.keys(t).length) ? t : null;
     hzApplyTileAccess(isAdmin, roles);
+    hzApplyTileNames(s.exists && s.data().names);   // 12.224
   }).catch(function() {});
 }
+// 12.224 (Sam): tiles can be renamed in Admin ▸ Security ▸ Home screen tiles (appdata/tileAccess.names = { sec: "Name" }); blank = the built-in name
+function hzApplyTileNames(names) {
+  names = names || {};
+  document.querySelectorAll('.m-tile[data-sec] .m-tile-label, .big-btn[data-sec] .btn-label').forEach(function(l) {
+    var t = l.closest("[data-sec]"), sec = t && t.getAttribute("data-sec"); if (!sec) return;
+    if (!l.hasAttribute("data-hz-orig")) l.setAttribute("data-hz-orig", l.textContent);
+    var n = String(names[sec] || "").trim(); l.textContent = n || l.getAttribute("data-hz-orig");
+  });
+}
+
 // ── Regional Hatzolah directory (11.68 / 4.58) ──
 var HZ_REGIONAL = [
   { area: "NYC", sub: "5 Boroughs + Catskills", phones: ["718-230-1000", "718-387-1750"] },
@@ -13327,7 +13338,7 @@ function hzDvDraw() {
     + (HZ_DV.meErr === "denied" || HZ_DV.meErr === "off" ? '<div class="hz-dv-locmsg">📍 Location is off for this app — distances are from the base. Allow location for this app in your phone\'s settings to see how far each hospital is from you.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
     + '<div class="hz-dv-tapmsg">Tap a hospital to navigate there.</div>'
     + rows
-    + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank" rel="noopener">Open the official NJ divert page ↗</a></div></div>';
+    + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank" rel="noopener">Click to open statewide hospital status page ↗</a></div></div>';
 }
 (function() {
   var css = document.createElement("style");
