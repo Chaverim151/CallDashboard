@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.77"; window.M_BUILD = BUILD;
+  var BUILD = "6.78"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1964,7 +1964,9 @@ function hzLoadTileAccess(isAdmin, roles) {
     HZ_TILE_ACCESS_ADMIN = !!(s.exists && s.data().adminColumn);
     HZ_TILE_ACCESS = (t && typeof t === "object" && Object.keys(t).length) ? t : null;
     hzApplyTileAccess(isAdmin, roles);
+    window.HZ_TILE_NAMES_LIVE = (s.exists && s.data().names) || {};   // 12.225: used everywhere (hzTileName)
     hzApplyTileNames(s.exists && s.data().names);   // 12.224
+    if (window.hzTileNamesEverywhere) hzTileNamesEverywhere();
   }).catch(function() {});
 }
 // 12.224 (Sam): tiles can be renamed in Admin ▸ Security ▸ Home screen tiles (appdata/tileAccess.names = { sec: "Name" }); blank = the built-in name
@@ -14392,6 +14394,57 @@ window.addEventListener("message", function(e) { if (e.data === "hz-close-overla
     var subs = Array.from(document.querySelectorAll(".hz-dv-box .hz-dv-sub")); if (subs.length > 1) { var mn = Math.min.apply(null, subs.map(function(e) { return parseFloat(e.style.fontSize) || 99; })); subs.forEach(function(e) { if (parseFloat(e.style.getPropertyValue("--hz-fs")) !== mn) { e.style.setProperty("--hz-fs", mn); } e.style.setProperty("font-size", mn + "px", "important"); }); } };
   setInterval(hzFitTitles, 400); addEventListener("resize", function() { setTimeout(hzFitTitles, 50); });
   if (document.readyState !== "loading") hzFitTitles(); else document.addEventListener("DOMContentLoaded", hzFitTitles);
+})();
+</script>
+<script id="hz-tile-names-global">
+/* 12.225 (Sam): a tile's name is used everywhere — page titles, pop-up titles, the CAD menu, the ☰ menu, admin tabs —
+   not just on the tile. Name = the admin's rename (Admin ▸ Security ▸ Home Screen Tiles) or the built-in name.
+   Swaps any label whose whole text is one of the tile's old names (sentences are left alone). */
+(function() {
+  var EXTRA = { maps: ["Dispatch Console", "Dispatch"], shifts: ["Night Shifts"], diverts: ["Hospital Diversion Status"], hospital: ["Hospital Codes"] };
+  var BUILTIN_RENAMED = { maps: 1, shifts: 1, diverts: 1 };   // renamed in 12.223 — their old names are swapped even without an admin rename
+  var LABEL_ONLY = { "Dispatch": "#m-disp-hdr-title" };   // too common a word — only swapped in this one place
+  var applied = {};   // sec → names we've shown before (so a second rename still finds the label)
+  window.HZ_TILE_NAMES_LIVE = window.HZ_TILE_NAMES_LIVE || {};
+  window.hzTileName = function(sec) {
+    var c = String((HZ_TILE_NAMES_LIVE || {})[sec] || "").trim(); if (c) return c;
+    var d = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(t) { return t.k === sec; })[0];
+    return d ? d.l : sec;
+  };
+  function lead(s) { var m = String(s).match(/^(\s*(?:[←-⯿️‍]|[\uD83C-\uDBFF][\uDC00-\uDFFF])*\s*)/); return m ? m[1] : ""; }
+  var busy = false, tm = null;
+  function run() {
+    if (busy || typeof HZ_TILES === "undefined") return; busy = true;
+    try {
+      var map = [];   // [oldLower, sec, onlyIn]
+      HZ_TILES.forEach(function(t) {
+        var cur = hzTileName(t.k), custom = !!String((HZ_TILE_NAMES_LIVE || {})[t.k] || "").trim(), olds = (applied[t.k] || []).slice();
+        if (custom || BUILTIN_RENAMED[t.k]) {   // only touch a tile's other labels once it actually has a new name
+          olds = olds.concat([t.l], EXTRA[t.k] || []);
+          document.querySelectorAll('[data-sec="' + t.k + '"] [data-hz-orig]').forEach(function(l) { olds.push(l.getAttribute("data-hz-orig")); });
+        }
+        olds.forEach(function(o) { o = String(o || "").trim(); if (o && o.toLowerCase() !== cur.toLowerCase()) map.push([o.toLowerCase(), t.k, LABEL_ONLY[o] || null]); });
+        (applied[t.k] = applied[t.k] || []).indexOf(cur) === -1 && applied[t.k].push(cur);
+      });
+      if (!map.length) return;
+      var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n) {
+        var p = n.parentElement; if (!p || /^(SCRIPT|STYLE|TEXTAREA|OPTION)$/.test(p.tagName) || p.isContentEditable || p.closest("#tile-access-grid, input, textarea")) return NodeFilter.FILTER_REJECT;
+        return /\S/.test(n.nodeValue) && n.nodeValue.length < 60 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT; } });
+      var n; while ((n = w.nextNode())) {
+        var v = n.nodeValue, pre = lead(v), core = v.slice(pre.length).trim(); if (!core) continue;
+        for (var i = 0; i < map.length; i++) if (core.toLowerCase() === map[i][0]) {
+          if (map[i][2] && !n.parentElement.closest(map[i][2])) continue;
+          var nu = hzTileName(map[i][1]); if (core === core.toUpperCase() && /[A-Z]/.test(core)) nu = nu.toUpperCase();
+          var tail = v.slice(pre.length + v.slice(pre.length).indexOf(core) + core.length);
+          n.nodeValue = pre + nu + tail; break;
+        }
+      }
+    } finally { busy = false; }
+  }
+  window.hzTileNamesEverywhere = run;
+  var obs = new MutationObserver(function() { clearTimeout(tm); tm = setTimeout(run, 120); });
+  function start() { run(); obs.observe(document.body, { childList: true, subtree: true, characterData: true }); }
+  if (document.readyState !== "loading") start(); else document.addEventListener("DOMContentLoaded", start);
 })();
 </script>
 </body>
