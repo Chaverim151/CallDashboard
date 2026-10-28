@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.249">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.250">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2469,7 +2469,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.249</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.250</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7974,6 +7974,9 @@ function setRender() {
       (canTest ? line('🧪 Test Mode', sw(tOn, "setToggleTest()", "Test Mode"), tOn ? "ON — only you get what you trigger" : "") : '') +
       line('🗺️ Maps', '<span class="set-seg set-seg-s">' + [["google", "Google"], ["waze", "Waze"]].concat(hzIsApple() ? [["apple", "Apple"]] : []).map(function(o) {
         return '<label' + (map === o[0] ? ' class="on"' : '') + '><input type="radio" name="set-map" value="' + o[0] + '"' + (map === o[0] ? " checked" : "") + ' onchange="setMap(this.value)">' + o[1] + '</label>'; }).join("") + '</span>') +
+      (setRcCan() ? (function() { var rc = hzPrefs.rollCallSms || {}, on = rc.on === true, hrs = Math.max(1, Math.min(24, +rc.hours || 2));   // 12.250 (Sam)
+        return line('🕯️ Erev Shabbos roll call text', (on ? '<select class="set-input" onchange="setRollCall(true, +this.value)" style="width:auto;padding:4px 6px;margin-right:6px">' + [1, 2, 3, 4, 5, 6, 8, 10, 12, 24].map(function(h) { return '<option value="' + h + '"' + (h === hrs ? " selected" : "") + '>' + h + ' h before</option>'; }).join("") + '</select>' : '') + sw(on, "setRollCall(" + (!on) + ")", "Erev Shabbos roll call text"),
+          on ? 'Texted ' + hrs + ' hour' + (hrs === 1 ? '' : 's') + ' before candle lighting (Shabbos and Yom Tov). It\'s accurate as of when it\'s sent — things can change after that.' : 'Get the roll call by text before Shabbos / Yom Tov'); })() : '') +
       line('🔒 Password', setFlow.pw ? '' : '<button class="set-mini" onclick="setFlow.pw=true;setRender()">Change</button>') + pwPanel);
   // Home screen order: the mini grid; the numbered dropdowns only while changing it
   var cOrder = setCard('🔢 Home screen order <span class="set-sub" style="text-transform:none;letter-spacing:0">' + (setFlow.order ? 'on this computer' : '<button class="set-mini" onclick="setFlow.order=true;setRender()">✎ Change</button>') + '</span>',
@@ -8082,6 +8085,13 @@ function setTestAlert() {
     }).catch(function(e) { showToast(e.message, true); });
   };
   go(false);
+}
+// 12.250 (Sam): Erev Shabbos / Yom Tov roll call text — responders and admins choose it for themselves (sent by the server)
+function setRcCan() { var r = (currentUserRoles || []).map(function(x) { return String(x).toLowerCase(); }); return currentRole === "admin" || r.indexOf("admin") !== -1 || r.some(function(x) { return ["responder", "captain", "chief", "backup"].indexOf(x) !== -1; }); }
+function setRollCall(on, hours) {
+  var cur = hzPrefs.rollCallSms || {}, v = { on: !!on, hours: Math.max(1, Math.min(24, +(hours || cur.hours) || 2)) };
+  setPrefs("rollCallSms", v).then(function() { showToast(v.on ? "✓ You'll get the roll call by text " + v.hours + " h before candle lighting" : "Roll call text off"); }).catch(function(e) { showToast(e.message, true); });
+  setRender();
 }
 function setMap(v) {
   try { localStorage.setItem("hzMapApp", v); } catch (e) {}
@@ -19433,7 +19443,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.249";
+var DESKTOP_VERSION = "12.250";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {

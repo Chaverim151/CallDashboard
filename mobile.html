@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.02"; window.M_BUILD = BUILD;
+  var BUILD = "7.03"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2391,6 +2391,9 @@ function mSettingsRender() {
       (canTest ? line('🧪 Test Mode', sw(!!MSysTestingMode, "mToggleTestMode();setTimeout(mSettingsRender,900)", "Test Mode"), MSysTestingMode ? "ON — only you get what you trigger" : "") : '') +
       line('🗺️ Maps', '<span class="m-set-seg m-set-seg-s">' + [["google", "Google"], ["waze", "Waze"]].concat(hzIsApple() ? [["apple", "Apple"]] : []).map(function(o) {
         return '<label' + (map === o[0] ? ' class="on"' : '') + '><input type="radio" name="m-set-map" value="' + o[0] + '"' + (map === o[0] ? " checked" : "") + ' onchange="mSetMap(this.value)">' + o[1] + '</label>'; }).join("") + '</span>') +
+      (mRcCan() ? (function() { var rc = mPrefs.rollCallSms || {}, on = rc.on === true, hrs = Math.max(1, Math.min(24, +rc.hours || 2));   // 12.250 (Sam)
+        return line('🕯️ Erev Shabbos roll call text', (on ? '<select class="m-disp-input m-set-rc-h" onchange="mSetRollCall(true, +this.value)" style="width:auto;padding:4px 6px;margin-right:6px">' + [1, 2, 3, 4, 5, 6, 8, 10, 12, 24].map(function(h) { return '<option value="' + h + '"' + (h === hrs ? " selected" : "") + '>' + h + ' h before</option>'; }).join("") + '</select>' : '') + sw(on, "mSetRollCall(" + (!on) + ")", "Erev Shabbos roll call text"),
+          on ? 'Texted ' + hrs + ' hour' + (hrs === 1 ? '' : 's') + ' before candle lighting (Shabbos and Yom Tov). It\'s accurate as of when it\'s sent — things can change after that.' : 'Get the roll call by text before Shabbos / Yom Tov'); })() : '') +
       (pk ? line('👆 ' + mEscHtml(face), sw(mPasskeyStored(), mPasskeyStored() ? "mRemovePasskey();mSettingsRender()" : "mSetFlow.pw=\'face\';mSettingsRender()", face)) : '') +
       line('🔒 Password', pwOpen ? '' : '<button class="m-set-mini" onclick="mSetFlow.pw=\'pw\';mSettingsRender()">Change</button>') + pwPanel) +
     // Home screen order: the mini grid shows the order; the numbered dropdowns open only when changing it
@@ -2488,6 +2491,13 @@ function mSetTestAlert() {
     }).catch(function(e) { mToast(e.message, true); });
   };
   go(false);
+}
+// 12.250 (Sam): Erev Shabbos / Yom Tov roll call text — responders and admins choose it for themselves (sent by the server)
+function mRcCan() { var r = (mCurrentUserRoles || []).map(function(x) { return String(x).toLowerCase(); }); return mCurrentRole === "admin" || r.indexOf("admin") !== -1 || r.some(function(x) { return ["responder", "captain", "chief", "backup"].indexOf(x) !== -1; }); }
+function mSetRollCall(on, hours) {
+  var cur = mPrefs.rollCallSms || {}, v = { on: !!on, hours: Math.max(1, Math.min(24, +(hours || cur.hours) || 2)) };
+  mSetPrefs("rollCallSms", v).then(function() { mToast(v.on ? "✓ You'll get the roll call by text " + v.hours + " h before candle lighting" : "Roll call text off"); }).catch(function(e) { mToast(e.message, true); });
+  mSettingsRender();
 }
 function mSetMap(v) {
   try { localStorage.setItem("hzMapApp", v); } catch (e) {}
