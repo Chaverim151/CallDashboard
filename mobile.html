@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "6.97"; window.M_BUILD = BUILD;
+  var BUILD = "7.00"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1030,9 +1030,10 @@ html[data-theme="basic"] .hz-erv-note.ok{color:#167a3e !important}
 html[data-theme="basic"] .hz-erv-hq{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-card{background:#f8f9fa !important}
 html[data-theme="basic"] .hz-erv-pill.ok{color:#167a3e !important}
-html[data-theme="basic"] body .hz-dv-box a.hz-dv-sample b{color:#8a680f !important}
-html[data-theme="basic"] body .hz-dv-box a.hz-dv-sample2 b,html[data-theme="basic"] body .hz-dv-box a.hz-dv-sample2 .hz-dv-mi,html[data-theme="basic"] body .hz-dv-box a.hz-dv-sample2 .hz-dv-addr,html[data-theme="basic"] body .hz-dv-box a.hz-dv-sample2 span:not(.hz-dv-pill){color:#8a680f !important}
-html[data-theme="basic"] body .hz-dv-box a.hz-dv-sample2 .hz-dv-why{color:#8a680f !important}
+html[data-theme="basic"] body .hz-dv-box .hz-dv-sample b{color:#8a680f !important}
+html[data-theme="basic"] body .hz-dv-box .hz-dv-sample2 b,html[data-theme="basic"] body .hz-dv-box .hz-dv-sample2 .hz-dv-mi,html[data-theme="basic"] body .hz-dv-box .hz-dv-sample2 .hz-dv-addr,html[data-theme="basic"] body .hz-dv-box .hz-dv-sample2 span:not(.hz-dv-pill){color:#8a680f !important}
+html[data-theme="basic"] body:not(#hzA):not(#hzB) .hz-dv-box a.hz-dv-navbtn.hz-dv-navbtn{color:#8a680f !important}
+html[data-theme="basic"] body .hz-dv-box .hz-dv-sample2 .hz-dv-why{color:#8a680f !important}
 html[data-theme="basic"] body:not(#hzA):not(#hzB) .hz-dv-box .hz-dv-tapmsg.hz-dv-tapmsg{color:#8a680f !important}
 html[data-theme="basic"] body .hz-dv-box button.hz-dv-rf2 b{color:#8a680f !important}
 html[data-theme="basic"] body .hz-dv-box button.hz-dv-rf2 i{color:#8a680f !important}
@@ -12986,7 +12987,24 @@ var HZ_DV_HOSPITALS = [
 // A hospital nobody verified still navigates — by its name — but shows no distance.
 function hzDvLoadPlaces() {
   if (typeof db === "undefined") return;
-  db.collection("appdata").doc("divertPlaces").get().then(function(d) { HZ_DV.places = (d.exists && d.data().places) || {}; HZ_DV.custom = (d.exists && d.data().custom) || []; if (HZ_DV.open) hzDvDraw(); }).catch(function() {});
+  db.collection("appdata").doc("divertPlaces").get().then(function(d) { HZ_DV.places = (d.exists && d.data().places) || {}; HZ_DV.custom = (d.exists && d.data().custom) || []; HZ_DV.specList = (d.exists && Array.isArray(d.data().specList)) ? d.data().specList : null; if (HZ_DV.open) hzDvDraw(); }).catch(function() {});
+}
+// 12.246 (Sam): a hospital's resources / specialties as short coloured tags on its card — the list, names and colours
+// are Admin ▸ Transport Hospitals ▸ Specialties list (white = which ED, red = trauma / stroke / STEMI …)
+var HZ_DV_SPEC_DEFAULT = [
+  { k: "adultEd", l: "Adult ED", c: "white" }, { k: "pedEd", l: "Peds ED", c: "white" },
+  { k: "trauma1", l: "Trauma I", c: "red" }, { k: "trauma2", l: "Trauma II", c: "red" }, { k: "pedTrauma", l: "Peds Trauma", c: "red" },
+  { k: "strokeComp", l: "Stroke (Comp)", c: "red" }, { k: "strokePrim", l: "Stroke", c: "red" }, { k: "stemi", l: "STEMI", c: "red" },
+  { k: "burn", l: "Burn", c: "red" }, { k: "ob", l: "OB", c: "red" }, { k: "nicu", l: "NICU", c: "red" }, { k: "psych", l: "Psych", c: "red" },
+  { k: "sane", l: "SANE", c: "red" }, { k: "hyperbaric", l: "Hyperbaric", c: "red" }, { k: "dialysis", l: "Dialysis", c: "red" }
+];
+function hzDvSpecList() { return (Array.isArray(HZ_DV.specList) && HZ_DV.specList.length) ? HZ_DV.specList : HZ_DV_SPEC_DEFAULT; }
+function hzDvTags(h) {
+  var p = (HZ_DV.places || {})[h.id]; if (!p) return "";
+  var on = Array.isArray(p.specialties) ? p.specialties : [], L = hzDvSpecList();
+  var tags = L.filter(function(s) { return on.indexOf(s.k) !== -1; }).map(function(s) { return '<i class="hz-dv-tag ' + (s.c === "white" ? "w" : s.c === "gold" ? "g" : "r") + '">' + hzDvEsc(s.l) + '</i>'; });
+  String(p.specOther || "").split(",").map(function(x) { return x.trim(); }).filter(Boolean).forEach(function(x) { tags.push('<i class="hz-dv-tag g">' + hzDvEsc(x) + '</i>'); });
+  return tags.length ? '<span class="hz-dv-tags">' + tags.join("") + '</span>' : "";
 }
 function hzDvPlace(h) {
   var p = (HZ_DV.places || {})[h.id] || null, ok = p && p.lat && p.lng;   // an admin-verified location first
@@ -13227,10 +13245,14 @@ function hzDvMiles(a, b) {
   var h = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
   return 2 * R * Math.asin(Math.sqrt(h));
 }
+// 12.247 (Sam): Navigate always uses the member's own My Settings ▸ 🗺️ Maps choice — worked out when it's tapped,
+// so a choice made after the page opened (or settings that loaded late) still counts
+function hzDvNavTap(a) { try { a.href = hzDvNavUrl({ lat: +a.getAttribute("data-lat") || 0, lng: +a.getAttribute("data-lng") || 0, q: a.getAttribute("data-q") || "" }); } catch (e) {} }
 function hzDvNavUrl(pl) {
   if (pl.lat && pl.lng && typeof mDirUrl === "function") return mDirUrl(pl.lat, pl.lng);
   var app = ""; try { app = localStorage.getItem("hzMapApp") || ""; } catch (e) {}
   if (typeof mPrefs !== "undefined" && mPrefs && mPrefs.mapApp) app = mPrefs.mapApp;
+  if (typeof hzPrefs !== "undefined" && hzPrefs && hzPrefs.mapApp) app = hzPrefs.mapApp;   // 12.247: the computer's My Settings too
   var q = encodeURIComponent(pl.q);
   if (app === "waze") return "https://waze.com/ul?q=" + q + "&navigate=yes";
   if (app === "apple" && /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent || "")) return "https://maps.apple.com/?daddr=" + q + "&dirflg=d";
@@ -13353,7 +13375,8 @@ function hzDvDraw() {
     var mi = pl.lat && pl.lng ? hzDvMiles(from, pl) : null, et = etas && h.id ? etas[h.id] : null;
     var dist = '<span class="hz-dv-mi">' + (et ? '🚑 ~' + et.min + ' min · ' + hzDvFmtMi(et.mi) + fromTxt : '📍 ' + (mi === null ? "Finding distance…" : hzDvFmtMi(mi) + fromTxt)) + '</span>'
       + (pl.addr ? '<span class="hz-dv-addr">' + hzDvEsc(pl.addr) + '</span>' : '');
-    return head + '<a class="hz-dv-row hz-dv-nav hz-dv-sample2" href="' + hzDvEsc(hzDvNavUrl(pl)) + '" target="_blank" rel="noopener" aria-label="Navigate to ' + hzDvEsc(h.name) + '"><div><b>' + hzDvEsc(h.name) + '</b>' + (why ? '<em class="hz-dv-why">' + hzDvEsc(why) + '</em>' : '') + (h.city || note ? '<span class="hz-dv-note">' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + dist + '</div><div class="hz-dv-right">' + pill + '</div></a>';
+    // 12.245 (Sam): the card isn't a link any more — a Navigate button on each card opens directions
+    return head + '<div class="hz-dv-row hz-dv-nav hz-dv-sample2"><div><b>' + hzDvEsc(h.name) + '</b>' + hzDvTags(h) + (why ? '<em class="hz-dv-why">' + hzDvEsc(why) + '</em>' : '') + (h.city || note ? '<span class="hz-dv-note">' + hzDvEsc([h.city, note].filter(Boolean).join(" · ")) + '</span>' : '') + dist + '</div><div class="hz-dv-right">' + pill + '<a class="hz-dv-navbtn" href="' + hzDvEsc(hzDvNavUrl(pl)) + '" data-lat="' + (pl.lat || "") + '" data-lng="' + (pl.lng || "") + '" data-q="' + hzDvEsc(pl.q || "") + '" onclick="hzDvNavTap(this)" target="_blank" rel="noopener" aria-label="Navigate to ' + hzDvEsc(h.name) + '">🧭 Navigate</a></div></div>';
   }).join("");
   // 12.210 (Sam): the check status and "Checked … · state updated …" live inside the Refresh box, in gold
   var busy = HZ_DV.err ? '<div class="hz-dv-warn" style="margin-bottom:8px">Couldn\'t check just now: ' + hzDvEsc(HZ_DV.err) + '</div>' : '';
@@ -13369,28 +13392,32 @@ function hzDvDraw() {
     + (d && d.lastError && stale ? '<div class="hz-dv-warn" style="margin-top:8px">Last check failed: ' + hzDvEsc(d.lastError) + '</div>' : '')
     + '<div class="hz-dv-sub">Middlesex County hospitals</div>'
     + (HZ_DV.meErr === "denied" || HZ_DV.meErr === "off" ? '<div class="hz-dv-locmsg">📍 Location is off for this app — distances are from the base. Allow location for this app in your phone\'s settings to see how far each hospital is from you.</div>' : !HZ_DV.me && !HZ_DV.meErr ? '<div class="hz-dv-locmsg">📍 Finding your location…</div>' : '')
-    + '<div class="hz-dv-tapmsg">Tap a hospital to navigate there.</div>'
+    + '<div class="hz-dv-tapmsg">Tap 🧭 Navigate on a hospital for directions.</div>'
     + rows
     + '<a class="hz-dv-link" href="https://njdivert.juvare.com/" target="_blank">Click to open statewide hospital status page ↗</a></div></div>';
 }
 (function() {
   var css = document.createElement("style");
   css.textContent = ".hz-dv-nav{display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:10px 12px !important;border:2px solid #0b5cad !important;border-radius:10px;text-decoration:none !important;color:inherit !important;cursor:pointer;background:transparent}html[data-theme=basic] .hz-dv-nav{background:#ffffff !important}"
-    + ".hz-dv-nav:active{transform:scale(.99)}.hz-dv-nav .hz-dv-mi{display:block;font-size:.76rem;color:#0b5cad !important;font-weight:700;margin-top:2px}html:not([data-theme=basic]) .hz-dv-nav .hz-dv-mi{color:#8cbcff !important}"
+    + ".hz-dv-nav .hz-dv-mi{display:block;font-size:.76rem;color:#0b5cad !important;font-weight:700;margin-top:2px}html:not([data-theme=basic]) .hz-dv-nav .hz-dv-mi{color:#8cbcff !important}"
     + ".hz-dv-right{flex:0 0 auto !important;display:flex;flex-direction:column;align-items:flex-end;gap:5px}.hz-dv-go{font-size:.72rem !important;font-weight:700;color:#0b5cad !important;white-space:nowrap}html:not([data-theme=basic]) .hz-dv-go{color:#8cbcff !important}"
     + ".hz-dv-box .hz-dv-pill.ok,.hz-hp-pill.ok{background:#34c759 !important;color:#000 !important;border:0 !important}.hz-dv-box .hz-dv-pill.no,.hz-hp-pill.no{background:#c62828 !important;color:#fff !important;border:0 !important}"   // 12.189 (Sam): solid pills
     + ".hz-dv-box .hz-dv-pill,.hz-hp-pill{display:inline-flex !important;align-items:center;justify-content:center;min-width:86px;padding:6px 12px !important;font-size:.8rem !important;font-weight:800 !important;line-height:1.1;border-radius:999px !important;text-align:center;white-space:nowrap;box-sizing:border-box}"   // 12.192: one size, no ⛔ on red
     + ".hz-dv-box .hz-dv-pill.unk,.hz-hp-pill.unk{background:#e9ecef !important;color:#3d4248 !important}"
     // 12.203 (Sam): every hospital box has a black border; ONE box (the first / closest) is a sample in black — gold name + gold border, address and distance in white
-    + "html body .hz-dv-box a.hz-dv-nav.hz-dv-nav{border-color:#000 !important}"
-    + "html body .hz-dv-box a.hz-dv-nav.hz-dv-sample{background:#000 !important;border:2px solid #d4a017 !important}"
-    + "html body .hz-dv-box a.hz-dv-sample b{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}"
-    + "html body .hz-dv-box a.hz-dv-sample .hz-dv-mi,html body .hz-dv-box a.hz-dv-sample .hz-dv-addr,html body .hz-dv-box a.hz-dv-sample span:not(.hz-dv-pill){color:#fff !important;-webkit-text-fill-color:#fff}"
-    + "html body .hz-dv-box a.hz-dv-sample .hz-dv-why{color:#ff2d20 !important;-webkit-text-fill-color:#ff2d20}"
+    + "html body .hz-dv-box .hz-dv-nav.hz-dv-nav{border-color:#000 !important}"
+    + "html body .hz-dv-box .hz-dv-nav.hz-dv-sample{background:#000 !important;border:2px solid #d4a017 !important}"
+    + "html body .hz-dv-box .hz-dv-sample b{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}"
+    + "html body .hz-dv-box .hz-dv-sample .hz-dv-mi,html body .hz-dv-box .hz-dv-sample .hz-dv-addr,html body .hz-dv-box .hz-dv-sample span:not(.hz-dv-pill){color:#fff !important;-webkit-text-fill-color:#fff}"
+    + "html body .hz-dv-box .hz-dv-sample .hz-dv-why{color:#ff2d20 !important;-webkit-text-fill-color:#ff2d20}"
     // 12.204 (Sam): a second sample — black inside, gold border, name + distance + address all gold
-    + "html body .hz-dv-box a.hz-dv-nav.hz-dv-sample2{background:#000 !important;border:2px solid #d4a017 !important}"
-    + "html body .hz-dv-box a.hz-dv-sample2 b,html body .hz-dv-box a.hz-dv-sample2 .hz-dv-mi,html body .hz-dv-box a.hz-dv-sample2 .hz-dv-addr,html body .hz-dv-box a.hz-dv-sample2 span:not(.hz-dv-pill){color:#d4a017 !important;-webkit-text-fill-color:#d4a017}"
-    + "html body .hz-dv-box a.hz-dv-sample2 .hz-dv-why{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}"   // 12.212 (Sam): option 1 = all gold, the divert reason too
+    + "html body .hz-dv-box .hz-dv-nav.hz-dv-sample2{background:#000 !important;border:2px solid #d4a017 !important}"
+    + "html body .hz-dv-box .hz-dv-sample2 b,html body .hz-dv-box .hz-dv-sample2 .hz-dv-mi,html body .hz-dv-box .hz-dv-sample2 .hz-dv-addr,html body .hz-dv-box .hz-dv-sample2 span:not(.hz-dv-pill){color:#d4a017 !important;-webkit-text-fill-color:#d4a017}"
+    + "html body:not(#hzA):not(#hzB) .hz-dv-box .hz-dv-tags.hz-dv-tags{display:flex !important;flex-wrap:wrap;gap:4px;margin:4px 0 2px}"
+    + "html body:not(#hzA):not(#hzB) .hz-dv-box i.hz-dv-tag{font-style:normal;font-size:.7rem;font-weight:800;letter-spacing:.02em;padding:1px 7px;border-radius:999px;border:1.5px solid currentColor;background:transparent}"
+    + "html body:not(#hzA):not(#hzB) .hz-dv-box i.hz-dv-tag.w{color:#fff !important;-webkit-text-fill-color:#fff !important}html body:not(#hzA):not(#hzB) .hz-dv-box i.hz-dv-tag.r{color:#ff3b30 !important;-webkit-text-fill-color:#ff3b30 !important}html body:not(#hzA):not(#hzB) .hz-dv-box i.hz-dv-tag.g{color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important}"   // 12.246
+    + "html body:not(#hzA):not(#hzB) .hz-dv-box a.hz-dv-navbtn.hz-dv-navbtn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:10px;background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;font-weight:800 !important;font-size:.85rem !important;text-decoration:none !important;white-space:nowrap;cursor:pointer}html body .hz-dv-box a.hz-dv-navbtn:active{transform:scale(.97)}html body .hz-dv-box .hz-dv-nav{cursor:default}"   // 12.245
+    + "html body .hz-dv-box .hz-dv-sample2 .hz-dv-why{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}"   // 12.212 (Sam): option 1 = all gold, the divert reason too
     // 12.221 (Sam, voice note): group headings fill the card width (hzFitTitles sizes the font), centred, with equal space above (Refresh box) and below; "Tap a hospital…" centred, gold
     + "html body:not(#hzA):not(#hzB) .hz-dv-box .hz-dv-sub.hz-dv-sub.hz-dv-sub{display:block !important;width:100% !important;margin:14px 0 !important;border:0 !important;padding:0 !important;color:#000 !important;-webkit-text-fill-color:#000 !important;text-align:center !important;text-shadow:none !important;white-space:nowrap !important;overflow:hidden !important;line-height:1.1 !important}" + "html body:not(#hzA):not(#hzB) .hz-dv-box .hz-dv-rfrow.hz-dv-rfrow{margin-bottom:0 !important}html body:not(#hzA):not(#hzB) .hz-dv-box .hz-dv-body.hz-dv-body{padding-top:0 !important}" + "html body:not(#hzA):not(#hzB) .hz-dv-box .hz-dv-tapmsg.hz-dv-tapmsg{margin-top:0 !important}"
     + "html body:not(#hzA):not(#hzB) .hz-dv-box .hz-dv-tapmsg.hz-dv-tapmsg{text-align:center !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important}"
