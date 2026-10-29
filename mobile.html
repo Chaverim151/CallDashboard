@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.07"; window.M_BUILD = BUILD;
+  var BUILD = "7.08"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -13040,28 +13040,20 @@ function hzDvLoadPlaces() {
 var HZ_DV_SPEC_DEFAULT = [
   { k: "adultEd", l: "Adult ED", c: "white" }, { k: "pedEd", l: "Peds ED", c: "white" },
   { k: "trauma1", l: "Trauma I", c: "red" }, { k: "trauma2", l: "Trauma II", c: "red" }, { k: "pedTrauma", l: "Peds Trauma", c: "red" },
-  { k: "strokeComp", l: "Comprehensive Stroke", c: "red" }, { k: "strokeThromb", l: "Thrombectomy Stroke", c: "red" }, { k: "strokePrim", l: "Primary Stroke", c: "red" }, { k: "strokeAsr", l: "Acute Stroke Ready", c: "red" },
-  { k: "stemi", l: "STEMI", c: "red" },
+  { k: "strokeComp", l: "Stroke (Comp)", c: "red" }, { k: "strokePrim", l: "Stroke (Pri)", c: "red" }, { k: "stemi", l: "STEMI", c: "red" },
   { k: "burn", l: "Burn", c: "red" }, { k: "ob", l: "OB", c: "red" }, { k: "nicu", l: "NICU", c: "red" }, { k: "psych", l: "Psych", c: "red" },
   { k: "sane", l: "SANE", c: "red" }, { k: "hyperbaric", l: "Hyperbaric", c: "red" }, { k: "dialysis", l: "Dialysis", c: "red" }
 ];
-// 12.253 (Sam): "multiple options for stroke centers" — Comprehensive / Thrombectomy-capable / Primary / Acute Stroke Ready.
-// A list an admin already saved gets the stroke levels it's missing (next to its other stroke rows), and the old
-// short names "Stroke (Comp)" / "Stroke" read as the full level names; anything the admin renamed is left alone.
-var HZ_DV_STROKE = [["strokeComp", "Comprehensive Stroke", "Stroke (Comp)"], ["strokeThromb", "Thrombectomy Stroke"], ["strokePrim", "Primary Stroke", "Stroke"], ["strokeAsr", "Acute Stroke Ready"]];
+// 12.255 (Sam): stroke = just "Stroke (Comp)" and "Stroke (Pri)". Any list saved before is tidied the same way:
+// Thrombectomy / Acute Stroke Ready (12.253) are dropped, and the old built-in names read as the new ones.
+// Names the admin typed himself are left alone.
+var HZ_DV_STROKE_DROP = ["strokeThromb", "strokeAsr"], HZ_DV_STROKE_NAME = { strokeComp: [["Comprehensive Stroke"], "Stroke (Comp)"], strokePrim: [["Stroke", "Primary Stroke"], "Stroke (Pri)"] };
 function hzDvStrokeMerge(list) {
-  var L = list.map(function(s) { var o = Object.assign({}, s), z = HZ_DV_STROKE.filter(function(x) { return x[0] === s.k; })[0]; if (z && z[2] && o.l === z[2]) o.l = z[1]; return o; });
-  HZ_DV_STROKE.forEach(function(z, i) {
-    if (L.some(function(s) { return s.k === z[0]; })) return;
-    var at = -1; L.forEach(function(s, j) { var zi = HZ_DV_STROKE.map(function(x) { return x[0]; }).indexOf(s.k); if (zi !== -1 && zi < i) at = j; });
-    if (at === -1) L.forEach(function(s, j) { if (/stroke/i.test(s.l) && at === -1) at = j - 1; });
-    L.splice(at === -1 ? L.length : at + 1, 0, { k: z[0], l: z[1], c: "red" });
-  });
-  return L;
+  return (list || []).filter(function(s) { return HZ_DV_STROKE_DROP.indexOf(s.k) === -1; }).map(function(s) {
+    var o = Object.assign({}, s), z = HZ_DV_STROKE_NAME[s.k]; if (z && z[0].indexOf(o.l) !== -1) o.l = z[1]; return o; });
 }
 function hzDvSpecList() {
   if (!(Array.isArray(HZ_DV.specList) && HZ_DV.specList.length)) return HZ_DV_SPEC_DEFAULT;
-  if (HZ_DV.strokeLevels) return HZ_DV.specList;   // the admin has saved the list since the stroke levels came in — use it as is
   if (HZ_DV._specSrc !== HZ_DV.specList) { HZ_DV._specSrc = HZ_DV.specList; HZ_DV._specOut = hzDvStrokeMerge(HZ_DV.specList); }
   return HZ_DV._specOut;
 }
