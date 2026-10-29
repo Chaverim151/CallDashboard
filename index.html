@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.269">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.270">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2494,7 +2494,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.269</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.270</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -19469,7 +19469,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.269";
+var DESKTOP_VERSION = "12.270";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -27225,20 +27225,20 @@ function hzErvCheck() {
   else if (isNaN(a) || isNaN(b)) err = "Pick a start and an end.";
   else if (b <= a) err = "The end has to be after the start.";
   else if (a < Date.now() - 5 * 60000) err = "The start is in the past.";
-  else if (!((document.getElementById("hz-erv-note") || {}).value || "").trim()) err = "Write the reason you need the vehicle.";   // 12.90: required
-  else {
+  else {   // 12.270 (Sam): the vehicle / time check shows as soon as the vehicle and times are in — it doesn't wait for the reason
     var clash = hzErvOverlaps(hzErvBlocking(ervId), a, b);
     if (clash.length) err = "Already booked: " + clash.map(function(t){ return hzErvRange(t.startMs, t.endMs) + " (" + (t.submittedBy || "") + ")"; }).join("; ");
     var pend = hzErvOverlaps(HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && hzErvStatus(t) === "pending"; }), a, b);
     if (!err && pend.length) warn = "Someone else already asked for part of this time (" + pend.map(function(t){ return t.submittedBy || ""; }).join(", ") + ") — an admin will choose.";
     if (!err && b - a > 24 * 3600000) warn = (warn ? warn + " " : "") + "That's longer than 24 hours.";
   }
-  var quiet = err === "Write the reason you need the vehicle." || err === "Select a vehicle.";   // 12.267 (Sam): no line saying the reason is required — the red box and the dim button say it
+  var noReason = !((document.getElementById("hz-erv-note") || {}).value || "").trim();   // 12.90: required — Send stays red until it's written
+  var quiet = err === "Select a vehicle.";   // 12.267 (Sam): no line saying the reason is required — the red box and the dim button say it
   box.className = "hz-erv-note" + (err ? " bad" : warn ? " warn" : " ok");
   box.textContent = quiet ? "" : (err || warn || ("✓ " + hzErvRange(a, b) + " is open."));
   box.style.display = quiet ? "none" : "";
-  if (go) go.disabled = !!err;
-  return err ? null : { a: a, b: b, ervId: ervId };
+  if (go) go.disabled = !!err || noReason;
+  return err || noReason ? null : { a: a, b: b, ervId: ervId };
 }
 function hzErvSubmit() {
   var c = hzErvCheck(); if (!c) return;

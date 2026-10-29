@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.22"; window.M_BUILD = BUILD;
+  var BUILD = "7.23"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12821,20 +12821,20 @@ function hzErvCheck() {
   else if (isNaN(a) || isNaN(b)) err = "Pick a start and an end.";
   else if (b <= a) err = "The end has to be after the start.";
   else if (a < Date.now() - 5 * 60000) err = "The start is in the past.";
-  else if (!((document.getElementById("hz-erv-note") || {}).value || "").trim()) err = "Write the reason you need the vehicle.";   // 12.90: required
-  else {
+  else {   // 12.270 (Sam): the vehicle / time check shows as soon as the vehicle and times are in — it doesn't wait for the reason
     var clash = hzErvOverlaps(hzErvBlocking(ervId), a, b);
     if (clash.length) err = "Already booked: " + clash.map(function(t){ return hzErvRange(t.startMs, t.endMs) + " (" + (t.submittedBy || "") + ")"; }).join("; ");
     var pend = hzErvOverlaps(HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && hzErvStatus(t) === "pending"; }), a, b);
     if (!err && pend.length) warn = "Someone else already asked for part of this time (" + pend.map(function(t){ return t.submittedBy || ""; }).join(", ") + ") — an admin will choose.";
     if (!err && b - a > 24 * 3600000) warn = (warn ? warn + " " : "") + "That's longer than 24 hours.";
   }
-  var quiet = err === "Write the reason you need the vehicle." || err === "Select a vehicle.";   // 12.267 (Sam): no line saying the reason is required — the red box and the dim button say it
+  var noReason = !((document.getElementById("hz-erv-note") || {}).value || "").trim();   // 12.90: required — Send stays red until it's written
+  var quiet = err === "Select a vehicle.";   // 12.267 (Sam): no line saying the reason is required — the red box and the dim button say it
   box.className = "hz-erv-note" + (err ? " bad" : warn ? " warn" : " ok");
   box.textContent = quiet ? "" : (err || warn || ("✓ " + hzErvRange(a, b) + " is open."));
   box.style.display = quiet ? "none" : "";
-  if (go) go.disabled = !!err;
-  return err ? null : { a: a, b: b, ervId: ervId };
+  if (go) go.disabled = !!err || noReason;
+  return err || noReason ? null : { a: a, b: b, ervId: ervId };
 }
 function hzErvSubmit() {
   var c = hzErvCheck(); if (!c) return;
