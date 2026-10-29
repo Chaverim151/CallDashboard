@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.24"; window.M_BUILD = BUILD;
+  var BUILD = "7.25"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12743,12 +12743,13 @@ function hzErvClose(fromBack) {
   if (HZ_ERV.hist) { HZ_ERV.hist = false; if (!fromBack && history.state && history.state.hzOv === "erv" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
 }
 function hzErvTab(t) { HZ_ERV.tab = t; hzErvDraw(); }
-function hzErvWeek(n) { HZ_ERV.weekStart = n === 0 ? hzErvAddDays(hzErvDayStart(Date.now()), -new Date().getDay()) : hzErvAddDays(HZ_ERV.weekStart, 7 * n); hzErvDraw(); }
+function hzErvWeek(n) { var w0 = hzErvAddDays(hzErvDayStart(Date.now()), -new Date().getDay());
+  HZ_ERV.weekStart = n === 0 ? w0 : Math.max(w0, hzErvAddDays(HZ_ERV.weekStart, 7 * n)); hzErvDraw(); }   // 12.272 (Sam): never back before this week
 function hzErvPick(id) { HZ_ERV.ervId = id; hzErvDraw(); }
 function hzErvDraw() {
   var el = document.getElementById("hz-erv"); if (!el) return;
   var pend = HZ_ERV.tickets.filter(function(t){ return hzErvStatus(t) === "pending"; }).length;
-  var tabs = [["schedule", "🗓 Schedule"], ["request", "➕ Usage Request"], ["mine", "📋 My requests"]].concat(HZ_ERV.isAdmin ? [["approve", "✅ Approve" + (pend ? " (" + pend + ")" : "")]] : []);
+  var tabs = [["schedule", "🗓 Schedule"], ["request", "New Request"], ["mine", "📋 My requests"]].concat(HZ_ERV.isAdmin ? [["approve", "✅ Approve" + (pend ? " (" + pend + ")" : "")]] : []);
   var body = HZ_ERV.tab === "request" ? hzErvRequestHtml() : HZ_ERV.tab === "mine" ? hzErvMineHtml() : HZ_ERV.tab === "approve" && HZ_ERV.isAdmin ? hzErvApproveHtml() : hzErvScheduleHtml();
   el.innerHTML = '<div class="hz-erv-box" role="dialog" aria-label="Vehicle Usage Request"><div class="hz-erv-top"><button class="hz-pop-back" onclick="hzErvClose()">← Back</button><b>Vehicle Usage Request</b>'
     + (HZ_ERV.access !== "drivers" ? '<span class="hz-erv-pill warn" title="Only admins can see this until it is opened to drivers in Admin ▸ Notifications & Permissions">Testing — admins only</span>' : '')
@@ -12781,17 +12782,18 @@ function hzErvFree(dayMs, taken) {
   return out;
 }
 function hzErvScheduleHtml() {
-  var ws = HZ_ERV.weekStart, now = Date.now(), ervId = HZ_ERV.ervId;
+  var ws = HZ_ERV.weekStart, now = Date.now(), ervId = HZ_ERV.ervId, thisWk = ws <= now;   // 12.272 (Sam): no past days or past bookings — just today onward
   var mine = function(t){ return hzErvIsMine(t); };
   var list = HZ_ERV.tickets.filter(function(t){ return t.ervUnit === ervId && (["approved", "pending"].indexOf(hzErvStatus(t)) >= 0 || (mine(t) && hzErvStatus(t) === "denied")); }).map(hzErvEff);
   var approved = list.filter(function(t){ return hzErvStatus(t) === "approved"; });
   var h = '<div class="hz-erv-row">' + hzErvErvSelect("hz-erv-pick", "hzErvPick(this.value)")
-    + '<button class="hz-erv-btn" onclick="hzErvWeek(-1)">‹ Previous</button><button class="hz-erv-btn" onclick="hzErvWeek(0)">This week</button><button class="hz-erv-btn" onclick="hzErvWeek(1)">Next ›</button>'
-    + '<span class="hz-erv-muted">' + hzErvDay(ws) + " – " + hzErvDay(hzErvAddDays(ws, 6)) + '</span></div>'
+    + (thisWk ? '' : '<button class="hz-erv-btn" onclick="hzErvWeek(-1)">‹ Previous</button><button class="hz-erv-btn" onclick="hzErvWeek(0)">This week</button>') + '<button class="hz-erv-btn" onclick="hzErvWeek(1)">Next ›</button>'
+    + '<span class="hz-erv-muted">' + (thisWk ? 'Today' : hzErvDay(ws)) + " – " + hzErvDay(hzErvAddDays(ws, 6)) + '</span></div>'
     + '<div class="hz-erv-legend"><span class="hz-erv-chip ok">Approved</span><span class="hz-erv-chip warn">Requested — waiting</span><span class="hz-erv-chip open">Open</span></div><div class="hz-erv-week">';
   for (var i = 0; i < 7; i++) {
     var d = hzErvAddDays(ws, i), e = hzErvAddDays(d, 1), past = e <= now, today = d <= now && now < e;
-    var items = list.filter(function(t){ return t.startMs < e && t.endMs > d; });
+    if (past) continue;
+    var items = list.filter(function(t){ return t.startMs < e && t.endMs > d && t.endMs > now; });
     var free = hzErvFree(d, approved).filter(function(f){ return f[1] > now; }).map(function(f){ return [Math.max(f[0], d), f[1]]; });
     h += '<div class="hz-erv-day' + (today ? " today" : "") + (past ? " past" : "") + '"><div class="hz-erv-dh">' + hzErvDay(d) + '</div>'
       + items.map(function(t){ var st = hzErvStatus(t), cls = st === "approved" ? "ok" : st === "pending" ? "warn" : "bad";
@@ -12864,7 +12866,7 @@ function hzErvCard(t, actions) {
 }
 function hzErvMineHtml() {
   var mine = HZ_ERV.tickets.filter(hzErvIsMine).sort(function(a, b){ return b.startMs - a.startMs; });
-  if (!mine.length) return '<div class="hz-erv-muted">No requests yet. Use ➕ Usage Request, or tap an open time on the Schedule.</div>';
+  if (!mine.length) return '<div class="hz-erv-muted">No requests yet. Use New Request, or tap an open time on the Schedule.</div>';
   return mine.map(function(t){ var st = hzErvStatus(t), can = (st === "pending" || st === "approved") && t.endMs > Date.now() && !t.checkedInAt;
     return hzErvCard(t, hzErvCheckBtns(t) + (can ? '<button class="hz-erv-btn" onclick="hzErvCancel(\'' + t.id + '\')">Cancel request</button>' : '')); }).join("");
 }
