@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="hz-version" content="12.306">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.307">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2590,7 +2590,7 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.306</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.307</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -7056,6 +7056,8 @@ document.addEventListener("keydown", function(e) {
 
 // ── STANDARD ROLES ──
 // Ticket stages: open → accepted → in-progress → resolved (shown as "Completed")
+// 12.307 (Sam): status and owner always agree — "Assigned" with nobody on it shows as Unassigned; someone on an "Unassigned" ticket shows as Assigned
+function hzTkFixStatus(t) { if (!t || t.category === "erv") return t; var s = t.status || "open"; if (s === "accepted" && !t.assignedTo) t.status = "open"; else if (s === "open" && t.assignedTo) t.status = "accepted"; return t; }
 var M_TICKET_STAGES = [
   { key: "open",        label: "Unassigned",        icon: "🔴", color: "#ff9090" },
   { key: "accepted",    label: "Assigned",    icon: "🟠", color: "#ffb26b" },
@@ -8383,7 +8385,7 @@ function loadTickets() {
   document.getElementById("tickets-list").innerHTML = '<div class="tickets-loading">Loading service requests…</div>';
   db.collection("tickets").get().then(function(snap) {
     allTickets = [];
-    snap.forEach(function(d) { allTickets.push(Object.assign({ id: d.id }, d.data())); });
+    snap.forEach(function(d) { allTickets.push(hzTkFixStatus(Object.assign({ id: d.id }, d.data()))); });
     if (typeof mBackfillTicketNumbers === "function") { var _r = mCurrentRole; mCurrentRole = currentRole; mBackfillTicketNumbers(allTickets); mCurrentRole = _r; }
     allTickets.sort(function(a, b) {
       var po = (PRIORITY_ORDER[a.priority] != null ? PRIORITY_ORDER[a.priority] : 2) - (PRIORITY_ORDER[b.priority] != null ? PRIORITY_ORDER[b.priority] : 2);
@@ -8427,7 +8429,7 @@ function renderTickets() {
 function openTicket(id) {
   var t = allTickets.find(function(x) { return x.id === id; }); if (!t) return;
   // pull the latest copy so the server-written activity log is current
-  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) Object.assign(t, s.data()); renderTicketDetail(id, t); }).catch(function(){ renderTicketDetail(id, t); });
+  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) hzTkFixStatus(Object.assign(t, s.data())); renderTicketDetail(id, t); }).catch(function(){ renderTicketDetail(id, t); });
 }
 function renderTicketDetail(id, t) {
   if (t && t.category === "erv" && typeof hzErvTicketHtml === "function") {   // 12.79: ERV shift request
@@ -8462,7 +8464,7 @@ function renderTicketDetail(id, t) {
       commentsHtml = (byParent["__root__"] || []).map(function(x) { return renderC(x, 0); }).join("");
     }
     var statusControl = isAdmin
-      ? '<select id="tk-st-sel" class="status-select" onchange="tkDirty()">' + M_TICKET_STAGES.map(function(s){ return '<option value="' + s.key + '"' + ((t.status||"open") === s.key ? " selected" : "") + '>' + s.icon + ' ' + s.label + '</option>'; }).join("") + '</select>'
+      ? '<select id="tk-st-sel" class="status-select" onchange="tkDirty()">' + M_TICKET_STAGES.filter(function(s){ return s.key === "in-progress" || s.key === "resolved" || s.key === (t.status || "open"); }).map(function(s){ return '<option value="' + s.key + '"' + ((t.status||"open") === s.key ? " selected" : "") + '>' + s.icon + ' ' + s.label + '</option>'; }).join("") + '</select>'
       : '<span class="ticket-badge badge-' + (t.status || "open").replace(" ", "-") + '">' + (t.status || "open") + '</span>';
     var assignmentHtml = "";
     if (t.assignedTo) {
@@ -8658,7 +8660,9 @@ function replyToComment(commentId, author) {
 function cancelReply() { replyTarget = null; var w = document.getElementById("reply-banner"); if (w) w.style.display = "none"; }
 function unassignTicket(id) {
   if (!confirm("Remove assignment?")) return;
-  db.collection("tickets").doc(id).set({ assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: currentUser ? currentUser.uid : "" }, { merge: true }).then(function() {
+  var t0 = allTickets.find(function(x){ return x.id === id; }) || {}, upd0 = { assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: currentUser ? currentUser.uid : "" };
+  if ((t0.status || "open") === "accepted") { upd0.status = "open"; upd0.statusByUid = upd0.lastActionByUid; t0.status = "open"; }   // 12.307: back to Unassigned
+  db.collection("tickets").doc(id).set(upd0, { merge: true }).then(function() {
     var t = allTickets.find(function(x) { return x.id === id; });
     if (t) { t.assignedTo = null; t.assignedByUid = null; t.assignedAt = null; }
     showToast("Unassigned"); openTicket(id);
@@ -19586,7 +19590,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.306";
+var DESKTOP_VERSION = "12.307";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -21829,7 +21833,7 @@ function mLoadTickets() {
   document.getElementById("m-tickets-list").innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading service requests…</div>';
   db.collection("tickets").get().then(function(snap) {
     mAllTickets = [];
-    snap.forEach(function(d) { mAllTickets.push(Object.assign({ id: d.id }, d.data())); });
+    snap.forEach(function(d) { mAllTickets.push(hzTkFixStatus(Object.assign({ id: d.id }, d.data()))); });
     mBackfillTicketNumbers(mAllTickets);
     mAllTickets.sort(function(a, b) {
       var po = (M_PRIORITY_ORDER[a.priority] != null ? M_PRIORITY_ORDER[a.priority] : 2) - (M_PRIORITY_ORDER[b.priority] != null ? M_PRIORITY_ORDER[b.priority] : 2);
@@ -21947,7 +21951,7 @@ function mOpenTicket(id) {
   var t = mAllTickets.find(function(x){ return x.id === id; });
   if (!t) return;
   // pull the latest copy so the server-written activity log is current
-  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) Object.assign(t, s.data()); mRenderTicketDetail(id, t); }).catch(function(){ mRenderTicketDetail(id, t); });
+  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) hzTkFixStatus(Object.assign(t, s.data())); mRenderTicketDetail(id, t); }).catch(function(){ mRenderTicketDetail(id, t); });
 }
 function mRenderTicketDetail(id, t) {
   var isAdmin = mCurrentRole === "admin";
@@ -21977,7 +21981,7 @@ function mRenderTicketDetail(id, t) {
       commentsHtml = (byParent["__root__"] || []).map(function(d) { return renderComment(d, 0); }).join("");
     }
     var statusControl = isAdmin
-      ? '<select id="m-tk-st-sel" class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.75rem" onchange="mTkDirty()">' + M_TICKET_STAGES.map(function(s){ return '<option value="' + s.key + '"' + ((t.status||"open")===s.key?" selected":"") + '>' + s.icon + ' ' + s.label + '</option>'; }).join("") + '</select>'
+      ? '<select id="m-tk-st-sel" class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.75rem" onchange="mTkDirty()">' + M_TICKET_STAGES.filter(function(s){ return s.key === "in-progress" || s.key === "resolved" || s.key === (t.status || "open"); }).map(function(s){ return '<option value="' + s.key + '"' + ((t.status||"open")===s.key?" selected":"") + '>' + s.icon + ' ' + s.label + '</option>'; }).join("") + '</select>'
       : '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:' + mTicketStage(t.status).color + ';border:1px solid var(--card-border)">' + mTicketStage(t.status).icon + ' ' + mTicketStage(t.status).label + '</span>';
     var assignmentHtml = "";
     if (t.assignedTo) {
@@ -22077,7 +22081,9 @@ function mAcceptTicket(id) {
 }
 function mUnassignTicket(id) {
   if (!confirm("Remove assignment?")) return;
-  db.collection("tickets").doc(id).set({ assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true }).then(function() {
+  var t0 = mAllTickets.find(function(x){ return x.id === id; }) || {}, upd0 = { assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: mCurrentUser ? mCurrentUser.uid : "" };
+  if ((t0.status || "open") === "accepted") { upd0.status = "open"; upd0.statusByUid = upd0.lastActionByUid; t0.status = "open"; }   // 12.307: back to Unassigned
+  db.collection("tickets").doc(id).set(upd0, { merge: true }).then(function() {
     var t = mAllTickets.find(function(x){ return x.id === id; });
     if (t) { t.assignedTo = null; t.assignedByUid = null; t.assignedAt = null; }
     mToast("Unassigned"); mOpenTicket(id);

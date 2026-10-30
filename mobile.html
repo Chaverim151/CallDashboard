@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.59"; window.M_BUILD = BUILD;
+  var BUILD = "7.60"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -6583,6 +6583,8 @@ var mTicketStatusFilter = "open";   // opens on Open requests
 var M_CAT_ICONS = { general: "📋", it: "💻", restock: "📦", feature: "💡", erv: "🚙" };
 var M_PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 // Ticket stages: open → accepted → in-progress → resolved (shown as "Completed")
+// 12.307 (Sam): status and owner always agree — "Assigned" with nobody on it shows as Unassigned; someone on an "Unassigned" ticket shows as Assigned
+function hzTkFixStatus(t) { if (!t || t.category === "erv") return t; var s = t.status || "open"; if (s === "accepted" && !t.assignedTo) t.status = "open"; else if (s === "open" && t.assignedTo) t.status = "accepted"; return t; }
 var M_TICKET_STAGES = [
   { key: "open",        label: "Unassigned",        icon: "🔴", color: "#ff9090" },
   { key: "accepted",    label: "Assigned",    icon: "🟠", color: "#ffb26b" },
@@ -6600,7 +6602,7 @@ function mLoadTickets() {
   document.getElementById("m-tickets-list").innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading service requests…</div>';
   db.collection("tickets").get().then(function(snap) {
     mAllTickets = [];
-    snap.forEach(function(d) { mAllTickets.push(Object.assign({ id: d.id }, d.data())); });
+    snap.forEach(function(d) { mAllTickets.push(hzTkFixStatus(Object.assign({ id: d.id }, d.data()))); });
     mBackfillTicketNumbers(mAllTickets);
     mAllTickets.sort(function(a, b) {
       var po = (M_PRIORITY_ORDER[a.priority] != null ? M_PRIORITY_ORDER[a.priority] : 2) - (M_PRIORITY_ORDER[b.priority] != null ? M_PRIORITY_ORDER[b.priority] : 2);
@@ -7180,7 +7182,7 @@ function mOpenTicket(id) {
   var t = mAllTickets.find(function(x){ return x.id === id; });
   if (!t) return;
   // pull the latest copy so the server-written activity log is current
-  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) Object.assign(t, s.data()); mRenderTicketDetail(id, t); }).catch(function(){ mRenderTicketDetail(id, t); });
+  db.collection("tickets").doc(id).get().then(function(s){ if (s.exists) hzTkFixStatus(Object.assign(t, s.data())); mRenderTicketDetail(id, t); }).catch(function(){ mRenderTicketDetail(id, t); });
 }
 function mRenderTicketDetail(id, t) {
   if (t && t.category === "erv" && typeof hzErvTicketHtml === "function") {   // 5.37: ERV shift request
@@ -7215,7 +7217,7 @@ function mRenderTicketDetail(id, t) {
       commentsHtml = (byParent["__root__"] || []).map(function(d) { return renderComment(d, 0); }).join("");
     }
     var statusControl = isAdmin
-      ? '<select id="m-tk-st-sel" class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.75rem" onchange="mTkDirty()">' + M_TICKET_STAGES.map(function(s){ return '<option value="' + s.key + '"' + ((t.status||"open")===s.key?" selected":"") + '>' + s.icon + ' ' + s.label + '</option>'; }).join("") + '</select>'
+      ? '<select id="m-tk-st-sel" class="m-disp-input" style="width:auto;padding:6px 10px;font-size:0.75rem" onchange="mTkDirty()">' + M_TICKET_STAGES.filter(function(s){ return s.key === "in-progress" || s.key === "resolved" || s.key === (t.status || "open"); }).map(function(s){ return '<option value="' + s.key + '"' + ((t.status||"open")===s.key?" selected":"") + '>' + s.icon + ' ' + s.label + '</option>'; }).join("") + '</select>'
       : '<span class="m-disp-zone" style="background:rgba(255,255,255,0.06);color:' + mTicketStage(t.status).color + ';border:1px solid var(--card-border)">' + mTicketStage(t.status).icon + ' ' + mTicketStage(t.status).label + '</span>';
     var assignmentHtml = "";
     if (t.assignedTo) {
@@ -7328,7 +7330,9 @@ function mAcceptTicket(id) {
 }
 function mUnassignTicket(id) {
   if (!confirm("Remove assignment?")) return;
-  db.collection("tickets").doc(id).set({ assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true }).then(function() {
+  var t0 = mAllTickets.find(function(x){ return x.id === id; }) || {}, upd0 = { assignedTo: null, assignedByUid: null, assignedAt: null, lastActionByUid: mCurrentUser ? mCurrentUser.uid : "" };
+  if ((t0.status || "open") === "accepted") { upd0.status = "open"; upd0.statusByUid = upd0.lastActionByUid; t0.status = "open"; }   // 12.307: back to Unassigned
+  db.collection("tickets").doc(id).set(upd0, { merge: true }).then(function() {
     var t = mAllTickets.find(function(x){ return x.id === id; });
     if (t) { t.assignedTo = null; t.assignedByUid = null; t.assignedAt = null; }
     mToast("Unassigned"); mOpenTicket(id);
