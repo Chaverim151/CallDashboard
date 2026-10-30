@@ -17,7 +17,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.63"; window.M_BUILD = BUILD;
+  var BUILD = "7.64"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2466,6 +2466,7 @@ function mVisibleTiles() {
     .map(function(t) { var l = t.querySelector(".m-tile-label"); return { k: t.getAttribute("data-sec"), label: (l ? l.textContent : t.getAttribute("data-sec")).replace(/\s+/g, " ").replace(/BETA/, "").trim() }; });
 }
 function mSettingsRender() {
+  mWaFlag(function() { mSettingsRender(); });   // 12.311
   var el = document.getElementById("m-set-content"); if (!el) return;
   var me = mMe || {}, roles = (mCurrentUserRoles || []).concat(mCurrentRole === "admin" ? ["admin"] : []);
   var on = hzNotifPerm() === "granted" && !window._mAlertsDisabled;
@@ -2510,6 +2511,10 @@ function mSettingsRender() {
       (canTest ? line('🧪 Test Mode', sw(!!MSysTestingMode, "mToggleTestMode();setTimeout(mSettingsRender,900)", "Test Mode"), MSysTestingMode ? "ON — only you get what you trigger" : "") : '') +
       line('🗺️ Maps', '<span class="m-set-seg m-set-seg-s">' + [["google", "Google"], ["waze", "Waze"]].concat(hzIsApple() ? [["apple", "Apple"]] : []).map(function(o) {
         return '<label' + (map === o[0] ? ' class="on"' : '') + '><input type="radio" name="m-set-map" value="' + o[0] + '"' + (map === o[0] ? " checked" : "") + ' onchange="mSetMap(this.value)">' + o[1] + '</label>'; }).join("") + '</span>') +
+      (window.HZ_WA_ON === true ? (function() { var via = mPrefs.notifyVia || "sms", num = mMe.whatsapp || mMe.phone || "";   // 12.311 (Sam): 💬 texts by WhatsApp
+        return line('💬 Notifications by', (via !== "sms" ? '<button class="m-set-mini" onclick="mSetWaTest()">Test</button>' : '') + '<span class="m-set-seg m-set-seg-s">' + [["sms", "Text"], ["wa", "WhatsApp"], ["both", "Both"]].map(function(o) {
+          return '<label' + (via === o[0] ? ' class="on"' : '') + '><input type="radio" name="m-set-via" value="' + o[0] + '"' + (via === o[0] ? " checked" : "") + ' onchange="mSetVia(this.value)">' + o[1] + '</label>'; }).join("") + '</span>',
+          via === "sms" ? "" : "WhatsApp to " + mEscHtml(num) + (mMe.whatsapp ? "" : " (your phone)") + " · if WhatsApp fails you get a text"); })() : '') +
       (mRcCan() ? (function() { var rc = mPrefs.rollCallSms || {}, on = rc.on === true, hrs = Math.max(1, Math.min(24, +rc.hours || 2));   // 12.250 (Sam)
         return line('🕯️ Erev Shabbos roll call text', (on ? '<select class="m-disp-input m-set-rc-h" onchange="mSetRollCall(true, +this.value)" style="width:auto;padding:4px 6px;margin-right:6px">' + [1, 2, 3, 4, 5, 6, 8, 10, 12, 24].map(function(h) { return '<option value="' + h + '"' + (h === hrs ? " selected" : "") + '>' + h + ' h before</option>'; }).join("") + '</select>' : '') + sw(on, "mSetRollCall(" + (!on) + ")", "Erev Shabbos roll call text"),
           on ? 'Texted ' + hrs + ' hour' + (hrs === 1 ? '' : 's') + ' before candle lighting (Shabbos and Yom Tov). It\'s accurate as of when it\'s sent — things can change after that.' : 'Get the roll call by text before Shabbos / Yom Tov'); })() : '') +
@@ -2618,6 +2623,12 @@ function mSetRollCall(on, hours) {
   mSetPrefs("rollCallSms", v).then(function() { mToast(v.on ? "✓ You'll get the roll call by text " + v.hours + " h before candle lighting" : "Roll call text off"); }).catch(function(e) { mToast(e.message, true); });
   mSettingsRender();
 }
+function mSetVia(v) {   // 12.311
+  var pr = mSetPrefs("notifyVia", v); mSettingsRender();
+  pr.then(function() { mToast("✓ Notifications will come by " + ({ sms: "text", wa: "WhatsApp", both: "text and WhatsApp" })[v]); }).catch(function(e) { mToast(e.message, true); });
+}
+function mSetWaTest() { mToast("Sending…"); hzRelayAny("whatsappSelfTest", {}).then(function(r) { mToast("✓ Test WhatsApp sent to " + r.to); }).catch(function(e) { mToast(e.message, true); }); }
+function mWaFlag(cb) { if (window.HZ_WA_ON !== undefined) return; window.HZ_WA_ON = false; db.collection("appdata").doc("whatsapp").get().then(function(s) { window.HZ_WA_ON = !!(s.exists && s.data().allowed === true); if (window.HZ_WA_ON && cb) cb(); }).catch(function() {}); }
 function mSetMap(v) {
   try { localStorage.setItem("hzMapApp", v); } catch (e) {}
   var pr = mSetPrefs("mapApp", v); mSettingsRender();
