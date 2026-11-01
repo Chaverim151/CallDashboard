@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.76"; window.M_BUILD = BUILD;
+  var BUILD = "7.77"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1204,6 +1204,7 @@ html[data-theme="basic"] .hz-tl-vit small{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-tbl span{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-tap{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-in{color:#8a680f !important}
+html[data-theme="basic"] .hz-tl-sugit{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-chip2{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-medsub{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-pill.q{color:#8a680f !important}
@@ -15027,7 +15028,7 @@ setInterval(function() { var el = document.getElementById("hz-mtb-name"); if (!e
    Phone Back key: from a tool goes back to the Tools list, from the list closes Tools (mNavCloseOverlay).
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 var HZ_TL = { view: "menu", hist: false, apgar: {}, apgarLog: [], gcs: {}, gcsKid: false, burn: {}, burnKid: false, palms: 0,
-  met: null, cpr: { rate: 110, mode: "cont" }, vent: { rate: 10 }, audio: null, wake: null };
+  met: null, cpr: { rate: 110, mode: "cont" }, vent: { rate: 10, who: "ad" }, audio: null, wake: null };
 var HZ_TL_LIST = [
   ["apgar", "👶", "APGAR Score", "Newborn at 1 and 5 minutes"],
   ["gcs", "🧠", "GCS Calculator", "Glasgow Coma Scale — adult or infant"],
@@ -15093,20 +15094,21 @@ function hzTlReset(group) { HZ_TL[group] = {}; if (group === "burn") HZ_TL.palms
 
 // ── 👶 APGAR ──
 var HZ_TL_APGAR = [
-  ["a", "Appearance (colour)", [[0, "Blue or pale all over"], [1, "Body pink, hands and feet blue"], [2, "Pink all over"]]],
-  ["p", "Pulse", [[0, "Absent"], [1, "Below 100"], [2, "100 or more"]]],
-  ["g", "Grimace (reflex)", [[0, "No response"], [1, "Grimace"], [2, "Cries, coughs, sneezes or pulls away"]]],
-  ["ac", "Activity (muscle tone)", [[0, "Limp"], [1, "Some flexion"], [2, "Active movement"]]],
-  ["r", "Respiration", [[0, "Absent"], [1, "Slow, irregular, weak cry"], [2, "Good, strong cry"]]]
+  // 12.325: wording from the NJ EMS APGAR chart (Childbirth / Newborn Care, p63–64)
+  ["a", "Appearance (skin colour)", [[0, "Blue, pale"], [1, "Body pink, extremities blue"], [2, "Completely pink"]]],
+  ["p", "Pulse", [[0, "Absent"], [1, "Below 100 bpm"], [2, "Over 100 bpm"]]],
+  ["g", "Grimace (irritability / reflexes)", [[0, "No reflexes"], [1, "Grimace (some flexion of extremities)"], [2, "Cry, sneeze, cough, active movement"]]],
+  ["ac", "Activity (muscle tone)", [[0, "Limp or flaccid"], [1, "Arms & legs flexed (weak, some movement)"], [2, "Active movement"]]],
+  ["r", "Respiration", [[0, "Absent"], [1, "Slow, irregular or gasping breaths, weak cry"], [2, "Vigorous cry, full breaths"]]]
 ];
 function hzTlApgar() {
   var s = HZ_TL.apgar, done = HZ_TL_APGAR.filter(function(q) { return s[q[0]] !== undefined; }).length, tot = HZ_TL_APGAR.reduce(function(n, q) { return n + (s[q[0]] || 0); }, 0);
   var band = done < 5 ? "" : tot >= 7 ? ["ok", "7–10 · Reassuring"] : tot >= 4 ? ["mid", "4–6 · Moderately abnormal"] : ["bad", "0–3 · Low — needs immediate care"];
   return '<div class="hz-tl-total"><span>APGAR</span><b>' + (done ? tot : "–") + '<small>/10</small></b>' + (band ? '<em class="' + band[0] + '">' + band[1] + '</em>' : '<em>' + done + ' of 5 answered</em>') + '</div>'
     + HZ_TL_APGAR.map(function(q) { return hzTlRow("apgar", q[0], q[1], q[2], s[q[0]]); }).join("")
-    + '<div class="hz-tl-acts">' + (done === 5 ? ['1 min', '5 min', '10 min'].map(function(m) { return '<button class="hz-tl-btn" onclick="hzTlApgarLog(\'' + m + '\')">Note as ' + m + '</button>'; }).join("") : '') + '<button class="hz-tl-btn" onclick="hzTlReset(\'apgar\')">Clear</button></div>'
+    + '<div class="hz-tl-acts">' + (done === 5 ? ['1 min', '5 min'].map(function(m) { return '<button class="hz-tl-btn" onclick="hzTlApgarLog(\'' + m + '\')">Note as ' + m + '</button>'; }).join("") : '') + '<button class="hz-tl-btn" onclick="hzTlReset(\'apgar\')">Clear</button></div>'
     + (HZ_TL.apgarLog.length ? '<div class="hz-tl-log">' + HZ_TL.apgarLog.map(function(l) { return '<span><b>' + hzTlEsc(l[0]) + '</b> ' + l[1] + ' <small>(' + hzTlEsc(l[2]) + ')</small></span>'; }).join("") + '<button class="hz-tl-link" onclick="HZ_TL.apgarLog=[];hzTlDraw()">clear notes</button></div>' : '')
-    + '<div class="hz-tl-note">Score at 1 and 5 minutes after birth (then every 5 minutes while under 7). Never delay resuscitation to score.</div>';
+    + '<div class="hz-tl-note">NJ EMS (p63): record the APGAR at 1 minute and 5 minutes only if the newborn does not need resuscitation. The APGAR is less important than assessment and intervention — never delay care to score.</div>';
 }
 function hzTlApgarLog(m) {
   var s = HZ_TL.apgar, tot = HZ_TL_APGAR.reduce(function(n, q) { return n + (s[q[0]] || 0); }, 0);
@@ -15116,15 +15118,11 @@ function hzTlApgarLog(m) {
 
 // ── 🧠 GCS ──
 function hzTlGcsSets() {
-  return HZ_TL.gcsKid ? [
-    ["e", "Eyes", [[4, "Open spontaneously"], [3, "Open to sound"], [2, "Open to pain"], [1, "No response"]]],
-    ["v", "Verbal (infant)", [[5, "Coos, babbles"], [4, "Irritable cry"], [3, "Cries to pain"], [2, "Moans to pain"], [1, "No response"]]],
-    ["m", "Motor (infant)", [[6, "Moves spontaneously"], [5, "Withdraws to touch"], [4, "Withdraws to pain"], [3, "Abnormal flexion"], [2, "Extension"], [1, "No response"]]]
-  ] : [
-    ["e", "Eyes", [[4, "Open spontaneously"], [3, "Open to voice"], [2, "Open to pain"], [1, "No response"]]],
-    ["v", "Verbal", [[5, "Oriented"], [4, "Confused"], [3, "Inappropriate words"], [2, "Incomprehensible sounds"], [1, "No response"]]],
-    ["m", "Motor", [[6, "Obeys commands"], [5, "Localizes pain"], [4, "Withdraws from pain"], [3, "Abnormal flexion (decorticate)"], [2, "Extension (decerebrate)"], [1, "No response"]]]
-  ];
+  // 12.325: the NJ EMS Glasgow Coma Scale table (Reference, p246) — one eye and motor scale; infants only change the verbal part
+  var eyes = ["e", "Eye opening", [[4, "Open"], [3, "To voice"], [2, "To pain"], [1, "No response"]]];
+  var motor = ["m", "Best motor response", [[6, "Obeys commands / spontaneous"], [5, "Localizes pain"], [4, "Withdraws from pain"], [3, "Decorticate posturing / flexion"], [2, "Decerebrate posturing / extension"], [1, "No response"]]];
+  return HZ_TL.gcsKid ? [eyes, ["v", "Verbal — infants", [[5, "Babbles"], [4, "Irritable"], [3, "Cries to pain"], [2, "Moans"], [1, "No response"]]], motor]
+    : [eyes, ["v", "Best verbal response", [[5, "Oriented"], [4, "Disoriented"], [3, "Inappropriate words"], [2, "Moans, unintelligible"], [1, "No response"]]], motor];
 }
 function hzTlGcs() {
   var s = HZ_TL.gcs, sets = hzTlGcsSets(), done = sets.filter(function(q) { return s[q[0]] !== undefined; }).length, tot = (s.e || 0) + (s.v || 0) + (s.m || 0);
@@ -15133,7 +15131,9 @@ function hzTlGcs() {
     + '<div class="hz-tl-total"><span>GCS</span><b>' + (done ? tot : "–") + '<small>/15</small></b>'
     + '<em' + (band ? ' class="' + band[0] + '"' : '') + '>' + (done ? 'E' + (s.e || "?") + ' V' + (s.v || "?") + ' M' + (s.m || "?") : '0 of 3 answered') + (band ? ' · ' + band[1] : '') + '</em></div>'
     + sets.map(function(q) { return hzTlRow("gcs", q[0], q[1], q[2], s[q[0]]); }).join("")
-    + '<div class="hz-tl-acts"><button class="hz-tl-btn" onclick="hzTlReset(\'gcs\')">Clear</button></div>';
+    + (done === 3 && (tot < 9 || s.m < 5) ? '<div class="hz-tl-warn">Neurologic compromise (NJ: total GCS under 9 or motor under 5) — consider air medical; see NJ Air Medical Transport (p222).</div>' : '')
+    + '<div class="hz-tl-acts"><button class="hz-tl-btn" onclick="hzTlReset(\'gcs\')">Clear</button></div>'
+    + '<div class="hz-tl-note">Wording from the NJ EMS GCS table (p246). In head injury, NJ says assess and document pupils and GCS every 5 minutes (p150). Mild / moderate / severe bands are the usual trauma grouping, not from NJ.</div>';
 }
 
 // ── 🔥 BURNS (Rule of Nines) — each part split front / back so partial burns can be counted ──
@@ -15191,11 +15191,12 @@ function hzTlBurn() {
   var b = HZ_TL.burn, tot = hzTlBurnTotal(), fmt = function(n) { return String(Math.round(n * 100) / 100); };
   return '<div class="hz-tl-seg"><button class="' + (HZ_TL.burnKid ? '' : 'on') + '" onclick="HZ_TL.burnKid=false;hzTlDraw()">🧑 Adult</button><button class="' + (HZ_TL.burnKid ? 'on' : '') + '" onclick="HZ_TL.burnKid=true;hzTlDraw()">🧒 Pediatric</button></div>'
     + '<div class="hz-tl-total"><span>Burned</span><b>' + fmt(tot) + '<small>%</small></b><em>of body surface</em></div>'
+    + (tot > 20 ? '<div class="hz-tl-warn">Over 20% — NJ: consider air medical for major burns over 20% BSA, and a burn center (p137).</div>' : tot > 10 ? '<div class="hz-tl-warn">Over 10% — NJ burn center criteria: more than 10% total body surface (p137).</div>' : '')
     + '<div class="hz-tl-bodies">' + hzTlFigure("F") + hzTlFigure("B") + '</div>'
     + '<div class="hz-tl-bsel">' + (function() { var on = []; hzTlBurnParts().forEach(function(p) { ["F", "B"].forEach(function(sd) { if (b[p[0] + sd]) on.push('<button class="hz-tl-chip" onclick="hzTlBurnTap(\'' + p[0] + sd + '\')">' + hzTlEsc(p[1]) + ' · ' + (sd === "F" ? "front" : "back") + ' ' + fmt(sd === "F" ? p[2] : p[3]) + '% ✕</button>'); }); }); return on.length ? on.join("") : '<span class="hz-tl-bnone">Tap the burned areas on the body.</span>'; })() + '</div>'
-    + '<div class="hz-tl-q"><div class="hz-tl-ql">Small or scattered burns — the patient\'s palm with fingers ≈ 1%</div><div class="hz-tl-palm"><button class="hz-tl-btn" onclick="HZ_TL.palms=Math.max(0,HZ_TL.palms-1);hzTlDraw()">− 1%</button><b>' + HZ_TL.palms + ' palm' + (HZ_TL.palms === 1 ? '' : 's') + '</b><button class="hz-tl-btn" onclick="HZ_TL.palms++;hzTlDraw()">＋ 1%</button></div></div>'
+    + '<div class="hz-tl-q"><div class="hz-tl-ql">Small or scattered burns — the patient\'s palm with fingers ≈ 1% (extra help, not part of the NJ protocol)</div><div class="hz-tl-palm"><button class="hz-tl-btn" onclick="HZ_TL.palms=Math.max(0,HZ_TL.palms-1);hzTlDraw()">− 1%</button><b>' + HZ_TL.palms + ' palm' + (HZ_TL.palms === 1 ? '' : 's') + '</b><button class="hz-tl-btn" onclick="HZ_TL.palms++;hzTlDraw()">＋ 1%</button></div></div>'
     + '<div class="hz-tl-acts"><button class="hz-tl-btn" onclick="hzTlReset(\'burn\')">Clear</button></div>'
-    + '<div class="hz-tl-note">Count partial-thickness (2nd degree) and full-thickness (3rd degree) burns only — not superficial (1st degree) redness. ' + (HZ_TL.burnKid ? 'Pediatric (child / infant): the head is bigger — 18% — and each leg is 13.5%.' : 'Adult: head 9%, each leg 18%. For a child or infant, tap 🧒 Pediatric at the top.') + '</div>';
+    + '<div class="hz-tl-note">NJ Burns protocol (p136): use the Rule of Nines and do not include 1st-degree (superficial) burns — count 2nd and 3rd degree only. Burn center also for: hands, feet, genitals, face, major joints or circumferential burns; any 3rd degree; electrical, lightning or chemical burns; smoke inhalation (airway compromise → closest hospital) (p137). ' + (HZ_TL.burnKid ? 'Pediatric (child / infant): the head is bigger — 18% — and each leg is 13.5%.' : 'Adult: head 9%, each leg 18%. For a child or infant, tap 🧒 Pediatric at the top.') + '</div>';
 }
 
 // ── 📊 Normal vitals by age — NJ EMS Clinical Practice Protocols & Guidelines v1 (8/21/2025), page 247 "Pediatric Vital Signs";
@@ -15262,7 +15263,7 @@ function hzTlLabor() {
   for (var i = Math.max(1, n - 4); i < n; i++) gaps.push(list[i].s - list[i - 1].s);
   var avg = function(a) { return a.length ? a.reduce(function(x, y) { return x + y; }, 0) / a.length : 0; };
   var aD = avg(durs), aG = avg(gaps);
-  var alert = n >= 3 && aG && aG <= 2.5 * 60000 ? '<div class="hz-tl-warn">Contractions about every ' + hzTlMmss(aG) + ' — delivery may be close. Check for crowning and an urge to push; see the NJ childbirth protocol.</div>' : '';
+  var alert = n >= 3 && aG && aG <= 2.5 * 60000 ? '<div class="hz-tl-warn">Contractions about every ' + hzTlMmss(aG) + ' — delivery may be close. NJ (p69): check for crowning — if crowning, prepare for delivery and notify the hospital; if no crowning, transport.</div>' : '';
   setTimeout(function() { if (HZ_TL.view !== "labor") return; clearTimeout(HZ_TL.labT); HZ_TL.labT = setTimeout(function() { if (HZ_TL.view === "labor" && document.getElementById("hz-tools-pop")) hzTlDraw(); }, 1000); }, 0);
   var rows = list.slice().reverse().slice(0, 12).map(function(c, k) {
     var idx = n - 1 - k, gap = idx > 0 ? c.s - list[idx - 1].s : null;
@@ -15272,7 +15273,7 @@ function hzTlLabor() {
     + alert
     + (rows ? '<div class="hz-tl-tbl hz-tl-lab">' + rows + '</div>' : '')
     + '<div class="hz-tl-acts">' + (n || L.cur ? '<button class="hz-tl-btn" onclick="if(confirm(\'Clear all contractions?\')){HZ_TL.lab={list:[],cur:null};hzTlLabSave();hzTlDraw()}">Clear</button>' : '') + '</div>'
-    + '<div class="hz-tl-note">Times are kept on this phone until you clear them, even if you close Tools. "Apart" is from the start of one contraction to the start of the next.</div>';
+    + '<div class="hz-tl-note">Times are kept on this phone until you clear them, even if you close Tools. "Apart" is from the start of one contraction to the start of the next. NJ signs of imminent delivery (p70): membrane rupture or bloody show, urge to move bowels, urge to push. Delivery is imminent when there is crowning (p69).</div>';
 }
 
 // ── 💊 Med Lookup (12.324): the server (medLookup) asks the FDA drug label (openFDA) — misspellings and brand names are
@@ -15281,7 +15282,7 @@ HZ_TL.med = { q: "", busy: false, res: null, err: "", recent: (function() { try 
 function hzTlMedGo(name) {
   var M = HZ_TL.med, q = String(name == null ? (document.getElementById("hz-tl-medq") || {}).value || "" : name).trim();
   if (q.length < 2) return;
-  M.q = q; M.busy = true; M.err = ""; M.res = null; hzTlDraw();
+  M.q = q; M.typed = q; M.busy = true; M.err = ""; M.res = null; hzTlMedSugHide(); hzTlDraw();
   var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
   rel("medLookup", { name: q }).then(function(r) {
     M.busy = false; M.res = r;
@@ -15289,10 +15290,62 @@ function hzTlMedGo(name) {
     if (HZ_TL.view === "med") hzTlDraw();
   }).catch(function(e) { M.busy = false; M.err = (e && e.message) || "Couldn't reach the server"; if (HZ_TL.view === "med") hzTlDraw(); });
 }
+// 12.325 (Sam): autocomplete — names come from the National Library of Medicine's RxTerms list (clinicaltables.nlm.nih.gov,
+// made for exactly this). Only the letters typed are sent. If the phone can't reach it directly, the server (medLookup suggest) asks for us.
+HZ_TL.med.sug = []; HZ_TL.med.sugIdx = -1; HZ_TL.med.sugCache = {}; HZ_TL.med.sugSeq = 0; HZ_TL.med.direct = true;
+function hzTlMedType(v) {
+  var M = HZ_TL.med; M.typed = v; clearTimeout(M.sugT);
+  var q = String(v || "").trim();
+  if (q.length < 2) { hzTlMedSugHide(); return; }
+  M.sugT = setTimeout(function() { hzTlMedSuggest(q); }, 200);
+}
+function hzTlMedSugClean(list, q) {
+  var seen = {}, out = [], ql = q.toLowerCase();
+  HZ_TL.med.recent.forEach(function(x) { if (x.toLowerCase().indexOf(ql) === 0) list.unshift(x); });
+  list.forEach(function(x) {
+    var n = String(x || "").replace(/\s*\(.*\)\s*$/, "").replace(/\s+/g, " ").trim(); if (!n) return;
+    if (n === n.toUpperCase()) n = n.toLowerCase().replace(/(^|[\s\-\/])([a-z])/g, function(a, b, c) { return b + c.toUpperCase(); });   // "ELIQUIS" → "Eliquis"
+    var k = n.toLowerCase(); if (seen[k]) return; seen[k] = 1; out.push(n);
+  });
+  return out.slice(0, 8);
+}
+function hzTlMedSuggest(q) {
+  var M = HZ_TL.med, key = q.toLowerCase(), seq = ++M.sugSeq;
+  var show = function(names) { M.sugCache[key] = names; if (seq !== M.sugSeq) return; var inp = document.getElementById("hz-tl-medq"); if (!inp || inp.value.trim().toLowerCase() !== key) return; M.sug = hzTlMedSugClean(names.slice(), q); M.sugIdx = -1; hzTlMedSugDraw(); };
+  if (M.sugCache[key]) return show(M.sugCache[key]);
+  var viaServer = function() {
+    var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
+    rel("medLookup", { suggest: q }).then(function(r) { show((r && r.names) || []); }).catch(function() {});
+  };
+  if (!M.direct || typeof fetch !== "function") return viaServer();
+  var ctl = typeof AbortController === "function" ? new AbortController() : null, tm = ctl ? setTimeout(function() { ctl.abort(); }, 4000) : 0;
+  fetch("https://clinicaltables.nlm.nih.gov/api/rxterms/v3/search?maxList=20&terms=" + encodeURIComponent(q), ctl ? { signal: ctl.signal } : {})
+    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(j) { clearTimeout(tm); show(((j && j[3]) || []).map(function(a) { return a && a[0]; })); })
+    .catch(function() { clearTimeout(tm); M.direct = false; viaServer(); });
+}
+function hzTlMedSugDraw() {
+  var M = HZ_TL.med, box = document.getElementById("hz-tl-medsug"), inp = document.getElementById("hz-tl-medq"); if (!box) return;
+  if (!M.sug.length || !inp || document.activeElement !== inp) { box.hidden = true; box.innerHTML = ""; return; }
+  var ql = inp.value.trim().length;
+  box.innerHTML = M.sug.map(function(n, i) {
+    var hit = n.toLowerCase().indexOf(inp.value.trim().toLowerCase()) === 0;
+    return '<button type="button" role="option" class="hz-tl-sugit' + (i === M.sugIdx ? ' on' : '') + '" onmousedown="event.preventDefault()" onclick="hzTlMedPick(' + i + ')">' + (hit ? '<b>' + hzTlEsc(n.slice(0, ql)) + '</b>' + hzTlEsc(n.slice(ql)) : hzTlEsc(n)) + '</button>'; }).join("");
+  box.hidden = false;
+}
+function hzTlMedSugHide() { var M = HZ_TL.med; M.sug = []; M.sugIdx = -1; clearTimeout(M.sugT); M.sugSeq++; var b = document.getElementById("hz-tl-medsug"); if (b) { b.hidden = true; b.innerHTML = ""; } }
+function hzTlMedPick(i) { var n = HZ_TL.med.sug[i]; if (n) hzTlMedGo(n); }
+function hzTlMedKey(e) {
+  var M = HZ_TL.med, n = M.sug.length;
+  if (e.key === "ArrowDown" && n) { e.preventDefault(); M.sugIdx = (M.sugIdx + 1) % n; hzTlMedSugDraw(); }
+  else if (e.key === "ArrowUp" && n) { e.preventDefault(); M.sugIdx = (M.sugIdx - 1 + n) % n; hzTlMedSugDraw(); }
+  else if (e.key === "Enter") { e.preventDefault(); if (M.sugIdx >= 0 && n) hzTlMedPick(M.sugIdx); else hzTlMedGo(); }
+  else if (e.key === "Escape" && n) { e.preventDefault(); e.stopPropagation(); hzTlMedSugHide(); }
+}
 function hzTlMedCap(s) { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); }
 function hzTlMed() {
   var M = HZ_TL.med, r = M.res;
-  var h = '<div class="hz-tl-medbar"><input id="hz-tl-medq" class="hz-tl-in" type="search" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Medicine name, e.g. Eliquis or metoprolol" value="' + hzTlEsc(M.q) + '" onkeydown="if(event.key===\'Enter\')hzTlMedGo()"><button class="hz-tl-go" onclick="hzTlMedGo()">Search</button></div>';
+  var h = '<div class="hz-tl-medbar"><div class="hz-tl-medwrap"><input id="hz-tl-medq" class="hz-tl-in" type="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="hz-tl-medsug" placeholder="Medicine name, e.g. Eliquis or metoprolol" value="' + hzTlEsc(M.typed != null ? M.typed : M.q) + '" oninput="hzTlMedType(this.value)" onkeydown="hzTlMedKey(event)" onblur="setTimeout(hzTlMedSugHide,180)"><div id="hz-tl-medsug" class="hz-tl-medsug" role="listbox" hidden></div></div><button class="hz-tl-go" onclick="hzTlMedGo()">Search</button></div>';
   if (M.recent.length && !M.busy) h += '<div class="hz-tl-medrec">' + M.recent.map(function(x) { return '<button class="hz-tl-chip2" onclick="hzTlMedGo(\'' + hzTlEsc(x).replace(/'/g, "") + '\')">' + hzTlEsc(hzTlMedCap(x)) + '</button>'; }).join("") + '</div>';
   if (M.busy) return h + '<div class="hz-tl-note">Looking up “' + hzTlEsc(M.q) + '” in the FDA drug labels…</div>';
   if (M.err) return h + '<div class="hz-tl-warn">' + hzTlEsc(M.err) + '</div>';
@@ -15312,24 +15365,26 @@ function hzTlMed() {
 // ── 💓 CPR / 🫁 ventilation metronomes ──
 function hzTlCpr() {
   var c = HZ_TL.cpr, on = HZ_TL.met && HZ_TL.met.kind === "cpr", m = HZ_TL.met || {};
-  return '<div class="hz-tl-metro' + (on ? ' run' : '') + '" id="hz-tl-metro"><div class="hz-tl-beat" id="hz-tl-beat"></div><div class="hz-tl-big" id="hz-tl-big">' + (on ? hzTlCprLabel() : c.rate) + '</div><div class="hz-tl-sub" id="hz-tl-sub">' + (on ? hzTlClock(m) : 'compressions a minute') + '</div></div>'
+  return '<div class="hz-tl-metro' + (on ? ' run' : '') + '" id="hz-tl-metro"><div class="hz-tl-beat" id="hz-tl-beat"></div><div class="hz-tl-big" id="hz-tl-big">' + (on ? hzTlCprLabel() : c.mode === "nb" ? 120 : c.rate) + '</div><div class="hz-tl-sub" id="hz-tl-sub">' + (on ? hzTlClock(m) : c.mode === "nb" ? 'beats a minute · 90 compressions + 30 breaths' : 'compressions a minute') + '</div></div>'
     + '<div class="hz-tl-acts"><button class="hz-tl-go' + (on ? ' stop' : '') + '" onclick="' + (on ? 'hzTlStop();hzTlDraw()' : 'hzTlStart(\'cpr\')') + '">' + (on ? '■ Stop' : '▶ Start') + '</button></div>'
-    + '<div class="hz-tl-q"><div class="hz-tl-ql">Rate: <b id="hz-tl-ratev">' + c.rate + '</b> a minute</div><input type="range" class="hz-tl-range" min="100" max="120" step="5" value="' + c.rate + '" oninput="HZ_TL.cpr.rate=+this.value;document.getElementById(\'hz-tl-ratev\').textContent=this.value;if(!HZ_TL.met)document.getElementById(\'hz-tl-big\').textContent=this.value"></div>'
-    + '<div class="hz-tl-q"><div class="hz-tl-ql">Mode</div><div class="hz-tl-opts hz-tl-opts3">' + [["cont", "Continuous", "advanced airway"], ["30", "30 : 2", "adult"], ["15", "15 : 2", "child / infant, 2 rescuers"]].map(function(o) {
+    + (c.mode === "nb" ? '' : '<div class="hz-tl-q"><div class="hz-tl-ql">Rate: <b id="hz-tl-ratev">' + c.rate + '</b> a minute <small style="font-weight:400">(NJ: 100–120, p121)</small></div><input type="range" class="hz-tl-range" min="100" max="120" step="5" value="' + c.rate + '" oninput="HZ_TL.cpr.rate=+this.value;document.getElementById(\'hz-tl-ratev\').textContent=this.value;if(!HZ_TL.met)document.getElementById(\'hz-tl-big\').textContent=this.value"></div>')
+    + '<div class="hz-tl-q"><div class="hz-tl-ql">Mode</div><div class="hz-tl-opts hz-tl-opts3 hz-tl-opts4">' + [["cont", "Continuous", "advanced airway · breath every 6 s"], ["30", "30 : 2", "adult"], ["15", "15 : 2", "child / infant, 2 rescuers"], ["nb", "Newborn 3 : 1", "heart rate under 60"]].map(function(o) {
       return '<button class="hz-tl-opt' + (c.mode === o[0] ? ' on' : '') + '" onclick="HZ_TL.cpr.mode=\'' + o[0] + '\';if(HZ_TL.met)hzTlStart(\'cpr\');else hzTlDraw()"><b>' + o[1] + '</b><small>' + o[2] + '</small></button>'; }).join("") + '</div></div>'
-    + '<div class="hz-tl-note">Push hard and fast, let the chest fully recoil. A 2-minute timer reminds you to switch compressors and check rhythm. The screen stays on while it runs.</div>';
+    + '<div class="hz-tl-note">' + (c.mode === "nb" ? 'NJ Newborn Care (p65): for a heart rate under 60 after correcting ventilations, CPR at 3 : 1 — three compressions then one breath, 120 beats a minute. Reassess every 60 seconds (you get an alert).' : 'NJ (p121): 100–120 compressions a minute, minimize interruptions, let the chest fully recoil. With an advanced airway, ventilate 8–10 a minute — continuous mode gives a breath cue every 6 seconds without stopping compressions. The 2-minute alert is for switching compressors and checking rhythm (p119, p124). 30 : 2 and 15 : 2 are the AHA ratios.') + ' The screen stays on while it runs.</div>';
 }
+// 12.325: NJ EMS BVM rates — [key, rate set, label, NJ range]. Basic airway p246; newborn p65; supraglottic / ETT p246
+var HZ_TL_VENT = [["ad", 10, "Adult", "10–12"], ["ch", 16, "Child", "12–20"], ["in", 25, "Infant", "20–30"], ["nb", 40, "Newborn", "40–60"], ["aa", 8, "Adv. airway adult", "6–10"], ["ap", 9, "Adv. airway peds", "8–10"]];
 function hzTlVent() {
   var on = HZ_TL.met && HZ_TL.met.kind === "vent", r = HZ_TL.vent.rate, m = HZ_TL.met || {};
   return '<div class="hz-tl-metro' + (on ? ' run' : '') + '" id="hz-tl-metro"><div class="hz-tl-beat" id="hz-tl-beat"></div><div class="hz-tl-big" id="hz-tl-big">' + (on ? 'READY' : r) + '</div><div class="hz-tl-sub" id="hz-tl-sub">' + (on ? hzTlClock(m) : 'breaths a minute · 1 every ' + (Math.round(600 / r) / 10) + ' s') + '</div></div>'
     + '<div class="hz-tl-acts"><button class="hz-tl-go' + (on ? ' stop' : '') + '" onclick="' + (on ? 'hzTlStop();hzTlDraw()' : 'hzTlStart(\'vent\')') + '">' + (on ? '■ Stop' : '▶ Start') + '</button></div>'
-    + '<div class="hz-tl-q"><div class="hz-tl-ql">Who</div><div class="hz-tl-opts hz-tl-opts3">' + [[10, "Adult", "1 every 6 s"], [20, "Child", "1 every 3 s"], [30, "Infant", "1 every 2 s"]].map(function(o) {
-      return '<button class="hz-tl-opt' + (r === o[0] ? ' on' : '') + '" onclick="HZ_TL.vent.rate=' + o[0] + ';if(HZ_TL.met)hzTlStart(\'vent\');else hzTlDraw()"><b>' + o[1] + '</b><small>' + o[2] + '</small></button>'; }).join("") + '</div></div>'
-    + '<div class="hz-tl-q"><div class="hz-tl-ql">Or set the rate: <b id="hz-tl-ratev">' + r + '</b> a minute</div><input type="range" class="hz-tl-range" min="6" max="40" step="1" value="' + r + '" oninput="HZ_TL.vent.rate=+this.value;document.getElementById(\'hz-tl-ratev\').textContent=this.value" onchange="if(HZ_TL.met)hzTlStart(\'vent\');else hzTlDraw()"></div>'
-    + '<div class="hz-tl-note">SQUEEZE on the high tone — about 1 second, just enough to see the chest rise. Don\'t over-ventilate.</div>';
+    + '<div class="hz-tl-q"><div class="hz-tl-ql">Who</div><div class="hz-tl-opts hz-tl-opts3">' + HZ_TL_VENT.map(function(o) {
+      return '<button class="hz-tl-opt' + (HZ_TL.vent.who === o[0] ? ' on' : '') + '" onclick="HZ_TL.vent.who=\'' + o[0] + '\';HZ_TL.vent.rate=' + o[1] + ';if(HZ_TL.met)hzTlStart(\'vent\');else hzTlDraw()"><b>' + o[2] + '</b><small>NJ ' + o[3] + ' · set ' + o[1] + '</small></button>'; }).join("") + '</div></div>'
+    + '<div class="hz-tl-q"><div class="hz-tl-ql">Or set the rate: <b id="hz-tl-ratev">' + r + '</b> a minute</div><input type="range" class="hz-tl-range" min="6" max="60" step="1" value="' + r + '" oninput="HZ_TL.vent.rate=+this.value;HZ_TL.vent.who=\'\';document.getElementById(\'hz-tl-ratev\').textContent=this.value" onchange="if(HZ_TL.met)hzTlStart(\'vent\');else hzTlDraw()"></div>'
+    + '<div class="hz-tl-note">SQUEEZE on the high tone — about 1 second, just enough to see the chest rise. Don\'t over-ventilate (NJ p121). Rates from the NJ BVM table (p246); newborn 40–60 from NJ Newborn Care (p65). With an advanced airway during CPR, use the CPR metronome\'s Continuous mode instead.</div>';
 }
 function hzTlClock(m) { var s = Math.max(0, Math.floor((Date.now() - (m.t0 || Date.now())) / 1000)); return 'Running ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, "0"); }
-function hzTlCprLabel() { var m = HZ_TL.met; if (!m) return ""; if (m.pause) return "2 BREATHS"; return HZ_TL.cpr.mode === "cont" ? String(m.n || 0) : String(m.n || 0); }
+function hzTlCprLabel() { var m = HZ_TL.met; if (!m) return ""; if (m.pause) return "2 BREATHS"; return String(m.n || 0); }
 function hzTlTone(freq, dur, vol) {
   try {
     var a = HZ_TL.audio || (HZ_TL.audio = new (window.AudioContext || window.webkitAudioContext)());
@@ -15349,7 +15404,15 @@ function hzTlStart(kind) {
   var tick = function() {
     if (HZ_TL.met !== m) return;
     var now = performance.now(), big = document.getElementById("hz-tl-big"), sub = document.getElementById("hz-tl-sub");
-    if (kind === "cpr") {
+    if (kind === "cpr" && HZ_TL.cpr.mode === "nb") {   // 12.325 newborn 3:1 — "one-and-two-and-three-and-breathe", 120 events a minute (NJ p65)
+      m.n = (m.n % 4) + 1; m.beats++;
+      if (m.n === 4) { hzTlTone(520, 0.35, 0.3); hzTlFlash("v"); if (big) big.textContent = "BREATHE"; }
+      else { hzTlTone(1000, 0.06); hzTlFlash("c"); if (big) big.textContent = m.n; }
+      var elN = Math.floor((Date.now() - m.t0) / 1000), minN = Math.floor(elN / 60);
+      if (minN > m.lastSwitch) { m.lastSwitch = minN; hzTlTone(660, 0.5, 0.3); if (sub) sub.innerHTML = '<b class="hz-tl-alert">60 SECONDS — reassess heart rate</b>'; m.alertUntil = Date.now() + 6000; }
+      else if (sub && !(m.alertUntil > Date.now())) sub.textContent = hzTlClock(m) + ' · 3 compressions : 1 breath';
+      m.next += 500;
+    } else if (kind === "cpr") {
       var cyc = HZ_TL.cpr.mode === "cont" ? 0 : +HZ_TL.cpr.mode;
       if (m.pause) {   // 2 breaths, then compressions again
         m.pause = false; m.n = 0;
@@ -15362,6 +15425,10 @@ function hzTlStart(kind) {
       if (cycle > m.lastSwitch) { m.lastSwitch = cycle; hzTlTone(660, 0.5, 0.3); if (sub) sub.innerHTML = '<b class="hz-tl-alert">2 MINUTES — switch compressors · check rhythm</b>'; m.alertUntil = Date.now() + 8000; }
       else if (sub && !(m.alertUntil > Date.now())) sub.textContent = hzTlClock(m) + (cyc ? ' · compression ' + m.n + ' of ' + cyc : '');
       var gap = 60000 / HZ_TL.cpr.rate;
+      if (!cyc) {   // 12.325 continuous with an advanced airway: a breath cue every 6 s (10 a minute, NJ 8–10 p121) — compressions don't stop
+        if (!m.nextBreath) m.nextBreath = Date.now() + 6000;
+        if (Date.now() >= m.nextBreath) { m.nextBreath += 6000; setTimeout(function() { if (HZ_TL.met !== m) return; hzTlTone(520, 0.3, 0.25); hzTlFlash("v"); }, Math.min(150, gap / 2)); }
+      }
       if (last) {   // 2 breaths: about 4 seconds, with a cue for each
         m.pause = true; m.next += gap;
         setTimeout(function() { if (HZ_TL.met !== m) return; if (big) big.textContent = "2 BREATHS"; hzTlTone(520, 0.9, 0.3); hzTlFlash("v"); }, gap);
@@ -15408,7 +15475,7 @@ function hzTlCss() {
     + P + ".hz-tl-q{margin:12px 0}"
     + P + ".hz-tl-ql{font-weight:800;color:#000;-webkit-text-fill-color:#000;margin-bottom:6px}"
     + P + ".hz-tl-opts{display:flex;flex-direction:column;gap:6px}"
-    + P + ".hz-tl-opts3{flex-direction:row;flex-wrap:wrap}" + P + ".hz-tl-opts3 .hz-tl-opt{flex:1 1 28%;text-align:center}" + P + ".hz-tl-opts3 .hz-tl-opt b{display:block}" + P + ".hz-tl-opt small{display:block;font-size:.75rem;margin-top:2px;opacity:.9}"
+    + P + ".hz-tl-opts3{flex-direction:row;flex-wrap:wrap}" + P + ".hz-tl-opts3 .hz-tl-opt{flex:1 1 28%;text-align:center}" + P + ".hz-tl-opts4 .hz-tl-opt{flex:1 1 40%}" + P + ".hz-tl-opts3 .hz-tl-opt b{display:block}" + P + ".hz-tl-opt small{display:block;font-size:.75rem;margin-top:2px;opacity:.9}"
     + P + ".hz-tl-opt{text-align:left;background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017;border-radius:10px;padding:10px 12px;font-size:.92rem;cursor:pointer;line-height:1.3}"
     + P + ".hz-tl-opt b{display:inline-block;min-width:1.4em;font-family:Oswald,sans-serif;font-size:1.05rem}"
     + P + ".hz-tl-opt.on{background:#d4a017;color:#000;-webkit-text-fill-color:#000;font-weight:700}"
@@ -15472,7 +15539,11 @@ function hzTlCss() {
     + P + ".hz-tl-tap.on{background:#c62828;border-color:#c62828;color:#fff;-webkit-text-fill-color:#fff}"
     + P + ".hz-tl-in{width:100%;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important;border-radius:10px !important;padding:10px 12px !important;font-size:1.1rem !important;font-weight:700}" + P + ".hz-tl-in::placeholder{color:rgba(212,160,23,.55) !important;-webkit-text-fill-color:rgba(212,160,23,.55) !important;font-weight:400}"
     + P + ".hz-tl-warn{background:#c62828;color:#fff;-webkit-text-fill-color:#fff;border-radius:12px;padding:10px 12px;font-weight:700;margin:10px 0}"
-    + P + ".hz-tl-medbar{display:flex;gap:8px}" + P + ".hz-tl-medbar .hz-tl-in{flex:1;min-width:0}" + P + ".hz-tl-medbar .hz-tl-go{flex:0 0 auto;padding:10px 16px;font-size:1rem}"
+    + P + ".hz-tl-medbar{display:flex;gap:8px;align-items:flex-start}" + P + ".hz-tl-medbar .hz-tl-in{flex:1;min-width:0}" + P + ".hz-tl-medbar .hz-tl-go{flex:0 0 auto;padding:12px 16px;font-size:1rem}"
+    + P + ".hz-tl-medwrap{position:relative;flex:1;min-width:0}" + P + ".hz-tl-medwrap .hz-tl-in{width:100%}"
+    + P + ".hz-tl-medsug{margin-top:4px;background:#000;border:2px solid #d4a017;border-radius:10px;overflow:hidden}"
+    + P + ".hz-tl-sugit{display:block;width:100%;margin:0 !important;text-align:left;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:0 !important;border-top:1px solid rgba(212,160,23,.3) !important;border-radius:0 !important;box-shadow:none !important;padding:11px 12px !important;font-size:1rem;font-weight:600;cursor:pointer}" + P + ".hz-tl-sugit:first-child{border-top:0 !important}"
+    + P + ".hz-tl-sugit b{color:#fff;-webkit-text-fill-color:#fff}" + P + ".hz-tl-sugit.on,.hz-tl-sugit:hover{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important}" + P + ".hz-tl-sugit.on b{color:#000;-webkit-text-fill-color:#000}"
     + P + ".hz-tl-medrec{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}"
     + P + ".hz-tl-chip2{background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017;border-radius:999px;padding:4px 10px;font-weight:700;font-size:.82rem;cursor:pointer}"
     + P + ".hz-tl-medcard{background:#000;border:2px solid #d4a017;border-radius:12px;padding:12px 14px;margin:10px 0}"
@@ -15483,6 +15554,7 @@ function hzTlCss() {
     + "@media (max-width:600px){#hz-tools-pop{padding:0;align-items:stretch;padding-top:calc(env(safe-area-inset-top,0px) * 1.6)}" + P + ".hz-tl-box{max-width:none;max-height:none;border-radius:0}}";
   document.head.appendChild(s);
 }
+
 </script>
 <script id="hz-tkassign">
 /* ═══════════════════════════════════════════════════════════════════════════════════════════════
