@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.90"; window.M_BUILD = BUILD;
+  var BUILD = "7.91"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -15482,6 +15482,19 @@ function hzTrPfText() {
   if (pf.busy) return "🔊 Getting natural voices… " + pf.done + " of " + pf.total;
   return "🔊 Natural voices: " + pf.done + " of " + pf.total + " ready" + (HZ_TL.tr.voiceWhy ? " (" + hzTlEsc(HZ_TL.tr.voiceWhy) + ")" : "") + (navigator.onLine === false ? " — no signal; the rest use the phone's voice" : " — the rest use the phone's voice for now");
 }
+// 12.339 (Sam: "quick replies no longer speak out the translation"): a tap must speak right away. iPhone only lets the phone's
+// voice start from inside the tap, so: natural voice if it's already on the phone → play it now; otherwise the phone's voice
+// speaks now and the natural voice is fetched quietly for next time.
+function hzTrSayQuick(text, lang) {
+  var T = HZ_TL.tr, key = (lang || "") + "|" + text; T.tts = T.tts || {}; hzTrCtx();
+  if (T.natural !== false && T.tts[key] && hzTrPlay(T.tts[key], function(f) { if (f === "fail") hzTrSayPhone(text, lang); })) return;
+  hzTrSayPhone(text, lang);
+  if (T.natural !== false && navigator.onLine !== false) hzTrIdbGet(key).then(function(v) {
+    if (v && v.audio) { T.tts[key] = v; return; }
+    var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
+    rel("liveTranslate", { say: text, lang: lang }).then(function(r) { if (r && r.ttsv >= 3 && r.tts && r.tts.audio) { T.tts[key] = r.tts; hzTrIdbPut(key, r.tts); } else if (r && !(r.ttsv >= 3)) T.serverOld = true; else if (r && r.why) hzTrVoiceWhy(r.why); }).catch(function() {});
+  });
+}
 function hzTrSay(text, lang, done, tts) {
   var T = HZ_TL.tr, key = (lang || "") + "|" + text; T.tts = T.tts || {};
   if (tts && tts.audio) T.tts[key] = tts;
@@ -15791,7 +15804,7 @@ function hzTrShow(text, lang, en, pain) {
   var ans = HZ_TR_ANS.map(function(a, k) { var local = pi >= 0 ? a[pi + 1] : ""; return '<button class="hz-tr-ans a' + k + '" onclick="hzTrAnswer(' + k + ')"><b' + (rtl ? ' dir="rtl"' : '') + '>' + a[7] + ' ' + hzTlEsc(local || a[0]) + '</b>' + (local ? '<small>' + hzTlEsc(a[0]) + '</small>' : '') + '</button>'; }).join("");
   var scale = pain ? '<div class="hz-tr-pain">' + [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function(nn) { return '<button style="background:hsl(' + (120 - nn * 12) + ',70%,45%)" onclick="hzTrAnswer(\'p' + nn + '\')">' + nn + '</button>'; }).join("") + '</div>' : '';
   f.innerHTML = '<div class="hz-tr-fbox"><div class="hz-tr-fl">' + hzTlEsc(((hzTrL(lang) || [0, lang, ""])[2]) || "") + '</div><div class="hz-tr-ft"' + (rtl ? ' dir="rtl"' : '') + '>' + hzTlEsc(text) + '</div>' + (en ? '<div class="hz-tr-fe">' + hzTlEsc(en) + '</div>' : '')
-    + scale + '<div class="hz-tr-ansrow">' + ans + '</div><div class="hz-tl-acts" style="justify-content:center"><button class="hz-tl-btn" onclick="hzTrCtx();hzTrSay(' + hzTlEsc(JSON.stringify(text)).replace(/'/g, "&#39;") + ',\'' + hzTlEsc(lang) + '\')">🔊 Say it</button><button class="hz-tl-btn" onclick="hzTrHide()">✕ Close</button></div></div>';
+    + scale + '<div class="hz-tr-ansrow">' + ans + '</div><div class="hz-tl-acts" style="justify-content:center"><button class="hz-tl-btn" onclick="hzTrCtx();hzTrSayQuick(' + hzTlEsc(JSON.stringify(text)).replace(/'/g, "&#39;") + ',\'' + hzTlEsc(lang) + '\')">🔊 Say it</button><button class="hz-tl-btn" onclick="hzTrHide()">✕ Close</button></div></div>';
 }
 function hzTrHide() { var f = document.getElementById("hz-tr-full"); if (f) { f.remove(); return true; } return false; }
 function hzTrAnswer(k) {
@@ -15807,10 +15820,10 @@ function hzTrPhrase(id) {
   var tx = ph[pi + 2];
   T.lines.push({ who: "emt", heard: ph[1], en: ph[1], tr: tx, lang: T.lang, clarity: "clear", src: "phrase", at: Date.now() });
   hzTlDraw(); hzTrShow(tx, T.lang, ph[1], id === "pain");
-  if (T.speak) hzTrSay(tx, T.lang);
+  if (T.speak) hzTrSayQuick(tx, T.lang);
 }
 function hzTrLineShow(i) { var l = HZ_TL.tr.lines[i]; if (l) hzTrShow(l.tr, l.lang || HZ_TL.tr.lang, l.en, /\b(0|zero)\b.*\b10\b/i.test(l.en || "")); }
-function hzTrLineSay(i) { hzTrCtx(); var l = HZ_TL.tr.lines[i]; if (l) hzTrSay(l.tr, l.lang || HZ_TL.tr.lang); }
+function hzTrLineSay(i) { hzTrCtx(); var l = HZ_TL.tr.lines[i]; if (l) hzTrSayQuick(l.tr, l.lang || HZ_TL.tr.lang); }
 function hzTrLangSelect() {
   var T = HZ_TL.tr, cur = String(T.lang || "").split("-")[0];
   return '<select class="hz-tr-sel" onchange="if(this.value===\'\')hzTrResetLang();else{HZ_TL.tr.detected=false;hzTrSetLang(this.value,null,true)}">'
