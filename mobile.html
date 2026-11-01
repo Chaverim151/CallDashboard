@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.85"; window.M_BUILD = BUILD;
+  var BUILD = "7.86"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -15517,7 +15517,7 @@ function hzTrSayPhone(text, lang, done) {
 // 12.330 (Sam: "make sure the back and forth is natural"): after your translation is spoken, the app starts listening for the
 // patient's answer by itself, and every turn stops on its own when the speaker goes quiet — tap only when you start talking.
 function hzTrNext() { var T = HZ_TL.tr; if (T.auto && !T.rec && !T.busy && HZ_TL.view === "trans" && T.tab === "talk" && document.getElementById("hz-tools-pop")) hzTrRec("patient", true); }
-function hzTrClose() { hzTrStopRec(false); hzTrStopVoice(); var T = HZ_TL.tr; if (T.ctx) { try { T.ctx.close(); } catch (e) {} T.ctx = null; } }
+function hzTrClose() { hzTrPendStop(); hzTrStopRec(false); hzTrStopVoice(); var T = HZ_TL.tr; if (T.ctx) { try { T.ctx.close(); } catch (e) {} T.ctx = null; } }
 try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) {}
 // ── recording: tap once to start, tap again to stop and translate ──
 // 12.331 (Sam: "it should work like this" — Axon Body 4's translator): ONE big button. Hold it while anyone talks, let go, and
@@ -15604,12 +15604,23 @@ function hzTrWav(bufs, n, rate) {   // mono 16 kHz 16-bit WAV, as base64
   var u8 = new Uint8Array(pcm.buffer), str = ""; for (var k = 0; k < u8.length; k += 0x8000) str += String.fromCharCode.apply(null, u8.subarray(k, k + 0x8000));
   return btoa(str);
 }
+// 12.333 (Sam: "add a pending noise"): a soft two-note chime repeats while a turn is being translated, so you know it's working
+function hzTrPendStart() {
+  var T = HZ_TL.tr; hzTrPendStop(); var ctx = hzTrCtx(); if (!ctx) return;
+  var beep = function() {
+    try { var t = ctx.currentTime; [[660, 0], [880, 0.14]].forEach(function(n) { var o = ctx.createOscillator(), g = ctx.createGain(); o.type = "sine"; o.frequency.value = n[0];
+      g.gain.setValueAtTime(0.0001, t + n[1]); g.gain.exponentialRampToValueAtTime(0.09, t + n[1] + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + n[1] + 0.13);
+      o.connect(g); g.connect(ctx.destination); o.start(t + n[1]); o.stop(t + n[1] + 0.15); }); } catch (e) {}
+  };
+  beep(); T.pend = setInterval(beep, 1000);
+}
+function hzTrPendStop() { var T = HZ_TL.tr; if (T.pend) { clearInterval(T.pend); T.pend = null; } }
 function hzTrSend(p) {
-  var T = HZ_TL.tr; T.busy = p.role || "emt"; hzTlDraw();
+  var T = HZ_TL.tr; T.busy = p.role || "emt"; hzTlDraw(); hzTrPendStart();
   var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
   var ctx = T.lines.slice(-6).map(function(l) { return { who: l.who, text: l.who === "emt" ? (l.en || l.heard) : (l.tr || "") }; });
   rel("liveTranslate", Object.assign({ target: T.lang, targetName: T.langName, context: ctx, speak: !!(T.speak && T.natural !== false) }, p)).then(function(r) {
-    T.busy = false; r = r || {};
+    T.busy = false; hzTrPendStop(); r = r || {};
     var who = p.role === "auto" ? (r.speaker || (/^en\b/i.test(r.lang || "") ? "emt" : "patient")) : p.role;
     if (who === "patient") {
       T.lines.push({ who: "pt", heard: r.heard, tr: r.translation, lang: r.lang, langName: r.langName, clarity: r.clarity, note: r.note, src: "voice", at: Date.now() });
@@ -15627,7 +15638,7 @@ function hzTrSend(p) {
       else if (p.role !== "auto") setTimeout(hzTrNext, 400);
     }
     if (HZ_TL.view === "trans") hzTlDraw();
-  }).catch(function(e) { T.busy = false; hzTrToast((e && e.message) || "Couldn't translate — use the Quick Phrases.", true); if (HZ_TL.view === "trans") hzTlDraw(); });
+  }).catch(function(e) { T.busy = false; hzTrPendStop(); hzTrToast((e && e.message) || "Couldn't translate — use the Quick Phrases.", true); if (HZ_TL.view === "trans") hzTlDraw(); });
 }
 function hzTrType() {
   var T = HZ_TL.tr, i = document.getElementById("hz-tr-typed"), t = String(i ? i.value : "").trim(); if (!t) return;
