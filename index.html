@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.337">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.338">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2737,7 +2737,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.337</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.338</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -19795,7 +19795,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.337";
+var DESKTOP_VERSION = "12.338";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -30086,25 +30086,47 @@ function hzTrLiveMsg(L, m) {
   var T = HZ_TL.tr;
   if (m.setupComplete) { L.ready = true; T.liveFails = 0; T.liveWhy = ""; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); return; }
   var sc = m.serverContent; if (!sc) { if (m.goAway) { try { L.ws.close(); } catch (e) {} } return; }
+  if (sc.inputTranscription && !L.cur && !L.awaiting && L.last && Date.now() - L.last.at < 5000) {   // words that arrive just after the turn ended
+    L.last.heard = ((L.last.heard || "") + (sc.inputTranscription.text || "")).trim();
+    if (sc.inputTranscription.languageCode && !L.last.lc) L.last.lc = sc.inputTranscription.languageCode;
+    hzTrLiveLangFix(L.last); if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); return;
+  }
   var cur = L.cur = L.cur || { inT: "", outT: "", lang: "" };
   if (sc.inputTranscription) { cur.inT += sc.inputTranscription.text || ""; if (sc.inputTranscription.languageCode) cur.lang = sc.inputTranscription.languageCode; }
   if (sc.outputTranscription) cur.outT += sc.outputTranscription.text || "";
   if (sc.modelTurn && sc.modelTurn.parts) sc.modelTurn.parts.forEach(function(p) { if (p.inlineData && p.inlineData.data && /audio/.test(p.inlineData.mimeType || "audio")) { hzTrPendStop(); hzTrLivePlay(p.inlineData.data, p.inlineData.mimeType); } });
   if (sc.interrupted) hzTrLiveHush();
   if (sc.turnComplete) {
-    L.cur = null; clearTimeout(L.waitT);
+    L.cur = null; L.awaiting = false; clearTimeout(L.waitT);
     var inT = cur.inT.trim(), outT = cur.outT.trim(), lc = cur.lang || "";
-    var en = lc ? /^en\b/i.test(lc) : hzTrLooksEnglish(inT);
+    var en = lc ? /^en\b/i.test(lc) : hzTrEnScore(inT) > hzTrEnScore(outT);   // no language code → whichever side reads as English tells who spoke
     if (T.busy === "live") { T.busy = false; hzTrPendStop(); }
     if (inT || outT) {
       if (en) T.lines.push({ who: "emt", heard: inT, en: inT, tr: outT, lang: T.lang, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() });
       else {
-        T.lines.push({ who: "pt", heard: inT, tr: outT, lang: lc || T.lang, langName: lc ? ((hzTrL(lc) || [0, lc])[1]) : T.langName, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() });
-        if (!T.locked && lc && !/^en\b/i.test(lc)) { T.lang = lc; T.langName = (hzTrL(lc) || [0, lc])[1]; T.locked = true; T.detected = true; }
+        var pl = { who: "pt", heard: inT, tr: outT, lang: lc || T.lang, langName: lc ? ((hzTrL(lc) || [0, lc])[1]) : T.langName, lc: lc, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() };
+        T.lines.push(pl); L.last = pl; hzTrLiveLangFix(pl);
       }
     }
     if (HZ_TL.view === "trans" && !T.rec) hzTlDraw();
   }
+}
+// 12.338 (Sam: "why is speaking the language not setting the language?"): the live line doesn't always say which language it
+// heard — then the patient's words are sent to the server to find out, and that sets the patient's language
+function hzTrLiveLangFix(pl) {
+  var T = HZ_TL.tr; if (T.locked || pl.langAsked) return;
+  var set = function(lc, name) { if (!lc || /^en\b/i.test(lc) || T.locked) return; T.lang = lc; T.langName = name || (hzTrL(lc) || [0, lc])[1]; T.locked = true; T.detected = true; pl.lang = lc; pl.langName = T.langName; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); };
+  if (pl.lc) return set(pl.lc);
+  if (!pl.heard) return;
+  pl.langAsked = true;
+  var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
+  rel("liveTranslate", { detect: pl.heard }).then(function(r) { if (r && r.lang) set(r.lang, r.langName); }).catch(function() {});
+}
+function hzTrEnScore(t) {
+  t = String(t || ""); if (!t.trim()) return 0; if (/[^\x00-\x7F]/.test(t.replace(/[’‘“”—–…]/g, ""))) return 0;   // accents / other scripts → not English
+  var w = t.toLowerCase().match(/[a-z']+/g) || []; if (!w.length) return 0;
+  var sw = "the an is are you your i my do does did have has what where when how it to of in on and or not can any pain hurt hurts here we this that was were be been feel take taking going will with for since".split(" ");
+  return w.filter(function(x) { return sw.indexOf(x) >= 0; }).length / w.length + 0.01;
 }
 function hzTrLooksEnglish(t) { var w = String(t || "").toLowerCase().match(/[a-z']+/g) || []; if (!w.length) return false; var sw = "the a an is are you your i my me do does did have has what where when how it to of in on and or not can any pain hurt here we".split(" "); var n = w.filter(function(x) { return sw.indexOf(x) >= 0; }).length; return n / w.length >= 0.18 && !/[^\x00-\x7F]/.test(t.replace(/[’‘“”—–]/g, "")); }
 function hzTrLivePlay(b64, mime) {
@@ -30124,6 +30146,7 @@ function hzTrLiveSend(o) { var L = HZ_TL.tr.live; if (L && L.ws && L.ws.readySta
 // hold the button: stream the voice up in ~0.1 s pieces (16 kHz 16-bit PCM)
 function hzTrLiveHold() {
   var T = HZ_TL.tr, ctx = hzTrCtx(); hzTrLiveHush(); hzTrStopVoice();
+  if (T.live) { T.live.awaiting = true; T.live.last = null; }
   T.rec = { role: "live", hold: true, live: true, ctx: ctx, bufs: [], t0: Date.now(), rate: ctx.sampleRate, starting: true, floor: 1, spoke: false, loudAt: 0, carry: [] };
   hzTrHoldPaint();
   hzTrLiveSend({ realtimeInput: { activityStart: {} } });

@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.89"; window.M_BUILD = BUILD;
+  var BUILD = "7.90"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -15576,25 +15576,47 @@ function hzTrLiveMsg(L, m) {
   var T = HZ_TL.tr;
   if (m.setupComplete) { L.ready = true; T.liveFails = 0; T.liveWhy = ""; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); return; }
   var sc = m.serverContent; if (!sc) { if (m.goAway) { try { L.ws.close(); } catch (e) {} } return; }
+  if (sc.inputTranscription && !L.cur && !L.awaiting && L.last && Date.now() - L.last.at < 5000) {   // words that arrive just after the turn ended
+    L.last.heard = ((L.last.heard || "") + (sc.inputTranscription.text || "")).trim();
+    if (sc.inputTranscription.languageCode && !L.last.lc) L.last.lc = sc.inputTranscription.languageCode;
+    hzTrLiveLangFix(L.last); if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); return;
+  }
   var cur = L.cur = L.cur || { inT: "", outT: "", lang: "" };
   if (sc.inputTranscription) { cur.inT += sc.inputTranscription.text || ""; if (sc.inputTranscription.languageCode) cur.lang = sc.inputTranscription.languageCode; }
   if (sc.outputTranscription) cur.outT += sc.outputTranscription.text || "";
   if (sc.modelTurn && sc.modelTurn.parts) sc.modelTurn.parts.forEach(function(p) { if (p.inlineData && p.inlineData.data && /audio/.test(p.inlineData.mimeType || "audio")) { hzTrPendStop(); hzTrLivePlay(p.inlineData.data, p.inlineData.mimeType); } });
   if (sc.interrupted) hzTrLiveHush();
   if (sc.turnComplete) {
-    L.cur = null; clearTimeout(L.waitT);
+    L.cur = null; L.awaiting = false; clearTimeout(L.waitT);
     var inT = cur.inT.trim(), outT = cur.outT.trim(), lc = cur.lang || "";
-    var en = lc ? /^en\b/i.test(lc) : hzTrLooksEnglish(inT);
+    var en = lc ? /^en\b/i.test(lc) : hzTrEnScore(inT) > hzTrEnScore(outT);   // no language code → whichever side reads as English tells who spoke
     if (T.busy === "live") { T.busy = false; hzTrPendStop(); }
     if (inT || outT) {
       if (en) T.lines.push({ who: "emt", heard: inT, en: inT, tr: outT, lang: T.lang, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() });
       else {
-        T.lines.push({ who: "pt", heard: inT, tr: outT, lang: lc || T.lang, langName: lc ? ((hzTrL(lc) || [0, lc])[1]) : T.langName, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() });
-        if (!T.locked && lc && !/^en\b/i.test(lc)) { T.lang = lc; T.langName = (hzTrL(lc) || [0, lc])[1]; T.locked = true; T.detected = true; }
+        var pl = { who: "pt", heard: inT, tr: outT, lang: lc || T.lang, langName: lc ? ((hzTrL(lc) || [0, lc])[1]) : T.langName, lc: lc, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() };
+        T.lines.push(pl); L.last = pl; hzTrLiveLangFix(pl);
       }
     }
     if (HZ_TL.view === "trans" && !T.rec) hzTlDraw();
   }
+}
+// 12.338 (Sam: "why is speaking the language not setting the language?"): the live line doesn't always say which language it
+// heard — then the patient's words are sent to the server to find out, and that sets the patient's language
+function hzTrLiveLangFix(pl) {
+  var T = HZ_TL.tr; if (T.locked || pl.langAsked) return;
+  var set = function(lc, name) { if (!lc || /^en\b/i.test(lc) || T.locked) return; T.lang = lc; T.langName = name || (hzTrL(lc) || [0, lc])[1]; T.locked = true; T.detected = true; pl.lang = lc; pl.langName = T.langName; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); };
+  if (pl.lc) return set(pl.lc);
+  if (!pl.heard) return;
+  pl.langAsked = true;
+  var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
+  rel("liveTranslate", { detect: pl.heard }).then(function(r) { if (r && r.lang) set(r.lang, r.langName); }).catch(function() {});
+}
+function hzTrEnScore(t) {
+  t = String(t || ""); if (!t.trim()) return 0; if (/[^\x00-\x7F]/.test(t.replace(/[’‘“”—–…]/g, ""))) return 0;   // accents / other scripts → not English
+  var w = t.toLowerCase().match(/[a-z']+/g) || []; if (!w.length) return 0;
+  var sw = "the an is are you your i my do does did have has what where when how it to of in on and or not can any pain hurt hurts here we this that was were be been feel take taking going will with for since".split(" ");
+  return w.filter(function(x) { return sw.indexOf(x) >= 0; }).length / w.length + 0.01;
 }
 function hzTrLooksEnglish(t) { var w = String(t || "").toLowerCase().match(/[a-z']+/g) || []; if (!w.length) return false; var sw = "the a an is are you your i my me do does did have has what where when how it to of in on and or not can any pain hurt here we".split(" "); var n = w.filter(function(x) { return sw.indexOf(x) >= 0; }).length; return n / w.length >= 0.18 && !/[^\x00-\x7F]/.test(t.replace(/[’‘“”—–]/g, "")); }
 function hzTrLivePlay(b64, mime) {
@@ -15614,6 +15636,7 @@ function hzTrLiveSend(o) { var L = HZ_TL.tr.live; if (L && L.ws && L.ws.readySta
 // hold the button: stream the voice up in ~0.1 s pieces (16 kHz 16-bit PCM)
 function hzTrLiveHold() {
   var T = HZ_TL.tr, ctx = hzTrCtx(); hzTrLiveHush(); hzTrStopVoice();
+  if (T.live) { T.live.awaiting = true; T.live.last = null; }
   T.rec = { role: "live", hold: true, live: true, ctx: ctx, bufs: [], t0: Date.now(), rate: ctx.sampleRate, starting: true, floor: 1, spoke: false, loudAt: 0, carry: [] };
   hzTrHoldPaint();
   hzTrLiveSend({ realtimeInput: { activityStart: {} } });
