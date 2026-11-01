@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.77"; window.M_BUILD = BUILD;
+  var BUILD = "7.78"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1192,6 +1192,8 @@ html[data-theme="basic"] .hz-sc-in{background:#f3f4f6 !important}
 html[data-theme="basic"] .hz-tl-top b{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-top .hz-pop-back{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-item{color:#8a680f !important}
+html[data-theme="basic"] .hz-tl-tri.none{color:#8a680f !important}
+html[data-theme="basic"] .hz-tl-sec{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-opt{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-total span{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-total em{color:#8a680f !important}
@@ -15023,7 +15025,7 @@ setInterval(function() { var el = document.getElementById("hz-mtb-name"); if (!e
 /* ═══════════════════════════════════════════════════════════════════════════════════════════════
    12.316 / 7.67 — 🧰 TOOLS (same code in index.html and mobile.html)
    Sam: a Tools tile with APGAR, GCS, CPR metronome, ventilation metronome and burn surface area.
-   12.322 / 7.74: + Normal Vitals by Age (NJ table), Vital Sign Timer, Contraction Tracker. 12.324 / 7.76: + 💊 Med Lookup (FDA label via medLookup).
+   12.322 / 7.74: + Normal Vitals by Age (NJ table), Vital Sign Timer, Contraction Tracker. 12.324 / 7.76: + 💊 Med Lookup (FDA label via medLookup). 12.326 / 7.78: + 🚑 Trauma Triage (NJ 8.2).
    Everything runs on the device — nothing is saved or sent. Black / gold look; selected answers solid gold.
    Phone Back key: from a tool goes back to the Tools list, from the list closes Tools (mNavCloseOverlay).
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
@@ -15032,6 +15034,7 @@ var HZ_TL = { view: "menu", hist: false, apgar: {}, apgarLog: [], gcs: {}, gcsKi
 var HZ_TL_LIST = [
   ["apgar", "👶", "APGAR Score", "Newborn at 1 and 5 minutes"],
   ["gcs", "🧠", "GCS Calculator", "Glasgow Coma Scale — adult or infant"],
+  ["tri", "🚑", "Trauma Triage", "NJ field triage — red / yellow trauma center criteria"],
   ["cpr", "💓", "CPR Metronome", "Compression beat, 100–120 a minute"],
   ["vent", "🫁", "Ventilation Metronome", "Breath timing for BVM"],
   ["burn", "🔥", "Burn Surface Area", "Rule of Nines — adult or pediatric"],
@@ -15073,7 +15076,7 @@ function hzTlDraw() {
   var v = HZ_TL.view, item = HZ_TL_LIST.filter(function(x) { return x[0] === v; })[0];
   var back = v === "menu" ? '<button class="hz-pop-back" onclick="hzToolsClose()">← Back</button>' : '<button class="hz-pop-back" onclick="hzTlGo(\'menu\')">← ' + hzTlEsc(hzTlTitle()) + '</button>';
   var ttl = v === "menu" ? "🧰 " + hzTlTitle() : item[1] + " " + item[2];
-  var body = v === "menu" ? hzTlMenu() : v === "apgar" ? hzTlApgar() : v === "gcs" ? hzTlGcs() : v === "cpr" ? hzTlCpr() : v === "vent" ? hzTlVent() : v === "vitals" ? hzTlVitals() : v === "vtimer" ? hzTlVt() : v === "labor" ? hzTlLabor() : v === "med" ? hzTlMed() : hzTlBurn();
+  var body = v === "menu" ? hzTlMenu() : v === "apgar" ? hzTlApgar() : v === "gcs" ? hzTlGcs() : v === "cpr" ? hzTlCpr() : v === "vent" ? hzTlVent() : v === "vitals" ? hzTlVitals() : v === "vtimer" ? hzTlVt() : v === "labor" ? hzTlLabor() : v === "med" ? hzTlMed() : v === "tri" ? hzTlTri() : hzTlBurn();
   var ob = o.querySelector(".hz-tl-body"), keep = ob && o.getAttribute("data-v") === v ? ob.scrollTop : 0;   // a redraw of the same tool keeps its scroll place
   o.innerHTML = '<div class="hz-tl-box" role="dialog" aria-label="' + hzTlEsc(ttl) + '"><div class="hz-tl-top">' + back + '<b>' + hzTlEsc(ttl) + '</b></div><div class="hz-tl-body">' + body + '</div></div>';
   o.setAttribute("data-v", v); if (keep) { var nb = o.querySelector(".hz-tl-body"); if (nb) nb.scrollTop = keep; }
@@ -15081,7 +15084,7 @@ function hzTlDraw() {
 function hzTlMenu() {
   return HZ_TL_LIST.map(function(t) {
     return '<button class="hz-tl-item" onclick="hzTlGo(\'' + t[0] + '\')"><span class="hz-tl-ic">' + t[1] + '</span><span><b>' + hzTlEsc(t[2]) + '</b><small>' + hzTlEsc(t[3]) + '</small></span><span class="hz-tl-chev">›</span></button>';
-  }).join("") + '<div class="hz-tl-note">These are quick aids only. Follow NJ EMS protocols and medical control.</div>';
+  }).join("") + '<div class="hz-tl-note hz-tl-disc">These are quick aids only. Follow NJ EMS protocols and medical control.</div>';
 }
 // one row of choices: [value, label]
 function hzTlRow(group, key, title, opts, sel) {
@@ -15134,6 +15137,81 @@ function hzTlGcs() {
     + (done === 3 && (tot < 9 || s.m < 5) ? '<div class="hz-tl-warn">Neurologic compromise (NJ: total GCS under 9 or motor under 5) — consider air medical; see NJ Air Medical Transport (p222).</div>' : '')
     + '<div class="hz-tl-acts"><button class="hz-tl-btn" onclick="hzTlReset(\'gcs\')">Clear</button></div>'
     + '<div class="hz-tl-note">Wording from the NJ EMS GCS table (p246). In head injury, NJ says assess and document pupils and GCS every 5 minutes (p150). Mild / moderate / severe bands are the usual trauma grouping, not from NJ.</div>';
+}
+
+// ── 🚑 TRAUMA TRIAGE (12.326, Sam: "trauma score calculator, NJ EMS standard"). NJ doesn't use a numeric trauma score —
+//    NJ 8.2 Trauma Triage & Transport Decision (p224) is the National Guideline for the Field Triage of Injured Patients:
+//    any RED → highest-level trauma center; YELLOW only → a trauma center (need not be highest). Also flags NJ 8.1 Air
+//    Medical clinical criteria (p222). Nothing is saved or sent.
+var HZ_TL_TRI = {
+  red: [["pen", "Penetrating injury to head, neck, torso or proximal extremities", 1], ["skull", "Skull deformity / suspected skull fracture", 1],
+    ["spine", "Suspected spinal injury with new motor or sensory loss", 1], ["chest", "Chest wall instability, deformity or suspected flail chest", 1],
+    ["pelvis", "Suspected pelvic fracture", 1], ["long", "Suspected fracture of 2 or more proximal long bones", 1],
+    ["mangled", "Crushed, degloved, mangled or pulseless extremity", 1], ["amp", "Amputation proximal to wrist or ankle", 1],
+    ["bleed", "Active bleeding needing a tourniquet or wound packing with continuous pressure", 0], ["resp", "Respiratory distress or needs respiratory support", 1]],
+  moi: [["eject", "Auto crash: partial or complete ejection"], ["intr12", "Auto crash: intrusion (incl. roof) over 12 in at an occupant site"], ["intr18", "Auto crash: intrusion over 18 in at any site"],
+    ["extr", "Auto crash: needs extrication (entrapped)"], ["death", "Auto crash: death in the passenger compartment"], ["kidseat", "Auto crash: child (0–9) unrestrained or in an unsecured child seat"],
+    ["telem", "Auto crash: vehicle telemetry consistent with severe injury"], ["rider", "Rider separated from vehicle with significant impact (motorcycle, ATV, horse…)"],
+    ["ped", "Pedestrian / bicycle rider thrown, run over or with significant impact"], ["fall", "Fall from height over 10 feet (all ages)"]],
+  jdg: [["lowfall", "Low-level fall, age ≤ 5 or ≥ 65, with significant head impact"], ["anticoag", "Anticoagulant (blood thinner) use"], ["abuse", "Suspicion of child abuse"],
+    ["special", "Special, high-resource healthcare needs"], ["preg", "Pregnancy over 20 weeks"], ["burn", "Burns together with trauma"], ["concern", "I'm concerned (EMS judgement)"]]
+};
+HZ_TL.tri = { age: "", rr: "", sbp: "", hr: "", spo2: "", motor: undefined, c: {} };
+function hzTlTriNum(v) { v = String(v == null ? "" : v).trim(); return v === "" || isNaN(+v) ? null : +v; }
+function hzTlTriEval() {
+  var T = HZ_TL.tri, red = [], yel = [], air = [], age = hzTlTriNum(T.age), rr = hzTlTriNum(T.rr), sbp = hzTlTriNum(T.sbp), hr = hzTlTriNum(T.hr), sp = hzTlTriNum(T.spo2);
+  if (T.motor !== undefined && T.motor < 6) red.push("Unable to follow commands (motor GCS " + T.motor + ")");
+  if (T.motor !== undefined && T.motor < 5) air.push("Motor GCS under 5");
+  if (rr !== null && (rr < 10 || rr > 29)) { red.push("Breathing " + rr + " a minute (under 10 or over 29)"); air.push("Abnormal respiratory rate"); }
+  if (sp !== null && sp < 90) red.push("Room-air SpO₂ " + sp + "% (under 90)");
+  if (sbp !== null) {
+    var a = age === null ? 30 : age;
+    if (a < 10) { var lim = 70 + 2 * Math.floor(a); if (sbp < lim) { red.push("Systolic " + sbp + " — under " + lim + " for age " + Math.floor(a) + " (70 + 2 × age)"); air.push("Age-appropriate hypotension"); } }
+    else {
+      var lo = a >= 65 ? 110 : 90;
+      if (sbp < lo) red.push("Systolic " + sbp + " — under " + lo + (a >= 65 ? " (age 65+)" : ""));
+      if (hr !== null && hr > sbp) red.push("Heart rate " + hr + " is higher than systolic " + sbp);
+      if (sbp < 90) air.push("Systolic under 90");
+    }
+  }
+  HZ_TL_TRI.red.forEach(function(x) { if (T.c[x[0]]) { red.push(x[1]); if (x[2]) air.push(x[0] === "spine" ? "Paralysis / new motor loss" : x[0] === "resp" ? "Severe respiratory compromise" : x[1]); } });
+  HZ_TL_TRI.moi.concat(HZ_TL_TRI.jdg).forEach(function(x) { if (T.c[x[0]]) yel.push(x[1]); });
+  return { red: red, yel: yel, air: air, noAge: sbp !== null && age === null };
+}
+// the short coloured verdict stays pinned at the top while scrolling; the reasons and air medical box are under the form
+function hzTlTriTop() {
+  var r = hzTlTriEval();
+  return r.red.length ? '<div class="hz-tl-tri red"><b>RED — high risk</b><span>Highest-level trauma center available</span></div>'
+    : r.yel.length ? '<div class="hz-tl-tri yel"><b>YELLOW — moderate risk</b><span>A trauma center (need not be highest level)</span></div>'
+    : '<div class="hz-tl-tri none"><b>No criteria marked yet</b><span>When in doubt, transport to a trauma center</span></div>';
+}
+function hzTlTriRes() {
+  var r = hzTlTriEval(), li = function(a) { return '<ul>' + a.map(function(x) { return '<li>' + hzTlEsc(x) + '</li>'; }).join("") + '</ul>'; };
+  var h = r.red.length ? '<div class="hz-tl-tri red"><b>RED — high risk for serious injury</b><span>Transport to the highest-level trauma center available</span>' + li(r.red) + '</div>'
+    : r.yel.length ? '<div class="hz-tl-tri yel"><b>YELLOW — moderate risk for serious injury</b><span>Preferentially transport to a trauma center (need not be the highest level)</span>' + li(r.yel) + '</div>'
+    : '<div class="hz-tl-tri none"><b>No red or yellow criteria marked</b><span>When in doubt, transport to a trauma center.</span></div>';
+  if (r.red.length && r.yel.length) h += '<div class="hz-tl-note">Also yellow: ' + hzTlEsc(r.yel.join("; ")) + '</div>';
+  if (r.air.length) h += '<div class="hz-tl-tri air"><b>🚁 Meets NJ air medical clinical criteria (p222)</b><span>Request if ground time to the right trauma center is longer than the helicopter\'s ETA. Uncontrolled airway or bleeding → nearest hospital unless ALS can intercept sooner.</span>' + li(r.air) + '</div>';
+  if (r.noAge) h += '<div class="hz-tl-note">Enter the age — the blood-pressure limits change for under 10 and 65+.</div>';
+  return h;
+}
+function hzTlTriSet(k, v) { HZ_TL.tri[k] = v; var e = document.getElementById("hz-tl-trires"), t = document.getElementById("hz-tl-tritop"); if (e) e.innerHTML = hzTlTriRes(); if (t) t.innerHTML = hzTlTriTop(); }
+function hzTlTriTog(k) { HZ_TL.tri.c[k] = !HZ_TL.tri.c[k]; hzTlDraw(); }
+function hzTlTri() {
+  var T = HZ_TL.tri;
+  var inp = function(k, lbl, unit) { return '<label class="hz-tl-trin"><span>' + lbl + '</span><input class="hz-tl-in" type="number" inputmode="decimal" min="0" value="' + hzTlEsc(T[k]) + '" oninput="hzTlTriSet(\'' + k + '\',this.value)"><small>' + unit + '</small></label>'; };
+  var chk = function(list) { return '<div class="hz-tl-opts">' + list.map(function(x) { return '<button class="hz-tl-opt hz-tl-chk' + (T.c[x[0]] ? ' on' : '') + '" onclick="hzTlTriTog(\'' + x[0] + '\')">' + (T.c[x[0]] ? '☑' : '☐') + ' ' + hzTlEsc(x[1]) + '</button>'; }).join("") + '</div>'; };
+  var motor = [[6, "Obeys commands"], [5, "Localizes pain"], [4, "Withdraws from pain"], [3, "Decorticate / flexion"], [2, "Decerebrate / extension"], [1, "No response"]];
+  return '<div id="hz-tl-tritop" class="hz-tl-tritop">' + hzTlTriTop() + '</div>'
+    + '<div class="hz-tl-sec red">Mental status &amp; vital signs</div>'
+    + '<div class="hz-tl-trig">' + inp("age", "Age", "years (0 if under 1)") + inp("rr", "Breathing", "a minute") + inp("sbp", "Systolic BP", "mmHg") + inp("hr", "Heart rate", "a minute") + inp("spo2", "SpO₂ on room air", "%") + '</div>'
+    + '<div class="hz-tl-q"><div class="hz-tl-ql">Best motor response (GCS)</div><div class="hz-tl-opts hz-tl-chips">' + motor.map(function(o) { return '<button class="hz-tl-opt' + (T.motor === o[0] ? ' on' : '') + '" onclick="HZ_TL.tri.motor=HZ_TL.tri.motor===' + o[0] + '?undefined:' + o[0] + ';hzTlDraw()"><b>' + o[0] + '</b> ' + o[1] + '</button>'; }).join("") + '</div></div>'
+    + '<div class="hz-tl-sec red">Injury patterns</div>' + chk(HZ_TL_TRI.red)
+    + '<div class="hz-tl-sec yel">Mechanism of injury</div>' + chk(HZ_TL_TRI.moi)
+    + '<div class="hz-tl-sec yel">EMS judgement — risk factors</div>' + chk(HZ_TL_TRI.jdg)
+    + '<div class="hz-tl-sec">Result</div><div id="hz-tl-trires">' + hzTlTriRes() + '</div>'
+    + '<div class="hz-tl-acts"><button class="hz-tl-btn" onclick="HZ_TL.tri={age:\'\',rr:\'\',sbp:\'\',hr:\'\',spo2:\'\',motor:undefined,c:{}};hzTlDraw()">Clear</button></div>'
+    + '<div class="hz-tl-note">From NJ EMS 8.2 Trauma Triage &amp; Transport Decision (National Guideline for the Field Triage of Injured Patients, p224) and 8.1 Air Medical Transport (p222). Children should be triaged preferentially to pediatric-capable centers. When in doubt, transport to a trauma center. NJ doesn\'t use a numbered trauma score, so this shows the NJ red / yellow criteria instead.</div>';
 }
 
 // ── 🔥 BURNS (Rule of Nines) — each part split front / back so partial burns can be counted ──
@@ -15472,6 +15550,13 @@ function hzTlCss() {
     + P + ".hz-tl-item>span:nth-child(2){flex:1}"
     + P + ".hz-tl-chev{font-size:1.6rem;opacity:.8}"
     + P + ".hz-tl-note{font-size:.8rem;color:#444;-webkit-text-fill-color:#444;line-height:1.5;margin-top:10px}"
+    + P + ".hz-tl-disc{text-align:center;font-weight:800;color:#000;-webkit-text-fill-color:#000}"
+    + P + ".hz-tl-tri{border-radius:12px;padding:12px 14px;margin:0 0 10px}" + P + ".hz-tl-tri b{display:block;font-family:Oswald,sans-serif;font-size:1.15rem;letter-spacing:.04em;text-transform:uppercase}" + P + ".hz-tl-tri span{display:block;font-weight:700;margin-top:2px}" + P + ".hz-tl-tri ul{margin:8px 0 0;padding-left:18px;font-size:.88rem;line-height:1.4}"
+    + P + ".hz-tl-tri.red{background:#c62828;color:#fff;-webkit-text-fill-color:#fff}" + P + ".hz-tl-tri.yel{background:#ffd60a;color:#000;-webkit-text-fill-color:#000}"
+    + P + ".hz-tl-tri.none{background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017}" + P + ".hz-tl-tri.air{background:#1e88e5;color:#fff;-webkit-text-fill-color:#fff}"
+    + P + ".hz-tl-sec{font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:8px;padding:6px 10px;margin:16px 0 8px;background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017}" + P + ".hz-tl-sec.red{background:#c62828;color:#fff;-webkit-text-fill-color:#fff}" + P + ".hz-tl-sec.yel{background:#ffd60a;color:#000;-webkit-text-fill-color:#000}"
+    + P + ".hz-tl-trig{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}" + P + ".hz-tl-trin{display:flex;flex-direction:column;gap:3px}" + P + ".hz-tl-trin span{font-weight:800;color:#000;-webkit-text-fill-color:#000;font-size:.88rem}" + P + ".hz-tl-trin small{color:#555;-webkit-text-fill-color:#555;font-size:.75rem}"
+    + P + ".hz-tl-chk{font-size:.9rem}" + P + ".hz-tl-tritop{position:sticky;top:-14px;z-index:2;background:#fff;padding-top:2px}" + P + ".hz-tl-tritop .hz-tl-tri{margin:0;box-shadow:0 4px 12px rgba(0,0,0,.2)}"
     + P + ".hz-tl-q{margin:12px 0}"
     + P + ".hz-tl-ql{font-weight:800;color:#000;-webkit-text-fill-color:#000;margin-bottom:6px}"
     + P + ".hz-tl-opts{display:flex;flex-direction:column;gap:6px}"
