@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.81"; window.M_BUILD = BUILD;
+  var BUILD = "7.82"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1207,6 +1207,17 @@ html[data-theme="basic"] .hz-tl-tbl span{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-tap{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-in{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-sugit{color:#8a680f !important}
+html[data-theme="basic"] .hz-tr-sel{color:#8a680f !important}
+html[data-theme="basic"] .hz-tr-big.patient{color:#8a680f !important}
+html[data-theme="basic"] .hz-tr-meter{background:#f3f4f6 !important}
+html[data-theme="basic"] .hz-tr-who{color:#8a680f !important}
+html[data-theme="basic"] .hz-tr-sm{color:#8a680f !important}
+html[data-theme="basic"] .hz-tr-back{color:#5c6672 !important}
+html[data-theme="basic"] .hz-tr-acts button{color:#8a680f !important}
+html[data-theme="basic"] .hz-tr-fl{color:#8a680f !important}
+html[data-theme="basic"] .hz-tr-fe{color:#5c6672 !important}
+html[data-theme="basic"] .hz-tr-ans.a2{color:#8a680f !important}
+html[data-theme="basic"] .hz-tr-ans.a3{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-chip2{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-medsub{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-pill.q{color:#8a680f !important}
@@ -15025,7 +15036,7 @@ setInterval(function() { var el = document.getElementById("hz-mtb-name"); if (!e
 /* ═══════════════════════════════════════════════════════════════════════════════════════════════
    12.316 / 7.67 — 🧰 TOOLS (same code in index.html and mobile.html)
    Sam: a Tools tile with APGAR, GCS, CPR metronome, ventilation metronome and burn surface area.
-   12.322 / 7.74: + Normal Vitals by Age (NJ table), Vital Sign Timer, Contraction Tracker. 12.324 / 7.76: + 💊 Med Lookup (FDA label via medLookup). 12.326 / 7.78: + 🚑 Trauma Triage (NJ 8.2).
+   12.322 / 7.74: + Normal Vitals by Age (NJ table), Vital Sign Timer, Contraction Tracker. 12.324 / 7.76: + 💊 Med Lookup (FDA label via medLookup). 12.326 / 7.78: + 🚑 Trauma Triage (NJ 8.2). 12.330 / 7.82: + 🗣️ Live Translator (liveTranslate).
    Everything runs on the device — nothing is saved or sent. Black / gold look; selected answers solid gold.
    Phone Back key: from a tool goes back to the Tools list, from the list closes Tools (mNavCloseOverlay).
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
@@ -15041,6 +15052,7 @@ var HZ_TL_LIST = [
   ["vitals", "📊", "Normal Vitals by Age", "NJ EMS pediatric ranges, SpO₂ and BVM rates"],
   ["vtimer", "⏱️", "Vital Sign Timer", "Count pulse or breathing — tap or time it"],
   ["labor", "🤰", "Contraction Tracker", "How long they last and how far apart"],
+  ["trans", "🗣️", "Live Translator", "EMT ⇄ patient, any language — plus quick medical phrases"],
   ["med", "💊", "Med Lookup", "What a medicine is for and how it works — FDA label"]
 ];
 function hzTlEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
@@ -15055,13 +15067,14 @@ function hzToolsOpen() {
   HZ_TL.view = "menu"; hzTlDraw();
 }
 function hzToolsClose(fromBack) {
-  hzTlStop(); hzTlVtStop();
+  hzTlStop(); hzTlVtStop(); hzTrClose();
   var o = document.getElementById("hz-tools-pop"); if (o) o.remove();
   HZ_TL.view = "menu";
   if (HZ_TL.hist) { HZ_TL.hist = false; if (!fromBack && history.state && history.state.hzOv === "tools" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
 }
 // Phone Back key (called from mNavCloseOverlay): inside a tool → the list; on the list → close
 function hzToolsBack() {
+  if (hzTrHide()) { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "tools" }), ""); HZ_TL.hist = true; } catch (e) {} return "added"; }   // 12.330: the big patient screen closes first
   if (HZ_TL.view !== "menu") {
     hzTlGo("menu");
     try { history.pushState(Object.assign({}, mNavState(), { hzOv: "tools" }), ""); HZ_TL.hist = true; } catch (e) {}
@@ -15069,14 +15082,14 @@ function hzToolsBack() {
   }
   var h = HZ_TL.hist; HZ_TL.hist = false; hzToolsClose(true); return h ? "added" : true;
 }
-function hzTlGo(v) { hzTlStop(); hzTlVtStop(); HZ_TL.view = v; hzTlDraw(); var b = document.querySelector("#hz-tools-pop .hz-tl-body"); if (b) b.scrollTop = 0; }
+function hzTlGo(v) { hzTlStop(); hzTlVtStop(); if (v !== "trans") hzTrClose(); HZ_TL.view = v; hzTlDraw(); var b = document.querySelector("#hz-tools-pop .hz-tl-body"); if (b) b.scrollTop = 0; }
 
 function hzTlDraw() {
   var o = document.getElementById("hz-tools-pop"); if (!o) return;
   var v = HZ_TL.view, item = HZ_TL_LIST.filter(function(x) { return x[0] === v; })[0];
   var back = v === "menu" ? '<button class="hz-pop-back" onclick="hzToolsClose()">← Back</button>' : '<button class="hz-pop-back" onclick="hzTlGo(\'menu\')">← ' + hzTlEsc(hzTlTitle()) + '</button>';
   var ttl = v === "menu" ? "🧰 " + hzTlTitle() : item[1] + " " + item[2];
-  var body = v === "menu" ? hzTlMenu() : v === "apgar" ? hzTlApgar() : v === "gcs" ? hzTlGcs() : v === "cpr" ? hzTlCpr() : v === "vent" ? hzTlVent() : v === "vitals" ? hzTlVitals() : v === "vtimer" ? hzTlVt() : v === "labor" ? hzTlLabor() : v === "med" ? hzTlMed() : v === "tri" ? hzTlTri() : hzTlBurn();
+  var body = v === "menu" ? hzTlMenu() : v === "apgar" ? hzTlApgar() : v === "gcs" ? hzTlGcs() : v === "cpr" ? hzTlCpr() : v === "vent" ? hzTlVent() : v === "vitals" ? hzTlVitals() : v === "vtimer" ? hzTlVt() : v === "labor" ? hzTlLabor() : v === "med" ? hzTlMed() : v === "tri" ? hzTlTri() : v === "trans" ? hzTlTrans() : hzTlBurn();
   var ob = o.querySelector(".hz-tl-body"), keep = ob && o.getAttribute("data-v") === v ? ob.scrollTop : 0;   // a redraw of the same tool keeps its scroll place
   o.innerHTML = '<div class="hz-tl-box" role="dialog" aria-label="' + hzTlEsc(ttl) + '"><div class="hz-tl-top">' + back + '<b>' + hzTlEsc(ttl) + '</b></div><div class="hz-tl-body">' + body + '</div></div>';
   o.setAttribute("data-v", v); if (keep) { var nb = o.querySelector(".hz-tl-body"); if (nb) nb.scrollTop = keep; }
@@ -15354,6 +15367,244 @@ function hzTlLabor() {
     + '<div class="hz-tl-note">Times are kept on this phone until you clear them, even if you close Tools. "Apart" is from the start of one contraction to the start of the next. NJ signs of imminent delivery (p70): membrane rupture or bloody show, urge to move bowels, urge to push. Delivery is imminent when there is crowning (p69).</div>';
 }
 
+// ── 🗣️ LIVE TRANSLATOR (12.330, Sam): EMT ⇄ patient, built for a noisy rig. Tap a big button, talk, tap again: the phone
+//    records with noise suppression, makes a small 16 kHz WAV and the server (liveTranslate) has Gemini hear it, detect the
+//    language + dialect and translate; EMT turns are read back into English by Google Translate as a check. The patient's
+//    language is set by the first thing they say (or picked). ⚡ Quick Phrases are built in (Spanish, Yiddish, Hebrew,
+//    Russian, Ukrainian, Farsi) and work with no internet. Nothing is saved — closing Tools forgets the conversation.
+var HZ_TR_LANGS = [["es", "Spanish", "Español"], ["yi", "Yiddish", "ייִדיש"], ["he", "Hebrew", "עברית"], ["ru", "Russian", "Русский"], ["uk", "Ukrainian", "Українська"], ["fa", "Farsi (Persian)", "فارسی"],
+  ["ar", "Arabic", "العربية"], ["ht", "Haitian Creole", "Kreyòl"], ["pt", "Portuguese", "Português"], ["zh", "Chinese (Mandarin)", "中文"], ["pl", "Polish", "Polski"], ["hi", "Hindi", "हिन्दी"],
+  ["ur", "Urdu", "اردو"], ["bn", "Bengali", "বাংলা"], ["gu", "Gujarati", "ગુજરાતી"], ["pa", "Punjabi", "ਪੰਜਾਬੀ"], ["ko", "Korean", "한국어"], ["vi", "Vietnamese", "Tiếng Việt"], ["fr", "French", "Français"],
+  ["it", "Italian", "Italiano"], ["tl", "Tagalog", "Tagalog"], ["tr", "Turkish", "Türkçe"], ["am", "Amharic", "አማርኛ"], ["hu", "Hungarian", "Magyar"], ["ro", "Romanian", "Română"], ["ka", "Georgian", "ქართული"],
+  ["uz", "Uzbek", "Oʻzbek"], ["ja", "Japanese", "日本語"], ["ta", "Tamil", "தமிழ்"], ["te", "Telugu", "తెలుగు"], ["de", "German", "Deutsch"]];
+var HZ_TR_PL = ["es", "yi", "he", "ru", "uk", "fa"];   // languages with built-in Quick Phrases
+function hzTrRtl(l) { return /^(he|yi|fa|ar|ur|ps|iw)\b/i.test(String(l || "")); }
+// [id, English, es, yi, he, ru, uk, fa]  — 12.330: written for Hatzolah; have a native speaker check before relying on them
+var HZ_TR_PH = [
+  ["Introduce", [
+    ["intro", "I'm an EMT from Hatzolah. We're here to help you.", "Soy paramédico de Hatzolah. Estamos aquí para ayudarle.", "איך בין פון הצלה. מיר זענען דא צו העלפן אייך.", "אני חובש מהצלה. אנחנו כאן כדי לעזור לך.", "Я медик из «Хацолы». Мы здесь, чтобы помочь вам.", "Я медик з «Хацоли». Ми тут, щоб допомогти вам.", "من امدادگر اورژانس هاتزولا هستم. ما اینجا هستیم تا به شما کمک کنیم."],
+    ["name", "What is your name?", "¿Cómo se llama?", "ווי הייסט איר?", "מה שמך?", "Как вас зовут?", "Як вас звати?", "اسم شما چیست؟"],
+    ["age", "How old are you?", "¿Cuántos años tiene?", "ווי אלט זענט איר?", "בן/בת כמה את/ה?", "Сколько вам лет?", "Скільки вам років?", "چند سال دارید؟"],
+    ["calm", "Stay calm. We are taking care of you.", "Mantenga la calma. Lo estamos atendiendo.", "זייט רואיג. מיר נעמען זיך אן מיט אייך.", "שמרו על רוגע, אנחנו מטפלים בך.", "Сохраняйте спокойствие. Мы о вас позаботимся.", "Зберігайте спокій. Ми про вас подбаємо.", "آرام باشید. ما از شما مراقبت می‌کنیم."]]],
+  ["Pain & symptoms", [
+    ["where", "Where does it hurt? Point to it.", "¿Dónde le duele? Señálelo.", "וואו טוט עס וויי? ווייזט מיט'ן פינגער.", "איפה כואב? הראה/י לי את המקום.", "Где болит? Покажите.", "Де болить? Покажіть.", "کجایتان درد می‌کند؟ نشان دهید."],
+    ["pain", "How bad is the pain, from 0 to 10?", "¿Qué tan fuerte es el dolor, del 0 al 10?", "ווי שטארק איז דער ווייטיק, פון 0 ביז 10?", "כמה חזק הכאב, מ-0 עד 10?", "Насколько сильная боль, от 0 до 10?", "Наскільки сильний біль, від 0 до 10?", "شدت درد از ۰ تا ۱۰ چقدر است؟"],
+    ["start", "When did this start?", "¿Cuándo empezó esto?", "ווען האט עס זיך אנגעהויבן?", "מתי זה התחיל?", "Когда это началось?", "Коли це почалося?", "از کی شروع شد؟"],
+    ["chest", "Do you have chest pain?", "¿Tiene dolor en el pecho?", "טוט אייך וויי די ברוסט?", "יש לך כאב בחזה?", "У вас болит в груди?", "У вас болить у грудях?", "درد قفسه سینه دارید؟"],
+    ["breath", "Are you having trouble breathing?", "¿Le cuesta respirar?", "איז אייך שווער צו אטעמען?", "קשה לך לנשום?", "Вам трудно дышать?", "Вам важко дихати?", "در نفس کشیدن مشکل دارید؟"],
+    ["dizzy", "Do you feel dizzy or weak?", "¿Se siente mareado o débil?", "דרייט זיך אייך דער קאפ, אדער פילט איר זיך שוואך?", "יש לך סחרחורת או חולשה?", "У вас кружится голова или слабость?", "У вас паморочиться голова чи слабкість?", "سرگیجه یا ضعف دارید؟"],
+    ["nausea", "Do you feel sick to your stomach? Did you vomit?", "¿Tiene náuseas? ¿Ha vomitado?", "איז אייך נישט גוט אויפ'ן הארצן? האט איר זיך אויסגעבראכן?", "יש לך בחילה? הקאת?", "Вас тошнит? Была рвота?", "Вас нудить? Було блювання?", "حالت تهوع دارید؟ استفراغ کردید؟"],
+    ["faint", "Did you pass out?", "¿Se desmayó?", "האט איר געכאפט חלשות?", "התעלפת?", "Вы теряли сознание?", "Ви знепритомніли?", "بیهوش شدید؟"],
+    ["fall", "Did you fall? Did you hit your head?", "¿Se cayó? ¿Se golpeó la cabeza?", "זענט איר געפאלן? האט איר זיך אנגעקלאפט דעם קאפ?", "נפלת? קיבלת מכה בראש?", "Вы упали? Ударились головой?", "Ви впали? Вдарилися головою?", "زمین خوردید؟ سرتان ضربه خورد؟"]]],
+  ["Medical history", [
+    ["allergy", "Are you allergic to any medicine?", "¿Es alérgico a algún medicamento?", "זענט איר אלערגיש צו א מעדיצין?", "יש לך אלרגיה לתרופות?", "У вас есть аллергия на лекарства?", "У вас є алергія на ліки?", "به دارویی حساسیت دارید؟"],
+    ["meds", "What medicines do you take? Show me.", "¿Qué medicamentos toma? Muéstremelos.", "וועלכע מעדיצינען נעמט איר? ווייזט מיר.", "אילו תרופות את/ה לוקח/ת? תראה/י לי.", "Какие лекарства вы принимаете? Покажите мне.", "Які ліки ви приймаєте? Покажіть мені.", "چه داروهایی مصرف می‌کنید؟ به من نشان دهید."],
+    ["thin", "Do you take blood thinners?", "¿Toma medicina para hacer la sangre más líquida (anticoagulantes)?", "נעמט איר מעדיצין וואס מאכט דאס בלוט דינער?", "את/ה לוקח/ת מדללי דם?", "Вы принимаете препараты для разжижения крови?", "Ви приймаєте ліки для розрідження крові?", "داروی رقیق‌کننده خون مصرف می‌کنید؟"],
+    ["hx", "Do you have diabetes, heart or lung problems?", "¿Tiene diabetes, problemas del corazón o de los pulmones?", "האט איר צוקער, הארץ אדער לונגען פראבלעמען?", "יש לך סוכרת, בעיות לב או ריאות?", "У вас есть диабет, проблемы с сердцем или лёгкими?", "У вас є діабет, проблеми із серцем чи легенями?", "دیابت، مشکل قلبی یا ریوی دارید؟"],
+    ["preg", "Are you pregnant? Could you be?", "¿Está embarazada? ¿Podría estarlo?", "זענט איר שוואנגער? קען זיין?", "את בהריון? ייתכן שאת בהריון?", "Вы беременны? Это возможно?", "Ви вагітні? Це можливо?", "باردار هستید؟ ممکن است باشید؟"],
+    ["ate", "When did you last eat or drink?", "¿Cuándo comió o bebió por última vez?", "ווען האט איר לעצטנס געגעסן אדער געטרונקען?", "מתי אכלת או שתית לאחרונה?", "Когда вы последний раз ели или пили?", "Коли ви востаннє їли чи пили?", "آخرین بار کی غذا خوردید یا نوشیدید؟"],
+    ["etoh", "Did you drink alcohol or take drugs today?", "¿Tomó alcohol o drogas hoy?", "האט איר היינט געטרונקען אלקאהאל אדער גענומען דראגס?", "שתית אלכוהול או לקחת סמים היום?", "Вы сегодня пили алкоголь или принимали наркотики?", "Ви сьогодні пили алкоголь чи вживали наркотики?", "امروز الکل یا مواد مصرف کرده‌اید؟"]]],
+  ["Exam", [
+    ["squeeze", "Squeeze my hands.", "Apriete mis manos.", "דריקט מיינע הענט.", "לחץ/י לי על הידיים.", "Сожмите мои руки.", "Стисніть мої руки.", "دست‌هایم را فشار دهید."],
+    ["stroke", "Smile. Raise both arms.", "Sonría. Levante los dos brazos.", "שמייכלט. הייבט אויף ביידע הענט.", "חייך/י. הרם/י את שתי הידיים.", "Улыбнитесь. Поднимите обе руки.", "Усміхніться. Підніміть обидві руки.", "لبخند بزنید. هر دو دستتان را بالا ببرید."],
+    ["toes", "Can you move your fingers and toes?", "¿Puede mover los dedos de las manos y de los pies?", "קענט איר באוועגן די פינגער פון די הענט און פון די פיס?", "את/ה יכול/ה להזיז את האצבעות בידיים וברגליים?", "Можете пошевелить пальцами рук и ног?", "Можете поворушити пальцями рук і ніг?", "می‌توانید انگشتان دست و پایتان را تکان دهید؟"],
+    ["deep", "Take a deep breath.", "Respire profundo.", "נעמט א טיפן אטעם.", "קח/י נשימה עמוקה.", "Сделайте глубокий вдох.", "Зробіть глибокий вдих.", "یک نفس عمیق بکشید."]]],
+  ["What we're doing", [
+    ["neck", "Don't move your head or neck.", "No mueva la cabeza ni el cuello.", "באוועגט נישט דעם קאפ און דעם האלדז.", "אל תזיז/י את הראש ואת הצוואר.", "Не двигайте головой и шеей.", "Не рухайте головою і шиєю.", "سر و گردنتان را تکان ندهید."],
+    ["bp", "I'm going to check your blood pressure.", "Le voy a tomar la presión.", "איך גיי מעסטן אייער בלוט-דרוק.", "אני הולך/ת למדוד לך לחץ דם.", "Я измерю вам давление.", "Я виміряю вам тиск.", "می‌خواهم فشار خونتان را بگیرم."],
+    ["o2", "I'm going to give you oxygen.", "Le voy a dar oxígeno.", "איך גיי אייך געבן אקסיגען.", "אני אתן לך חמצן.", "Я дам вам кислород.", "Я дам вам кисень.", "به شما اکسیژن می‌دهم."],
+    ["hosp", "We need to take you to the hospital.", "Tenemos que llevarlo al hospital.", "מיר דארפן אייך נעמען אין שפיטאל.", "אנחנו צריכים לקחת אותך לבית החולים.", "Нам нужно отвезти вас в больницу.", "Нам потрібно відвезти вас до лікарні.", "باید شما را به بیمارستان ببریم."],
+    ["which", "Which hospital do you want?", "¿A qué hospital quiere ir?", "אין וועלכן שפיטאל ווילט איר פארן?", "לאיזה בית חולים תרצו?", "В какую больницу вы хотите?", "До якої лікарні ви хочете?", "به کدام بیمارستان می‌خواهید بروید؟"],
+    ["call", "Is there someone we can call for you?", "¿Hay alguien a quien podamos llamar por usted?", "איז דא איינער וואס מיר זאלן אנרופן פאר אייך?", "יש מישהו שנוכל להתקשר אליו בשבילך?", "Кому мы можем позвонить за вас?", "Кому ми можемо зателефонувати замість вас?", "کسی هست که برایتان با او تماس بگیریم؟"]]]
+];
+// answers the patient can tap: [English, es, yi, he, ru, uk, fa, symbol]
+var HZ_TR_ANS = [["Yes", "Sí", "יא", "כן", "Да", "Так", "بله", "✓"], ["No", "No", "ניין", "לא", "Нет", "Ні", "نه", "✗"], ["I don't know", "No sé", "איך ווייס נישט", "אני לא יודע/ת", "Не знаю", "Не знаю", "نمی‌دانم", "?"], ["A little", "Un poco", "א ביסל", "קצת", "Немного", "Трохи", "کمی", "≈"]];
+HZ_TL.tr = { tab: "talk", lang: "", langName: "", locked: false, lines: [], rec: null, busy: false, speak: true, auto: true, readEn: false, typed: "", ctx: null };
+function hzTrL(code) { var c = String(code || "").split("-")[0].toLowerCase(); if (c === "iw") c = "he"; return HZ_TR_LANGS.filter(function(x) { return x[0] === c; })[0]; }
+function hzTrPI(code) { return HZ_TR_PL.indexOf(String(code || "").split("-")[0].toLowerCase()); }
+function hzTrToast(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); }
+function hzTrSetLang(code, name, lock) { var T = HZ_TL.tr, l = hzTrL(code); T.lang = code; T.langName = name || (l ? l[1] : code); if (lock !== undefined) T.locked = lock; hzTlDraw(); }
+function hzTrVoice(lang) {
+  try { var vs = speechSynthesis.getVoices() || [], c = String(lang || "").toLowerCase(), base = c.split("-")[0];
+    return vs.filter(function(v) { return String(v.lang).toLowerCase() === c; })[0] || vs.filter(function(v) { return String(v.lang).toLowerCase().replace("_", "-").split("-")[0] === (base === "he" ? "he" : base) || (base === "he" && /^iw/i.test(v.lang)); })[0] || null; } catch (e) { return null; }
+}
+function hzTrSay(text, lang, done) {
+  var fin = function() { if (done) { var d = done; done = null; setTimeout(d, 250); } };
+  if (!text || !window.speechSynthesis) { fin(); return false; }
+  var v = hzTrVoice(lang); if (!v) { var bl = String(lang || "").split("-")[0]; HZ_TL.tr.noVoice = HZ_TL.tr.noVoice || {}; if (HZ_TL.tr.noVoice[bl]) { fin(); return false; } HZ_TL.tr.noVoice[bl] = 1; hzTrToast("No voice for " + ((hzTrL(lang) || [0, lang])[1]) + " on this device — show them the screen instead.", true); fin(); return false; }
+  try { speechSynthesis.cancel(); var u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = 0.95; u.onend = fin; u.onerror = fin;
+    setTimeout(fin, 2500 + text.length * 120);   // some phones never fire "end"
+    speechSynthesis.speak(u); return true; } catch (e) { fin(); return false; }
+}
+// 12.330 (Sam: "make sure the back and forth is natural"): after your translation is spoken, the app starts listening for the
+// patient's answer by itself, and every turn stops on its own when the speaker goes quiet — tap only when you start talking.
+function hzTrNext() { var T = HZ_TL.tr; if (T.auto && !T.rec && !T.busy && HZ_TL.view === "trans" && T.tab === "talk" && document.getElementById("hz-tools-pop")) hzTrRec("patient", true); }
+function hzTrClose() { hzTrStopRec(false); try { speechSynthesis.cancel(); } catch (e) {} var T = HZ_TL.tr; if (T.ctx) { try { T.ctx.close(); } catch (e) {} T.ctx = null; } }
+try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) {}
+// ── recording: tap once to start, tap again to stop and translate ──
+function hzTrRec(role, auto) {
+  var T = HZ_TL.tr;
+  if (T.rec) { var wasRole = T.rec.role, wasAuto = T.rec.auto, heard = T.rec.spoke; hzTrStopRec(wasAuto && !heard ? false : true); if (wasAuto && wasRole !== role) setTimeout(function() { hzTrRec(role); }, 50); return; }
+  if (T.busy) return;
+  if (role === "emt" && !T.lang) { hzTrToast("Pick the patient's language first — or let the patient speak first.", true); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { hzTrToast("This browser can't use the microphone — use the Quick Phrases.", true); return; }
+  try { speechSynthesis.cancel(); } catch (e) {}
+  var AC = window.AudioContext || window.webkitAudioContext, ctx = T.ctx;
+  try { if (!ctx || ctx.state === "closed") ctx = T.ctx = new AC(); if (ctx.resume) ctx.resume(); } catch (e) { hzTrToast("Couldn't start the microphone.", true); return; }   // first made inside a tap (iPhone needs that), then kept for the conversation
+  T.rec = { role: role, auto: !!auto, ctx: ctx, bufs: [], t0: Date.now(), rate: ctx.sampleRate, starting: true, floor: 1, spoke: false, loudAt: 0 };
+  hzTlDraw();
+  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } }).then(function(stream) {
+    var R = T.rec; if (!R || R.ctx !== ctx) { stream.getTracks().forEach(function(t) { t.stop(); }); return; }
+    R.stream = stream; R.src = ctx.createMediaStreamSource(stream); R.proc = ctx.createScriptProcessor(4096, 1, 1); R.starting = false; R.t0 = Date.now();
+    R.proc.onaudioprocess = function(e) {
+      if (T.rec !== R) return;
+      var d = e.inputBuffer.getChannelData(0), s = 0; R.bufs.push(new Float32Array(d));
+      for (var i = 0; i < d.length; i += 8) s += d[i] * d[i];
+      var rms = Math.sqrt(s / (d.length / 8)), now = Date.now(), el = now - R.t0;
+      var lv = Math.min(1, rms * 4); var m = document.getElementById("hz-tr-lvl"); if (m) m.style.width = Math.round(lv * 100) + "%";
+      // voice detection that copes with a siren: the background level is learned and followed slowly; speech = clearly above it
+      if (el < 500) R.floor = Math.min(R.floor, rms);
+      var loud = rms > Math.max(0.025, R.floor * 2.4);
+      if (loud && el > 250) { if (!R.spoke) { R.spoke = true; var b = document.getElementById("hz-tr-heard"); if (b) b.textContent = "hearing speech"; } R.loudAt = now; }
+      else R.floor = Math.min(rms, R.floor + (rms - R.floor) * 0.02);
+      if (R.spoke && now - R.loudAt > 1300 && el > 1500) setTimeout(function() { if (T.rec === R) hzTrStopRec(true); }, 0);
+      else if (R.auto && !R.spoke && el > 12000) setTimeout(function() { if (T.rec === R) { hzTrStopRec(false); hzTrToast("No answer heard — tap Patient speaks when they talk."); } }, 0);
+    };
+    R.src.connect(R.proc); R.proc.connect(ctx.destination);
+    R.tick = setInterval(function() { var el = document.getElementById("hz-tr-time"), sec = Math.floor((Date.now() - R.t0) / 1000); if (el) el.textContent = "0:" + String(sec).padStart(2, "0"); if (sec >= 45) hzTrStopRec(true); }, 250);
+    hzTlDraw();
+  }).catch(function() { hzTrStopRec(false); hzTrToast("The microphone is blocked — allow it for this site in your phone's settings.", true); });
+}
+function hzTrStopRec(send) {
+  var T = HZ_TL.tr, R = T.rec; if (!R) return; T.rec = null;
+  try { clearInterval(R.tick); } catch (e) {}
+  try { if (R.proc) { R.proc.onaudioprocess = null; R.proc.disconnect(); } if (R.src) R.src.disconnect(); } catch (e) {}
+  try { if (R.stream) R.stream.getTracks().forEach(function(t) { t.stop(); }); } catch (e) {}
+  if (!send) { if (document.getElementById("hz-tools-pop")) hzTlDraw(); return; }
+  var n = R.bufs.reduce(function(a, b) { return a + b.length; }, 0);
+  if (n < R.rate * 0.6) { hzTrToast("That was too short — tap, talk, then tap again.", true); hzTlDraw(); return; }
+  var wav = hzTrWav(R.bufs, n, R.rate);
+  hzTrSend({ audio: wav, role: R.role });
+}
+function hzTrWav(bufs, n, rate) {   // mono 16 kHz 16-bit WAV, as base64
+  var out = 16000, ratio = rate / out, len = Math.floor(n / ratio), all = new Float32Array(n), o = 0;
+  bufs.forEach(function(b) { all.set(b, o); o += b.length; });
+  var pcm = new DataView(new ArrayBuffer(44 + len * 2)), w = function(p, s) { for (var i = 0; i < s.length; i++) pcm.setUint8(p + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); pcm.setUint32(4, 36 + len * 2, true); w(8, "WAVE"); w(12, "fmt "); pcm.setUint32(16, 16, true); pcm.setUint16(20, 1, true); pcm.setUint16(22, 1, true);
+  pcm.setUint32(24, out, true); pcm.setUint32(28, out * 2, true); pcm.setUint16(32, 2, true); pcm.setUint16(34, 16, true); w(36, "data"); pcm.setUint32(40, len * 2, true);
+  for (var i = 0; i < len; i++) {
+    var a = Math.floor(i * ratio), b = Math.min(n, Math.floor((i + 1) * ratio)), s = 0; for (var j = a; j < b; j++) s += all[j]; s = b > a ? s / (b - a) : all[a] || 0;
+    s = Math.max(-1, Math.min(1, s)); pcm.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  var u8 = new Uint8Array(pcm.buffer), str = ""; for (var k = 0; k < u8.length; k += 0x8000) str += String.fromCharCode.apply(null, u8.subarray(k, k + 0x8000));
+  return btoa(str);
+}
+function hzTrSend(p) {
+  var T = HZ_TL.tr; T.busy = p.role || "emt"; hzTlDraw();
+  var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
+  var ctx = T.lines.slice(-6).map(function(l) { return { who: l.who, text: l.who === "emt" ? (l.en || l.heard) : (l.tr || "") }; });
+  rel("liveTranslate", Object.assign({ target: T.lang, targetName: T.langName, context: ctx }, p)).then(function(r) {
+    T.busy = false; r = r || {};
+    if (p.role === "patient" || (!p.role && false)) {
+      T.lines.push({ who: "pt", heard: r.heard, tr: r.translation, lang: r.lang, langName: r.langName, clarity: r.clarity, note: r.note, src: "voice", at: Date.now() });
+      if (!T.locked && r.lang && !/^en\b/i.test(r.lang) && r.clarity !== "unclear") { T.lang = r.lang; T.langName = r.langName || (hzTrL(r.lang) || [0, r.lang])[1]; }
+      if (T.readEn && r.translation && r.clarity !== "unclear") hzTrSay(r.translation, "en-US");
+      T.yourTurn = true;
+    } else {
+      T.lines.push({ who: "emt", heard: r.heard, en: r.english || r.heard, tr: r.translation, back: r.back || "", lang: r.lang || T.lang, clarity: r.clarity, note: r.note, src: p.text != null ? "typed" : "voice", at: Date.now() });
+      T.yourTurn = false;
+      if (r.clarity === "unclear" || !r.translation) { /* nothing to say — EMT tries again */ }
+      else if (T.speak) hzTrSay(r.translation, r.lang || T.lang, hzTrNext);
+      else setTimeout(hzTrNext, 400);
+    }
+    if (HZ_TL.view === "trans") hzTlDraw();
+  }).catch(function(e) { T.busy = false; hzTrToast((e && e.message) || "Couldn't translate — use the Quick Phrases.", true); if (HZ_TL.view === "trans") hzTlDraw(); });
+}
+function hzTrType() {
+  var T = HZ_TL.tr, i = document.getElementById("hz-tr-typed"), t = String(i ? i.value : "").trim(); if (!t) return;
+  if (!T.lang) { hzTrToast("Pick the patient's language first.", true); return; }
+  T.typed = ""; hzTrSend({ text: t, role: "emt" });
+}
+// ── big screen to show the patient (and answer buttons they can tap) ──
+function hzTrShow(text, lang, en, pain) {
+  var o = document.getElementById("hz-tools-pop"); if (!o) return;
+  var f = document.getElementById("hz-tr-full"); if (!f) { f = document.createElement("div"); f.id = "hz-tr-full"; o.appendChild(f); }
+  var pi = hzTrPI(lang), rtl = hzTrRtl(lang);
+  var ans = HZ_TR_ANS.map(function(a, k) { var local = pi >= 0 ? a[pi + 1] : ""; return '<button class="hz-tr-ans a' + k + '" onclick="hzTrAnswer(' + k + ')"><b' + (rtl ? ' dir="rtl"' : '') + '>' + a[7] + ' ' + hzTlEsc(local || a[0]) + '</b>' + (local ? '<small>' + hzTlEsc(a[0]) + '</small>' : '') + '</button>'; }).join("");
+  var scale = pain ? '<div class="hz-tr-pain">' + [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(function(nn) { return '<button style="background:hsl(' + (120 - nn * 12) + ',70%,45%)" onclick="hzTrAnswer(\'p' + nn + '\')">' + nn + '</button>'; }).join("") + '</div>' : '';
+  f.innerHTML = '<div class="hz-tr-fbox"><div class="hz-tr-fl">' + hzTlEsc(((hzTrL(lang) || [0, lang, ""])[2]) || "") + '</div><div class="hz-tr-ft"' + (rtl ? ' dir="rtl"' : '') + '>' + hzTlEsc(text) + '</div>' + (en ? '<div class="hz-tr-fe">' + hzTlEsc(en) + '</div>' : '')
+    + scale + '<div class="hz-tr-ansrow">' + ans + '</div><div class="hz-tl-acts" style="justify-content:center"><button class="hz-tl-btn" onclick="hzTrSay(' + hzTlEsc(JSON.stringify(text)).replace(/'/g, "&#39;") + ',\'' + hzTlEsc(lang) + '\')">🔊 Say it</button><button class="hz-tl-btn" onclick="hzTrHide()">✕ Close</button></div></div>';
+}
+function hzTrHide() { var f = document.getElementById("hz-tr-full"); if (f) { f.remove(); return true; } return false; }
+function hzTrAnswer(k) {
+  var T = HZ_TL.tr, pi = hzTrPI(T.lang);
+  if (String(k).charAt(0) === "p") T.lines.push({ who: "pt", heard: String(k).slice(1), tr: "Pain " + String(k).slice(1) + " out of 10", lang: T.lang, clarity: "clear", src: "tap", at: Date.now() });
+  else { var a = HZ_TR_ANS[k]; T.lines.push({ who: "pt", heard: pi >= 0 ? a[pi + 1] : a[0], tr: a[0], lang: T.lang, clarity: "clear", src: "tap", at: Date.now() }); }
+  hzTrHide(); hzTlDraw();
+}
+function hzTrPhrase(id) {
+  var T = HZ_TL.tr, pi = hzTrPI(T.lang); if (pi < 0) { hzTrToast("Pick one of the Quick Phrase languages first.", true); return; }
+  var ph = null; HZ_TR_PH.forEach(function(g) { g[1].forEach(function(p) { if (p[0] === id) ph = p; }); }); if (!ph) return;
+  var tx = ph[pi + 2];
+  T.lines.push({ who: "emt", heard: ph[1], en: ph[1], tr: tx, lang: T.lang, clarity: "clear", src: "phrase", at: Date.now() });
+  hzTlDraw(); hzTrShow(tx, T.lang, ph[1], id === "pain");
+  if (T.speak) hzTrSay(tx, T.lang);
+}
+function hzTrLineShow(i) { var l = HZ_TL.tr.lines[i]; if (l) hzTrShow(l.tr, l.lang || HZ_TL.tr.lang, l.en, /\b(0|zero)\b.*\b10\b/i.test(l.en || "")); }
+function hzTrLineSay(i) { var l = HZ_TL.tr.lines[i]; if (l) hzTrSay(l.tr, l.lang || HZ_TL.tr.lang); }
+function hzTrLangSelect() {
+  var T = HZ_TL.tr, cur = String(T.lang || "").split("-")[0];
+  return '<select class="hz-tr-sel" onchange="if(this.value===\'\'){HZ_TL.tr.lang=\'\';HZ_TL.tr.langName=\'\';HZ_TL.tr.locked=false;hzTlDraw()}else hzTrSetLang(this.value,null,true)">'
+    + '<option value=""' + (T.lang ? '' : ' selected') + '>🔎 Auto-detect — let the patient speak first</option>'
+    + (T.lang && !hzTrL(T.lang) ? '<option value="' + hzTlEsc(T.lang) + '" selected>' + hzTlEsc(T.langName || T.lang) + '</option>' : '')
+    + HZ_TR_LANGS.map(function(l) { return '<option value="' + l[0] + '"' + (cur === l[0] ? ' selected' : '') + '>' + hzTlEsc(l[1] + " · " + l[2]) + (HZ_TR_PL.indexOf(l[0]) >= 0 ? " ⚡" : "") + '</option>'; }).join("") + '</select>';
+}
+function hzTlTrans() {
+  var T = HZ_TL.tr, R = T.rec, rtl = hzTrRtl(T.lang);
+  var langRow = '<div class="hz-tr-langrow"><div class="hz-tl-ql">Patient speaks</div>' + hzTrLangSelect()
+    + (T.lang ? '<div class="hz-tr-langnow">' + hzTlEsc(T.langName || T.lang) + (T.locked ? ' · picked' : ' · detected') + '</div>' : '') + '</div>';
+  var tabs = '<div class="hz-tl-seg"><button class="' + (T.tab === "talk" ? "on" : "") + '" onclick="HZ_TL.tr.tab=\'talk\';hzTlDraw()">🎙️ Live talk</button><button class="' + (T.tab === "ph" ? "on" : "") + '" onclick="hzTrStopRec(false);HZ_TL.tr.tab=\'ph\';hzTlDraw()">⚡ Quick phrases</button></div>';
+  var h = tabs + langRow;
+  if (T.tab === "ph") {
+    var pi = hzTrPI(T.lang);
+    h += '<div class="hz-tl-medrec">' + HZ_TR_PL.map(function(c) { var l = hzTrL(c); return '<button class="hz-tl-chip2' + (pi === HZ_TR_PL.indexOf(c) ? ' on' : '') + '" onclick="hzTrSetLang(\'' + c + '\',null,true)">' + hzTlEsc(l[1].replace(/ \(.*\)/, "")) + ' · ' + hzTlEsc(l[2]) + '</button>'; }).join("") + '</div>';
+    if (pi < 0) return h + '<div class="hz-tl-warn">' + (T.lang ? 'No built-in phrases for ' + hzTlEsc(T.langName || T.lang) + ' — use 🎙️ Live talk, or pick a language above.' : 'Pick the patient\'s language above.') + '</div>';
+    h += HZ_TR_PH.map(function(g) { return '<div class="hz-tl-sec">' + hzTlEsc(g[0]) + '</div><div class="hz-tl-opts">' + g[1].map(function(p) { return '<button class="hz-tl-opt hz-tr-ph" onclick="hzTrPhrase(\'' + p[0] + '\')"><b>' + hzTlEsc(p[1]) + '</b><small' + (rtl ? ' dir="rtl"' : '') + '>' + hzTlEsc(p[pi + 2]) + '</small></button>'; }).join("") + '</div>'; }).join("");
+    h += '<div class="hz-tl-sec">Patient answers</div><div class="hz-tl-acts"><button class="hz-tl-btn" onclick="hzTrShow(' + hzTlEsc(JSON.stringify(HZ_TR_ANS[0][pi + 1] + ' / ' + HZ_TR_ANS[1][pi + 1] + ' ?')).replace(/'/g, "&#39;") + ',HZ_TL.tr.lang,\'Yes / No?\')">Show Yes / No buttons</button><button class="hz-tl-btn" onclick="hzTrPhrase(\'pain\')">Pain 0–10 scale</button></div>';
+    return h + hzTrConvo() + '<div class="hz-tl-note">Quick phrases are built into the app and work with no signal. Written for Hatzolah — have a native speaker check them before relying on them. Tap a phrase to show it big and say it out loud; the patient can tap an answer.</div>';
+  }
+  var btn = function(role, ico, label, sub) {
+    var on = R && R.role === role, busy = T.busy === role;
+    return '<button class="hz-tr-big ' + role + (on ? ' rec' : '') + (busy ? ' busy' : '') + '"' + (T.busy && !busy ? ' disabled' : '') + ' onclick="hzTrRec(\'' + role + '\')">'
+      + (on ? '<span class="hz-tr-bi">■</span><b>' + (R.starting ? 'Starting mic…' : R.auto ? 'Listening for answer' : 'Listening…') + '</b><small><span id="hz-tr-time">0:00</span> · <span id="hz-tr-heard">' + (R.spoke ? 'hearing speech' : 'waiting for voice') + '</span> · tap to stop</small><span class="hz-tr-meter"><span id="hz-tr-lvl"></span></span>'
+        : busy ? '<span class="hz-tr-bi">⏳</span><b>Translating…</b><small>a few seconds</small>'
+        : '<span class="hz-tr-bi">' + ico + '</span><b>' + label + '</b><small>' + sub + '</small>') + '</button>';
+  };
+  h += '<div class="hz-tr-bigs">' + btn("emt", "🧑‍⚕️", T.yourTurn ? "Your turn — I speak" : "I speak", T.lang ? "English → " + hzTlEsc((T.langName || T.lang).replace(/ \(.*\)/, "")) : "pick a language first") + btn("patient", "🗣️", "Patient speaks", "any language → English") + '</div>'
+    + '<div class="hz-tr-typerow"><input id="hz-tr-typed" class="hz-tl-in" type="text" placeholder="Or type in English…" value="' + hzTlEsc(T.typed) + '" oninput="HZ_TL.tr.typed=this.value" onkeydown="if(event.key===\'Enter\')hzTrType()"><button class="hz-tl-go" onclick="hzTrType()"' + (T.busy ? ' disabled' : '') + '>Send</button></div>'
+    + '<div class="hz-tr-spks"><label class="hz-tr-spk"><input type="checkbox"' + (T.speak ? ' checked' : '') + ' onchange="HZ_TL.tr.speak=this.checked"> Say my translations out loud</label>'
+    + '<label class="hz-tr-spk"><input type="checkbox"' + (T.auto ? ' checked' : '') + ' onchange="HZ_TL.tr.auto=this.checked"> Then listen for the answer by itself</label>'
+    + '<label class="hz-tr-spk"><input type="checkbox"' + (T.readEn ? ' checked' : '') + ' onchange="HZ_TL.tr.readEn=this.checked"> Read the patient\'s answer to me in English</label></div>'
+    + hzTrConvo()
+    + '<div class="hz-tl-note">Hold the phone close to whoever is talking — about a hand\'s width from the mouth — and point the bottom of the phone at them; it cuts out sirens and road noise best that way. One sentence or question at a time works best. If it says "hard to hear", ask again or use ⚡ Quick phrases. Translation by Google Gemini, checked back into English by Google Translate. Nothing is saved.</div>';
+  return h;
+}
+function hzTrConvo() {
+  var T = HZ_TL.tr; if (!T.lines.length) return '';
+  var rows = T.lines.map(function(l, i) {
+    var rtl = hzTrRtl(l.lang);
+    if (l.who === "emt") return '<div class="hz-tr-line emt"><div class="hz-tr-who">🧑‍⚕️ You' + (l.src === "phrase" ? ' · quick phrase' : l.src === "typed" ? ' · typed' : '') + '</div><div class="hz-tr-sm">' + hzTlEsc(l.en || l.heard || "") + '</div>'
+      + (l.clarity === "unclear" ? '<div class="hz-tr-warn">Couldn\'t make that out — try again closer to the phone.</div>' : '<div class="hz-tr-bigt"' + (rtl ? ' dir="rtl"' : '') + '>' + hzTlEsc(l.tr || "") + '</div>')
+      + (l.back ? '<div class="hz-tr-back">↩︎ Back to English: ' + hzTlEsc(l.back) + '</div>' : '') + (l.note ? '<div class="hz-tr-back">' + hzTlEsc(l.note) + '</div>' : '')
+      + (l.tr && l.clarity !== "unclear" ? '<div class="hz-tr-acts"><button onclick="hzTrLineSay(' + i + ')">🔊 Say again</button><button onclick="hzTrLineShow(' + i + ')">⛶ Show patient</button></div>' : '') + '</div>';
+    return '<div class="hz-tr-line pt"><div class="hz-tr-who">🗣️ Patient' + (l.langName ? ' · ' + hzTlEsc(l.langName) : '') + (l.src === "tap" ? ' · tapped' : '') + '</div>'
+      + (l.clarity === "unclear" ? '<div class="hz-tr-warn">Couldn\'t make that out — ask again, closer to the phone.</div>' : '<div class="hz-tr-bigt">' + hzTlEsc(l.tr || "") + '</div>')
+      + (l.clarity === "partly" ? '<div class="hz-tr-warn">Partly hard to hear — confirm anything important.</div>' : '') + (l.note ? '<div class="hz-tr-back">⚠️ ' + hzTlEsc(l.note) + '</div>' : '')
+      + (l.heard ? '<div class="hz-tr-sm"' + (rtl ? ' dir="rtl"' : '') + '>' + hzTlEsc(l.heard) + '</div>' : '') + '</div>';
+  }).reverse().join("");
+  return '<div class="hz-tl-sec">Conversation <button class="hz-tl-link" style="float:right;color:#d4a017;-webkit-text-fill-color:#d4a017" onclick="if(confirm(\'Clear the conversation?\')){HZ_TL.tr.lines=[];hzTlDraw()}">clear</button></div><div class="hz-tr-convo">' + rows + '</div>';
+}
+
 // ── 💊 Med Lookup (12.324): the server (medLookup) asks the FDA drug label (openFDA) — misspellings and brand names are
 //    matched through the National Library of Medicine. Only the medicine's name is sent. Recent searches stay on this device. ──
 HZ_TL.med = { q: "", busy: false, res: null, err: "", recent: (function() { try { return JSON.parse(localStorage.getItem("hzMedRecent") || "[]").slice(0, 8); } catch (e) { return []; } })() };
@@ -15539,7 +15790,7 @@ function hzTlStop() {
   HZ_TL.met = null;
   try { if (HZ_TL.wake) { HZ_TL.wake.release(); HZ_TL.wake = null; } } catch (e) {}
 }
-document.addEventListener("visibilitychange", function() { if (document.hidden && HZ_TL.met) { hzTlStop(); if (document.getElementById("hz-tools-pop")) hzTlDraw(); } });
+document.addEventListener("visibilitychange", function() { if (document.hidden && HZ_TL.tr && HZ_TL.tr.rec) { hzTrStopRec(false); if (document.getElementById("hz-tools-pop")) hzTlDraw(); } if (document.hidden && HZ_TL.met) { hzTlStop(); if (document.getElementById("hz-tools-pop")) hzTlDraw(); } });
 
 function hzTlCss() {
   if (document.getElementById("hz-tools-css")) return;
@@ -15639,6 +15890,37 @@ function hzTlCss() {
     + P + ".hz-tl-sugit{display:block;width:100%;margin:0 !important;text-align:left;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:0 !important;border-top:1px solid rgba(212,160,23,.3) !important;border-radius:0 !important;box-shadow:none !important;padding:11px 12px !important;font-size:1rem;font-weight:600;cursor:pointer}" + P + ".hz-tl-sugit:first-child{border-top:0 !important}"
     + P + ".hz-tl-sugit b{color:#fff;-webkit-text-fill-color:#fff}" + P + ".hz-tl-sugit.on,.hz-tl-sugit:hover{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important}" + P + ".hz-tl-sugit.on b{color:#000;-webkit-text-fill-color:#000}"
     + P + ".hz-tl-medclr{margin:8px 0 0;align-items:center}" + P + ".hz-tl-medclr .hz-tl-link{margin-left:auto}"
+    + P + ".hz-tr-langrow{margin:6px 0 10px}" + P + ".hz-tr-sel{width:100%;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important;border-radius:10px !important;padding:10px !important;font-weight:700;font-size:1rem}"
+    + P + ".hz-tr-langnow{margin-top:6px;font-weight:800;color:#000;-webkit-text-fill-color:#000;text-align:center}"
+    + P + ".hz-tr-bigs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}"
+    + P + ".hz-tr-big{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:150px;border-radius:16px !important;padding:14px 8px !important;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;overflow:hidden}"
+    + P + ".hz-tr-big.emt{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important;border:3px solid #d4a017 !important}"
+    + P + ".hz-tr-big.patient{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:3px solid #d4a017 !important}"
+    + P + ".hz-tr-big.rec{background:#c62828 !important;border-color:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff !important;animation:hzTrPulse 1.2s infinite}"
+    + P + ".hz-tr-big.busy{background:#1e88e5 !important;border-color:#1e88e5 !important;color:#fff !important;-webkit-text-fill-color:#fff !important}"
+    + P + ".hz-tr-big[disabled]{opacity:.45}"
+    + "@keyframes hzTrPulse{0%,100%{box-shadow:0 0 0 0 rgba(198,40,40,.6)}50%{box-shadow:0 0 0 10px rgba(198,40,40,0)}}"
+    + P + ".hz-tr-bi{font-size:2.2rem;line-height:1}" + P + ".hz-tr-big b{font-family:Oswald,sans-serif;font-size:1.25rem;letter-spacing:.04em;text-transform:uppercase;text-align:center;line-height:1.15}" + P + ".hz-tr-big small{font-size:.78rem;font-weight:700;text-align:center;opacity:.9}"
+    + P + ".hz-tr-meter{position:absolute;left:10px;right:10px;bottom:8px;height:6px;border-radius:3px;background:rgba(255,255,255,.3);overflow:hidden}" + P + ".hz-tr-meter span{display:block;height:100%;width:0;background:#fff;transition:width .08s}"
+    + P + ".hz-tr-typerow{display:flex;gap:8px;align-items:center}" + P + ".hz-tr-typerow .hz-tl-in{flex:1;min-width:0;font-size:1rem !important}" + P + ".hz-tr-typerow .hz-tl-go{flex:0 0 auto;padding:12px 16px;font-size:1rem}"
+    + P + ".hz-tr-spks{display:flex;flex-direction:column;gap:6px;margin:10px 0}" + P + ".hz-tr-spk{display:flex;align-items:center;gap:8px;font-weight:700;color:#000;-webkit-text-fill-color:#000;font-size:.9rem}" + P + ".hz-tr-spk input{width:20px;height:20px;accent-color:#d4a017}"
+    + P + ".hz-tr-convo{display:flex;flex-direction:column;gap:8px}"
+    + P + ".hz-tr-line{border-radius:14px;padding:10px 12px;border:2px solid #d4a017}" + P + ".hz-tr-line.emt{background:#000;margin-left:18px}" + P + ".hz-tr-line.pt{background:#fff8e1;margin-right:18px}"
+    + P + ".hz-tr-who{font-family:Oswald,sans-serif;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:#d4a017;-webkit-text-fill-color:#d4a017}" + P + ".hz-tr-line.pt .hz-tr-who{color:#8a680f;-webkit-text-fill-color:#8a680f}"
+    + P + ".hz-tr-bigt{font-size:1.35rem;font-weight:800;line-height:1.3;margin:4px 0;color:#fff;-webkit-text-fill-color:#fff}" + P + ".hz-tr-line.pt .hz-tr-bigt{color:#000;-webkit-text-fill-color:#000}"
+    + P + ".hz-tr-sm{font-size:.88rem;color:#d4a017;-webkit-text-fill-color:#d4a017}" + P + ".hz-tr-line.pt .hz-tr-sm{color:#555;-webkit-text-fill-color:#555}"
+    + P + ".hz-tr-back{font-size:.8rem;color:#bbb;-webkit-text-fill-color:#bbb;margin-top:4px}" + P + ".hz-tr-line.pt .hz-tr-back{color:#8a5a00;-webkit-text-fill-color:#8a5a00;font-weight:700}"
+    + P + ".hz-tr-warn{background:#c62828;color:#fff;-webkit-text-fill-color:#fff;border-radius:8px;padding:6px 8px;font-weight:700;font-size:.85rem;margin:4px 0}"
+    + P + ".hz-tr-acts{display:flex;gap:8px;margin-top:8px}" + P + ".hz-tr-acts button{flex:1;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important;border-radius:8px !important;padding:8px !important;font-weight:700;cursor:pointer}"
+    + P + ".hz-tr-ph small{display:block;font-size:.95rem !important;margin-top:4px;opacity:1 !important}" + P + ".hz-tl-chip2.on{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important}"
+    + "#hz-tr-full{position:fixed;inset:0;z-index:9100;background:#000;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto}"
+    + P + ".hz-tr-fbox{width:100%;max-width:620px;text-align:center}" + P + ".hz-tr-fl{color:#d4a017;-webkit-text-fill-color:#d4a017;font-weight:800;letter-spacing:.06em;margin-bottom:10px}"
+    + P + ".hz-tr-ft{color:#fff;-webkit-text-fill-color:#fff;font-size:2.1rem;font-weight:800;line-height:1.3}" + P + ".hz-tr-fe{color:#aaa;-webkit-text-fill-color:#aaa;font-size:.95rem;margin-top:10px}"
+    + P + ".hz-tr-ansrow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 6px}"
+    + P + ".hz-tr-ans{border:0 !important;border-radius:14px !important;padding:16px 8px !important;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}" + P + ".hz-tr-ans b{font-size:1.5rem}" + P + ".hz-tr-ans small{font-size:.8rem;opacity:.85}"
+    + P + ".hz-tr-ans.a0{background:#34c759 !important;color:#000 !important;-webkit-text-fill-color:#000 !important}" + P + ".hz-tr-ans.a1{background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff !important}"
+    + P + ".hz-tr-ans.a2{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important}" + P + ".hz-tr-ans.a3{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important}"
+    + P + ".hz-tr-pain{display:grid;grid-template-columns:repeat(11,1fr);gap:4px;margin:16px 0 4px}" + P + ".hz-tr-pain button{border:0 !important;border-radius:8px !important;padding:12px 0 !important;font-weight:800;font-size:1.05rem;color:#000 !important;-webkit-text-fill-color:#000 !important;cursor:pointer}"
     + P + ".hz-tl-medrec{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}"
     + P + ".hz-tl-chip2{background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017;border-radius:999px;padding:4px 10px;font-weight:700;font-size:.82rem;cursor:pointer}"
     + P + ".hz-tl-medcard{background:#000;border:2px solid #d4a017;border-radius:12px;padding:12px 14px;margin:10px 0}"
