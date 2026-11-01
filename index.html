@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.334">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.335">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2737,7 +2737,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.334</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.335</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -19795,7 +19795,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.334";
+var DESKTOP_VERSION = "12.335";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -29933,7 +29933,7 @@ HZ_TL.tr = { mode: "one", tab: "talk", lang: "", langName: "", locked: false, li
 function hzTrL(code) { var c = String(code || "").split("-")[0].toLowerCase(); if (c === "iw") c = "he"; return HZ_TR_LANGS.filter(function(x) { return x[0] === c; })[0]; }
 function hzTrPI(code) { return HZ_TR_PL.indexOf(String(code || "").split("-")[0].toLowerCase()); }
 function hzTrToast(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); }
-function hzTrSetLang(code, name, lock) { var T = HZ_TL.tr, l = hzTrL(code); T.lang = code; T.langName = name || (l ? l[1] : code); if (lock !== undefined) T.locked = lock; hzTlDraw(); }
+function hzTrSetLang(code, name, lock) { var T = HZ_TL.tr, l = hzTrL(code); if (T.live && code !== T.lang) { hzTrLiveClose(); T.liveFails = 0; }   /* the live line restarts so it knows the new language */ T.lang = code; T.langName = name || (l ? l[1] : code); if (lock !== undefined) T.locked = lock; hzTlDraw(); }
 function hzTrVoice(lang) {
   try { var vs = speechSynthesis.getVoices() || [], c = String(lang || "").toLowerCase(), base = c.split("-")[0];
     return vs.filter(function(v) { return String(v.lang).toLowerCase() === c; })[0] || vs.filter(function(v) { return String(v.lang).toLowerCase().replace("_", "-").split("-")[0] === (base === "he" ? "he" : base) || (base === "he" && /^iw/i.test(v.lang)); })[0] || null; } catch (e) { return null; }
@@ -30027,7 +30027,7 @@ function hzTrSayPhone(text, lang, done) {
 // 12.330 (Sam: "make sure the back and forth is natural"): after your translation is spoken, the app starts listening for the
 // patient's answer by itself, and every turn stops on its own when the speaker goes quiet — tap only when you start talking.
 function hzTrNext() { var T = HZ_TL.tr; if (T.auto && !T.rec && !T.busy && HZ_TL.view === "trans" && T.tab === "talk" && document.getElementById("hz-tools-pop")) hzTrRec("patient", true); }
-function hzTrClose() { hzTrPendStop(); hzTrStopRec(false); hzTrStopVoice(); var T = HZ_TL.tr; if (T.ctx) { try { T.ctx.close(); } catch (e) {} T.ctx = null; } }
+function hzTrClose() { hzTrLiveClose(); hzTrPendStop(); hzTrStopRec(false); hzTrStopVoice(); var T = HZ_TL.tr; if (T.ctx) { try { T.ctx.close(); } catch (e) {} T.ctx = null; } }
 try { if (window.speechSynthesis) speechSynthesis.getVoices(); } catch (e) {}
 // ── recording: tap once to start, tap again to stop and translate ──
 // 12.331 (Sam: "it should work like this" — Axon Body 4's translator): ONE big button. Hold it while anyone talks, let go, and
@@ -30037,9 +30037,120 @@ function hzTrHoldStart(e) {
   if (e) { e.preventDefault(); }
   var T = HZ_TL.tr; if (T.busy || T.rec) return;
   hzTrCtx();
+  var useLive = T.fast !== false && T.live && T.live.ready;
   var end = function(ev) { ["pointerup", "pointercancel", "touchend", "touchcancel", "mouseup"].forEach(function(t) { document.removeEventListener(t, end, true); }); hzTrHoldEnd(); };
   ["pointerup", "pointercancel", "touchend", "touchcancel", "mouseup"].forEach(function(t) { document.addEventListener(t, end, true); });
-  hzTrRec("auto", false, true);
+  if (useLive) hzTrLiveHold(); else hzTrRec("auto", false, true);
+}
+// ── 12.335 (Sam: "we need to speed this up 5x") FAST MODE: one live line to Gemini Live for the whole conversation. While the
+//    button is held, the voice streams up in small pieces; the translated voice streams back and starts playing the moment
+//    the first piece arrives (no upload-then-wait, no separate voice step). It remembers the conversation, so it knows the
+//    patient's language. If the live line can't be made, the app quietly uses the normal translator instead.
+function hzTrLiveSys() {
+  var T = HZ_TL.tr, tgt = T.lang ? (T.langName || (hzTrL(T.lang) || [0, T.lang])[1]) : "";
+  return ["You are a live medical interpreter in an ambulance in New Jersey, USA, between an English-speaking EMT and a patient (or family).",
+    "You ONLY interpret. Never answer questions yourself, never greet, never comment, never add or drop information, never say things like 'Sure' or 'The patient says'.",
+    "If you hear ENGLISH, it is the EMT: say exactly what they said in " + (tgt ? tgt : "the language the patient has been speaking in this conversation") + ", naturally, warmly and simply, the way a native interpreter would say it out loud (formal 'you').",
+    "If you hear ANY OTHER language, it is the patient: say it in natural spoken English in the first person (e.g. 'My chest hurts since this morning').",
+    "If the language is Yiddish, it is Hasidic Yiddish as spoken in New York / New Jersey.",
+    "Keep numbers, body parts, medicine names and times exact. Ignore sirens, road noise, radio traffic and background voices.",
+    "If you truly cannot make out the words, say only 'Please repeat' in the speaker's language.",
+    "Speak at a brisk, natural pace. Translate each turn immediately and then stop."].join("\n");
+}
+function hzTrLiveConnect() {
+  var T = HZ_TL.tr; if (T.live || T.liveBroken || T.fast === false || typeof WebSocket === "undefined") return;
+  var L = T.live = { ready: false, q: [], want: true };
+  var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
+  var fail = function(why) { if (T.live !== L) return; T.live = null; T.liveWhy = why; L.fails = (T.liveFails = (T.liveFails || 0) + 1); if (T.liveFails >= 2) T.liveBroken = true; try { L.ws && L.ws.close(); } catch (e) {} if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); };
+  rel("liveTranslate", { liveToken: true }).then(function(r) {
+    if (T.live !== L) return; if (!r || !r.token) return fail((r && r.error) || "no token");
+    var ws; try { ws = new WebSocket(r.ws + "?access_token=" + encodeURIComponent(r.token)); } catch (e) { return fail("couldn't open"); }
+    L.ws = ws; L.model = r.model;
+    var setupTimer = setTimeout(function() { if (!L.ready) fail("no answer from Google"); }, 8000);
+    ws.onopen = function() {
+      ws.send(JSON.stringify({ setup: { model: "models/" + r.model, generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: r.voice || "Kore" } } } },
+        systemInstruction: { parts: [{ text: hzTrLiveSys() }] }, realtimeInputConfig: { automaticActivityDetection: { disabled: true } }, inputAudioTranscription: {}, outputAudioTranscription: {} } }));
+    };
+    ws.onmessage = function(ev) {
+      var handle = function(txt) { var m; try { m = JSON.parse(txt); } catch (e) { return; } hzTrLiveMsg(L, m); };
+      if (typeof ev.data === "string") handle(ev.data); else if (ev.data && ev.data.text) ev.data.text().then(handle); else { try { handle(new TextDecoder().decode(ev.data)); } catch (e) {} }
+    };
+    ws.onclose = function(ev) { clearTimeout(setupTimer); if (T.live === L) { var was = L.ready; T.live = null; if (!was) fail("closed " + ev.code + (ev.reason ? " " + ev.reason.slice(0, 60) : "")); else { T.liveFails = 0; if (T.busy === "live") { T.busy = false; hzTrPendStop(); hzTrToast("The live line dropped — try again.", true); } if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); } } };
+    ws.onerror = function() {};
+  }).catch(function(e) { fail((e && e.message) || "server"); });
+}
+function hzTrLiveMsg(L, m) {
+  var T = HZ_TL.tr;
+  if (m.setupComplete) { L.ready = true; T.liveFails = 0; T.liveWhy = ""; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); return; }
+  var sc = m.serverContent; if (!sc) { if (m.goAway) { try { L.ws.close(); } catch (e) {} } return; }
+  var cur = L.cur = L.cur || { inT: "", outT: "", lang: "" };
+  if (sc.inputTranscription) { cur.inT += sc.inputTranscription.text || ""; if (sc.inputTranscription.languageCode) cur.lang = sc.inputTranscription.languageCode; }
+  if (sc.outputTranscription) cur.outT += sc.outputTranscription.text || "";
+  if (sc.modelTurn && sc.modelTurn.parts) sc.modelTurn.parts.forEach(function(p) { if (p.inlineData && p.inlineData.data && /audio/.test(p.inlineData.mimeType || "audio")) { hzTrPendStop(); hzTrLivePlay(p.inlineData.data, p.inlineData.mimeType); } });
+  if (sc.interrupted) hzTrLiveHush();
+  if (sc.turnComplete) {
+    L.cur = null; clearTimeout(L.waitT);
+    var inT = cur.inT.trim(), outT = cur.outT.trim(), lc = cur.lang || "";
+    var en = lc ? /^en\b/i.test(lc) : hzTrLooksEnglish(inT);
+    if (T.busy === "live") { T.busy = false; hzTrPendStop(); }
+    if (inT || outT) {
+      if (en) T.lines.push({ who: "emt", heard: inT, en: inT, tr: outT, lang: T.lang, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() });
+      else {
+        T.lines.push({ who: "pt", heard: inT, tr: outT, lang: lc || T.lang, langName: lc ? ((hzTrL(lc) || [0, lc])[1]) : T.langName, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() });
+        if (!T.locked && lc && !/^en\b/i.test(lc)) { T.lang = lc; T.langName = (hzTrL(lc) || [0, lc])[1]; }
+      }
+    }
+    if (HZ_TL.view === "trans" && !T.rec) hzTlDraw();
+  }
+}
+function hzTrLooksEnglish(t) { var w = String(t || "").toLowerCase().match(/[a-z']+/g) || []; if (!w.length) return false; var sw = "the a an is are you your i my me do does did have has what where when how it to of in on and or not can any pain hurt here we".split(" "); var n = w.filter(function(x) { return sw.indexOf(x) >= 0; }).length; return n / w.length >= 0.18 && !/[^\x00-\x7F]/.test(t.replace(/[’‘“”—–]/g, "")); }
+function hzTrLivePlay(b64, mime) {
+  var T = HZ_TL.tr, ctx = hzTrCtx(); if (!ctx) return;
+  try {
+    var rate = +((/rate=(\d+)/.exec(mime || "") || [])[1] || 24000), bin = atob(b64), n = bin.length >> 1, f = new Float32Array(n);
+    for (var i = 0; i < n; i++) { var v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v >= 32768) v -= 65536; f[i] = v / 32768; }
+    var buf = ctx.createBuffer(1, n, rate); buf.getChannelData(0).set(f);
+    var src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+    var at = Math.max(ctx.currentTime + 0.02, T.playAt || 0); src.start(at); T.playAt = at + buf.duration;
+    (T.liveSrc = T.liveSrc || []).push(src); src.onended = function() { var k = T.liveSrc.indexOf(src); if (k >= 0) T.liveSrc.splice(k, 1); };
+  } catch (e) {}
+}
+function hzTrLiveHush() { var T = HZ_TL.tr; (T.liveSrc || []).forEach(function(s) { try { s.onended = null; s.stop(); } catch (e) {} }); T.liveSrc = []; T.playAt = 0; }
+function hzTrLiveClose() { var T = HZ_TL.tr, L = T.live; T.live = null; hzTrLiveHush(); if (L && L.ws) { try { L.ws.close(); } catch (e) {} } }
+function hzTrLiveSend(o) { var L = HZ_TL.tr.live; if (L && L.ws && L.ws.readyState === 1) { try { L.ws.send(JSON.stringify(o)); return true; } catch (e) {} } return false; }
+// hold the button: stream the voice up in ~0.1 s pieces (16 kHz 16-bit PCM)
+function hzTrLiveHold() {
+  var T = HZ_TL.tr, ctx = hzTrCtx(); hzTrLiveHush(); hzTrStopVoice();
+  T.rec = { role: "live", hold: true, live: true, ctx: ctx, bufs: [], t0: Date.now(), rate: ctx.sampleRate, starting: true, floor: 1, spoke: false, loudAt: 0, carry: [] };
+  hzTrHoldPaint();
+  hzTrLiveSend({ realtimeInput: { activityStart: {} } });
+  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } }).then(function(stream) {
+    var R = T.rec; if (!R || !R.live) { stream.getTracks().forEach(function(t) { t.stop(); }); return; }
+    R.stream = stream; R.src = ctx.createMediaStreamSource(stream); R.proc = ctx.createScriptProcessor(2048, 1, 1); R.starting = false; R.t0 = Date.now();
+    var ratio = ctx.sampleRate / 16000, acc = [];
+    R.proc.onaudioprocess = function(e) {
+      if (T.rec !== R) return;
+      var d = e.inputBuffer.getChannelData(0), len = Math.floor(d.length / ratio), out = new Int16Array(len), s2 = 0;
+      for (var i = 0; i < len; i++) { var a = Math.floor(i * ratio), b = Math.floor((i + 1) * ratio), sum = 0; for (var j = a; j < b; j++) sum += d[j]; var v = Math.max(-1, Math.min(1, sum / Math.max(1, b - a))); out[i] = v < 0 ? v * 0x8000 : v * 0x7fff; s2 += v * v; }
+      var rms = Math.sqrt(s2 / Math.max(1, len)); var m = document.getElementById("hz-tr-lvl"); if (m) m.style.width = Math.round(Math.min(1, rms * 4) * 100) + "%";
+      if (rms > 0.03 && !R.spoke) { R.spoke = true; var hb = document.getElementById("hz-tr-heard"); if (hb) hb.textContent = "hearing speech"; }
+      var u8 = new Uint8Array(out.buffer), str = ""; for (var k = 0; k < u8.length; k += 0x8000) str += String.fromCharCode.apply(null, u8.subarray(k, k + 0x8000));
+      hzTrLiveSend({ realtimeInput: { audio: { data: btoa(str), mimeType: "audio/pcm;rate=16000" } } });
+    };
+    R.src.connect(R.proc); R.proc.connect(ctx.destination);
+    R.tick = setInterval(function() { var el = document.getElementById("hz-tr-time"), sec = Math.floor((Date.now() - R.t0) / 1000); if (el) el.textContent = "0:" + String(sec).padStart(2, "0"); if (sec >= 45) hzTrLiveRelease(); }, 250);
+    hzTrHoldPaint();
+  }).catch(function() { T.rec = null; hzTrLiveSend({ realtimeInput: { activityEnd: {} } }); hzTrToast("The microphone is blocked — allow it for this site in your phone's settings.", true); hzTlDraw(); });
+}
+function hzTrLiveRelease() {
+  var T = HZ_TL.tr, R = T.rec; if (!R || !R.live) return; T.rec = null;
+  try { clearInterval(R.tick); } catch (e) {}
+  try { if (R.proc) { R.proc.onaudioprocess = null; R.proc.disconnect(); } if (R.src) R.src.disconnect(); } catch (e) {}
+  try { if (R.stream) R.stream.getTracks().forEach(function(t) { t.stop(); }); } catch (e) {}
+  hzTrLiveSend({ realtimeInput: { activityEnd: {} } });
+  if (Date.now() - R.t0 < 600) { hzTrToast("Hold the button the whole time you (or they) are talking, then let go."); hzTlDraw(); return; }
+  T.busy = "live"; hzTlDraw(); hzTrPendStart();
+  var L = T.live; if (L) { clearTimeout(L.waitT); L.waitT = setTimeout(function() { if (T.busy === "live") { T.busy = false; hzTrPendStop(); hzTrToast("No answer from the live line — try again.", true); hzTrLiveClose(); hzTlDraw(); } }, 15000); }
 }
 // while the button is held it's repainted in place (never rebuilt), so the phone keeps tracking the finger
 function hzTrHoldPaint() {
@@ -30049,6 +30160,7 @@ function hzTrHoldPaint() {
 }
 function hzTrHoldEnd() {
   var T = HZ_TL.tr, R = T.rec; if (!R || !R.hold) return;
+  if (R.live) { hzTrLiveRelease(); return; }
   if (Date.now() - R.t0 < 700 || R.starting) { hzTrStopRec(false); hzTrToast("Hold the button the whole time you (or they) are talking, then let go."); return; }
   hzTrStopRec(true);
 }
@@ -30222,14 +30334,17 @@ function hzTlTrans() {
   };
   var modeSeg = '<div class="hz-tl-seg hz-tr-mode"><button class="' + (T.mode === "one" ? "on" : "") + '" onclick="hzTrStopRec(false);HZ_TL.tr.mode=\'one\';hzTlDraw()">One button (hold)</button><button class="' + (T.mode === "two" ? "on" : "") + '" onclick="hzTrStopRec(false);HZ_TL.tr.mode=\'two\';hzTlDraw()">Two buttons</button></div>';
   if (T.mode === "one") {
-    var on1 = R && R.hold, busy1 = !!T.busy;
+    if (T.fast !== false && !T.live && !T.liveBroken) setTimeout(hzTrLiveConnect, 0);
+    var on1 = R && R.hold, busy1 = !!T.busy, liveOn = T.fast !== false && T.live && T.live.ready;
     h += modeSeg + '<button class="hz-tr-hold' + (on1 ? ' rec' : '') + (busy1 ? ' busy' : '') + '" onpointerdown="hzTrHoldStart(event)" oncontextmenu="return false"' + (busy1 ? ' disabled' : '') + '>'
       + (on1 ? '<span class="hz-tr-bi">🎙️</span><b>' + (R.starting ? 'Starting mic…' : 'Talking… let go to translate') + '</b><small><span id="hz-tr-time">0:00</span> · <span id="hz-tr-heard">' + (R.spoke ? 'hearing speech' : 'waiting for voice') + '</span></small><span class="hz-tr-meter"><span id="hz-tr-lvl"></span></span>'
-        : busy1 ? '<span class="hz-tr-bi">⏳</span><b>Translating…</b><small>a few seconds</small>'
+        : busy1 ? '<span class="hz-tr-bi">⏳</span><b>Translating…</b><small>' + (T.busy === "live" ? 'live — starts speaking in a moment' : 'a few seconds') + '</small>'
         : '<span class="hz-tr-bi">🎙️</span><b>Hold to talk</b><small>You or the patient — it knows who by the language.<br>English → ' + hzTlEsc(T.lang ? (T.langName || T.lang).replace(/ \(.*\)/, "") : "their language") + ' · their language → English, both said out loud</small>') + '</button>'
       + '<div class="hz-tr-typerow"><input id="hz-tr-typed" class="hz-tl-in" type="text" placeholder="Or type in English…" value="' + hzTlEsc(T.typed) + '" oninput="HZ_TL.tr.typed=this.value" onkeydown="if(event.key===\'Enter\')hzTrType()"><button class="hz-tl-go" onclick="hzTrType()"' + (T.busy ? ' disabled' : '') + '>Send</button></div>'
       + '<div class="hz-tr-spks"><label class="hz-tr-spk"><input type="checkbox"' + (T.speak ? ' checked' : '') + ' onchange="HZ_TL.tr.speak=this.checked"> Say translations out loud</label>'
-      + '<label class="hz-tr-spk"><input type="checkbox"' + (T.natural !== false ? ' checked' : '') + ' onchange="HZ_TL.tr.natural=this.checked;HZ_TL.tr.tts={}"> Natural voice (needs signal — otherwise the phone\'s voice)</label></div>'
+      + '<label class="hz-tr-spk"><input type="checkbox"' + (T.natural !== false ? ' checked' : '') + ' onchange="HZ_TL.tr.natural=this.checked;HZ_TL.tr.tts={}"> Natural voice (needs signal — otherwise the phone\'s voice)</label>'
+      + '<label class="hz-tr-spk"><input type="checkbox"' + (T.fast !== false ? ' checked' : '') + ' onchange="HZ_TL.tr.fast=this.checked;HZ_TL.tr.liveBroken=false;HZ_TL.tr.liveFails=0;if(!this.checked)hzTrLiveClose();hzTlDraw()"> ⚡ Fast live mode</label></div>'
+      + '<div class="hz-tr-livest">' + (T.fast === false ? 'Fast mode off — normal translation' : liveOn ? '⚡ Live line connected — fastest' : T.liveBroken ? 'Fast mode unavailable' + (T.liveWhy ? ' (' + hzTlEsc(T.liveWhy) + ')' : '') + ' — using normal translation' : T.live ? '⚡ Connecting live line…' : 'Normal translation') + '</div>'
       + hzTrConvo()
       + '<div class="hz-tl-note">Hold the button the whole time someone is talking, then let go — like a body-cam translator. Tell the patient first that the phone is translating. Hold the phone about a hand\'s width from whoever is talking. Don\'t know their language? Just have them talk — it detects it and tells you. Nothing is saved.</div>';
     return h;
@@ -30550,7 +30665,7 @@ function hzTlCss() {
     + P + ".hz-tr-hold{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;min-height:210px;margin:10px 0;border-radius:20px !important;padding:16px 12px !important;background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important;border:3px solid #d4a017 !important;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overflow:hidden}"
     + P + ".hz-tr-hold *{pointer-events:none}" + P + ".hz-tr-hold .hz-tr-bi{font-size:3rem}" + P + ".hz-tr-hold b{font-family:Oswald,sans-serif;font-size:1.7rem;letter-spacing:.05em;text-transform:uppercase;text-align:center}" + P + ".hz-tr-hold small{font-size:.85rem;font-weight:700;text-align:center;line-height:1.35}"
     + P + ".hz-tr-hold.rec{background:#c62828 !important;border-color:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff !important;animation:hzTrPulse 1.2s infinite}" + P + ".hz-tr-hold.busy{background:#1e88e5 !important;border-color:#1e88e5 !important;color:#fff !important;-webkit-text-fill-color:#fff !important}"
-    + P + ".hz-tr-mode{margin-top:4px}" + P + ".hz-tr-pf{text-align:center;font-weight:700;font-size:.85rem;color:#000;-webkit-text-fill-color:#000;margin:6px 0}"
+    + P + ".hz-tr-mode{margin-top:4px}" + P + ".hz-tr-livest{text-align:center;font-weight:700;font-size:.82rem;color:#555;-webkit-text-fill-color:#555;margin:2px 0 8px}" + P + ".hz-tr-pf{text-align:center;font-weight:700;font-size:.85rem;color:#000;-webkit-text-fill-color:#000;margin:6px 0}"
     + P + ".hz-tr-bigs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}"
     + P + ".hz-tr-big{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:150px;border-radius:16px !important;padding:14px 8px !important;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;overflow:hidden}"
     + P + ".hz-tr-big.emt{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important;border:3px solid #d4a017 !important}"
