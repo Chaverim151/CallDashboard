@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.83"; window.M_BUILD = BUILD;
+  var BUILD = "7.84"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -15444,18 +15444,65 @@ function hzTrPlay(tts, done) {
     return true;
   } catch (e) { return false; }
 }
+// 12.332 (Sam: "faster and a natural voice for quick phrases"): every Quick Phrase's natural voice is downloaded in the
+// background as soon as the patient's language is known, and kept on the phone (IndexedDB) — a tap plays instantly, even with no signal.
+var HZ_TR_IDB = null;
+function hzTrIdb() { return new Promise(function(res) { if (HZ_TR_IDB) return res(HZ_TR_IDB); try { var r = indexedDB.open("hzTr", 1); r.onupgradeneeded = function() { r.result.createObjectStore("tts"); }; r.onsuccess = function() { HZ_TR_IDB = r.result; res(HZ_TR_IDB); }; r.onerror = function() { res(null); }; } catch (e) { res(null); } }); }
+function hzTrIdbGet(key) { return hzTrIdb().then(function(db) { return new Promise(function(res) { if (!db) return res(null); try { var q = db.transaction("tts").objectStore("tts").get(key); q.onsuccess = function() { res(q.result || null); }; q.onerror = function() { res(null); }; } catch (e) { res(null); } }); }); }
+function hzTrIdbPut(key, v) { hzTrIdb().then(function(db) { try { if (db) db.transaction("tts", "readwrite").objectStore("tts").put({ audio: v.audio, type: v.type || "" }, key); } catch (e) {} }); }
+function hzTrPrefetch(lang) {
+  var T = HZ_TL.tr, pi = hzTrPI(lang); if (pi < 0 || T.natural === false) return;
+  if (T.pf && T.pf.lang === lang && (T.pf.busy || T.pf.done >= T.pf.total)) return;
+  var texts = []; HZ_TR_PH.forEach(function(g) { g[1].forEach(function(p) { texts.push(p[pi + 2]); }); });
+  T.tts = T.tts || {};
+  var pf = T.pf = { lang: lang, total: texts.length, done: 0, busy: true, failed: 0 };
+  var show = function() { var el = document.getElementById("hz-tr-pf"); if (el) el.innerHTML = hzTrPfText(); };
+  Promise.all(texts.map(function(t) { var k = lang + "|" + t; return T.tts[k] ? Promise.resolve(true) : hzTrIdbGet(k).then(function(v) { if (v && v.audio) { T.tts[k] = v; return true; } return false; }); })).then(function(have) {
+    var missing = texts.filter(function(t, i) { return !have[i]; }); pf.done = texts.length - missing.length; show();
+    if (!missing.length || navigator.onLine === false) { pf.busy = false; show(); return; }
+    var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
+    var batches = []; for (var i = 0; i < missing.length; i += 10) batches.push(missing.slice(i, i + 10));
+    var next = function() {
+      if (T.pf !== pf) return; var b = batches.shift(); if (!b) { pf.busy = false; show(); return; }
+      rel("liveTranslate", { sayMany: b, lang: lang }).then(function(r) {
+        if (r && r.why) HZ_TL.tr.voiceWhy = r.why; if (!r || !r.tts) HZ_TL.tr.voiceWhy = HZ_TL.tr.voiceWhy || "the server hasn't been updated yet";
+        (r && r.tts || []).forEach(function(v, i) { if (v && v.audio) { var k = lang + "|" + b[i]; T.tts[k] = v; hzTrIdbPut(k, v); pf.done++; } else pf.failed++; });
+        show(); next();
+      }).catch(function() { pf.failed += b.length; show(); next(); });
+    };
+    next(); next();   // two batches at a time
+  });
+}
+function hzTrPfText() {
+  var pf = HZ_TL.tr.pf; if (!pf || HZ_TL.tr.natural === false) return "";
+  if (pf.done >= pf.total) return "✓ Natural voices ready — work with no signal";
+  if (pf.busy) return "🔊 Getting natural voices… " + pf.done + " of " + pf.total;
+  return "🔊 Natural voices: " + pf.done + " of " + pf.total + " ready" + (HZ_TL.tr.voiceWhy ? " (" + hzTlEsc(HZ_TL.tr.voiceWhy) + ")" : "") + (navigator.onLine === false ? " — no signal; the rest use the phone's voice" : " — the rest use the phone's voice for now");
+}
 function hzTrSay(text, lang, done, tts) {
   var T = HZ_TL.tr, key = (lang || "") + "|" + text; T.tts = T.tts || {};
   if (tts && tts.audio) T.tts[key] = tts;
   var phone = function() { hzTrSayPhone(text, lang, done); };
   if (T.tts[key]) { if (!hzTrPlay(T.tts[key], function(f) { if (f === "fail") phone(); else if (done) done(); })) phone(); return true; }
-  if (T.natural === false || navigator.onLine === false) { phone(); return true; }
-  var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay), gaveUp = false;
+  if (T.natural === false) { phone(); return true; }
+  hzTrIdbGet(key).then(function(v) {
+    if (v && v.audio) { T.tts[key] = v; if (!hzTrPlay(v, function(f) { if (f === "fail") phone(); else if (done) done(); })) phone(); return; }
+    if (navigator.onLine === false) { phone(); return; }
+    hzTrSayNet(text, lang, key, done, phone);
+  });
+  return true;
+}
+function hzTrVoiceWhy(why) {   // say once why the natural voice isn't working, so it isn't a mystery
+  var T = HZ_TL.tr; if (!why || T.whyShown === why) return; T.whyShown = why; T.voiceWhy = why;
+  hzTrToast("Natural voice isn't working (" + why + ") — using the phone's voice.", true);
+}
+function hzTrSayNet(text, lang, key, done, phone) {
+  var T = HZ_TL.tr, rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay), gaveUp = false;
   var tm = setTimeout(function() { gaveUp = true; phone(); }, 6000);   // a slow signal never leaves the patient waiting
   rel("liveTranslate", { say: text, lang: lang }).then(function(r) {
     clearTimeout(tm); if (gaveUp) return;
-    if (r && r.tts && r.tts.audio) { T.tts[key] = r.tts; if (!hzTrPlay(r.tts, function(f) { if (f === "fail") phone(); else if (done) done(); })) phone(); } else phone();
-  }).catch(function() { clearTimeout(tm); if (!gaveUp) phone(); });
+    if (r && r.tts && r.tts.audio) { T.tts[key] = r.tts; hzTrIdbPut(key, r.tts); if (!hzTrPlay(r.tts, function(f) { if (f === "fail") phone(); else if (done) done(); })) phone(); } else { hzTrVoiceWhy(r && r.why ? r.why : "the server hasn't been updated yet"); phone(); }
+  }).catch(function(e) { clearTimeout(tm); hzTrVoiceWhy((e && e.message) || "couldn't reach the server"); if (!gaveUp) phone(); });
   return true;
 }
 function hzTrSayPhone(text, lang, done) {
@@ -15624,19 +15671,22 @@ function hzTrLangSelect() {
 function hzTrWake() {   // 12.331: wake the translation server while the EMT gets ready (once every 5 minutes)
   var T = HZ_TL.tr; if (T.wokeAt && Date.now() - T.wokeAt < 300000) return; T.wokeAt = Date.now();
   var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
-  try { rel("liveTranslate", { ping: true }).catch(function() { T.wokeAt = 0; }); } catch (e) {}
+  try { rel("liveTranslate", { ping: true }).then(function(r) { var old = !(r && r.v >= 2); if (old !== !!T.serverOld) { T.serverOld = old; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); } }).catch(function(e) { T.wokeAt = 0; if (/not.?found|404/i.test((e && e.message) || "")) { T.serverOld = true; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); } }); } catch (e) {}
 }
 function hzTlTrans() {
   var T = HZ_TL.tr, R = T.rec, rtl = hzTrRtl(T.lang);
   hzTrWake();
+  if (T.lang && hzTrPI(T.lang) >= 0 && !T.rec) setTimeout(function() { if (!HZ_TL.tr.rec) hzTrPrefetch(HZ_TL.tr.lang); }, 1500);   // phrases ready before you need them
   var langRow = '<div class="hz-tr-langrow"><div class="hz-tl-ql">Patient speaks</div>' + hzTrLangSelect()
     + (T.lang ? '<div class="hz-tr-langnow">' + hzTlEsc(T.langName || T.lang) + (T.locked ? ' · picked' : ' · detected') + '</div>' : '') + '</div>';
   var tabs = '<div class="hz-tl-seg"><button class="' + (T.tab === "talk" ? "on" : "") + '" onclick="HZ_TL.tr.tab=\'talk\';hzTlDraw()">🎙️ Live talk</button><button class="' + (T.tab === "ph" ? "on" : "") + '" onclick="hzTrStopRec(false);HZ_TL.tr.tab=\'ph\';hzTlDraw()">⚡ Quick phrases</button></div>';
-  var h = tabs + langRow;
+  var h = tabs + (T.serverOld ? '<div class="hz-tl-warn">The translation server hasn\'t been updated yet — run the latest deploy-functions.sh. Until then voices are the phone\'s own.</div>' : '') + langRow;
   if (T.tab === "ph") {
     var pi = hzTrPI(T.lang);
+    if (pi >= 0) setTimeout(function() { hzTrPrefetch(T.lang); }, 0);
     h += '<div class="hz-tl-medrec">' + HZ_TR_PL.map(function(c) { var l = hzTrL(c); return '<button class="hz-tl-chip2' + (pi === HZ_TR_PL.indexOf(c) ? ' on' : '') + '" onclick="hzTrSetLang(\'' + c + '\',null,true)">' + hzTlEsc(l[1].replace(/ \(.*\)/, "")) + ' · ' + hzTlEsc(l[2]) + '</button>'; }).join("") + '</div>';
     if (pi < 0) return h + '<div class="hz-tl-warn">' + (T.lang ? 'No built-in phrases for ' + hzTlEsc(T.langName || T.lang) + ' — use 🎙️ Live talk, or pick a language above.' : 'Pick the patient\'s language above.') + '</div>';
+    h += (T.natural !== false ? '<div id="hz-tr-pf" class="hz-tr-pf">' + hzTrPfText() + '</div>' : '');
     h += HZ_TR_PH.map(function(g) { return '<div class="hz-tl-sec">' + hzTlEsc(g[0]) + '</div><div class="hz-tl-opts">' + g[1].map(function(p) { return '<button class="hz-tl-opt hz-tr-ph" onclick="hzTrPhrase(\'' + p[0] + '\')"><b>' + hzTlEsc(p[1]) + '</b><small' + (rtl ? ' dir="rtl"' : '') + '>' + hzTlEsc(p[pi + 2]) + '</small></button>'; }).join("") + '</div>'; }).join("");
     h += '<div class="hz-tl-sec">Patient answers</div><div class="hz-tl-acts"><button class="hz-tl-btn" onclick="hzTrShow(' + hzTlEsc(JSON.stringify(HZ_TR_ANS[0][pi + 1] + ' / ' + HZ_TR_ANS[1][pi + 1] + ' ?')).replace(/'/g, "&#39;") + ',HZ_TL.tr.lang,\'Yes / No?\')">Show Yes / No buttons</button><button class="hz-tl-btn" onclick="hzTrPhrase(\'pain\')">Pain 0–10 scale</button></div>';
     return h + hzTrConvo() + '<div class="hz-tl-note">Quick phrases are built into the app and work with no signal. Written for Hatzolah — have a native speaker check them before relying on them. Tap a phrase to show it big and say it out loud; the patient can tap an answer.</div>';
@@ -15978,7 +16028,7 @@ function hzTlCss() {
     + P + ".hz-tr-hold{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;min-height:210px;margin:10px 0;border-radius:20px !important;padding:16px 12px !important;background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important;border:3px solid #d4a017 !important;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overflow:hidden}"
     + P + ".hz-tr-hold *{pointer-events:none}" + P + ".hz-tr-hold .hz-tr-bi{font-size:3rem}" + P + ".hz-tr-hold b{font-family:Oswald,sans-serif;font-size:1.7rem;letter-spacing:.05em;text-transform:uppercase;text-align:center}" + P + ".hz-tr-hold small{font-size:.85rem;font-weight:700;text-align:center;line-height:1.35}"
     + P + ".hz-tr-hold.rec{background:#c62828 !important;border-color:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff !important;animation:hzTrPulse 1.2s infinite}" + P + ".hz-tr-hold.busy{background:#1e88e5 !important;border-color:#1e88e5 !important;color:#fff !important;-webkit-text-fill-color:#fff !important}"
-    + P + ".hz-tr-mode{margin-top:4px}"
+    + P + ".hz-tr-mode{margin-top:4px}" + P + ".hz-tr-pf{text-align:center;font-weight:700;font-size:.85rem;color:#000;-webkit-text-fill-color:#000;margin:6px 0}"
     + P + ".hz-tr-bigs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}"
     + P + ".hz-tr-big{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:150px;border-radius:16px !important;padding:14px 8px !important;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;overflow:hidden}"
     + P + ".hz-tr-big.emt{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important;border:3px solid #d4a017 !important}"
