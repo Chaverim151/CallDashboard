@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.326">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.329">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2726,7 +2726,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.326</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.329</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -19784,7 +19784,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.326";
+var DESKTOP_VERSION = "12.329";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -29544,7 +29544,7 @@ var HZ_TL = { view: "menu", hist: false, apgar: {}, apgarLog: [], gcs: {}, gcsKi
 var HZ_TL_LIST = [
   ["apgar", "👶", "APGAR Score", "Newborn at 1 and 5 minutes"],
   ["gcs", "🧠", "GCS Calculator", "Glasgow Coma Scale — adult or infant"],
-  ["tri", "🚑", "Trauma Triage", "NJ field triage — red / yellow trauma center criteria"],
+  ["tri", "🚑", "Trauma Center Criteria", "NJ field triage — red / yellow"],
   ["cpr", "💓", "CPR Metronome", "Compression beat, 100–120 a minute"],
   ["vent", "🫁", "Ventilation Metronome", "Breath timing for BVM"],
   ["burn", "🔥", "Burn Surface Area", "Rule of Nines — adult or pediatric"],
@@ -29930,10 +29930,19 @@ function hzTlMedKey(e) {
   else if (e.key === "Enter") { e.preventDefault(); if (M.sugIdx >= 0 && n) hzTlMedPick(M.sugIdx); else hzTlMedGo(); }
   else if (e.key === "Escape" && n) { e.preventDefault(); e.stopPropagation(); hzTlMedSugHide(); }
 }
+function hzTlMedClear(recent) {
+  var M = HZ_TL.med;
+  if (recent) { M.recent = []; try { localStorage.removeItem("hzMedRecent"); } catch (e) {} }
+  else { M.q = ""; M.typed = ""; M.res = null; M.err = ""; }
+  hzTlMedSugHide(); hzTlDraw();
+  if (!recent) { var i = document.getElementById("hz-tl-medq"); if (i) i.focus(); }
+}
 function hzTlMedCap(s) { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); }
 function hzTlMed() {
   var M = HZ_TL.med, r = M.res;
   var h = '<div class="hz-tl-medbar"><div class="hz-tl-medwrap"><input id="hz-tl-medq" class="hz-tl-in" type="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="hz-tl-medsug" placeholder="Medicine name, e.g. Eliquis or metoprolol" value="' + hzTlEsc(M.typed != null ? M.typed : M.q) + '" oninput="hzTlMedType(this.value)" onkeydown="hzTlMedKey(event)" onblur="setTimeout(hzTlMedSugHide,180)"><div id="hz-tl-medsug" class="hz-tl-medsug" role="listbox" hidden></div></div><button class="hz-tl-go" onclick="hzTlMedGo()">Search</button></div>';
+  // 12.328 (Sam): a Clear button — empties the box and the answer; "clear recent" forgets the recent-search chips on this device
+  if ((M.q || M.typed || r || M.err || M.recent.length) && !M.busy) h += '<div class="hz-tl-acts hz-tl-medclr">' + (M.q || M.typed || r || M.err ? '<button class="hz-tl-btn" onclick="hzTlMedClear()">✕ Clear</button>' : '') + (M.recent.length ? '<button class="hz-tl-link" onclick="hzTlMedClear(true)">clear recent searches</button>' : '') + '</div>';
   if (M.recent.length && !M.busy) h += '<div class="hz-tl-medrec">' + M.recent.map(function(x) { return '<button class="hz-tl-chip2" onclick="hzTlMedGo(\'' + hzTlEsc(x).replace(/'/g, "") + '\')">' + hzTlEsc(hzTlMedCap(x)) + '</button>'; }).join("") + '</div>';
   if (M.busy) return h + '<div class="hz-tl-note">Looking up “' + hzTlEsc(M.q) + '” in the FDA drug labels…</div>';
   if (M.err) return h + '<div class="hz-tl-warn">' + hzTlEsc(M.err) + '</div>';
@@ -30059,7 +30068,7 @@ function hzTlCss() {
     + P + ".hz-tl-item small{display:block;font-size:.8rem;opacity:.85;margin-top:2px}"
     + P + ".hz-tl-item>span:nth-child(2){flex:1}"
     + P + ".hz-tl-chev{font-size:1.6rem;opacity:.8}"
-    + P + ".hz-tl-note{font-size:.8rem;color:#444;-webkit-text-fill-color:#444;line-height:1.5;margin-top:10px}"
+    + P + ".hz-tl-note{text-align:center;font-size:.8rem;color:#444;-webkit-text-fill-color:#444;line-height:1.5;margin-top:10px}"
     + P + ".hz-tl-disc{text-align:center;font-weight:800;color:#000;-webkit-text-fill-color:#000}"
     + P + ".hz-tl-tri{border-radius:12px;padding:12px 14px;margin:0 0 10px}" + P + ".hz-tl-tri b{display:block;font-family:Oswald,sans-serif;font-size:1.15rem;letter-spacing:.04em;text-transform:uppercase}" + P + ".hz-tl-tri span{display:block;font-weight:700;margin-top:2px}" + P + ".hz-tl-tri ul{margin:8px 0 0;padding-left:18px;font-size:.88rem;line-height:1.4}"
     + P + ".hz-tl-tri.red{background:#c62828;color:#fff;-webkit-text-fill-color:#fff}" + P + ".hz-tl-tri.yel{background:#ffd60a;color:#000;-webkit-text-fill-color:#000}"
@@ -30084,7 +30093,7 @@ function hzTlCss() {
     + P + ".hz-tl-total em.bad{background:#c62828;color:#fff;-webkit-text-fill-color:#fff;padding:3px 10px}"
     + P + ".hz-tl-acts{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}"
     + P + ".hz-tl-btn{background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}"
-    + P + ".hz-tl-link{background:none;border:0;color:#555;-webkit-text-fill-color:#555;text-decoration:underline;cursor:pointer;font-size:.8rem}"
+    + P + ".hz-tl-link{background:none !important;border:0 !important;box-shadow:none !important;padding:4px 0 !important;color:#555;-webkit-text-fill-color:#555;text-decoration:underline;cursor:pointer;font-size:.8rem}"
     + P + ".hz-tl-log{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#f6f6f6;border-radius:10px;padding:8px 10px}"
     + P + ".hz-tl-log span{background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border-radius:999px;padding:4px 10px;font-size:.88rem}"
     + P + ".hz-tl-seg{display:flex;gap:6px;margin-bottom:10px}"
@@ -30139,6 +30148,7 @@ function hzTlCss() {
     + P + ".hz-tl-medsug{margin-top:4px;background:#000;border:2px solid #d4a017;border-radius:10px;overflow:hidden}"
     + P + ".hz-tl-sugit{display:block;width:100%;margin:0 !important;text-align:left;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:0 !important;border-top:1px solid rgba(212,160,23,.3) !important;border-radius:0 !important;box-shadow:none !important;padding:11px 12px !important;font-size:1rem;font-weight:600;cursor:pointer}" + P + ".hz-tl-sugit:first-child{border-top:0 !important}"
     + P + ".hz-tl-sugit b{color:#fff;-webkit-text-fill-color:#fff}" + P + ".hz-tl-sugit.on,.hz-tl-sugit:hover{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important}" + P + ".hz-tl-sugit.on b{color:#000;-webkit-text-fill-color:#000}"
+    + P + ".hz-tl-medclr{margin:8px 0 0;align-items:center}" + P + ".hz-tl-medclr .hz-tl-link{margin-left:auto}"
     + P + ".hz-tl-medrec{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}"
     + P + ".hz-tl-chip2{background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017;border-radius:999px;padding:4px 10px;font-weight:700;font-size:.82rem;cursor:pointer}"
     + P + ".hz-tl-medcard{background:#000;border:2px solid #d4a017;border-radius:12px;padding:12px 14px;margin:10px 0}"
