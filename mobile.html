@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.87"; window.M_BUILD = BUILD;
+  var BUILD = "7.89"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -15423,6 +15423,7 @@ HZ_TL.tr = { mode: "one", tab: "talk", lang: "", langName: "", locked: false, li
 function hzTrL(code) { var c = String(code || "").split("-")[0].toLowerCase(); if (c === "iw") c = "he"; return HZ_TR_LANGS.filter(function(x) { return x[0] === c; })[0]; }
 function hzTrPI(code) { return HZ_TR_PL.indexOf(String(code || "").split("-")[0].toLowerCase()); }
 function hzTrToast(m, bad) { if (typeof showToast === "function") showToast(m, bad); else if (typeof mToast === "function") mToast(m, bad); }
+function hzTrResetLang() { var T = HZ_TL.tr; if (T.live) { hzTrLiveClose(); T.liveFails = 0; } T.lang = ""; T.langName = ""; T.locked = false; T.detected = false; hzTlDraw(); }
 function hzTrSetLang(code, name, lock) { var T = HZ_TL.tr, l = hzTrL(code); if (T.live && code !== T.lang) { hzTrLiveClose(); T.liveFails = 0; }   /* the live line restarts so it knows the new language */ T.lang = code; T.langName = name || (l ? l[1] : code); if (lock !== undefined) T.locked = lock; hzTlDraw(); }
 function hzTrVoice(lang) {
   try { var vs = speechSynthesis.getVoices() || [], c = String(lang || "").toLowerCase(), base = c.split("-")[0];
@@ -15448,9 +15449,9 @@ function hzTrPlay(tts, done) {
 // background as soon as the patient's language is known, and kept on the phone (IndexedDB) — a tap plays instantly, even with no signal.
 var HZ_TR_IDB = null;
 // 12.333: keys start "2|" — voices saved before could start with the spoken instruction; old ones are cleared
-function hzTrIdb() { return new Promise(function(res) { if (HZ_TR_IDB) return res(HZ_TR_IDB); try { var r = indexedDB.open("hzTr", 1); r.onupgradeneeded = function() { r.result.createObjectStore("tts"); }; r.onsuccess = function() { HZ_TR_IDB = r.result; try { if (!localStorage.getItem("hzTrV2")) { HZ_TR_IDB.transaction("tts", "readwrite").objectStore("tts").clear(); localStorage.setItem("hzTrV2", "1"); } } catch (e) {} res(HZ_TR_IDB); }; r.onerror = function() { res(null); }; } catch (e) { res(null); } }); }
-function hzTrIdbGet(key) { return hzTrIdb().then(function(db) { return new Promise(function(res) { if (!db) return res(null); try { var q = db.transaction("tts").objectStore("tts").get("2|" + key); q.onsuccess = function() { res(q.result || null); }; q.onerror = function() { res(null); }; } catch (e) { res(null); } }); }); }
-function hzTrIdbPut(key, v) { hzTrIdb().then(function(db) { try { if (db) db.transaction("tts", "readwrite").objectStore("tts").put({ audio: v.audio, type: v.type || "" }, "2|" + key); } catch (e) {} }); }
+function hzTrIdb() { return new Promise(function(res) { if (HZ_TR_IDB) return res(HZ_TR_IDB); try { var r = indexedDB.open("hzTr", 1); r.onupgradeneeded = function() { r.result.createObjectStore("tts"); }; r.onsuccess = function() { HZ_TR_IDB = r.result; try { if (!localStorage.getItem("hzTrV3")) { HZ_TR_IDB.transaction("tts", "readwrite").objectStore("tts").clear(); localStorage.setItem("hzTrV3", "1"); }   /* 12.336: clips saved from an older server could start with the spoken instruction */ } catch (e) {} res(HZ_TR_IDB); }; r.onerror = function() { res(null); }; } catch (e) { res(null); } }); }
+function hzTrIdbGet(key) { return hzTrIdb().then(function(db) { return new Promise(function(res) { if (!db) return res(null); try { var q = db.transaction("tts").objectStore("tts").get("3|" + key); q.onsuccess = function() { res(q.result || null); }; q.onerror = function() { res(null); }; } catch (e) { res(null); } }); }); }
+function hzTrIdbPut(key, v) { hzTrIdb().then(function(db) { try { if (db) db.transaction("tts", "readwrite").objectStore("tts").put({ audio: v.audio, type: v.type || "" }, "3|" + key); } catch (e) {} }); }
 function hzTrPrefetch(lang) {
   var T = HZ_TL.tr, pi = hzTrPI(lang); if (pi < 0 || T.natural === false) return;
   if (T.pf && T.pf.lang === lang && (T.pf.busy || T.pf.done >= T.pf.total)) return;
@@ -15467,6 +15468,7 @@ function hzTrPrefetch(lang) {
       if (T.pf !== pf) return; var b = batches.shift(); if (!b) { pf.busy = false; show(); return; }
       rel("liveTranslate", { sayMany: b, lang: lang }).then(function(r) {
         if (r && r.why) HZ_TL.tr.voiceWhy = r.why; if (!r || !r.tts) HZ_TL.tr.voiceWhy = HZ_TL.tr.voiceWhy || "the server hasn't been updated yet";
+        if (!(r && r.ttsv >= 3)) { HZ_TL.tr.serverOld = true; pf.failed += b.length; show(); return next(); }   // older server: its Gemini clips can start with the instruction — don't use them
         (r && r.tts || []).forEach(function(v, i) { if (v && v.audio) { var k = lang + "|" + b[i]; T.tts[k] = v; hzTrIdbPut(k, v); pf.done++; } else pf.failed++; });
         show(); next();
       }).catch(function() { pf.failed += b.length; show(); next(); });
@@ -15502,6 +15504,7 @@ function hzTrSayNet(text, lang, key, done, phone) {
   var tm = setTimeout(function() { gaveUp = true; phone(); }, 6000);   // a slow signal never leaves the patient waiting
   rel("liveTranslate", { say: text, lang: lang }).then(function(r) {
     clearTimeout(tm); if (gaveUp) return;
+    if (r && r.tts && r.tts.audio && !(r.ttsv >= 3)) { T.serverOld = true; phone(); return; }   // older server: use the phone's voice rather than a clip that reads the instruction
     if (r && r.tts && r.tts.audio) { T.tts[key] = r.tts; hzTrIdbPut(key, r.tts); if (!hzTrPlay(r.tts, function(f) { if (f === "fail") phone(); else if (done) done(); })) phone(); } else { hzTrVoiceWhy(r && r.why ? r.why : "the server hasn't been updated yet"); phone(); }
   }).catch(function(e) { clearTimeout(tm); hzTrVoiceWhy((e && e.message) || "couldn't reach the server"); if (!gaveUp) phone(); });
   return true;
@@ -15587,7 +15590,7 @@ function hzTrLiveMsg(L, m) {
       if (en) T.lines.push({ who: "emt", heard: inT, en: inT, tr: outT, lang: T.lang, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() });
       else {
         T.lines.push({ who: "pt", heard: inT, tr: outT, lang: lc || T.lang, langName: lc ? ((hzTrL(lc) || [0, lc])[1]) : T.langName, clarity: outT ? "clear" : "unclear", src: "live", at: Date.now() });
-        if (!T.locked && lc && !/^en\b/i.test(lc)) { T.lang = lc; T.langName = (hzTrL(lc) || [0, lc])[1]; }
+        if (!T.locked && lc && !/^en\b/i.test(lc)) { T.lang = lc; T.langName = (hzTrL(lc) || [0, lc])[1]; T.locked = true; T.detected = true; }
       }
     }
     if (HZ_TL.view === "trans" && !T.rec) hzTlDraw();
@@ -15736,7 +15739,7 @@ function hzTrSend(p) {
     var who = p.role === "auto" ? (r.speaker || (/^en\b/i.test(r.lang || "") ? "emt" : "patient")) : p.role;
     if (who === "patient") {
       T.lines.push({ who: "pt", heard: r.heard, tr: r.translation, lang: r.lang, langName: r.langName, clarity: r.clarity, note: r.note, src: "voice", at: Date.now() });
-      if (!T.locked && r.lang && !/^en\b/i.test(r.lang) && r.clarity !== "unclear") { T.lang = r.lang; T.langName = r.langName || (hzTrL(r.lang) || [0, r.lang])[1]; }
+      if (!T.locked && r.lang && !/^en\b/i.test(r.lang) && r.clarity !== "unclear") { T.lang = r.lang; T.langName = r.langName || (hzTrL(r.lang) || [0, r.lang])[1]; T.locked = true; T.detected = true; }   // 12.337 (Sam): once detected it stays until you change or reset it
       if (p.role === "auto" && T.speak && r.translation && r.clarity !== "unclear") hzTrSay(r.translation, "en-US", null, r.tts);   // one-button: said to you in English
       else if (T.readEn && r.translation && r.clarity !== "unclear") hzTrSay(r.translation, "en-US");
       T.yourTurn = true;
@@ -15787,7 +15790,7 @@ function hzTrLineShow(i) { var l = HZ_TL.tr.lines[i]; if (l) hzTrShow(l.tr, l.la
 function hzTrLineSay(i) { hzTrCtx(); var l = HZ_TL.tr.lines[i]; if (l) hzTrSay(l.tr, l.lang || HZ_TL.tr.lang); }
 function hzTrLangSelect() {
   var T = HZ_TL.tr, cur = String(T.lang || "").split("-")[0];
-  return '<select class="hz-tr-sel" onchange="if(this.value===\'\'){HZ_TL.tr.lang=\'\';HZ_TL.tr.langName=\'\';HZ_TL.tr.locked=false;hzTlDraw()}else hzTrSetLang(this.value,null,true)">'
+  return '<select class="hz-tr-sel" onchange="if(this.value===\'\')hzTrResetLang();else{HZ_TL.tr.detected=false;hzTrSetLang(this.value,null,true)}">'
     + '<option value=""' + (T.lang ? '' : ' selected') + '>🔎 Auto-detect — let the patient speak first</option>'
     + (T.lang && !hzTrL(T.lang) ? '<option value="' + hzTlEsc(T.lang) + '" selected>' + hzTlEsc(T.langName || T.lang) + '</option>' : '')
     + HZ_TR_LANGS.map(function(l) { return '<option value="' + l[0] + '"' + (cur === l[0] ? ' selected' : '') + '>' + hzTlEsc(l[1] + " · " + l[2]) + (HZ_TR_PL.indexOf(l[0]) >= 0 ? " ⚡" : "") + '</option>'; }).join("") + '</select>';
@@ -15795,14 +15798,14 @@ function hzTrLangSelect() {
 function hzTrWake() {   // 12.331: wake the translation server while the EMT gets ready (once every 5 minutes)
   var T = HZ_TL.tr; if (T.wokeAt && Date.now() - T.wokeAt < 300000) return; T.wokeAt = Date.now();
   var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
-  try { rel("liveTranslate", { ping: true }).then(function(r) { var old = !(r && r.v >= 2); if (old !== !!T.serverOld) { T.serverOld = old; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); } }).catch(function(e) { T.wokeAt = 0; if (/not.?found|404/i.test((e && e.message) || "")) { T.serverOld = true; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); } }); } catch (e) {}
+  try { rel("liveTranslate", { ping: true }).then(function(r) { var old = !(r && r.v >= 3); if (old !== !!T.serverOld) { T.serverOld = old; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); } }).catch(function(e) { T.wokeAt = 0; if (/not.?found|404/i.test((e && e.message) || "")) { T.serverOld = true; if (HZ_TL.view === "trans" && !T.rec) hzTlDraw(); } }); } catch (e) {}
 }
 function hzTlTrans() {
   var T = HZ_TL.tr, R = T.rec, rtl = hzTrRtl(T.lang);
   hzTrWake();
   if (T.lang && hzTrPI(T.lang) >= 0 && !T.rec) setTimeout(function() { if (!HZ_TL.tr.rec) hzTrPrefetch(HZ_TL.tr.lang); }, 1500);   // phrases ready before you need them
   var langRow = '<div class="hz-tr-langrow"><div class="hz-tl-ql">Patient speaks</div>' + hzTrLangSelect()
-    + (T.lang ? '<div class="hz-tr-langnow">' + hzTlEsc(T.langName || T.lang) + (T.locked ? ' · picked' : ' · detected') + '</div>' : '') + '</div>';
+    + (T.lang ? '<div class="hz-tr-langnow">' + hzTlEsc(T.langName || T.lang) + (T.detected ? ' · detected' : ' · picked') + ' — stays until you change it <button class="hz-tl-link" onclick="hzTrResetLang()">reset</button></div>' : '') + '</div>';
   var tabs = '<div class="hz-tl-seg"><button class="' + (T.tab === "talk" ? "on" : "") + '" onclick="HZ_TL.tr.tab=\'talk\';hzTlDraw()">🎙️ Live talk</button><button class="' + (T.tab === "ph" ? "on" : "") + '" onclick="hzTrStopRec(false);HZ_TL.tr.tab=\'ph\';hzTlDraw()">⚡ Quick phrases</button></div>';
   var h = tabs + (T.serverOld ? '<div class="hz-tl-warn">The translation server hasn\'t been updated yet — run the latest deploy-functions.sh. Until then voices are the phone\'s own.</div>' : '') + langRow;
   if (T.tab === "ph") {
