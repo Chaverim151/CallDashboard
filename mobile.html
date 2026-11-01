@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "7.84"; window.M_BUILD = BUILD;
+  var BUILD = "7.85"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -15447,9 +15447,10 @@ function hzTrPlay(tts, done) {
 // 12.332 (Sam: "faster and a natural voice for quick phrases"): every Quick Phrase's natural voice is downloaded in the
 // background as soon as the patient's language is known, and kept on the phone (IndexedDB) — a tap plays instantly, even with no signal.
 var HZ_TR_IDB = null;
-function hzTrIdb() { return new Promise(function(res) { if (HZ_TR_IDB) return res(HZ_TR_IDB); try { var r = indexedDB.open("hzTr", 1); r.onupgradeneeded = function() { r.result.createObjectStore("tts"); }; r.onsuccess = function() { HZ_TR_IDB = r.result; res(HZ_TR_IDB); }; r.onerror = function() { res(null); }; } catch (e) { res(null); } }); }
-function hzTrIdbGet(key) { return hzTrIdb().then(function(db) { return new Promise(function(res) { if (!db) return res(null); try { var q = db.transaction("tts").objectStore("tts").get(key); q.onsuccess = function() { res(q.result || null); }; q.onerror = function() { res(null); }; } catch (e) { res(null); } }); }); }
-function hzTrIdbPut(key, v) { hzTrIdb().then(function(db) { try { if (db) db.transaction("tts", "readwrite").objectStore("tts").put({ audio: v.audio, type: v.type || "" }, key); } catch (e) {} }); }
+// 12.333: keys start "2|" — voices saved before could start with the spoken instruction; old ones are cleared
+function hzTrIdb() { return new Promise(function(res) { if (HZ_TR_IDB) return res(HZ_TR_IDB); try { var r = indexedDB.open("hzTr", 1); r.onupgradeneeded = function() { r.result.createObjectStore("tts"); }; r.onsuccess = function() { HZ_TR_IDB = r.result; try { if (!localStorage.getItem("hzTrV2")) { HZ_TR_IDB.transaction("tts", "readwrite").objectStore("tts").clear(); localStorage.setItem("hzTrV2", "1"); } } catch (e) {} res(HZ_TR_IDB); }; r.onerror = function() { res(null); }; } catch (e) { res(null); } }); }
+function hzTrIdbGet(key) { return hzTrIdb().then(function(db) { return new Promise(function(res) { if (!db) return res(null); try { var q = db.transaction("tts").objectStore("tts").get("2|" + key); q.onsuccess = function() { res(q.result || null); }; q.onerror = function() { res(null); }; } catch (e) { res(null); } }); }); }
+function hzTrIdbPut(key, v) { hzTrIdb().then(function(db) { try { if (db) db.transaction("tts", "readwrite").objectStore("tts").put({ audio: v.audio, type: v.type || "" }, "2|" + key); } catch (e) {} }); }
 function hzTrPrefetch(lang) {
   var T = HZ_TL.tr, pi = hzTrPI(lang); if (pi < 0 || T.natural === false) return;
   if (T.pf && T.pf.lang === lang && (T.pf.busy || T.pf.done >= T.pf.total)) return;
