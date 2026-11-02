@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.02"; window.M_BUILD = BUILD;
+  var BUILD = "8.07"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12352,6 +12352,10 @@ function mCloseAllSheets() {
         <span class="m-dash-txt"><span class="m-dash-t">New Call</span><span class="m-dash-s">Start a call and dispatch units</span></span>
         <span class="m-dash-go">›</span>
       </button>
+      <!-- 12.351 (Sam): manual Zello dispatch tone, right under New Call · 12.353: Short and Long side by side -->
+      <div class="hz-tone-row one" id="m-dash-tone">   <!-- 12.354 (Sam): one button, "Alert Tone" -->
+        <button class="m-dash-row hz-dash-tone" onclick="hzZelloManualTone(this,'alert')"><span class="m-dash-ic">🔊</span><span class="m-dash-txt"><span class="m-dash-t">Alert Tone</span><span class="m-dash-s hz-tone-sub">Plays the “5” tone on the Zello dispatch channel</span></span></button>
+      </div>
       <button class="m-dash-row" id="m-dash-rigs" onclick="mDispView('rigs')">
         <span class="m-dash-ic">🚑</span>
         <span class="m-dash-txt"><span class="m-dash-t">Rigs &amp; Vehicles</span><span class="m-dash-s" id="m-dash-rigs-sub">Status of every rig — take one out of service or put it back</span></span>
@@ -16346,6 +16350,23 @@ function hzTkaAssign(id, reopen) {
   window.hzCjApply = apply;
   setInterval(apply, 1500); document.addEventListener("DOMContentLoaded", apply);
 })();
+</script>
+<script id="hz-zello-tone">/* 12.351 (Sam): the console's "📻 Send Dispatch Tone" button → server zelloTone (dispatchers; never in Test Mode) */
+function hzZelloManualTone(btn, kind) {
+  if (btn && btn.dataset.busy) return;
+  var sub = btn && btn.querySelector(".hz-tone-sub"), orig = sub ? sub.textContent : "";
+  var toast = function(m, bad) { if (typeof mToast === "function") mToast(m, bad); else if (typeof showToast === "function") showToast(m, bad); };
+  var rel = typeof hzRelayAny === "function" ? hzRelayAny : (typeof hzRelay === "function" ? hzRelay : mRelay);
+  if (btn) { btn.dataset.busy = "1"; btn.classList.add("busy"); } if (sub) sub.textContent = "🔊 Sending the tone…";
+  rel("zelloTone", { kind: "alert" }).then(function(r) {
+    if (r && r.ok) toast("🔊 Alert tone sent on " + (r.channel || "Zello")); else toast("⚠ " + ((r && r.error) || "Tone not sent"), true);
+  }).catch(function(e) { toast("⚠ Tone not sent: " + e.message, true); })
+    .then(function() { if (btn) { delete btn.dataset.busy; btn.classList.remove("busy"); } if (sub) sub.textContent = orig; });
+}
+(function() { var P = "html body:not(#hzA):not(#hzB):not(#hzC) ", s = document.createElement("style");
+  var Q = "html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-disp-dash #m-dash-tone .m-dash-row.m-dash-row.hz-dash-tone";
+  s.textContent = Q + "{background:#d4a017 !important;border:2px solid #000 !important;color:#000 !important;-webkit-text-fill-color:#000 !important}" + Q + " *{color:#000 !important;-webkit-text-fill-color:#000 !important}" + Q + " .m-dash-t{font-weight:800 !important}" + Q + ".busy{opacity:.7}" + "#m-disp-dash .hz-tone-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 10px}#m-disp-dash .hz-tone-row.one{grid-template-columns:1fr}" + Q + "{margin:0 !important;width:auto !important;min-width:0;justify-content:center !important;gap:10px !important;padding-left:10px !important;padding-right:10px !important}" + Q + " .m-dash-txt{min-width:0;flex:0 1 auto !important}" + Q + " .m-dash-t{white-space:nowrap}" + "#m-disp-dash .hz-tone-row.one .m-dash-row.m-dash-row.hz-dash-tone{justify-content:flex-start !important;padding-left:16px !important}" + Q + " .m-dash-ic{margin:0 !important}";
+  (document.head || document.documentElement).appendChild(s); })();
 </script>
 </body>
 </html>
