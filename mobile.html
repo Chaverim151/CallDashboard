@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.22"; window.M_BUILD = BUILD;
+  var BUILD = "8.23"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1222,6 +1222,9 @@ html[data-theme="basic"] .hz-tr-ans.a3{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-chip2{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-medsub{color:#8a680f !important}
 html[data-theme="basic"] .hz-tl-pill.q{color:#8a680f !important}
+html[data-theme="basic"] .hz-tka-l{color:#8a680f !important}
+html[data-theme="basic"] .hz-tka-sel optgroup{color:#8a680f !important}
+html[data-theme="basic"] .hz-tka-sel{color-scheme:light !important}
 html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
 <!--HZ-BASIC-END-->
 </head>
@@ -16308,7 +16311,9 @@ function hzTkaLoad(done) {
     var l = [];
     snap.forEach(function(d) { var u = Object.assign({ uid: d.id }, d.data()); if (typeof hzIsTestUser === "function" && hzIsTestUser(u)) return; if (!u.unit && !u.firstName) return;
       var roles = (u.roles || []).map(function(r) { return String(r).toLowerCase(); });
-      u._handler = u.role === "admin" || roles.indexOf("logistics") !== -1 || u.ticketSupervisor === true; l.push(u); });
+      // 12.371 (Sam): only logistics personnel (Logistics role or Logistics Supervisor) can be given a ticket — being an admin does not count
+      if (roles.indexOf("logistics") === -1 && String(u.role || "").toLowerCase() !== "logistics" && u.ticketSupervisor !== true) return;
+      u._handler = true; l.push(u); });
     l.sort(function(a, b) { return String(a.unit || "").localeCompare(String(b.unit || ""), undefined, { numeric: true }); });
     HZ_TKA.people = l; HZ_TKA.loading = false; done();
   }).catch(function() { HZ_TKA.loading = false; HZ_TKA.people = []; done(); });
@@ -16324,8 +16329,8 @@ function hzTkaFill(id, t) {
   var sel = document.getElementById("hz-tka-sel-" + id); if (!sel) return;
   var cur = t.assignedToUid || "", list = HZ_TKA.people || [];
   var opt = function(u) { return '<option value="' + hzTkaEsc(u.uid) + '"' + (u.uid === cur ? ' selected' : '') + '>' + hzTkaEsc(hzTkaName(u)) + '</option>'; };
-  var h = list.filter(function(u) { return u._handler; }), o = list.filter(function(u) { return !u._handler; });
-  sel.innerHTML = '<option value="">— Choose a member —</option>' + (h.length ? '<optgroup label="Service / logistics">' + h.map(opt).join("") + '</optgroup>' : '') + (o.length ? '<optgroup label="Other members">' + o.map(opt).join("") + '</optgroup>' : '');
+  sel.innerHTML = list.length ? '<option value="">Choose a member…</option>' + list.map(opt).join("")
+    : '<option value="">No logistics members yet — set the Logistics role in Admin ▸ Users</option>';
 }
 function hzTkaAssign(id, reopen) {
   var sel = document.getElementById("hz-tka-sel-" + id), uid = sel ? sel.value : "";
@@ -16348,7 +16353,9 @@ function hzTkaAssign(id, reopen) {
   var P = "html body:not(#hzA):not(#hzB):not(#hzC) ";   // :not(#hzC) = the white-theme generator leaves these alone
   var s = document.createElement("style"); s.id = "hz-tka-css";
   s.textContent = P + ".hz-tka{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;width:100%}"
-    + P + ".hz-tka-l{font-weight:800}"
+    + P + ".hz-tka-l{font-weight:800;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important}"
+    + P + ".hz-tka-sel option," + P + ".hz-tka-sel optgroup{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important}"   // 12.371: the open list too (was gold on white / invisible)
+    + P + ".hz-tka-sel{color-scheme:dark}"
     + P + ".hz-tka-sel{flex:1 1 200px;min-width:0;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important;border-radius:8px !important;padding:8px 10px !important;font-weight:700}"
     + P + ".hz-tka-btn{background:#34c759 !important;color:#000 !important;-webkit-text-fill-color:#000 !important;border:0 !important;border-radius:8px !important;padding:9px 16px !important;font-weight:800 !important;cursor:pointer}";
   (document.head || document.documentElement).appendChild(s);
