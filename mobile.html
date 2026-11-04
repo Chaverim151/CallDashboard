@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.23"; window.M_BUILD = BUILD;
+  var BUILD = "8.24"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1225,6 +1225,9 @@ html[data-theme="basic"] .hz-tl-pill.q{color:#8a680f !important}
 html[data-theme="basic"] .hz-tka-l{color:#8a680f !important}
 html[data-theme="basic"] .hz-tka-sel optgroup{color:#8a680f !important}
 html[data-theme="basic"] .hz-tka-sel{color-scheme:light !important}
+html[data-theme="basic"] .hz-tka-pick{color:#8a680f !important}
+html[data-theme="basic"] #hz-tka-sheet .hz-tka-it{color:#8a680f !important}
+html[data-theme="basic"] #hz-tka-sheet .hz-tka-none{color:#8a680f !important}
 html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
 <!--HZ-BASIC-END-->
 </head>
@@ -16322,7 +16325,9 @@ function hzTkaLoad(done) {
 function hzTkaHtml(id, t, isAdmin, reopen) {
   if (!t || t.category === "erv" || t.status === "resolved" || !hzTkaCan(isAdmin)) return "";
   setTimeout(function() { hzTkaLoad(function() { hzTkaFill(id, t); }); }, 0);
-  return '<div class="hz-tka"><span class="hz-tka-l">👔 Assign to</span><select id="hz-tka-sel-' + hzTkaEsc(id) + '" class="hz-tka-sel"><option value="">Loading members…</option></select>'
+  // 12.372 (Sam): the phone's own picker can't be coloured, so the select is hidden and a black-and-gold list opens instead
+  return '<div class="hz-tka"><span class="hz-tka-l">👔 Assign to</span><select id="hz-tka-sel-' + hzTkaEsc(id) + '" class="hz-tka-sel" style="display:none" tabindex="-1" aria-hidden="true"><option value="">Loading members…</option></select>'
+    + '<button type="button" id="hz-tka-pick-' + hzTkaEsc(id) + '" class="hz-tka-pick" onclick="hzTkaPick(\'' + hzTkaEsc(id) + '\')"><span class="hz-tka-pv">Loading members…</span><span class="hz-tka-car">▾</span></button>'
     + '<button class="hz-tka-btn" onclick="hzTkaAssign(\'' + hzTkaEsc(id) + '\',\'' + reopen + '\')">Assign</button></div>';
 }
 function hzTkaFill(id, t) {
@@ -16331,6 +16336,30 @@ function hzTkaFill(id, t) {
   var opt = function(u) { return '<option value="' + hzTkaEsc(u.uid) + '"' + (u.uid === cur ? ' selected' : '') + '>' + hzTkaEsc(hzTkaName(u)) + '</option>'; };
   sel.innerHTML = list.length ? '<option value="">Choose a member…</option>' + list.map(opt).join("")
     : '<option value="">No logistics members yet — set the Logistics role in Admin ▸ Users</option>';
+  hzTkaPickLabel(id);
+}
+function hzTkaPickLabel(id) {
+  var sel = document.getElementById("hz-tka-sel-" + id), b = document.getElementById("hz-tka-pick-" + id); if (!sel || !b) return;
+  var o = sel.options[sel.selectedIndex]; b.querySelector(".hz-tka-pv").textContent = o ? o.textContent : "Choose a member…";
+  b.classList.toggle("set", !!sel.value);
+}
+function hzTkaPick(id) {
+  var sel = document.getElementById("hz-tka-sel-" + id); if (!sel) return;
+  var old = document.getElementById("hz-tka-sheet"); if (old) old.remove();
+  var o = document.createElement("div"); o.id = "hz-tka-sheet"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true");
+  var items = Array.prototype.filter.call(sel.options, function(op) { return op.value; });
+  o.innerHTML = '<div class="hz-tka-box"><div class="hz-tka-h">👔 Assign to</div><div class="hz-tka-list">'
+    + (items.length ? items.map(function(op) { return '<button type="button" class="hz-tka-it' + (op.value === sel.value ? ' on' : '') + '" data-v="' + hzTkaEsc(op.value) + '">' + (op.value === sel.value ? '✓ ' : '') + hzTkaEsc(op.textContent) + '</button>'; }).join("")
+       : '<div class="hz-tka-none">' + hzTkaEsc((sel.options[0] || {}).textContent || "No logistics members") + '</div>')
+    + '</div><button type="button" class="hz-tka-cancel">Cancel</button></div>';
+  var close = function() { o.remove(); window.removeEventListener("popstate", close); };
+  o.addEventListener("click", function(e) {
+    if (e.target === o || e.target.classList.contains("hz-tka-cancel")) return close();
+    var it = e.target.closest(".hz-tka-it"); if (!it) return;
+    sel.value = it.getAttribute("data-v"); hzTkaPickLabel(id); close();
+  });
+  window.addEventListener("popstate", close);
+  document.body.appendChild(o);
 }
 function hzTkaAssign(id, reopen) {
   var sel = document.getElementById("hz-tka-sel-" + id), uid = sel ? sel.value : "";
@@ -16356,6 +16385,17 @@ function hzTkaAssign(id, reopen) {
     + P + ".hz-tka-l{font-weight:800;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important}"
     + P + ".hz-tka-sel option," + P + ".hz-tka-sel optgroup{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important}"   // 12.371: the open list too (was gold on white / invisible)
     + P + ".hz-tka-sel{color-scheme:dark}"
+    + P + ".hz-tka-pick{flex:1 1 200px;min-width:0;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important;border-radius:8px !important;padding:9px 12px !important;font:inherit;font-weight:700 !important;text-align:left;cursor:pointer;box-shadow:none !important}"
+    + P + ".hz-tka-pick .hz-tka-pv{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+    + P + ".hz-tka-pick:not(.set) .hz-tka-pv{opacity:.7}"
+    + P + "#hz-tka-sheet{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}"
+    + P + "#hz-tka-sheet .hz-tka-box{background:#000 !important;border:2px solid #d4a017 !important;border-radius:14px;padding:14px;width:100%;max-width:380px;max-height:80vh;display:flex;flex-direction:column;gap:10px}"
+    + P + "#hz-tka-sheet .hz-tka-h{font-family:'Oswald',sans-serif;font-size:1.2rem;font-weight:700;color:#d4a017 !important;text-align:center}"
+    + P + "#hz-tka-sheet .hz-tka-list{overflow-y:auto;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}"
+    + P + "#hz-tka-sheet .hz-tka-it{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important;border-radius:10px !important;padding:12px 14px !important;font:inherit;font-size:1rem !important;font-weight:700 !important;text-align:left;cursor:pointer;box-shadow:none !important}"
+    + P + "#hz-tka-sheet .hz-tka-it.on{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000 !important}"
+    + P + "#hz-tka-sheet .hz-tka-none{color:#d4a017;text-align:center;padding:10px}"
+    + P + "#hz-tka-sheet .hz-tka-cancel{background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff !important;border:0 !important;border-radius:10px !important;min-height:46px;font:inherit;font-weight:800 !important;cursor:pointer}"
     + P + ".hz-tka-sel{flex:1 1 200px;min-width:0;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;border:2px solid #d4a017 !important;border-radius:8px !important;padding:8px 10px !important;font-weight:700}"
     + P + ".hz-tka-btn{background:#34c759 !important;color:#000 !important;-webkit-text-fill-color:#000 !important;border:0 !important;border-radius:8px !important;padding:9px 16px !important;font-weight:800 !important;cursor:pointer}";
   (document.head || document.documentElement).appendChild(s);
