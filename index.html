@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.395">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.396">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2745,7 +2745,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.395</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.396</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13707,7 +13707,7 @@ var ITR_DEFAULTS = {
   typeOfService: "2205001", primaryRole: "2207003", responseMode: "2223001", dispatchPriority: "2305003", sendIncidentNumbers: false,
   locationTypes: { highway: "Y92.41", religious: "Y92.22", hospital: "Y92.23", privateHome: "Y92.01" },
   dispositions: { transported: "itDisposition.112.116", transferred: "itDisposition.112.115", rma: "itDisposition.112.113", cancelledBefore: "itDisposition.112.103", cancelledOnScene: "itDisposition.112.104" },
-  gender: { male: "9906003", female: "9906001" },
+  gender: { male: "9919003", female: "9919001" },   // 12.396: Sex (ePatient.25)
   fieldMap: {}, extraFields: [],   // 12.394: Field mapping
   placeholderUnit: "", rigPattern: "9##",
   natureCodes: { "01":"2301013","02":"2301021","03":"2301019","04":"2301023","05":"2301023","06":"2301081","07":"2301085","08":"2301077","09":"2301027","10":"2301073","11":"2301073","12":"2301073","13":"2301057","14":"2301067","15":"2301025","16":"2301059","17":"2301003","18":"2301003","19":"2301069","20":"it2301.105","21":"2301049","22":"2301077","23":"2301053","24":"it2301.118","25":"2301061","26":"2301051" },
@@ -13776,6 +13776,11 @@ function itrMerged(d) {
     if (["natureCodes","hospitals","townCounties","rigs","locationTypes","dispositions","gender"].indexOf(k) !== -1 && d[k] && typeof d[k] === "object") c[k] = Object.assign({}, c[k], d[k]);
     else c[k] = d[k];
   });
+  // 12.396: old Gender codes → Sex codes (saving rewrites them)
+  var sx = { "9906003": "9919003", "9906001": "9919001", "9906005": "9919005" };
+  if (c.gender) Object.keys(c.gender).forEach(function(k) { if (sx[c.gender[k]]) c.gender[k] = sx[c.gender[k]]; });
+  // a mapping saved under the old field name carries over
+  if (c.fieldMap && c.fieldMap.PatientGender && !c.fieldMap.PatientSex) { c.fieldMap.PatientSex = c.fieldMap.PatientGender; delete c.fieldMap.PatientGender; }
   return c;
 }
 function itrLoad() {
@@ -13860,7 +13865,7 @@ function itrRender() {
       '<div class="itr-k" style="color:var(--gold)">Disposition</div><div></div>' +
       cin("dispositions", "transported", "Transported by this unit") + cin("dispositions", "transferred", "Another unit transported") + cin("dispositions", "rma", "RMA / refused") +
       cin("dispositions", "cancelledBefore", "Cancelled before arrival") + cin("dispositions", "cancelledOnScene", "Cancelled on scene") +
-      '<div class="itr-k" style="color:var(--gold)">Patient gender</div><div></div>' + cin("gender", "male", "Male") + cin("gender", "female", "Female") +
+      '<div class="itr-k" style="color:var(--gold)">Patient sex (ePatient.25)</div><div></div>' + cin("gender", "male", "Male") + cin("gender", "female", "Female") +
       '<div class="itr-k" style="color:var(--gold)">Incident location type</div><div></div>' +
       cin("locationTypes", "highway", "Parkway / highway") + cin("locationTypes", "religious", "Address on the Shuls list") + cin("locationTypes", "hospital", "Address on the Hospital list") + cin("locationTypes", "privateHome", "Address on Private Homes") +
     '</div></div>';
@@ -13960,12 +13965,12 @@ function itrLabels() { return {
   GPSLatitude: "GPS latitude", GPSLongitude: "GPS longitude", SceneStreetAddress: "Scene street", SceneApartmentNumber: "Apt / floor", SceneCityName: "Scene city",
   SceneCountyName: "Scene county", ScenePostalCode: "Scene ZIP", SceneStateGNIS: "Scene state code", SceneStateName: "Scene state", LocationType: "Location type code",
   ComplaintReportDispatch: "Dispatched As (dispatch reason)", DispatchPriority: "Dispatch priority", TypeOfServiceRequested: "Type of service code", PrimaryRoleOfUnit: "Unit role code",
-  EMSUnitNumber: "Unit #", EMSUnitCallSign: "Unit call sign", ResponseModeToScene: "Response mode code", PatientGender: "Patient gender code",
+  EMSUnitNumber: "Unit #", EMSUnitCallSign: "Unit call sign", ResponseModeToScene: "Response mode code", PatientGender: "Patient gender code", PatientSex: "Patient sex code",
   PatientDisposition: "Disposition code", Narrative: "Narrative", DestinationCode: "Hospital code", DestinationName: "Hospital", DestinationStreetAddress: "Hospital street",
   DestinationCityName: "Hospital city", DestinationCountyName: "Hospital county", DestinationPostalCode: "Hospital ZIP", DestinationStateGNIS: "Hospital state code", DestinationStateName: "Hospital state"
 }; }
 // Every field the server sends, in the order it sends them (same list as itBuild in deploy-functions.sh)
-function itrFieldOrder() { return ["AgencyNumber","CadID","EMSResponseNumber","IncidentNumber","DispatchNotified","PSAP","GPSLatitude","GPSLongitude","SceneStreetAddress","SceneApartmentNumber","SceneCityName","SceneCountyName","ScenePostalCode","SceneStateGNIS","SceneStateName","LocationType","ComplaintReportDispatch","DispatchPriority","TypeOfServiceRequested","PrimaryRoleOfUnit","EMSUnitNumber","EMSUnitCallSign","ResponseModeToScene","UnitNotifiedByDispatch","UnitEnroute","UnitArrivedOnScene","InitialResponderArrivedOnScene","UnitLeftScene","PatientGender","PatientDisposition","Narrative","DestinationCode","DestinationName","DestinationStreetAddress","DestinationCityName","DestinationCountyName","DestinationPostalCode","DestinationStateGNIS","DestinationStateName"]; }
+function itrFieldOrder() { return ["AgencyNumber","CadID","EMSResponseNumber","IncidentNumber","DispatchNotified","PSAP","GPSLatitude","GPSLongitude","SceneStreetAddress","SceneApartmentNumber","SceneCityName","SceneCountyName","ScenePostalCode","SceneStateGNIS","SceneStateName","LocationType","ComplaintReportDispatch","DispatchPriority","TypeOfServiceRequested","PrimaryRoleOfUnit","EMSUnitNumber","EMSUnitCallSign","ResponseModeToScene","UnitNotifiedByDispatch","UnitEnroute","UnitArrivedOnScene","InitialResponderArrivedOnScene","UnitLeftScene","PatientSex","PatientDisposition","Narrative","DestinationCode","DestinationName","DestinationStreetAddress","DestinationCityName","DestinationCountyName","DestinationPostalCode","DestinationStateGNIS","DestinationStateName"]; }
 function itrTagOk(t) { t = String(t || "").trim(); return /^[A-Za-z_][A-Za-z0-9_.-]{0,80}$/.test(t) && !/^xml/i.test(t); }
 // What each field normally carries, so the mapping table can say it in plain words
 // 12.395 (Sam): every PCR field ImageTrend's CAD import takes — [XML name, PCR field (NEMSIS #)], from their
@@ -13976,7 +13981,7 @@ function itrPcrCatalog() { return [
   ["Dispatch", [["ComplaintReportDispatch","Dispatched As / Dispatch Reason (eDispatch.01)"],["DispatchReason","Dispatched As / Dispatch Reason (eDispatch.01) — workbook name"],["EMDPerformed","EMD Performed (eDispatch.02)"],["EMDCardNumber","EMD Card Number (eDispatch.03)"],["EMDDeterminantCode","EMD Determinant Code (eDispatch.03) — workbook name"],["DispatchPriority","Dispatch Priority (eDispatch.05)"],["DispatchLevel","Dispatch Level (itDispatch.002)"],["InitialCADDispatchCode","Initial CAD Dispatch Code (itDispatch.004)"],["FinalCADDispatchCode","Final CAD Dispatch Code (itDispatch.005)"],["Narrative","CAD Narrative (itDispatch.008)"],["CADNarrative","CAD Narrative (itDispatch.008) — workbook name"]]],
   ["Unit / response", [["TypeOfServiceRequested","Type of Service Requested (eResponse.05)"],["PrimaryRoleOfUnit","Primary Role of Unit (eResponse.07)"],["TypeOfDispatchDelay","Dispatch Delay (eResponse.08)"],["EMSUnitNumber","Unit Number (eResponse.13)"],["EMSUnitCallSign","Unit Call Sign (eResponse.14)"],["DispatchLocation","Vehicle Dispatch Location (eResponse.16)"],["BeginningOdomReading","Beginning Odometer (eResponse.19)"],["OnSceneOdomReading","On-Scene Odometer (eResponse.20)"],["PatientDestinationOdomReading","Destination Odometer (eResponse.21)"],["EndingOdomReading","Ending Odometer (eResponse.22)"],["ResponseModeToScene","Response Mode to Scene (eResponse.23)"],["EMSShift","Shift (itResponse.005)"],["MapYear","Map Year (itResponse.006)"],["MapPage","Map Page (itResponse.007)"],["MapCoordinates","Map Coordinates (itResponse.008)"]]],
   ["Scene", [["SceneStreetAddress","Scene Street Address (eScene.15)"],["SceneStreetAddress2","Scene Street Address 2"],["SceneApartmentNumber","Scene Apartment (eScene.16)"],["SceneCrossStreet","Scene Cross Street (eScene.20)"],["SceneCityName","Scene City (eScene.17)"],["SceneCountyName","Scene County (eScene.21)"],["SceneStateName","Scene State (eScene.18)"],["SceneStateGNIS","Scene State code (eScene.18)"],["ScenePostalCode","Scene ZIP (eScene.19)"],["GPSLatitude","Scene GPS Latitude (eScene.11)"],["GPSLongitude","Scene GPS Longitude (eScene.11)"],["LocationType","Incident Location Type (eScene.09)"],["FacilityCode","Incident Facility Code (eScene.10)"],["FacilityOrLocationName","Facility / Location Name (eScene.13)"],["ZoneNumber","Zone"],["AreaOfOperation","Area of Operation (itScene.026)"],["IncidentAreaClassification","Incident Area Classification (itScene.005)"]]],
-  ["Patient", [["PatientFirstName","Patient First Name (ePatient.03)"],["PatientMiddleInitial","Patient Middle Initial (ePatient.04)"],["PatientLastName","Patient Last Name (ePatient.02)"],["PatientDateOfBirth","Patient Date of Birth (ePatient.17)"],["PatientGender","Patient Gender (ePatient.13)"],["PatientStreetAddress","Patient Street Address (ePatient.05)"],["PatientApartmentNumber","Patient Apartment (itPatient.024)"],["PatientCityName","Patient City (ePatient.06)"],["PatientCountyName","Patient County (ePatient.07)"],["PatientStateName","Patient State (ePatient.08)"],["PatientPostalCode","Patient ZIP (ePatient.09)"]]],
+  ["Patient", [["PatientFirstName","Patient First Name (ePatient.03)"],["PatientMiddleInitial","Patient Middle Initial (ePatient.04)"],["PatientLastName","Patient Last Name (ePatient.02)"],["PatientDateOfBirth","Patient Date of Birth (ePatient.17)"],["PatientSex","Patient Sex (ePatient.25)"],["PatientGender","Patient Gender (ePatient.13) — old field"],["PatientStreetAddress","Patient Street Address (ePatient.05)"],["PatientApartmentNumber","Patient Apartment (itPatient.024)"],["PatientCityName","Patient City (ePatient.06)"],["PatientCountyName","Patient County (ePatient.07)"],["PatientStateName","Patient State (ePatient.08)"],["PatientPostalCode","Patient ZIP (ePatient.09)"]]],
   ["Disposition / destination", [["PatientDisposition","Incident / Patient Disposition (itDisposition.112)"],["TransportModeFromScene","Transport Mode from Scene (eDisposition.17)"],["DestinationName","Destination Name (eDisposition.01)"],["DestinationCode","Destination Code (eDisposition.02)"],["DestinationStreetAddress","Destination Street (eDisposition.03)"],["DestinationApartmentNumber","Destination Apartment (itDisposition.042)"],["DestinationCityName","Destination City (eDisposition.04)"],["DestinationCountyName","Destination County (eDisposition.06)"],["DestinationStateName","Destination State (eDisposition.05)"],["DestinationStateGNIS","Destination State code (eDisposition.05)"],["DestinationPostalCode","Destination ZIP (eDisposition.07)"]]],
   ["Billing", [["ResponseUrgency","Response Urgency (ePayment.40)"],["InsuranceCompanyName","Insurance Company (ePayment.10)"],["InsurancePolicyID","Insurance Policy ID (ePayment.18)"]]]
 ]; }
@@ -14005,7 +14010,7 @@ function itrDashName(f) { return ({
   LocationType: ["Kind of place", "home / shul / hospital / highway"], ComplaintReportDispatch: ["Nature of Illness", "code from the table above"], DispatchPriority: ["Priority", "always 2305003 Emergent"], TypeOfServiceRequested: ["Type of service", "always 2205001 911 Response"],
   PrimaryRoleOfUnit: ["Unit role", "Admin setting"], EMSUnitNumber: ["Rig", ""], EMSUnitCallSign: ["Rig", "call sign"], ResponseModeToScene: ["Response mode", "always 2223001 lights & sirens"],
   UnitNotifiedByDispatch: ["Call posted", "time"], UnitEnroute: ["First unit assigned", "time"], UnitArrivedOnScene: ["First unit on scene", "time"], InitialResponderArrivedOnScene: ["First unit on scene", "time"], UnitLeftScene: ["Transport started", "time"],
-  PatientGender: ["Patient male / female", ""], PatientDisposition: ["Call outcome", "transport / RMA / cancelled"], Narrative: ["Call summary", "nature, patient, ALS, crew, hospital"],
+  PatientSex: ["Patient male / female", ""], PatientDisposition: ["Call outcome", "transport / RMA / cancelled"], Narrative: ["Call summary", "nature, patient, ALS, crew, hospital"],
   DestinationCode: ["Hospital", "code"], DestinationName: ["Hospital", "name"], DestinationStreetAddress: ["Hospital", "street"], DestinationCityName: ["Hospital", "town"], DestinationCountyName: ["Hospital", "county"], DestinationPostalCode: ["Hospital", "ZIP"], DestinationStateGNIS: ["Hospital", "state code"], DestinationStateName: ["Hospital", "state"]
 })[f] || [f, ""]; }
 function itrMapHtml(c) {
@@ -14049,7 +14054,7 @@ function itrXtraRead() {
 // An extra field goes where ImageTrend's own sample file puts it: after the nearest field before it that we send
 function itrAfterFor(tag) {
   var all = []; itrPcrCatalog().forEach(function(g) { g[1].forEach(function(x) { all.push(x[0]); }); });
-  var sample = ["AgencyNumber","CadID","EMSResponseNumber","PatientCareReportNumber","IncidentNumber","DispatchNotified","PSAP","GPSLatitude","GPSLongitude","ZoneNumber","AreaOfOperation","IncidentAreaClassification","SceneStreetAddress","SceneStreetAddress2","SceneApartmentNumber","SceneCrossStreet","SceneCityName","SceneCountyName","ScenePostalCode","SceneStateGNIS","SceneStateName","FacilityCode","LocationType","ComplaintReportDispatch","DispatchReason","EMDCardNumber","EMDDeterminantCode","DispatchPriority","DispatchLevel","TypeOfServiceRequested","PrimaryRoleOfUnit","TypeOfDispatchDelay","EMSUnitNumber","EMSUnitCallSign","FacilityOrLocationName","DispatchLocation","BeginningOdomReading","OnSceneOdomReading","PatientDestinationOdomReading","EndingOdomReading","ResponseModeToScene","EMSShift","MapYear","MapPage","MapCoordinates","EMDPerformed","UnitNotifiedByDispatch","DispatchAcknowledged","UnitEnroute","UnitArrivedOnScene","InitialResponderArrivedOnScene","ArrivedAtPatient","UnitLeftScene","PatientArrivedAtDestination","TransferOfPatient","DestinationPatientTransfer","UnitBackInService","UnitBackAtHome","CallCompleted","UnitCanceled","PatientFirstName","PatientMiddleInitial","PatientLastName","PatientStreetAddress","PatientApartmentNumber","PatientCityName","PatientCountyName","PatientPostalCode","PatientStateName","PatientDateOfBirth","PatientGender","PatientDisposition","Narrative","CADNarrative","InitialCADDispatchCode","FinalCADDispatchCode","ResponseUrgency","DestinationCode","DestinationName","DestinationStreetAddress","DestinationApartmentNumber","DestinationCityName","DestinationCountyName","DestinationPostalCode","DestinationStateGNIS","DestinationStateName","TransportModeFromScene","InsuranceCompanyName","InsurancePolicyID"];
+  var sample = ["AgencyNumber","CadID","EMSResponseNumber","PatientCareReportNumber","IncidentNumber","DispatchNotified","PSAP","GPSLatitude","GPSLongitude","ZoneNumber","AreaOfOperation","IncidentAreaClassification","SceneStreetAddress","SceneStreetAddress2","SceneApartmentNumber","SceneCrossStreet","SceneCityName","SceneCountyName","ScenePostalCode","SceneStateGNIS","SceneStateName","FacilityCode","LocationType","ComplaintReportDispatch","DispatchReason","EMDCardNumber","EMDDeterminantCode","DispatchPriority","DispatchLevel","TypeOfServiceRequested","PrimaryRoleOfUnit","TypeOfDispatchDelay","EMSUnitNumber","EMSUnitCallSign","FacilityOrLocationName","DispatchLocation","BeginningOdomReading","OnSceneOdomReading","PatientDestinationOdomReading","EndingOdomReading","ResponseModeToScene","EMSShift","MapYear","MapPage","MapCoordinates","EMDPerformed","UnitNotifiedByDispatch","DispatchAcknowledged","UnitEnroute","UnitArrivedOnScene","InitialResponderArrivedOnScene","ArrivedAtPatient","UnitLeftScene","PatientArrivedAtDestination","TransferOfPatient","DestinationPatientTransfer","UnitBackInService","UnitBackAtHome","CallCompleted","UnitCanceled","PatientFirstName","PatientMiddleInitial","PatientLastName","PatientStreetAddress","PatientApartmentNumber","PatientCityName","PatientCountyName","PatientPostalCode","PatientStateName","PatientDateOfBirth","PatientGender","PatientSex","PatientDisposition","Narrative","CADNarrative","InitialCADDispatchCode","FinalCADDispatchCode","ResponseUrgency","DestinationCode","DestinationName","DestinationStreetAddress","DestinationApartmentNumber","DestinationCityName","DestinationCountyName","DestinationPostalCode","DestinationStateGNIS","DestinationStateName","TransportModeFromScene","InsuranceCompanyName","InsurancePolicyID"];
   var ours = itrFieldOrder(), k = sample.indexOf(tag);
   if (k < 0) return "";
   for (var i = k - 1; i >= 0; i--) if (ours.indexOf(sample[i]) !== -1) return sample[i];
@@ -20189,7 +20194,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.395";
+var DESKTOP_VERSION = "12.396";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
