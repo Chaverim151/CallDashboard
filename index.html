@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.388">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.390">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2745,7 +2745,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.388</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.390</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13056,7 +13056,7 @@ function renderCLDetail(log, body) {
 
     // Metadata
     '<div style="font-size:0.65rem;color:var(--gray);border-top:1px solid var(--card-border);padding-top:10px;display:flex;gap:16px;flex-wrap:wrap">' +
-      '<span>Call ID: <span style="color:var(--white);font-family:monospace">' + log.id + '</span></span>' +
+      '<span>Call ID: <span style="color:var(--white);font-family:monospace">' + hzCallNo(log) + '</span></span>' +
       (log.createdBy ? '<span>Dispatched by: <span style="color:var(--white)">' + log.createdBy + '</span></span>' : '') +
       (log.completedBy ? '<span>Closed by: <span style="color:var(--white)">' + log.completedBy + '</span></span>' : '') +
       (log.completedAt ? '<span>Closed at: <span style="color:var(--white)">' + new Date(log.completedAt).toLocaleString() + '</span></span>' : '') +
@@ -13291,9 +13291,16 @@ function hzFetchCallLogs(from, to) {
     .catch(function(e) { if (hzLgIsDenied(e)) throw e; return db.collection("activeCalls").where("status", "in", ["complete", "cancelled"]).get().then(keep); })
     .catch(function(e) { if (hzLgIsDenied(e)) hzLgLocked(); throw e; });   // 12.115
 }
+// 12.390 (Sam): Call ID shown as YYYYMMDD-HHMM (from when the call was posted) instead of the database id
+function hzCallNo(l) {
+  var d = l && l.createdAt ? new Date(l.createdAt) : null;
+  if (!d || isNaN(d.getTime())) return (l && l.id) || "";
+  var p = function(n) { return (n < 10 ? "0" : "") + n; };
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes());
+}
 // Free-text search across a call: address, nature, units, rigs, hospital, notes, who created it, call ID…
 function hzCallLogText(l) {
-  var bits = [l.id, l.address, l.apt, l.crossStreet, l.callNature, l.zone, l.zoneArea, l.patientAgeNum || l.patientAge, l.patientSex, l.callbackNumber,
+  var bits = [l.id, hzCallNo(l), l.address, l.apt, l.crossStreet, l.callNature, l.zone, l.zoneArea, l.patientAgeNum || l.patientAge, l.patientSex, l.callbackNumber,
     l.dispatchNotes, l.createdBy, l.completedBy, (l.disposition || {}).type, (l.disposition || {}).hospital, (l.disposition || {}).rmaBy, l.alsProvider, l.alsUnit, l.blsProvider];
   (l.crews || []).forEach(function(c) { Object.keys(c || {}).forEach(function(k) { if (c[k] && c[k] !== "__added__") bits.push(c[k]); }); });
   ((l.disposition || {}).transports || []).forEach(function(t) { bits.push(t.hospital, t.rig); });
@@ -13324,7 +13331,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
         var det = (l.unitDetails || {})[ci + "_" + k] || {};
         units.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", natureName(l.callNature), "Crew " + (ci + 1), c.rig || "", c[k],
           k.replace(/\d+$/, "").replace("rigUnit", "Unit 3").replace("primary", "Unit 1").replace("backup", "Unit 2").replace(/^sup_?|^supervisor/, "Supervisor").replace(/^observer/, "Observer").replace(/^responder/, "Responder"),
-          det.response === "rig" ? "Rig" : det.response === "scene" ? "Direct to scene" : "", det.customStatus || hzAvail(l, det.status, statusName(det.status)), l.id]);
+          det.response === "rig" ? "Rig" : det.response === "scene" ? "Direct to scene" : "", det.customStatus || hzAvail(l, det.status, statusName(det.status)), hzCallNo(l)]);
       });
     });
     var hosp = (disp.transports && disp.transports.length > 1) ? disp.transports.map(function(x) { return (x.rig ? x.rig + " → " : "") + x.hospital; }).join("; ") : (disp.hospital || "");
@@ -13335,7 +13342,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
       (l.status === "cancelled" ? "Cancelled" + (l.cancelReason ? " — " + l.cancelReason : "") : hzDispName(disp.type)), hosp, disp.rmaBy || "",
       l.alsActivated ? "Yes" : "No", l.alsProvider || "", l.alsUnit || "", l.blsActivated ? "Yes" : "No", l.pdActivated ? "Yes" : "No",
       l.dispatchNotes || "", (l.callNotes || []).filter(Boolean).map(function(n) { return (n.time ? n.time + " " : "") + (n.by ? n.by + ": " : "") + (n.text || ""); }).join("\n"),
-      l.createdBy || "", l.completedBy || "", asDate(l.completedAt), l.testMode ? "Yes" : "", l.id]);
+      l.createdBy || "", l.completedBy || "", asDate(l.completedAt), l.testMode ? "Yes" : "", hzCallNo(l)]);
   });
   var summary = [["Exported", new Date().toLocaleString()], ["By", (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || (typeof currentUserUnit !== "undefined" && currentUserUnit) || ""], ["", ""]]
     .concat((filterLines || []).map(function(f) { return f; }))
@@ -13697,7 +13704,7 @@ var IT_LISTS = {"reasons":[["it2301.158","911 Hang-Up"],["2301001","Abdominal Pa
 // The server (imageTrendSync) does the sending; this page sets it up and shows what happened.
 var ITR_DEFAULTS = {
   enabled: false, sendTestCalls: false, agencyNumber: "1211071", state: "NJ", stateGnis: "34", county: "Middlesex", townCounties: {},
-  typeOfService: "2205001", primaryRole: "2207003", responseMode: "2223001", dispatchPriority: "2305003", sendIncidentNumbers: true,
+  typeOfService: "2205001", primaryRole: "2207003", responseMode: "2223001", dispatchPriority: "2305003", sendIncidentNumbers: false,
   locationTypes: { highway: "Y92.41", religious: "Y92.22", hospital: "Y92.23", privateHome: "Y92.01" },
   dispositions: { transported: "itDisposition.112.116", transferred: "itDisposition.112.115", rma: "itDisposition.112.113", cancelledBefore: "itDisposition.112.103", cancelledOnScene: "itDisposition.112.104" },
   gender: { male: "9906003", female: "9906001" },
@@ -13844,7 +13851,7 @@ function itrRender() {
     '</div></div>';
   var cin = function(grp, key, label) { var v = (c[grp] || {})[key] || ""; return '<div class="itr-k">' + label + '</div><input type="text" data-itr-code="' + grp + '.' + key + '" value="' + itrEsc(v) + '">'; };
   h += '<div class="itr-card"><div class="itr-h">Codes ImageTrend may ask us to change</div><div class="itr-note">Pre-filled from ImageTrend\'s workbook. Change one only if ImageTrend gives you a different code — no new version of the system needed.</div>' +
-    '<label class="itr-chk"><input type="checkbox" id="itr-incnum"' + (c.sendIncidentNumbers !== false ? ' checked' : '') + '> Send our call number (e.g. 26-000014) as the EMS Response # and Incident # — untick if ImageTrend fills those itself</label>' +
+    '<div class="itr-note">EMS Response # and Incident # are left blank — ImageTrend numbers the PCR itself when it is posted.<input type="hidden" id="itr-incnum"></div>' +
     '<div class="itr-grid" style="margin-top:10px">' +
       '<div class="itr-k" style="color:var(--gold)">Disposition</div><div></div>' +
       cin("dispositions", "transported", "Transported by this unit") + cin("dispositions", "transferred", "Another unit transported") + cin("dispositions", "rma", "RMA / refused") +
@@ -13905,7 +13912,7 @@ function itrSave() {
     agencyNumber: v("itr-agency"), placeholderUnit: v("itr-placeholder"), rigPattern: v("itr-rigpat") || "9##",
     typeOfService: v("itr-service"), primaryRole: v("itr-role"), responseMode: v("itr-mode"), dispatchPriority: v("itr-priority"),
     state: (v("itr-state") || "NJ").toUpperCase(), county: v("itr-county"), townCounties: towns, natureCodes: nat, hospitals: hosp, rigs: rigs,
-    sendIncidentNumbers: ch("itr-incnum"), dispositions: {}, gender: {}, locationTypes: {},
+    sendIncidentNumbers: false, dispositions: {}, gender: {}, locationTypes: {},
     updatedAt: new Date().toISOString(), updatedBy: (typeof currentUserUnit !== "undefined" ? currentUserUnit : "") || ""
   };
   document.querySelectorAll("#adm-imagetrend [data-itr-code]").forEach(function(i) { var p = i.getAttribute("data-itr-code").split("."); data[p[0]][p[1]] = i.value.trim(); });
@@ -20057,7 +20064,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.388";
+var DESKTOP_VERSION = "12.390";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -22269,7 +22276,7 @@ function mOpenCallLogDetail(id, keepPlace) {
     '<div class="m-cld-meta">' +
       (l.createdBy ? '<div>Dispatched by <b>' + E(l.createdBy) + '</b></div>' : '') +
       (l.completedBy ? '<div>Closed by <b>' + E(l.completedBy) + '</b>' + (l.completedAt ? ' · ' + E(new Date(l.completedAt).toLocaleString()) : '') + '</div>' : '') +
-      '<div>Call ID <span style="font-family:monospace">' + E(l.id || "") + '</span></div>' +
+      '<div>Call ID <span style="font-family:monospace">' + E(hzCallNo(l)) + '</span></div>' +
     '</div>' +
     hzMsgLogSection(l) +   // 12.77 / 5.35: 💬 the call's text messages
     '<div style="margin-top:12px">' + mBuildDispTimeline(l) + '</div>';
