@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.379">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.380">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2745,7 +2745,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.379</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.380</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13802,6 +13802,7 @@ function itrRender() {
         (r.warnings && r.warnings.length ? '<div style="color:#ffc84a;font-size:0.74rem;margin-top:4px">' + r.warnings.map(itrEsc).join('<br>') + '</div>' : '') + '</div>';
     }).join("") : '<div class="itr-note" style="margin:6px 0 0">Nothing sent yet.</div>') + '</div>';
   host.innerHTML = h;
+  if (ITR_LAST_TEST) itrShowTestOut();   // 12.380: keep the last test's printout after a refresh
 }
 function itrSave() {
   var msg = document.getElementById("itr-msg"); msg.className = "form-msg"; msg.textContent = "Saving…";
@@ -13848,11 +13849,32 @@ function itrSaveConn() {
   hzRelay("imageTrendAdmin", payload).then(function() { itrConnMsg("✓ Saved", "success"); setTimeout(itrLoad, 900); })
     .catch(function(e) { itrConnMsg("Error: " + e.message, "error"); });
 }
+// 12.380 (Sam): the test incident is built from the real CAD (today's date, real units / rig / hospital) and what was
+// sent is printed right here in the tab, with ImageTrend's answer underneath.
+var ITR_LAST_TEST = null;
 function itrTest() {
-  itrConnMsg("Sending a made-up test incident…");
+  itrConnMsg("Sending a test incident (today's date, real units and rig)…");
   hzRelay("imageTrendAdmin", { action: "test" }).then(function(r) {
     itrConnMsg(r.ok ? "✓ ImageTrend accepted it (" + r.status + ")" : "✗ Not accepted" + (r.status ? " (" + r.status + ")" : "") + ": " + String(r.body || "").slice(0, 160), r.ok ? "success" : "error");
+    ITR_LAST_TEST = r; itrShowTestOut();
   }).catch(function(e) { itrConnMsg("Error: " + e.message, "error"); });
+}
+function itrShowTestOut() {
+  var r = ITR_LAST_TEST; if (!r) return;
+  var msg = document.getElementById("itr-conn-msg"); var card = msg && msg.closest(".itr-card"); if (!card) return;
+  var box = document.getElementById("itr-test-out");
+  if (!box) { box = document.createElement("div"); box.id = "itr-test-out"; box.className = "itr-card"; card.parentNode.insertBefore(box, card.nextSibling); }
+  var when = r.sentAt ? new Date(r.sentAt).toLocaleString("en-US", { hour12: false }) : "";
+  var inc = (r.incidents || []).map(function(i) { return "Crew " + i.crew + ": CAD ID " + i.cadId + (i.unit ? " · unit " + i.unit : ""); }).join("<br>");
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="itr-h">What was sent to ImageTrend' + (when ? ' · ' + itrEsc(when) : '') + '</div>' +
+      '<button class="edit-mode-btn" style="padding:5px 11px" onclick="ITR_LAST_TEST=null;var b=document.getElementById(\'itr-test-out\');if(b)b.remove()">✕ Hide</button></div>' +
+    '<div class="itr-note" style="margin:4px 0 8px">' + (r.ok ? '✓ Accepted (' + r.status + ')' : '✗ Not accepted' + (r.status ? ' (' + r.status + ')' : '')) + (inc ? '<br>' + inc : '') +
+      '<br>In ImageTrend: Download CAD Incident, today\'s date. The narrative starts "TEST INCIDENT".</div>' +
+    ((r.warnings || []).length ? '<div style="color:#b26a00;font-size:0.8rem;margin-bottom:8px">' + r.warnings.map(itrEsc).join('<br>') + '</div>' : '') +
+    '<div class="itr-k" style="margin-bottom:4px">The call file (inside the SOAP message — the token is not shown)</div>' +
+    '<pre style="max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0e1116;color:#e6e6e6;padding:10px;border-radius:8px;font-size:0.75rem">' + itrEsc(r.xml || "(not returned — deploy the latest server)") + '</pre>' +
+    '<div class="itr-k" style="margin:8px 0 4px">ImageTrend\'s answer</div>' +
+    '<pre style="max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0e1116;color:#e6e6e6;padding:10px;border-radius:8px;font-size:0.75rem">' + itrEsc(r.body || "(empty)") + '</pre>';
 }
 function itrSample() {
   itrConnMsg("Building…");
@@ -19914,7 +19936,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.379";
+var DESKTOP_VERSION = "12.380";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
