@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.400">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.403">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2745,7 +2745,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.400</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.403</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13741,7 +13741,7 @@ function itrStyle() {
     "#adm-imagetrend .itr-table{display:grid;gap:6px;font-size:0.82rem}" +
     "#adm-imagetrend .itr-row{display:grid;gap:6px;align-items:center}" +
     "#adm-imagetrend .itr-nat{grid-template-columns:minmax(140px,1fr) minmax(180px,1.4fr)}" +
-    "#adm-imagetrend .itr-hosp{grid-template-columns:minmax(130px,1.3fr) 80px minmax(120px,1.3fr) minmax(90px,1fr) 70px minmax(80px,0.8fr)}" +
+    "#adm-imagetrend .itr-hosp{grid-template-columns:minmax(130px,1.2fr) minmax(150px,1.3fr) 70px minmax(110px,1.2fr) minmax(90px,1fr) 66px minmax(80px,0.8fr)}" +
     "#adm-imagetrend .itr-rig{grid-template-columns:minmax(110px,1fr) minmax(110px,1fr) minmax(110px,1fr)}" +
     "#adm-imagetrend .itr-map{grid-template-columns:minmax(140px,1fr) minmax(200px,1.6fr) minmax(150px,1fr) minmax(110px,0.9fr);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)}" +
     "#adm-imagetrend .itr-map.itr-changed{box-shadow:inset 3px 0 0 #d4a017;padding-left:8px}" +
@@ -13851,11 +13851,20 @@ function itrRender() {
     natures.map(function(n) { return '<div class="itr-row itr-nat"><div>' + itrEsc(n.label) + '</div><select data-itr-nat="' + n.code + '">' + itrOpts(IT_LISTS.reasons, c.natureCodes[n.code] || "", "— leave for the crew —") + '</select></div>'; }).join("") +
     '</div></div>';
   // hospitals
-  h += '<div class="itr-card"><div class="itr-h">Transport hospitals → ImageTrend destination</div><div class="itr-note">Codes are the NJ hospital HEAR codes (state list, updated 05/11/2016) — confirm with ImageTrend that your facility list uses them. Address fills the PCR\'s destination.</div>' +
-    '<div class="itr-table"><div class="itr-row itr-hosp"><div class="itr-th">Hospital</div><div class="itr-th">Code</div><div class="itr-th">Street</div><div class="itr-th">Town</div><div class="itr-th">Zip</div><div class="itr-th">County</div></div>' +
-    hospitals.map(function(name, i) { var x = c.hospitals[name] || {}; return '<div class="itr-row itr-hosp" data-itr-hosp="' + itrEsc(name) + '"><div>' + itrEsc(name) + '</div>' +
+  h += '<div class="itr-card"><div class="itr-h">Transport hospitals → ImageTrend destination</div><div class="itr-note">When a crew transports, the hospital\'s <b>HEAR code</b> is sent as the PCR\'s Destination Code (eDisposition.02) — only the code; name and address are not sent (testing whether ImageTrend fills them from the code). Codes come from the NJ hospital list (updated 05/11/2016). A hospital with no code is matched to that list by name automatically — <span style="color:var(--gold)">gold</span> = matched, please check it and Save. Pick from the list to change it.</div>' +
+    '<div class="itr-table"><div class="itr-row itr-hosp"><div class="itr-th">Hospital</div><div class="itr-th">NJ list</div><div class="itr-th">HEAR code</div><div class="itr-th">Street</div><div class="itr-th">Town</div><div class="itr-th">Zip</div><div class="itr-th">County</div></div>' +
+    hospitals.map(function(name, i) {
+      var x = Object.assign({}, c.hospitals[name] || {}), auto = "";
+      if (!String(x.code || "").trim()) {   // 12.401: no code yet — fill it from the NJ list
+        var m = itrHearMatch(name);
+        if (m) { x = { code: m[2], street: x.street || m[3], city: x.city || m[4], zip: x.zip || m[5], county: x.county || m[0], state: "NJ" }; auto = "matched to " + m[1] + ", " + m[4]; }
+        else auto = "⚠ not found in the NJ list — pick it or type its code";
+      }
+      return '<div class="itr-row itr-hosp" data-itr-hosp="' + itrEsc(name) + '"><div>' + itrEsc(name) + (auto ? '<div class="itr-hear-note" style="font-size:0.68rem;color:' + (auto.charAt(0) === "⚠" ? '#ff9090' : 'var(--gold)') + '">' + itrEsc(auto) + '</div>' : '') + '</div>' +
+      itrHearSelect(x.code) +
       '<input type="text" data-f="code" value="' + itrEsc(x.code) + '" placeholder="Code"><input type="text" data-f="street" value="' + itrEsc(x.street) + '" placeholder="Street">' +
-      '<input type="text" data-f="city" value="' + itrEsc(x.city) + '" placeholder="Town"><input type="text" data-f="zip" value="' + itrEsc(x.zip) + '" placeholder="Zip"><input type="text" data-f="county" value="' + itrEsc(x.county) + '" placeholder="County"></div>'; }).join("") +
+      '<input type="text" data-f="city" value="' + itrEsc(x.city) + '" placeholder="Town"><input type="text" data-f="zip" value="' + itrEsc(x.zip) + '" placeholder="Zip"><input type="text" data-f="county" value="' + itrEsc(x.county) + '" placeholder="County"></div>';
+    }).join("") +
     '</div></div>';
   // rigs
   var rigs = ITR_RIGS.filter(function(id) { return itrIsRig(id, c.rigPattern); });
@@ -13989,7 +13998,7 @@ function itrPcrCatalog() { return [
   ["Unit / response", [["TypeOfServiceRequested","Type of Service Requested (eResponse.05)"],["PrimaryRoleOfUnit","Primary Role of Unit (eResponse.07)"],["TypeOfDispatchDelay","Dispatch Delay (eResponse.08)"],["EMSUnitNumber","Unit Number (eResponse.13)"],["EMSUnitCallSign","Unit Call Sign (eResponse.14)"],["DispatchLocation","Vehicle Dispatch Location (eResponse.16)"],["BeginningOdomReading","Beginning Odometer (eResponse.19)"],["OnSceneOdomReading","On-Scene Odometer (eResponse.20)"],["PatientDestinationOdomReading","Destination Odometer (eResponse.21)"],["EndingOdomReading","Ending Odometer (eResponse.22)"],["ResponseModeToScene","Response Mode to Scene (eResponse.23)"],["EMSShift","Shift (itResponse.005)"],["MapYear","Map Year (itResponse.006)"],["MapPage","Map Page (itResponse.007)"],["MapCoordinates","Map Coordinates (itResponse.008)"]]],
   ["Scene", [["SceneStreetAddress","Scene Street Address (eScene.15)"],["SceneStreetAddress2","Scene Street Address 2"],["SceneApartmentNumber","Scene Apartment (eScene.16)"],["SceneCrossStreet","Scene Cross Street (eScene.20)"],["SceneCityName","Scene City (eScene.17)"],["SceneCountyName","Scene County (eScene.21)"],["SceneStateName","Scene State (eScene.18)"],["SceneStateGNIS","Scene State code (eScene.18)"],["ScenePostalCode","Scene ZIP (eScene.19)"],["GPSLatitude","Scene GPS Latitude (eScene.11)"],["GPSLongitude","Scene GPS Longitude (eScene.11)"],["LocationType","Incident Location Type (eScene.09)"],["FacilityCode","Incident Facility Code (eScene.10)"],["FacilityOrLocationName","Facility / Location Name (eScene.13)"],["ZoneNumber","Zone"],["AreaOfOperation","Area of Operation (itScene.026)"],["IncidentAreaClassification","Incident Area Classification (itScene.005)"]]],
   ["Patient", [["PatientFirstName","Patient First Name (ePatient.03)"],["PatientMiddleInitial","Patient Middle Initial (ePatient.04)"],["PatientLastName","Patient Last Name (ePatient.02)"],["PatientDateOfBirth","Patient Date of Birth (ePatient.17)"],["PatientSex","Patient Sex (ePatient.25)"],["PatientGender","Patient Gender (ePatient.13) — old field"],["PatientStreetAddress","Patient Street Address (ePatient.05)"],["PatientApartmentNumber","Patient Apartment (itPatient.024)"],["PatientCityName","Patient City (ePatient.06)"],["PatientCountyName","Patient County (ePatient.07)"],["PatientStateName","Patient State (ePatient.08)"],["PatientPostalCode","Patient ZIP (ePatient.09)"]]],
-  ["Disposition / destination", [["PatientDisposition","Incident / Patient Disposition (itDisposition.112)"],["TransportModeFromScene","Transport Mode from Scene (eDisposition.17)"],["DestinationName","Destination Name (eDisposition.01)"],["DestinationCode","Destination Code (eDisposition.02)"],["DestinationStreetAddress","Destination Street (eDisposition.03)"],["DestinationApartmentNumber","Destination Apartment (itDisposition.042)"],["DestinationCityName","Destination City (eDisposition.04)"],["DestinationCountyName","Destination County (eDisposition.06)"],["DestinationStateName","Destination State (eDisposition.05)"],["DestinationStateGNIS","Destination State code (eDisposition.05)"],["DestinationPostalCode","Destination ZIP (eDisposition.07)"]]],
+  ["Disposition / destination", [["PatientDisposition","Incident / Patient Disposition (itDisposition.112)"],["TransportModeFromScene","Transport Mode from Scene (eDisposition.17)"],["DestinationName","Destination / Transferred To (eDisposition.01)"],["DestinationCode","Destination Code (eDisposition.02)"],["DestinationStreetAddress","Destination Street (eDisposition.03)"],["DestinationApartmentNumber","Destination Apartment (itDisposition.042)"],["DestinationCityName","Destination City (eDisposition.04)"],["DestinationCountyName","Destination County (eDisposition.06)"],["DestinationStateName","Destination State (eDisposition.05)"],["DestinationStateGNIS","Destination State code (eDisposition.05)"],["DestinationPostalCode","Destination ZIP (eDisposition.07)"]]],
   ["Billing", [["ResponseUrgency","Response Urgency (ePayment.40)"],["InsuranceCompanyName","Insurance Company (ePayment.10)"],["InsurancePolicyID","Insurance Policy ID (ePayment.18)"]]]
 ]; }
 function itrPcrName(tag) { var n = ""; itrPcrCatalog().forEach(function(g) { g[1].forEach(function(x) { if (!n && x[0] === tag) n = x[1]; }); }); return n; }
@@ -14018,7 +14027,7 @@ function itrDashName(f) { return ({
   PrimaryRoleOfUnit: ["Unit role", "Admin setting"], EMSUnitNumber: ["Rig", ""], EMSUnitCallSign: ["Rig", "call sign"], ResponseModeToScene: ["Response mode", "always 2223001 lights & sirens"],
   UnitNotifiedByDispatch: ["Call posted", "time"], UnitEnroute: ["First unit assigned", "time"], UnitArrivedOnScene: ["First unit on scene", "time"], InitialResponderArrivedOnScene: ["First unit on scene", "time"], UnitLeftScene: ["Transport started", "time"],
   PatientSex: ["Patient male / female", ""], PatientDisposition: ["Call outcome", "transport / RMA / cancelled"], Narrative: ["Call summary", "nature, patient, ALS, crew, hospital"],
-  DestinationCode: ["Hospital", "code"], DestinationName: ["Hospital", "name"], DestinationStreetAddress: ["Hospital", "street"], DestinationCityName: ["Hospital", "town"], DestinationCountyName: ["Hospital", "county"], DestinationPostalCode: ["Hospital", "ZIP"], DestinationStateGNIS: ["Hospital", "state code"], DestinationStateName: ["Hospital", "state"]
+  DestinationCode: ["Hospital", "HEAR code (e.g. 6202)"], DestinationName: ["Hospital", "not sent — only the HEAR code goes"], DestinationStreetAddress: ["Hospital", "street — not sent for now"], DestinationCityName: ["Hospital", "town — not sent for now"], DestinationCountyName: ["Hospital", "county — not sent for now"], DestinationPostalCode: ["Hospital", "ZIP — not sent for now"], DestinationStateGNIS: ["Hospital", "state code — not sent for now"], DestinationStateName: ["Hospital", "state — not sent for now"]
 })[f] || [f, ""]; }
 function itrMapHtml(c) {
   var fm = c.fieldMap || {}, order = itrFieldOrder();
@@ -14090,6 +14099,44 @@ function itrMapRead() {
     else if (!x.value) err = err || 'Extra field ' + x.tag + ': type the value to send.';
   });
   return err ? { error: err } : { fieldMap: fm, extraFields: xs };
+}
+// 12.401 (Sam): NJ hospital HEAR codes — the state list he sent ("New Jersey Hospitals", updated 05/11/2016).
+// [county, name, HEAR code, street, town, zip]. The code is what goes to ImageTrend as the destination (eDisposition.01).
+function itrHearList() { return [["Atlantic","AtlantiCare - City Division","5101","1925 Pacific Av","Atlantic City","08401"],["Atlantic","AtlantiCare - Mainland Division","5104","Jimmie Leeds Road","Pomona","08240"],["Atlantic","Shore Memorial Hospital","5102","1 E New York Av","Somers Point","08244"],["Atlantic","AtlantiCare regional Medical Center - SED, Hammonton","5013","219 N. White Horse Pike","Hammonton","08037"],["Bergen","Bergen Regional Medical Center","5201","230 E Ridgewood Av","Paramus","07652"],["Bergen","Englewood Hospital & Medical Center","5202","350 Engle St","Englewood","07631"],["Bergen","Hackensack University Medical Center","5204","30 Prospect Av","Hackensack","07601"],["Bergen","Holy Name Hospital","5205","718 Teaneck Rd","Teaneck","07666"],["Bergen","HUMC at Pascack Valley, Westwood","5206","250 Old Hook Rd","Westwood","07675"],["Bergen","Valley Hospital","5210","223 N Van Dien Av","Ridgewood","07450"],["Burlington","Lourdes Medical Center of Burlington County","5303","218-A Sunset Rd","Willingboro","08046"],["Burlington","Virtua Memorial Hospital Burlington County","5301","175 Madison Av","Mt. Holly","08060"],["Burlington","Virtua West Jersey Hospital Marlton","5302","90 Brick Road","Marlton","08053"],["Burlington","Lourdes Medical Center at Deborah","5305","200 Trenton Rd","Browns Mills","08015"],["Camden","Cooper University Hospital","5402","1 Cooper Plaza","Camden","08103"],["Camden","Kennedy Memorial Hospital - Cherry Hill","5401","2201 Chapel Av West","Cherry Hill","08002"],["Camden","Kennedy Memorial Hospital - Stratford","5403","18 E Laurel Rd","Stratford","08084"],["Camden","Our Lady of Lourdes Medical Center","5404","1600 Haddon Av","Camden","08103"],["Camden","Virtua West Jersey Hospital Berlin (SED)","5407","100 Townsend Av","Berlin","08009"],["Camden","Virtua West Jersey Hospital Camden (SED)","5406","1000 Atlantic Avenue","Camden","08104"],["Camden","Virtua West Jersey Hospital Voorhees","5405","200 Bowman Drive","Voorhees","08043"],["Cape May","Cape Regional Medical Center","5501","2 Stone Harbor Blvd","Cape May Court House","08210"],["Cumberland","Inspira Medical Center, Vineland","5603","1505 W Sherman Av","Vineland","08360"],["Essex","RWJ Barnabas Clara Maass Medical Center","5701","1 Clara Maass Dr.","Belleville","07109"],["Essex","East Orange General Hospital","5704","300 Central Av","East Orange","07018"],["Essex","HUMC - Mountainside, Montclair","5709","1 Bay Av","Montclair","07042"],["Essex","RWJ Barnabas Health - Newark Beth Israel Med Center","5710","201 Lyons Av","Newark","07112"],["Essex","RWJ Barnabas Health - St. Barnabas Medical Center","5711","94 Old Short Hills Rd","Livingston","07039"],["Essex","Trinity Health - St. Michael's Medical Center","5714","268 Dr Martin Luther King Jr Blvd","Newark","07102"],["Essex","UMDNJ - University Hospital","5707","150 Bergen St","Newark","07103"],["Essex","Veterans Admin. Medical Center","5718","385 Tremont Ave.","East Orange","07018"],["Gloucester","Kennedy Memorial Hospital - Washington Twp.","5802","435 Hurffville-Cross Keys Road","Turnersville","08012"],["Gloucester","Inspira Medical Center","5801","509 N Broad St","Woodbury","08096"],["Hudson","CarePoint Health - Bayonne Medical Center","5901","29 E 29th St","Bayonne","07002"],["Hudson","CarePoint Health - Christ Hospital","5902","176 Palisade Av","Jersey City","07306"],["Hudson","CarePoint Health - Hoboken University Medical Center","5909","308 Willow Ave.","Hoboken","07030"],["Hudson","RWJ Barnabas Health - Jersey City Medical Center","5905","50 Baldwin Av","Jersey City","07304"],["Hudson","Meadowlands Hospital Medical Center","5907","55 Meadowlands Parkway","Secaucus","07094"],["Hudson","Hackensack University Health Network - HUMC - Palisades","5911","7600 River Rd","North Bergen","07047"],["Hunterdon","Hunterdon Medical Center","6001","2100 Wescott Dr","Flemington","08822"],["Mercer","Capital Health - Capital Health Regional Medical Center","6103","750 Brunswick Av","Trenton","08638"],["Mercer","Capital Health - Capital Health Medical Center Hopewell","6107","1 Capital Way","Pennington","08534"],["Mercer","RWJ Barnabas Health - RWJ University Hospital at Hamilton","6102","1 Hamilton Health Pl","Hamilton Square","08690"],["Mercer","Trinity Health - St. Francis Medical Center","6106","601 Hamilton Av","Trenton","08629"],["Middlesex","JFK Health - JFK Medical Center","6201","65 James St","Edison","08820"],["Middlesex","Meridian Health - Raritan Bay Medical Center","6206","1 Hospital Plaza","Old Bridge","08857"],["Middlesex","Meridian Health - Raritan Bay Medical Center, Perth Amboy","6205","530 New Brunswick Av","Perth Amboy","08861"],["Middlesex","RWJ Barnabas Health - RWJ University Hospital","6202","1 Robert Wood Johnson Place","New Brunswick","08901"],["Middlesex","St. Peter's Health Care System - SPU Hospital","6204","254 Easton Av","New Brunswick","08901"],["Middlesex","UMC of Princeton at Plainsboro","6207","1 Plainsboro Rd","Plainsboro","08536"],["Monmouth","Meridian Health Bayshore Community Hospital","6301","727 N Beers St","Holmdel","07733"],["Monmouth","CentraState Healthcare System","6302","901 W Main St","Freehold","07728"],["Monmouth","Merdian Health - Jersey Shore University Medical Center","6303","1945 State Route 33 West","Neptune","07753"],["Monmouth","Merdian Health - Monmouth Medical Center","6304","300 2nd Av","Long Branch","07740"],["Monmouth","Merdian Health - Riverview Medical Center","6305","1 Riverview Plaza","Red Bank","07701"],["Morris","Atlantic Health System - Chilton Medical Center","6401","97 West Parkway","Pompton Plains","07444"],["Morris","Atlantic Health System - Morristown Medical Center","6404","100 Madison Av","Morristown","07960"],["Morris","Saint Clare's Health System - St. Clare's Hospital","6406","25 N Pocono Rd","Denville","07834"],["Morris","Saint Clare's Health System - St. Clare's Hospital","6403","400 W Blackwell St","Dover","07801"],["Ocean","RWJ Barnabas Health - Community Medical Center","6501","99 State Route 37 West","Toms River","08755"],["Ocean","RWJ Barnabas Health - Monmouth Medical Center South","6502","600 River Av","Lakewood","08701"],["Ocean","Meridian Health - Ocean Medical Center","6505","425 Jack Martin Blvd","Brick","08724"],["Ocean","Meridian Health - Southern Ocean Medical Center","6504","1140 West Bay Av","Manahawkin","08050"],["Passaic","St. Joseph's Healthcare System - St. Josephs Regional MC","6605","703 Main St","Paterson","07503"],["Passaic","St. Joseph's Healthcare System - St. Joseph's Wayne Hospital","6603","224 Hamburg Turnpike","Wayne","07470"],["Passaic","St. Mary's General Hospital","6604","350 Boulevard","Passaic","07055"],["Salem","Inspira Health Network - Inspira Medical Center","6701","2 W Front Street","Elmer","08318"],["Salem","The Memorial Hospital of Salem County County","6702","310 Woodstown Rd","Salem","08079"],["Somerset","RWJ Barnabas Health - RWJ University Hospital Somerset","6802","110 Rehill Av","Somerville","08876"],["Sussex","Atlantic Health System - Newton Medical Center","6903","175 High St","Newton","07860"],["Sussex","Prime Healthcare - Saint Clare's Health Center at Sussex","6902","20 Walnut St","Sussex","07461"],["Union","Atlantic Health System - Overlook Medical Center","7005","99 Beauvoir Av","Summit","07901"],["Union","RWJ Barnabas Health - RWJU Hospital at Rahway","7006","865 Stone St","Rahway","07065"],["Union","Trinitas Health - Trinitas Regional Medical Center","7007","225 Williamson St","Elizabeth","07202"],["Warren","Atlantic Health System - Hackettstown Medical Center","7101","651 Willow Grove","Hackettstown","07840"],["Warren","St. Luke's Hospital - Warren Campus","7102","185 Roseberry Street","Phillipsburg","08865"]]; }
+// The best NJ-list match for a hospital name as dispatchers see it (e.g. "RWJ New Brunswick" → 6202), or null.
+function itrHearMatch(name) {
+  var LIST = itrHearList();
+  // Score a dispatch hospital name against the list: shared words, rare words count more; the town counts too.
+  var STOP = { hospital:1, medical:1, center:1, centre:1, health:1, system:1, healthcare:1, care:1, the:1, of:1, at:1, and:1, mc:1, med:1, network:1, county:1, general:1, regional:1, university:1, campus:1, division:1, sed:1 };
+  var norm = function(t) {
+    return String(t || "").toLowerCase().replace(/robert\s+wood\s+johnson/g, "rwj").replace(/penn\s+medicine/g, " ").replace(/\brwju\b/g, "rwj").replace(/'s\b/g, "").replace(/[^a-z0-9 ]+/g, " ")
+      .split(/\s+/).map(function(w) { return w === "st" ? "saint" : (w.length > 4 && /s$/.test(w) && !/ss$/.test(w) ? w.slice(0, -1) : w); }).filter(function(w) { return w && !STOP[w]; });
+  };
+  var docs = LIST.map(function(r) { return norm(r[1] + " " + r[4]); }), freq = {};
+  docs.forEach(function(d) { var seen = {}; d.forEach(function(w) { if (!seen[w]) { seen[w] = 1; freq[w] = (freq[w] || 0) + 1; } }); });
+  var q = norm(name); if (!q.length) return null;
+  var best = null, bestScore = 0, second = 0;
+  docs.forEach(function(d, i) {
+    var sc = 0, hit = 0; q.forEach(function(w) { if (d.indexOf(w) !== -1) { sc += 1 / freq[w]; hit++; } });
+    if (hit * 2 < q.length) sc = 0;   // at least half of the name's words must match
+    if (sc > bestScore) { second = bestScore; bestScore = sc; best = i; } else if (sc > second) second = sc;
+  });
+  if (best === null || bestScore <= 0 || bestScore - second < 0.05) return null;   // nothing, or too close to call
+  return LIST[best];
+}
+function itrHearByCode(code) { var r = null; itrHearList().forEach(function(x) { if (!r && x[2] === String(code || "").trim()) r = x; }); return r; }
+// Picking an NJ hospital fills that row's code and address
+function itrHearPick(sel) {
+  var row = sel.closest("[data-itr-hosp]"), r = itrHearByCode(sel.value); if (!row || !r) return;
+  var set = function(f, v) { var i = row.querySelector('[data-f="' + f + '"]'); if (i) i.value = v; };
+  set("code", r[2]); set("street", r[3]); set("city", r[4]); set("zip", r[5]); set("county", r[0]);
+  var n = row.querySelector(".itr-hear-note"); if (n) n.textContent = "";
+}
+function itrHearSelect(cur) {
+  var by = {}; itrHearList().forEach(function(r) { (by[r[0]] = by[r[0]] || []).push(r); });
+  return '<select data-hear onchange="itrHearPick(this)"><option value="">— pick from the NJ list —</option>' + Object.keys(by).map(function(c) {
+    return '<optgroup label="' + itrEsc(c) + '">' + by[c].map(function(r) { return '<option value="' + r[2] + '"' + (r[2] === cur ? ' selected' : '') + '>' + itrEsc(r[1] + ' — ' + r[4] + ' (' + r[2] + ')') + '</option>'; }).join("") + '</optgroup>';
+  }).join("") + '</select>';
 }
 // 12.381 (Sam): the test call in plain words — every field that went to ImageTrend, read back out of the file itself
 function itrCallTable(xml) {
@@ -20222,7 +20269,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.400";
+var DESKTOP_VERSION = "12.403";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
