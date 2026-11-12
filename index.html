@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.399">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.400">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2745,7 +2745,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.399</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.400</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13793,7 +13793,7 @@ function itrLoad() {
     hzRelay("imageTrendAdmin", { action: "status" }).catch(function(e) { return { error: e.message }; }),
     // 12.399 (Sam): re-read the Call Natures list every time, so a name changed on another computer (or since
     // this page was opened) shows here straight away
-    db.collection("appdata").doc("dispatchSettings").get().then(function(s) { if (s.exists) { DISPATCH_SETTINGS = s.data() || {}; applyDispatchSettings(DISPATCH_SETTINGS); } }).catch(function() {})
+    db.collection("appdata").doc("dispatchSettings").get().then(function(s) { DISPATCH_SETTINGS = s.exists ? (s.data() || {}) : {}; applyDispatchSettings(DISPATCH_SETTINGS); dsSettingsArrived(); }).catch(function() {})
   ]).then(function(r) {
     ITR_CFG = itrMerged(r[0]); ITR_RIGS = r[1]; ITR_STATUS = r[2] || {};
     itrRender();
@@ -14348,8 +14348,22 @@ function extraCodesEditorAdmin(sec, i, item) {
 }
 // ══ DISPATCH CONSOLE SETTINGS (admin) ══
 var dsTab = "mutualAid", DS_EDIT = null;
+// 12.400 (Sam): the editors could be built before the saved settings had loaded (renderCodesEditor draws them
+// early), so they showed the built-in lists — renamed Call Natures looked like they "reverted", and a Save from
+// there would have overwritten the saved lists. DS_LOADED = the saved settings have arrived; DS_EDIT_EARLY = the
+// editors were built before that and must be rebuilt from what's saved.
+var DS_LOADED = false, DS_EDIT_EARLY = false;
+function dsSettingsArrived() {
+  DS_LOADED = true;
+  if (DS_EDIT && DS_EDIT_EARLY) {
+    DS_EDIT = null; DS_EDIT_EARLY = false;
+    var el = document.getElementById("ds-content");
+    if (el && el.innerHTML) renderDispatchSettings();
+  }
+}
 function dsEnsureEdit() {
   if (DS_EDIT) return;
+  DS_EDIT_EARLY = !DS_LOADED;
   var ds = DISPATCH_SETTINGS || {};
   DS_EDIT = {
     mutualAid: (Array.isArray(ds.mutualAid) && ds.mutualAid.length ? ds.mutualAid : (MUTUAL_AID_911_DEFAULT||MUTUAL_AID_911)).map(function(r){ return { match: (r.match||[]).slice(), borough: r.borough||"", pd: r.pd||"", bls: r.bls||"", als: r.als||"" }; }),
@@ -15241,6 +15255,11 @@ function hzDvpSave() {
 }
 function saveDispatchSettings(msgId) {
   dsEnsureEdit(); var msg = document.getElementById(typeof msgId === "string" ? msgId : "ds-msg"); msg.className = "form-msg"; msg.textContent = "";
+  // 12.400: never save lists that were built before the saved ones loaded — that would wipe the saved lists
+  if (!DS_LOADED || DS_EDIT_EARLY) {
+    msg.className = "form-msg error"; msg.textContent = "Still loading the saved settings — nothing was saved. Check the list, then press Save again.";
+    loadDispatchSettings(); return;
+  }
   var data = {
     mutualAid: DS_EDIT.mutualAid.filter(function(r){ return r.match.length && r.borough; }),
     hospitals: DS_EDIT.hospitals.map(function(h){ return String(h||"").trim(); }).filter(Boolean),
@@ -15621,6 +15640,7 @@ function loadDispatchSettings() {
   return db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
     DISPATCH_SETTINGS = s.exists ? (s.data() || {}) : {};
     applyDispatchSettings(DISPATCH_SETTINGS);
+    dsSettingsArrived();   // 12.400
   }).catch(function(){});
 }
 function applyDispatchSettings(ds) {
@@ -20202,7 +20222,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.399";
+var DESKTOP_VERSION = "12.400";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
