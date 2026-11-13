@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.52"; window.M_BUILD = BUILD;
+  var BUILD = "8.53"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -11399,7 +11399,7 @@ function mRemoveUnitPrompt(crewIdx, role, unit) {
   o.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg"><b style="font-size:1.1rem">Remove ' + esc(unit) + ' from this call</b><br>Why is the unit being removed?</div>' +
     '<div class="hz-rm-list">' + M_UNIT_CANCEL_REASONS.map(function(r, i) { return '<button type="button" class="hz-rm-r" data-i="' + i + '">' + esc(r) + '</button>'; }).join("") + '</div>' +
     '<div class="hz-dlg-row"><button type="button" class="hz-dlg-no">Cancel — keep the unit</button></div>' +
-    '<div class="hz-rm-note">' + esc(unit) + ' and the notification group will be told the unit was cancelled.</div></div>';
+    '<div class="hz-rm-note">' + esc(unit) + ', the other units on this call and the notification group will be told the unit was cancelled.</div></div>';
   var close = function() { o.remove(); window.removeEventListener("popstate", close); document.removeEventListener("keydown", key, true); };
   var key = function(e) { if (e.key === "Escape") { e.preventDefault(); close(); } };
   o.addEventListener("click", function(e) { if (e.target === o) close(); });
@@ -11421,8 +11421,12 @@ function mNotifyUnitCancelled(call, unit, reason) {
   if (!call || !unit) return;
   var addr = typeof mSmsAddress === "function" ? mSmsAddress(call) : (call.address || "");
   var body = "UNIT CANCELLED\n" + addr + "\n" + unit + " has been cancelled from this call" + (reason ? "\nReason: " + reason : "");
-  if (hzSendOn("unitCancelled", "sms")) mSmsEnqueue(function() { return mPhonesForUnits([unit]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
-  hzPushTo([unit], "unitCancelled", "✕ Cancelled — " + hzPushStreet(call), unit + " has been cancelled from this call" + (reason ? " · " + reason : ""), call.id);
+  // 8.53 (Sam): the units still on the call get the same message as the removed unit
+  var onCall = [];
+  (call.crews || []).forEach(function(cr) { Object.keys(cr || {}).forEach(function(k) { var u = cr[k]; if (k !== "rig" && u && u !== "__added__" && u !== unit && onCall.indexOf(u) === -1) onCall.push(u); }); });
+  var to = [unit].concat(onCall);
+  if (hzSendOn("unitCancelled", "sms")) mSmsEnqueue(function() { return mPhonesForUnits(to).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
+  hzPushTo(to, "unitCancelled", "✕ " + unit + " cancelled — " + hzPushStreet(call), unit + " has been cancelled from this call" + (reason ? " · " + reason : ""), call.id);
   // the removed unit already got its own message — leave it out of the group copy (mAdminCopy skips units on the crews)
   mAdminCopy(Object.assign({}, call, { crews: (call.crews || []).concat([{ removed: unit }]) }), "UNIT CANCELLED", unit + " cancelled from this call" + (reason ? " — " + reason : ""), "unitCancelled");
 }
