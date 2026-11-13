@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.413">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.415">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2766,7 +2766,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.413</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.415</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -20344,7 +20344,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.413";
+var DESKTOP_VERSION = "12.415";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -26346,11 +26346,44 @@ function mRemoveEmptySlot(crewIdx, role, label) {
   if (!hzOk(arguments, this, "Remove the empty " + label + " slot?")) return;
   mRemoveUnitSlot(crewIdx, role);
 }
+// 8.52 (Sam): removing a unit asks why (three reasons), then the unit and the notification group are told it was cancelled
+var M_UNIT_CANCEL_REASONS = ["Unit assigned by mistake", "Unit was reassigned to an alternate call", "Unit self canceled due to inability to respond"];
 function mRemoveUnitPrompt(crewIdx, role, unit) {
-  if (!hzOk(arguments, this, "Remove " + unit + " from this call?")) return;
-  mRemoveUnitSlot(crewIdx, role);
+  if (!unit || unit === "__added__") { mRemoveUnitSlot(crewIdx, role); return; }   // an empty "Add Responder" slot — nothing to tell anyone
+  var old = document.getElementById("hz-rm-unit"); if (old) old.remove();
+  var esc = function(t) { return String(t || "").replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var o = document.createElement("div"); o.id = "hz-rm-unit"; o.className = "hz-dlg"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true");
+  o.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg"><b style="font-size:1.1rem">Remove ' + esc(unit) + ' from this call</b><br>Why is the unit being removed?</div>' +
+    '<div class="hz-rm-list">' + M_UNIT_CANCEL_REASONS.map(function(r, i) { return '<button type="button" class="hz-rm-r" data-i="' + i + '">' + esc(r) + '</button>'; }).join("") + '</div>' +
+    '<div class="hz-dlg-row"><button type="button" class="hz-dlg-no">Cancel — keep the unit</button></div>' +
+    '<div class="hz-rm-note">' + esc(unit) + ' and the notification group will be told the unit was cancelled.</div></div>';
+  var close = function() { o.remove(); window.removeEventListener("popstate", close); document.removeEventListener("keydown", key, true); };
+  var key = function(e) { if (e.key === "Escape") { e.preventDefault(); close(); } };
+  o.addEventListener("click", function(e) { if (e.target === o) close(); });
+  o.querySelector(".hz-dlg-no").onclick = close;
+  o.querySelectorAll(".hz-rm-r").forEach(function(b) { b.onclick = function() { close(); mRemoveUnitSlot(crewIdx, role, M_UNIT_CANCEL_REASONS[+b.getAttribute("data-i")]); }; });
+  window.addEventListener("popstate", close); document.addEventListener("keydown", key, true);
+  document.body.appendChild(o);
 }
-function mRemoveUnitSlot(crewIdx, role) {
+(function() {
+  var P = "html body:not(#hzA):not(#hzB):not(#hzC) #hz-rm-unit", st = document.createElement("style");
+  st.textContent = P + " .hz-rm-list{display:flex;flex-direction:column;gap:8px;margin:-4px 0 12px}" +
+    P + " .hz-rm-r{min-height:50px;border-radius:10px;font-size:.95rem;font-weight:800;cursor:pointer;box-shadow:none !important;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;padding:8px 12px;line-height:1.25}" +
+    P + " .hz-rm-r:active{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}" +
+    P + " .hz-rm-note{margin-top:10px;font-size:.78rem;color:#e6cf8a !important;-webkit-text-fill-color:#e6cf8a;opacity:.85}";
+  (document.head || document.documentElement).appendChild(st);
+})();
+// The removed unit gets a text + push; the notification group gets its copy (same switches as other group copies)
+function mNotifyUnitCancelled(call, unit, reason) {
+  if (!call || !unit) return;
+  var addr = typeof mSmsAddress === "function" ? mSmsAddress(call) : (call.address || "");
+  var body = "UNIT CANCELLED\n" + addr + "\n" + unit + " has been cancelled from this call" + (reason ? "\nReason: " + reason : "");
+  if (hzSendOn("unitCancelled", "sms")) mSmsEnqueue(function() { return mPhonesForUnits([unit]).then(function(phones) { if (phones.length) return mSendClickSendSMS(phones, body); }); });
+  hzPushTo([unit], "unitCancelled", "✕ Cancelled — " + hzPushStreet(call), unit + " has been cancelled from this call" + (reason ? " · " + reason : ""), call.id);
+  // the removed unit already got its own message — leave it out of the group copy (mAdminCopy skips units on the crews)
+  mAdminCopy(Object.assign({}, call, { crews: (call.crews || []).concat([{ removed: unit }]) }), "UNIT CANCELLED", unit + " cancelled from this call" + (reason ? " — " + reason : ""), "unitCancelled");
+}
+function mRemoveUnitSlot(crewIdx, role, reason) {
   var callId = mDispSelectedCallId;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
@@ -26365,9 +26398,12 @@ function mRemoveUnitSlot(crewIdx, role) {
     var assignedUnits = stillAssigned ? (call.assignedUnits||[]) : (call.assignedUnits||[]).filter(function(u){ return u !== removedUnit; });
     var upd = { crews: crews, unitDetails: ud, assignedUnits: assignedUnits, updatedAt: new Date().toISOString() };
     // logged in the timeline only — not as a note (11.49 / 4.41)
-    if (removedUnit && removedUnit !== "__added__") upd.callEvents = mEvtUnion(mEvt(removedUnit + " removed from call", "✕", "var(--gray)", "event"));
-    return db.collection("activeCalls").doc(callId).update(upd);
-  }).then(function(){ mToast("Unit removed"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+    if (removedUnit && removedUnit !== "__added__") upd.callEvents = mEvtUnion(mEvt(removedUnit + " removed from call" + (reason ? " — " + reason : ""), "✕", "var(--gray)", "event"));
+    return db.collection("activeCalls").doc(callId).update(upd).then(function() {
+      if (reason && removedUnit && removedUnit !== "__added__") mNotifyUnitCancelled(Object.assign({ id: callId }, call, upd), removedUnit, reason);   // 8.52
+      return removedUnit;
+    });
+  }).then(function(u){ mToast(u && reason ? "✓ " + u + " removed — notified" : "Unit removed"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mAddExtraRole(crewIdx, base) {
   var callId = mDispSelectedCallId;
