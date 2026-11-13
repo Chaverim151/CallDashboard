@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.408">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.410">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2766,7 +2766,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.408</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.410</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -8497,7 +8497,7 @@ function setRender() {
   var sw = function(isOn, onclick, label) { return '<button class="m-sw' + (isOn ? ' on' : '') + '" role="switch" aria-checked="' + isOn + '" aria-label="' + label + '" onclick="' + onclick + '"><i></i></button>'; };
   var line = function(label, ctl, sub) { return '<div class="set-line"><span class="set-ll">' + label + (sub ? '<small>' + sub + '</small>' : '') + '</span><span class="set-lc">' + ctl + '</span></div>'; };
   var canTest = hzCanTestMode(currentRole, currentUserRoles);
-  var tOn = typeof SYS_TESTING_MODE !== "undefined" && !!SYS_TESTING_MODE;
+  var tOn = (typeof MSysTestingMode !== "undefined") ? !!MSysTestingMode : (typeof SYS_TESTING_MODE !== "undefined" && !!SYS_TESTING_MODE);   // 12.410: the switch follows the tap at once
   // Me + contact
   var cMe = setCard('👤 ' + orgEsc(((me.firstName || "") + " " + (me.lastName || "")).trim() || "My info") + ' <span class="set-sub">' + orgEsc(currentUserUnit || "") + '</span>',
       '<div class="set-note set-1l" style="margin:-4px 0 4px" title="Only an admin can change these">' + orgEsc(roles.join(", ") || "—") + (me.emsLevel ? " · " + orgEsc(me.emsLevel) + (me.emsLicense ? " " + orgEsc(me.emsLicense) : "") : "") + ' <span style="opacity:.7">(set by admin)</span></div>' +
@@ -8556,7 +8556,8 @@ function setPreview(tiles) {
 function setToggleTest() {
   if (typeof deskSyncMobileGlobals === "function") deskSyncMobileGlobals();
   if (typeof mToggleTestMode === "function") mToggleTestMode();
-  setTimeout(setRender, 900);
+  setRender();   // 12.410 (Sam): show the new position straight away (mToggleTestMode flips the flag at once now)
+  setTimeout(setRender, 1500);   // and again once the save has gone through (or was undone)
 }
 function setSlot(i, k) {
   var t = setFlow.tiles, j = t.findIndex(function(x) { return x.k === k; });
@@ -20341,7 +20342,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.408";
+var DESKTOP_VERSION = "12.410";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -24039,6 +24040,7 @@ function mNcTestModeWarn() {
   ]);
 }
 function mOpenNewCallForm() {
+  mNcAddrOverride = false;   // 8.48: a fresh form never carries an old address override
   setTimeout(mNcTestModeWarn, 50);
   mNcPosted = false;
   setTimeout(function(){ mSetNcHighway(false, false); }, 0);
@@ -24636,6 +24638,53 @@ function mUpgradeAddressForPost(address, lat, lng) {
     });
   });
 }
+// 8.48 (Sam): "allow me to override in the new call form if unable to validate address"
+var mNcAddrOverride = false;
+function mNcAddrOverrideAsk(address) {
+  var old = document.getElementById("hz-addr-ovr"); if (old) old.remove();
+  var o = document.createElement("div"); o.id = "hz-addr-ovr"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true");
+  var esc = function(t) { return String(t || "").replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  o.innerHTML = '<div class="hz-tc-box"><div class="hz-tc-ic">📍</div><div class="hz-tc-t">Address not found on the map</div>' +
+    '<div class="hz-tc-s">“' + esc(address) + '” couldn’t be verified, so the response area can’t be worked out. To dispatch anyway, pick the area — the call will be marked <b>address not verified</b>.</div>' +
+    '<div class="hz-ao-zones">' +
+      '<button type="button" data-z="primary" class="hz-ao-z hz-ao-p">🚑 Local Response</button>' +
+      '<button type="button" data-z="secondary" class="hz-ao-z hz-ao-s">🚑 Load an Ambulance</button>' +
+      '<button type="button" data-z="transfer" class="hz-ao-z hz-ao-t">💠 Stabilize · Linden Rig</button>' +
+      '<button type="button" data-z="outside" class="hz-ao-z hz-ao-o">⚠ Outside Zone</button>' +
+    '</div><div class="hz-tc-row"><button type="button" class="hz-tc-no">Cancel — fix the address</button></div></div>';
+  var close = function() { o.remove(); window.removeEventListener("popstate", close); document.removeEventListener("keydown", key); };
+  var key = function(e) { if (e.key === "Escape") close(); };
+  o.addEventListener("click", function(e) { if (e.target === o) close(); });
+  o.querySelector(".hz-tc-no").onclick = function() { close(); var a = document.getElementById("m-nc-address"); if (a) { a.classList.add("m-nc-need"); try { a.focus(); } catch (e) {} } };
+  o.querySelectorAll(".hz-ao-z").forEach(function(b) { b.onclick = function() {
+    close();
+    mNcAddrOverride = true;
+    mSetNcZone(b.getAttribute("data-z"), false, "");
+    var a = document.getElementById("m-nc-address"); if (a) a.classList.remove("m-nc-need");
+    mPostAddrResolved = true;   // already tried to look it up — go straight on
+    mPostNewCallNow();
+  }; });
+  window.addEventListener("popstate", close); document.addEventListener("keydown", key);
+  document.body.appendChild(o);
+}
+(function() {
+  var P = "html body:not(#hzA):not(#hzB):not(#hzC) #hz-addr-ovr", st = document.createElement("style");
+  st.textContent = P + "{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}" +
+    P + " .hz-tc-box{background:#000 !important;border:2px solid #d4a017 !important;border-radius:14px;padding:18px 16px 16px;width:100%;max-width:380px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.5)}" +
+    P + " .hz-tc-ic{font-size:2rem;line-height:1}" +
+    P + " .hz-tc-t{font-family:'Oswald',sans-serif;font-size:1.2rem;font-weight:700;color:#d4a017 !important;margin:8px 0 6px}" +
+    P + " .hz-tc-s{font-size:.88rem;line-height:1.4;color:#d4a017 !important;opacity:.9;margin-bottom:14px}" +
+    P + " .hz-tc-s b{color:#ffc84a !important}" +
+    P + " .hz-ao-zones{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}" +
+    P + " .hz-ao-z{min-height:52px;border-radius:10px;font-size:.88rem;font-weight:800;cursor:pointer;box-shadow:none !important;padding:6px 8px;line-height:1.2}" +
+    P + " .hz-ao-p{background:#34c759 !important;color:#000 !important;border:2px solid #34c759 !important}" +
+    P + " .hz-ao-s{background:#4169e1 !important;color:#fff !important;border:2px solid #4169e1 !important}" +
+    P + " .hz-ao-t{background:#20beaf !important;color:#000 !important;border:2px solid #20beaf !important}" +
+    P + " .hz-ao-o{background:#c62828 !important;color:#fff !important;border:2px solid #c62828 !important}" +
+    P + " .hz-tc-row{display:flex}" +
+    P + " .hz-tc-no{flex:1;min-height:46px;border-radius:10px;font-size:.95rem;font-weight:800;cursor:pointer;background:#000 !important;color:#d4a017 !important;border:2px solid #d4a017 !important}";
+  (document.head || document.documentElement).appendChild(st);
+})();
 function mPostNewCallNow() {
   // Resolve a numbered street address first, if we don't already have one
   var _rawAddr = mCleanAddress(document.getElementById("m-nc-address").value.trim());
@@ -24658,8 +24707,11 @@ function mPostNewCallNow() {
   // a crew the wrong way — so stop and say so instead.
   var _lat0 = parseFloat(document.getElementById("m-nc-lat").value) || null;
   var _lng0 = parseFloat(document.getElementById("m-nc-lng").value) || null;
-  if (!_lat0 || !_lng0) {
+  if ((!_lat0 || !_lng0) && !mNcAddrOverride) {
     var _b1 = document.getElementById("m-nc-post-btn"); if (_b1) { mNcPostBtnsIdle(); }
+    // 8.48 (Sam): an address that can't be found on the map can still be dispatched — the dispatcher picks the
+    // response area (it decides the tone-out and whether a rig is loaded) and the call is marked "address not verified"
+    if (address) { mNcAddrOverrideAsk(address); return; }
     mAddressRejected("Pick the address from the suggestions — the crew needs a located address");
     return;
   }
@@ -24686,7 +24738,9 @@ function mPostNewCallNow() {
     zone: mNcZone, // always a detected value — posting is blocked below if it's unknown
     zoneArea: mNcZoneArea || "",   // which coverage area it fell in, for the card and call info
     onHighway: !!mNcHighway,
-    callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }],
+    callEvents: [{ text: "Call posted", icon: "📟", color: "#7ab8f5", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }]
+      .concat(mNcAddrOverride && !(_lat0 && _lng0) ? [{ text: "⚠ Address not verified on the map — dispatched by override", icon: "⚠️", color: "#ffc84a", sub: "", kind: "event", time: mNowHHMM(), by: mCurrentUserUnit || "Dispatcher", createdAt: new Date().toISOString() }] : []),
+    addressUnverified: !!(mNcAddrOverride && !(_lat0 && _lng0)),   // 8.48
     callNature: nature,
     patientAge: mNcUto ? mNcAge : "",          // only UTO asks Pediatric / Adult
     patientAgeUto: !!mNcUto,
@@ -27495,15 +27549,17 @@ function mToggleTestMode() {
   var next = !MSysTestingMode;
   if (!mCurrentUser) return;
   if (next && !hzCanTestMode(mCurrentRole, mCurrentUserRoles)) { mToast("Test Mode is for dispatchers, drivers and other roles — not available for responders", true); return; }
-  var label = document.getElementById("m-test-toggle-label"); if (label) label.textContent = "🧪 " + (next ? "Turning on…" : "Turning off…");
-  var sub0 = document.getElementById("m-home-test-sub"); if (sub0) sub0.textContent = next ? "Turning on…" : "Turning off…";
+  var label = document.getElementById("m-test-toggle-label");
+  // 8.48 (Sam): flip it the moment it's tapped (the switch used to wait for the server, then My Settings redrew too early
+  // and showed it still off); it flips back only if the save fails
+  var redraw = function() { var sp = document.getElementById("m-pg-settings"); if (sp && sp.classList.contains("active") && typeof mSettingsRender === "function") mSettingsRender(); };
+  mApplyTestModeState(next); redraw();
   db.collection("users").doc(mCurrentUser.uid).set({ sysTestingMode: next }, { merge: true }).then(function() {
     if (label) label.textContent = "🧪 Test Mode";
-    mApplyTestModeState(next);
     mToast(next ? "🧪 Test Mode ON for you — everything you trigger goes only to you" : "Test Mode OFF — your actions go live");
   }).catch(function(e) {
     if (label) label.textContent = "🧪 Test Mode";
-    mApplyTestModeState(MSysTestingMode);
+    mApplyTestModeState(!next); redraw();
     mToast("Couldn't turn test mode " + (next ? "on" : "off") + " (" + ((e && e.code) || "error") + ") — not changed.", true);
   });
 }
@@ -27644,6 +27700,7 @@ function mMakeCallFlagClass() {
 }
 // 12.364 (Sam): everything that belongs to the old address — apt, access code, map link, code suggestion / private code
 function mNcClearLocInfo() {
+  mNcAddrOverride = false;   // 8.48: a new address needs its own check
   ["m-nc-apt", "m-nc-accesscode", "m-nc-mapslink"].forEach(function(id) { var el = document.getElementById(id); if (el) { el.value = ""; if (el.dataset) delete el.dataset.userEdited; } });
   var cs = document.getElementById("m-nc-code-suggestion"); if (cs) cs.style.display = "none";
   if (typeof mAccessCodeSuggestion !== "undefined") mAccessCodeSuggestion = null;
