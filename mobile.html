@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.48"; window.M_BUILD = BUILD;
+  var BUILD = "8.50"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -4259,7 +4259,7 @@ function mEditEduEvent(eventId) {
   db.collection("education").doc(eventId).get().then(function(s) { if (s.exists) mOpenEduForm(Object.assign({ id: s.id }, s.data())); });
 }
 function mDeleteEduEvent(eventId) {
-  if (!confirm("Delete this event? Attendance records will be removed with it.")) return;
+  if (!hzOk(arguments, this, "Delete this event? Attendance records will be removed with it.")) return;
   db.collection("education").doc(eventId).delete().then(function() { mToast("Event deleted"); mCloseEduDetail(); mLoadEduContent(); }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
 // ── Attendance roster + CE approval (inside the event detail) ──
@@ -4322,7 +4322,7 @@ function mSubmitDenyCE() {
 }
 function mRevokeCE(eventId, uid, ceHours) {
   // Revoking already-approved hours also backs them out of the member's yearly total
-  if (!confirm("Revoke these " + ceHours + " approved CE hours?")) return;
+  if (!hzOk(arguments, this, "Revoke these " + ceHours + " approved CE hours?")) return;
   var year = new Date().getFullYear().toString();
   var batch = db.batch();
   batch.update(db.collection("education").doc(eventId).collection("attendance").doc(uid), { ceApproved: false, ceDecision: "denied", decidedByUid: mCurrentUser.uid, deniedBy: mCurrentUserUnit || mCurrentUser.email, deniedAt: new Date().toISOString(), denialReason: "Revoked" });
@@ -4335,7 +4335,7 @@ function mApproveAllCE(eventId) {
   db.collection("education").doc(eventId).collection("attendance").where("ceApproved", "==", false).get().then(function(snap) {
     var pending = []; snap.forEach(function(d) { var r = d.data(); if (r.ceHours > 0 && r.ceDecision !== "denied") pending.push(d); });
     if (!pending.length) { mToast("No pending approvals"); return; }
-    if (!confirm("Approve CE hours for " + pending.length + " member" + (pending.length > 1 ? "s" : "") + "?")) return;
+    if (!hzOk(arguments, this, "Approve CE hours for " + pending.length + " member" + (pending.length > 1 ? "s" : "") + "?")) return;
     var year = new Date().getFullYear().toString(), approvedBy = mCurrentUserUnit || mCurrentUser.email, batch = db.batch();
     pending.forEach(function(d) {
       var r = d.data();
@@ -5435,7 +5435,7 @@ function mMaybeOfferPasskey() {
 function mDismissPasskeyOffer() { mCloseAllSheets(); mPendingPasskeyCreds = null; }
 // iPhone (and some Android phones) only allow a Face ID / fingerprint prompt straight from a tap. Each
 // biometric prompt below therefore starts from its own button tap — never after a network call or an earlier
-// prompt (that used to fail silently as "Cancelled"). 11.56 / 4.48
+// hzAsk(arguments, this, that used to fail silently as "Cancelled"). 11.56 / 4.48
 async function mEnablePasskey() {
   var creds = mPendingPasskeyCreds;
   if (!creds) { mToast("Sign in with your password first", true); return; }
@@ -5524,7 +5524,7 @@ async function mSignInWithPasskey() {
   } finally { if (btn) btn.disabled = false; }
 }
 function mRemovePasskey() {
-  if (!confirm("Remove " + mBiometricName() + " sign-in from this device?")) return;
+  if (!hzOk(arguments, this, "Remove " + mBiometricName() + " sign-in from this device?")) return;
   try { localStorage.removeItem(M_PK_KEY); } catch (e) {}
   mRefreshPasskeyUI(); mToast("Biometric sign-in removed");
 }
@@ -6901,7 +6901,7 @@ function mTicketPhotosHtml(t, canDelete) {
   }).join("") + '</div>';
 }
 function mDeleteTicketPhoto(ticketId, idx) {
-  if (!confirm("Remove this photo?")) return;
+  if (!hzOk(arguments, this, "Remove this photo?")) return;
   db.collection("tickets").doc(ticketId).get().then(function(s) {
     if (!s.exists) return; var ph = (s.data().photos || []).slice(); var p = ph[idx]; if (!p) return;
     ph.splice(idx, 1);
@@ -7538,7 +7538,7 @@ function mAcceptTicket(id) {
   }).then(function() { mToast("✋ Assigned to you!"); mOpenTicket(id); }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
 function mUnassignTicket(id) {
-  if (!confirm("Remove assignment?")) return;
+  if (!hzOk(arguments, this, "Remove assignment?")) return;
   var t0 = mAllTickets.find(function(x){ return x.id === id; }) || {}, upd0 = { assignedTo: null, assignedToUid: null, assignedByUid: null, assignedAt: null, lastActionByUid: mCurrentUser ? mCurrentUser.uid : "" };
   if ((t0.status || "open") === "accepted") { upd0.status = "open"; upd0.statusByUid = upd0.lastActionByUid; t0.status = "open"; }   // 12.307: back to Unassigned
   db.collection("tickets").doc(id).set(upd0, { merge: true }).then(function() {
@@ -7548,12 +7548,12 @@ function mUnassignTicket(id) {
   }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
 function mResolveTicket(id) {
-  if (!confirm("Mark this service request as resolved?")) return;
+  if (!hzOk(arguments, this, "Mark this service request as resolved?")) return;
   mUpdateTicketStatus(id, "resolved");
 }
 function mStartTicket(id) { mUpdateTicketStatus(id, "in-progress"); }
 function mReopenTicket(id) {
-  if (!confirm("Reopen this service request?")) return;
+  if (!hzOk(arguments, this, "Reopen this service request?")) return;
   var t = mAllTickets.find(function(x){ return x.id === id; });
   mUpdateTicketStatus(id, (t && t.assignedTo) ? "accepted" : "open");
 }
@@ -7600,7 +7600,7 @@ function mAddComment(id) {
   }).then(function() { document.getElementById("m-tk-new-comment").value = ""; mReplyTarget = null; done(); mOpenTicket(id); }).catch(function(e){ done(); mToast("Error: " + e.message, true); });
 }
 function mDeleteTicket(id) {
-  if (!confirm("Delete this service request permanently?")) return;
+  if (!hzOk(arguments, this, "Delete this service request permanently?")) return;
   db.collection("tickets").doc(id).delete().then(function() { mToast("Deleted"); mGoTo("service"); mLoadTickets(); }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
 
@@ -8817,7 +8817,7 @@ function mOpenNewCallForm() {
   mLocReqCallback = ""; mLocCoordsOnly = false; mLocApplied = false; mLocAppliedAcc = 0; mLocAppliedLat = null; mLocAppliedLng = null; mLocLastAt = null; mLocLastData = null;
   var _ls = document.getElementById("m-nc-loc-status"); if (_ls) _ls.style.display = "none";
   setTimeout(mNcShowCoords, 0);
-  mNcAddressTouched = false; mNcZone = "primary"; mNcAge = ""; mNcAgeUnit = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
+  mNcAddressTouched = false; mNcZone = ""; mNcAge = ""; mNcAgeUnit = ""; mNcSex = ""; mPostAddrResolved = false; mNcLastPlace = null; mNcZoneArea = ""; mAccessCodeSuggestion = null;
   var _ac = document.getElementById("m-nc-accesscode"); if (_ac) _ac.dataset.userEdited = "";
   mBindNcValidation();
   [30, 150, 400].forEach(function(ms){ setTimeout(mNcValidateMarks, ms); });   // after the nature list and layout settle
@@ -9528,6 +9528,10 @@ function mNcAddressEdited() {
     mNcZone = ""; mNcZoneArea = "";
     var banner = document.getElementById("m-nc-zone-banner"); if (banner) banner.style.display = "none";
     mNcClearLocInfo();   // 12.361 (Sam): a new address wipes everything that belonged to the old one
+  } else if (inp && latEl && !latEl.value && (mNcZone || mNcAddrOverride) && inp.value.trim() !== (mNcResolvedAddress || "")) {
+    // 8.50 (Sam): an address that never verified keeps no area from before (e.g. one picked in the override box)
+    mNcZone = ""; mNcZoneArea = ""; mNcAddrOverride = false;
+    var banner2 = document.getElementById("m-nc-zone-banner"); if (banner2) banner2.style.display = "none";
   }
   if (typeof mNcValidateMarks === "function") mNcValidateMarks();
 }
@@ -9587,8 +9591,10 @@ function mPostNewCall() {
       mPostNewCall();
     }).catch(function() {
       if (pbtn) { mNcPostBtnsIdle(); }
-      if (!confirm("Couldn't verify this address's location, so the response zone can't be detected.\n\nPost anyway as LOCAL RESPONSE?")) return;
-      mNcZone = "primary"; mPostNewCallNow();
+      // 8.50 (Sam): never default the response type — an address that can't be verified goes to the override box,
+      // where the dispatcher picks the area (was: "Post anyway as LOCAL RESPONSE?", which quietly made it Local Response)
+      mNcZone = ""; mNcZoneArea = "";
+      mNcAddrOverrideAsk(address);
     });
     return;
   }
@@ -10017,7 +10023,7 @@ function hzLeOp(op, a, b) {
   hzLeSync();
   var s = HZ_LE.s, keep = HZ_LE.vals, i;
   if (op === "crewAdd") s.crews.push({});
-  else if (op === "crewDel") { if (!confirm("Remove Crew " + (a + 1) + " from the call log?")) return; s.crews.splice(a, 1);
+  else if (op === "crewDel") { if (!hzOk(arguments, this, "Remove Crew " + (a + 1) + " from the call log?")) return; s.crews.splice(a, 1);
     var ud = {}; Object.keys(s.ud).forEach(function(k) { var p = k.split("_"), ci = +p[0]; if (ci === a) return; ud[(ci > a ? ci - 1 : ci) + "_" + p.slice(1).join("_")] = s.ud[k]; }); s.ud = ud; }
   else if (op === "unitAdd") { var cr = s.crews[a], n = 1; while (cr["unit" + n] !== undefined) n++; cr["unit" + n] = ""; }
   else if (op === "unitDel") { delete s.crews[a][b]; delete s.ud[a + "_" + b]; }
@@ -10405,7 +10411,7 @@ function mFindDriverRole(call) {
 function mEditCallTime(key, label) {
   var call = mDispCallCache[mDispSelectedCallId]; if (!call) return;
   var cur = (call.times || {})[key] || "";
-  var v = prompt(label + " time (HH:MM, 24-hour)" + (cur ? "\nCurrently " + cur : "") + "\nLeave blank to clear.", cur);
+  var v = hzAsk(arguments, this, label + " time (HH:MM, 24-hour)" + (cur ? "\nCurrently " + cur : "") + "\nLeave blank to clear.", cur);
   if (v === null) return;
   v = v.trim();
   if (v && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) { mToast("Enter a time as HH:MM, e.g. 14:05", true); return; }
@@ -10506,7 +10512,7 @@ function mDdSendLocLink() {
   if (!to) { mToast("This call's callback number isn't a valid phone number", true); return; }
   var d = mDdLocData;
   if (d && d.seenAt && Date.now() - new Date(d.seenAt).getTime() < 90000 && d.status !== "closed" &&
-      !confirm("The caller's page is still sending updates. Send a new link anyway?")) return;
+      !hzOk(arguments, this, "The caller's page is still sending updates. Send a new link anyway?")) return;
   var token = "loc" + hzRandomToken(16);                   // 128-bit, URL-safe
   var link = "https://chaverim151.github.io/CallDashboard/loc.html?t=" + token;
   db.collection("locationRequests").doc(token).set({
@@ -10525,7 +10531,7 @@ function mDdPushLocation() {
   var lat = Number(d.lat), lng = Number(d.lng), acc = d.accuracy || 0;
   var moved = (call.lat && call.lng) ? mMetresBetween(call.lat, call.lng, lat, lng) : null;
   var units = mDdUnits(call);
-  if (!confirm("Move this call's pin to the caller's latest position (within " + acc + " m)" +
+  if (!hzOk(arguments, this, "Move this call's pin to the caller's latest position (within " + acc + " m)" +
       (units.length ? " and text " + units.join(", ") + " the new location?" : "?\n\nNo units are assigned yet, so nobody will be texted."))) return;
   var maps = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving";
   var waze = "https://waze.com/ul?ll=" + lat + "," + lng + "&navigate=yes";
@@ -10731,7 +10737,7 @@ function mClearNonRigUnits() {
     if (!snap.exists) return;
     var call = snap.data(); if (!call.crews) call.crews = [{}];
     var open = mOpenNonRigUnits(call); if (!open.length) return;
-    if (!confirm("Mark " + open.map(function(u){ return u.unit; }).join(", ") + " cleared?")) return;
+    if (!hzOk(arguments, this, "Mark " + open.map(function(u){ return u.unit; }).join(", ") + " cleared?")) return;
     var update = { updatedAt: new Date().toISOString() };
     open.forEach(function(u) {
       update["unitDetails." + mUdKey(u.crewIdx, u.role) + ".status"] = "cleared_scene";
@@ -11006,7 +11012,7 @@ function mDivertResponse(crewIdx, role, unit) {
     if (!snap.exists) return;
     var call = snap.data(); var det = mUdOf(call, crewIdx, role);
     var toRig = det.response !== "rig";
-    if (!confirm(unit + ": divert to " + (toRig ? "the rig" : "direct to scene") + "?")) return;
+    if (!hzOk(arguments, this, unit + ": divert to " + (toRig ? "the rig" : "direct to scene") + "?")) return;
     var now = mNowHHMM();
     var update = { updatedAt: new Date().toISOString() };
     update["unitDetails." + mUdKey(crewIdx, role) + ".response"] = toRig ? "rig" : "scene";
@@ -11290,17 +11296,17 @@ function mRenderAssignRoster(roster, onThisCall, filter) {
 }
 function mConfirmBusyRig(rigId) {
   var b = mRigConflictMap[rigId];
-  if (!confirm("⚠ " + rigId + " is already in use on another call" + (b && b.address ? " (" + b.address + ")" : "") + ".\n\nAssign it to this call anyway?")) return;
+  if (!hzOk(arguments, this, "⚠ " + rigId + " is already in use on another call" + (b && b.address ? " (" + b.address + ")" : "") + ".\n\nAssign it to this call anyway?")) return;
   mDoAssign(rigId);
 }
 function mConfirmOosRig(rigId) {
-  if (!confirm("⚠ " + rigId + " is marked Out of Service.\n\nUse it anyway?")) return;
+  if (!hzOk(arguments, this, "⚠ " + rigId + " is marked Out of Service.\n\nUse it anyway?")) return;
   mDoAssign(rigId);
 }
 function mConfirmAssignRoster(unitId) {
   var conflict = mUnitConflictMap[unitId];
   if (conflict) {
-    if (!confirm("⚠ " + unitId + " is currently assigned to:\n" + conflict.address + "\n\nDivert to this call?")) return;
+    if (!hzOk(arguments, this, "⚠ " + unitId + " is currently assigned to:\n" + conflict.address + "\n\nDivert to this call?")) return;
     mDivertAndAssign(unitId, conflict.id);
     return;
   }
@@ -11322,7 +11328,7 @@ function mConfirmAssignCustom() {
   if (mAssignSheetMode !== "rig" && mIs7xxUnit(v)) { mToast("700-series units are dispatch console units and can't be assigned to calls", true); return; }
   var conflict = mUnitConflictMap[v];
   if (conflict) {
-    if (!confirm("⚠ " + v + " is currently assigned to:\n" + conflict.address + "\n\nDivert to this call?")) return;
+    if (!hzOk(arguments, this, "⚠ " + v + " is currently assigned to:\n" + conflict.address + "\n\nDivert to this call?")) return;
     mDivertAndAssign(v, conflict.id);
     return;
   }
@@ -11380,11 +11386,11 @@ function mDoAssign(unitId) {
   }).then(function() { mCloseAllSheets(); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mRemoveEmptySlot(crewIdx, role, label) {
-  if (!confirm("Remove the empty " + label + " slot?")) return;
+  if (!hzOk(arguments, this, "Remove the empty " + label + " slot?")) return;
   mRemoveUnitSlot(crewIdx, role);
 }
 function mRemoveUnitPrompt(crewIdx, role, unit) {
-  if (!confirm("Remove " + unit + " from this call?")) return;
+  if (!hzOk(arguments, this, "Remove " + unit + " from this call?")) return;
   mRemoveUnitSlot(crewIdx, role);
 }
 function mRemoveUnitSlot(crewIdx, role) {
@@ -11504,7 +11510,7 @@ function mAddRigWithUnit(unitId) {
   var callId = mDispSelectedCallId;
   mNextFreeRig(true).then(function(res) {
     if (!res.rig) {
-      if (!confirm("No rigs are available" + (res.taken.length ? " (" + res.taken.join(", ") + " in use)" : "") + ".\n\nAdd " + unitId + " without a rig anyway?\n\nCancel to request BLS mutual aid instead.")) { mCloseAllSheets(); mOpenBLSSheet(); return null; }
+      if (!hzOk(arguments, this, "No rigs are available" + (res.taken.length ? " (" + res.taken.join(", ") + " in use)" : "") + ".\n\nAdd " + unitId + " without a rig anyway?\n\nCancel to request BLS mutual aid instead.")) { mCloseAllSheets(); mOpenBLSSheet(); return null; }
     }
     return db.collection("activeCalls").doc(callId).get().then(function(snap) {
       if (!snap.exists) return;
@@ -11542,7 +11548,7 @@ function mAddCrew() {
   }).then(function(){ mToast("✓ Crew added"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mRemoveCrew(crewIdx) {
-  if (!confirm("Remove Crew " + (crewIdx+1) + " from this call?")) return;
+  if (!hzOk(arguments, this, "Remove Crew " + (crewIdx+1) + " from this call?")) return;
   var callId = mDispSelectedCallId;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
@@ -11884,7 +11890,7 @@ function mConfirmBLS() {
   }).then(function() { mTextResourceToAssigned(mDispCallCache[mDispSelectedCallId] || {}, "🔵 BLS MUTUAL AID", "BLS: " + provider + (unit ? " (" + unit + ")" : "") + (eta ? " ETA " + eta + " min" : "")); }).then(function() { mCloseAllSheets(); mToast("🔵 BLS Requested"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mCancelBLS() {
-  if (!confirm("Cancel BLS mutual aid for this call?")) return;
+  if (!hzOk(arguments, this, "Cancel BLS mutual aid for this call?")) return;
   db.collection("activeCalls").doc(mDispSelectedCallId).update({ blsActivated: false, blsProvider: "", blsEta: "", updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("BLS Mutual Aid Cancelled", "✕", "var(--gray)", "event")) })
     .then(function(){ mToast("BLS cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -12330,7 +12336,7 @@ function mCompleteCall() {
     ]);
     return;
   }
-  if (!confirm("Mark this call as complete?")) return;
+  if (!hzOk(arguments, this, "Mark this call as complete?")) return;
   mCompleteCallGo();
 }
 var mRigNotHomeWhy = "";
@@ -12428,7 +12434,7 @@ function mAutoScrollToNextStep() {
   var content = document.getElementById("m-dd-content");
   var scroller = document.getElementById("m-dd-scroll");
   if (!content || !scroller) return;
-  // Priority: a real prompt (Select Response Mode / Select Crew Rig / Set Call Disposition / Set Status…)
+  // Priority: a real hzAsk(arguments, this, Select Response Mode / Select Crew Rig / Set Call Disposition / Set Status…)
   //  → a pulsing action button (Mark … On Scene, Rig Responding, Onboard …)
   //  → the empty next-slot "Assign Unit" badge (lowest — it's always present while a slot is open)
   var flashes = Array.prototype.slice.call(content.querySelectorAll(".m-flash"));
@@ -13070,7 +13076,7 @@ function hzErvCheckInOut(id, kind) {
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
   if (kind === "in" && !hzErvCanIn(t)) { hzErvToast("You can check in from 30 minutes before your start time until it ends.", true); return; }
   var early = kind === "out" && Date.now() < t.endMs - 5 * 60000;
-  if (kind === "out" && !confirm("Check out and return " + t.ervUnit + "?" + (early ? "\nYour booking ends " + hzErvTime(t.endMs) + " — the rest of it will be open for someone else to request." : ""))) return;
+  if (kind === "out" && !hzOk(arguments, this, "Check out and return " + t.ervUnit + "?" + (early ? "\nYour booking ends " + hzErvTime(t.endMs) + " — the rest of it will be open for someone else to request." : ""))) return;
   var upd = { lastActionByUid: HZ_ERV.uid }; upd[kind === "in" ? "checkedInAt" : "checkedOutAt"] = Date.now();
   db.collection("tickets").doc(id).update(upd)
     .then(function(){ hzErvToast(kind === "in" ? "✅ Checked in — " + t.ervUnit + " is yours on calls until you check out" : "🏁 Checked out — " + t.ervUnit + " returned" + (early ? "; the rest of the shift is open again" : "")); hzErvRefreshTicket(id); })
@@ -13422,7 +13428,7 @@ function hzErvDecide(id, to) {
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
   if (to === "approved" && hzErvOverlaps(hzErvBlocking(t.ervUnit, t.id), t.startMs, t.endMs).length) { hzErvToast("That time is already booked.", true); return; }
   var reason = "";
-  if (to === "denied") { reason = prompt("Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?\nReason (optional, they will see it):", ""); if (reason === null) return; }
+  if (to === "denied") { reason = hzAsk(arguments, this, "Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?\nReason (optional, they will see it):", ""); if (reason === null) return; }
   var me = HZ_ERV.me || {};
   db.collection("tickets").doc(id).update({ ervStatus: to, status: "resolved", ervReason: String(reason || "").trim().slice(0, 300), ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
     ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
@@ -13431,7 +13437,7 @@ function hzErvDecide(id, to) {
 }
 function hzErvCancel(id) {
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
-  if (!confirm("Cancel your vehicle usage request for " + hzErvRange(t.startMs, t.endMs) + "?")) return;
+  if (!hzOk(arguments, this, "Cancel your vehicle usage request for " + hzErvRange(t.startMs, t.endMs) + "?")) return;
   var me = HZ_ERV.me || {};
   db.collection("tickets").doc(id).update({ ervStatus: "cancelled", status: "resolved", ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
     ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
@@ -14359,7 +14365,7 @@ function hzAvRemindNow() {
     var names = list.map(function(x){ return x.unit + (x.name ? " " + x.name : ""); });
     var msg = "Text the weekday availability reminder (" + r.week + ") to " + list.length + " Daytime Responder" + (list.length === 1 ? "" : "s") + " who haven't finished?\n\n" + names.slice(0, 25).join("\n") + (names.length > 25 ? "\n…and " + (names.length - 25) + " more" : "")
       + (r.testMode ? "\n\n🧪 You're in Test Mode — the text goes only to YOU." : "");
-    if (!confirm(msg)) return;
+    if (!hzOk(arguments, this, msg)) return;
     return rel("availRemindNow", { mode: "run" }).then(function(x) {
       hzAvToast(x && x.testMode ? "🧪 Test Mode: reminder texted only to you" : "✓ Reminder texted to " + ((x && x.sent) || 0) + " phone" + ((x && x.sent) === 1 ? "" : "s"));
     });
@@ -14885,7 +14891,7 @@ function hzScAsksHtml() {
 }
 function hzScDecide(id, ok) {
   var c = (HZ_SC.list || []).filter(function(x){ return x.id === id; })[0]; if (!c) return;
-  if (!confirm((ok ? "Approve" : "Decline") + " — " + c.fromUnit + "'s " + (c.type === "swap" ? "swap" : "cover") + " for " + hzScLabel(c.date) + "?")) return;
+  if (!hzOk(arguments, this, (ok ? "Approve" : "Decline") + " — " + c.fromUnit + "'s " + (c.type === "swap" ? "swap" : "cover") + " for " + hzScLabel(c.date) + "?")) return;
   var rel = typeof hzRelay === "function" ? hzRelay : (typeof mRelay === "function" ? mRelay : null), me = HZ_SC.me || {};
   var direct = function() { return db.collection("shiftCovers").doc(id).update({ status: ok ? "accepted" : "declined", decidedAt: new Date().toISOString(), decidedBy: String(me.unit || "") }); };
   (rel ? rel("shiftCoverDecide", { id: id, ok: !!ok }) : Promise.reject(new Error("not found")))
@@ -14947,7 +14953,7 @@ function hzScSubmit() {
 }
 function hzScCancel(id) {
   var c = (HZ_SC.list || []).filter(function(x){ return x.id === id; })[0]; if (!c) return;
-  if (!confirm("Cancel this " + (c.status === "pending" ? "request" : (c.type === "swap" ? "swap" : "cover")) + " for " + hzScLabel(c.date) + "?" + (c.fromUid === HZ_SC.uid ? "\nYou'll be back on " + hzScLabel(c.date) + "." : ""))) return;
+  if (!hzOk(arguments, this, "Cancel this " + (c.status === "pending" ? "request" : (c.type === "swap" ? "swap" : "cover")) + " for " + hzScLabel(c.date) + "?" + (c.fromUid === HZ_SC.uid ? "\nYou'll be back on " + hzScLabel(c.date) + "." : ""))) return;
   var me = HZ_SC.me || {};
   db.collection("shiftCovers").doc(id).update({ status: "cancelled", decidedAt: new Date().toISOString(), decidedBy: String(me.unit || "") })
     .then(function(){ hzScToast("Cancelled"); }).catch(function(e){ hzScToast("Not cancelled: " + e.message, true); });
@@ -15607,7 +15613,7 @@ function hzTlLabor() {
     + (n ? '<div class="hz-tl-vit"><div><span>Lasting</span><b>' + hzTlMmss(aD) + '</b><small>average, last ' + durs.length + '</small></div><div><span>Apart</span><b>' + (aG ? hzTlMmss(aG) : '—') + '</b><small>start to start</small></div><div><span>Counted</span><b>' + n + '</b><small>contractions</small></div></div>' : '')
     + alert
     + (rows ? '<div class="hz-tl-tbl hz-tl-lab">' + rows + '</div>' : '')
-    + '<div class="hz-tl-acts">' + (n || L.cur ? '<button class="hz-tl-btn" onclick="if(confirm(\'Clear all contractions?\')){HZ_TL.lab={list:[],cur:null};hzTlLabSave();hzTlDraw()}">Clear</button>' : '') + '</div>'
+    + '<div class="hz-tl-acts">' + (n || L.cur ? '<button class="hz-tl-btn" onclick="if(hzOk(arguments, this, \'Clear all contractions?\')){HZ_TL.lab={list:[],cur:null};hzTlLabSave();hzTlDraw()}">Clear</button>' : '') + '</div>'
     + '<div class="hz-tl-note">Times are kept on this phone until you clear them, even if you close Tools. "Apart" is from the start of one contraction to the start of the next. NJ signs of imminent delivery (p70): membrane rupture or bloody show, urge to move bowels, urge to push. Delivery is imminent when there is crowning (p69).</div>';
 }
 
@@ -16145,7 +16151,7 @@ function hzTrConvo() {
       + (l.clarity === "partly" ? '<div class="hz-tr-warn">Partly hard to hear — confirm anything important.</div>' : '') + (l.note ? '<div class="hz-tr-back">⚠️ ' + hzTlEsc(l.note) + '</div>' : '')
       + (l.heard ? '<div class="hz-tr-sm"' + (rtl ? ' dir="rtl"' : '') + '>' + hzTlEsc(l.heard) + '</div>' : '') + '</div>';
   }).reverse().join("");
-  return '<div class="hz-tl-sec">Conversation <button class="hz-tl-link" style="float:right;color:#d4a017;-webkit-text-fill-color:#d4a017" onclick="if(confirm(\'Clear the conversation?\')){HZ_TL.tr.lines=[];hzTlDraw()}">clear</button></div><div class="hz-tr-convo">' + rows + '</div>';
+  return '<div class="hz-tl-sec">Conversation <button class="hz-tl-link" style="float:right;color:#d4a017;-webkit-text-fill-color:#d4a017" onclick="if(hzOk(arguments, this, \'Clear the conversation?\')){HZ_TL.tr.lines=[];hzTlDraw()}">clear</button></div><div class="hz-tr-convo">' + rows + '</div>';
 }
 
 // ── 💊 Med Lookup (12.324): the server (medLookup) asks the FDA drug label (openFDA) — misspellings and brand names are
@@ -16738,5 +16744,96 @@ function hzZelloSendTone(btn, kind) {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", watch); else watch();
 })();
 </script>
+<script id="hz-native-dialogs">
+// 8.49 / 12.411 (Sam): "all popups native, not system popups" — the browser's alert / confirm / prompt boxes are
+// replaced by the app's own black-and-gold box everywhere.
+//   alert(m)                          → hzDialog, OK only (window.alert is replaced, so every alert is covered)
+//   if (!hzOk(arguments, this, m)) …  → was confirm(m): first time it opens the box and returns false (the code stops
+//                                       where it already stopped on Cancel); on OK the same function runs again with the
+//                                       same arguments and this time hzOk returns true at once. Nothing before the
+//                                       question changes anything (checked for every one when this was added).
+//   hzAsk(arguments, this, m, def)    → was prompt(m, def): null first time, the typed text on the re-run
+//   hzAnswer(arguments, this, m, yes, no) → a Yes/No question where both answers go on: undefined first time
+//                                       (the caller returns), true/false on the re-run
+var HZ_DLG_PASS = new Map(), HZ_DLG_N = 0;
+function hzDlgEsc(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }).replace(/\n/g, "<br>"); }
+function hzDialog(o) {
+  o = o || {};
+  return new Promise(function(resolve) {
+    var wrap = document.createElement("div"); wrap.className = "hz-dlg"; wrap.setAttribute("role", "dialog"); wrap.setAttribute("aria-modal", "true");
+    var danger = o.kind === "confirm" && /\b(delete|remove|clear|cancel|deny|reset|wipe|discard|erase|sign out|log out|undo|revoke|kick|out of service)\b/i.test(String(o.msg || ""));
+    var okText = o.okText || (o.kind === "alert" ? "OK" : o.kind === "answer" ? "Yes" : danger ? "Yes, do it" : "OK");
+    var noText = o.noText || (o.kind === "answer" ? "No" : "Cancel");
+    wrap.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg">' + hzDlgEsc(o.msg) + '</div>' +
+      (o.kind === "prompt" ? '<input class="hz-dlg-in" type="text" autocomplete="off">' : "") +
+      '<div class="hz-dlg-row">' + (o.kind === "alert" ? "" : '<button type="button" class="hz-dlg-no">' + hzDlgEsc(noText) + '</button>') +
+      '<button type="button" class="hz-dlg-ok' + (danger ? " hz-dlg-danger" : "") + '">' + hzDlgEsc(okText) + '</button></div></div>';
+    var inp = wrap.querySelector(".hz-dlg-in"); if (inp) inp.value = o.def == null ? "" : String(o.def);
+    var done = false;
+    var finish = function(v) { if (done) return; done = true; wrap.remove(); window.removeEventListener("popstate", back); document.removeEventListener("keydown", key, true); resolve(v); };
+    var cancelV = o.kind === "prompt" ? null : (o.kind === "alert" ? undefined : false);
+    var okV = function() { return o.kind === "prompt" ? (inp ? inp.value : "") : (o.kind === "alert" ? undefined : true); };
+    var back = function() { finish(cancelV); };
+    var key = function(e) { if (e.key === "Escape") { e.preventDefault(); finish(cancelV); } else if (e.key === "Enter" && (o.kind !== "prompt" || e.target === inp)) { e.preventDefault(); finish(okV()); } };
+    wrap.querySelector(".hz-dlg-ok").onclick = function() { finish(okV()); };
+    var no = wrap.querySelector(".hz-dlg-no"); if (no) no.onclick = function() { finish(cancelV); };
+    wrap.addEventListener("click", function(e) { if (e.target === wrap && o.kind !== "answer") finish(cancelV); });
+    window.addEventListener("popstate", back); document.addEventListener("keydown", key, true);
+    document.body.appendChild(wrap);
+    setTimeout(function() { if (inp) { inp.focus(); inp.select(); } else { var b = wrap.querySelector(".hz-dlg-ok"); if (b) b.focus(); } }, 30);
+  });
+}
+function hzDlgGate(kind, args, self, msg, def, yes, no) {
+  var fn = args && args.callee, k = kind + "|" + String(msg);
+  var m = fn && HZ_DLG_PASS.get(fn);
+  if (m && Object.prototype.hasOwnProperty.call(m, k)) return m[k];   // answered — this is the re-run
+  HZ_DLG_N++;
+  hzDialog({ kind: kind, msg: msg, def: def, okText: yes, noText: no }).then(function(v) {
+    if ((kind === "confirm" && v !== true) || (kind === "prompt" && v === null)) { if (fn) HZ_DLG_PASS.delete(fn); return; }
+    if (!fn) return;
+    var mm = HZ_DLG_PASS.get(fn) || {}; mm[k] = v; HZ_DLG_PASS.set(fn, mm);
+    var n0 = HZ_DLG_N;
+    try { fn.apply(self, Array.prototype.slice.call(args)); }
+    finally { if (HZ_DLG_N === n0) HZ_DLG_PASS.delete(fn); }   // no further question on this run — forget the answers
+  });
+  return kind === "prompt" ? null : (kind === "answer" ? undefined : false);
+}
+function hzOk(args, self, msg) { return hzDlgGate("confirm", args, self, msg); }
+function hzAsk(args, self, msg, def) { return hzDlgGate("prompt", args, self, msg, def); }
+function hzAnswer(args, self, msg, yes, no) { return hzDlgGate("answer", args, self, msg, undefined, yes, no); }
+window.alert = function(m) { hzDialog({ kind: "alert", msg: m }); };
+(function() {
+  var P = "html body:not(#hzA):not(#hzB):not(#hzC) .hz-dlg", st = document.createElement("style");
+  st.textContent = P + "{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}" +
+    P + " .hz-dlg-box{background:#000 !important;border:2px solid #d4a017 !important;border-radius:14px;padding:18px 16px 16px;width:100%;max-width:380px;box-shadow:0 10px 30px rgba(0,0,0,.5);text-align:center}" +
+    P + " .hz-dlg-msg{color:#d4a017 !important;-webkit-text-fill-color:#d4a017;font-size:.98rem;line-height:1.45;margin-bottom:16px;word-break:break-word}" +
+    P + " .hz-dlg-in{display:block;width:100%;box-sizing:border-box;margin:-4px 0 14px;padding:11px 12px;border-radius:9px;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;font-size:1rem;outline:none}" +
+    P + " .hz-dlg-row{display:flex;gap:10px}" +
+    P + " .hz-dlg-row button{flex:1;min-height:48px;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:none !important}" +
+    P + " .hz-dlg-no{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important}" +
+    P + " .hz-dlg-ok{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000;border:2px solid #000 !important}" +
+    P + " .hz-dlg-ok.hz-dlg-danger{background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;border-color:#c62828 !important}";
+  (document.head || document.documentElement).appendChild(st);
+})();
+</script>
+<style id="hz-tr-look">/* 8.49 / 12.411 (Sam): Transporting Units sheet in black and gold — hospital list and its closed box black with gold border and text (distance light gold), the picked hospital solid gold with black text; divert pills stay green / red; search box black/gold; "Select Transport Destination" when it's still needed = solid red bar with white text that glows (no more pink-on-pink); Confirm Transport gold with black text */
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-row.hz-hp-row,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-head.hz-hp-head{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-n small{color:#e6cf8a !important;-webkit-text-fill-color:#e6cf8a}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-n small.dv{color:#ff6b6b !important;-webkit-text-fill-color:#ff6b6b}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-ph{color:rgba(212,160,23,.65) !important;-webkit-text-fill-color:rgba(212,160,23,.65)}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-car,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-upd,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-other .hz-hp-n{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-upd.old{color:#c62828 !important;-webkit-text-fill-color:#c62828}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-row.hz-hp-row.on,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-head.hz-hp-head.picked{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000;border-color:#000 !important}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-row.on .hz-hp-n small,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-head.picked .hz-hp-n small,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-head.picked .hz-hp-car,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-row.on .hz-hp-n:before{color:#000 !important;-webkit-text-fill-color:#000}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-pill.ok{background:#34c759 !important;color:#000 !important;-webkit-text-fill-color:#000}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-pill.no{background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transport input.m-disp-input,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transport select.m-disp-input{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transport input.m-disp-input::placeholder{color:rgba(212,160,23,.6) !important;-webkit-text-fill-color:rgba(212,160,23,.6)}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transport #m-tr-hosp-results{background:#000 !important;border:2px solid #d4a017 !important}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transport #m-tr-hosp-results *{color:#d4a017 !important;-webkit-text-fill-color:#d4a017;background-color:transparent !important;border-color:rgba(212,160,23,.3) !important}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transport .m-disp-label.m-disp-label.m-flash{animation:hzTrNeed 1.2s ease-in-out infinite !important;background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;border-radius:6px;padding:5px 9px !important;display:inline-block}
+@keyframes hzTrNeed{0%,100%{box-shadow:0 0 0 0 rgba(198,40,40,0)}50%{box-shadow:0 0 12px 3px rgba(198,40,40,.6)}}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transport > button[onclick^="mConfirmTransport"]{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000;border:2px solid #000 !important;box-shadow:none !important;font-weight:800 !important}
+</style>
 </body>
 </html>
