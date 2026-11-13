@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.45"; window.M_BUILD = BUILD;
+  var BUILD = "8.46"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -697,6 +697,16 @@ html[data-theme="basic"] .m-cl-als{color:#b42318 !important}
 .m-cl-f input[type=date]::-webkit-date-and-time-value{text-align:left}
 .m-cl-wide{grid-column:1 / -1}
 .m-cl-btns{display:flex;gap:8px}
+.m-cl-fbar{display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid var(--card-border);flex-direction:row-reverse}
+.m-cl-fbar button{height:40px;border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.74rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;cursor:pointer}
+#m-cl-ftoggle{flex:1;display:flex;align-items:center;gap:8px;padding:0 12px;text-align:left;min-width:0}
+#m-cl-fsum{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:inherit;font-weight:600;font-size:0.68rem;letter-spacing:0.02em;text-transform:none;opacity:0.85}
+#m-cl-farrow{font-size:0.8rem}
+.m-cl-fbar #m-cl-export{flex:0 0 auto;padding:0 14px}
+.m-cl-filters.m-cl-folded{display:none}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-cl-ftoggle{background:#000 !important;color:#d4a017 !important;border:2px solid #d4a017 !important;box-shadow:none !important}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-cl-export{background:#000 !important;color:#d4a017 !important;border:2px solid #d4a017 !important;box-shadow:none !important}
+html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-cl-ftoggle.m-cl-fon{background:#d4a017 !important;color:#000 !important;border-color:#000 !important}
 .m-cl-btns button{height:40px;border-radius:8px;font-family:'Oswald',sans-serif;font-size:0.74rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;cursor:pointer}
 .m-cl-go{flex:2}
 .m-cl-b2{flex:1;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);color:var(--white)}
@@ -1637,7 +1647,12 @@ html[data-theme="basic"][data-theme] body:not(#hzA):not(#hzB) #m-pg-codes .m-gri
     <span style="display:none;font-size:0.55rem;letter-spacing:0.06em;text-transform:uppercase;color:#7dedb5;border:1px solid rgba(76,175,128,0.4);border-radius:5px;padding:3px 7px;font-family:'Oswald',sans-serif;font-weight:700">HIPAA Secured</span><!-- 12.181 (Sam): HIPAA badge removed -->
   </div>
   <!-- 4.83: tidy filters — labelled From / To (always filled in), two per row, full-width search, equal buttons -->
-  <div class="m-cl-filters">
+  <!-- 8.46 (Sam): filters fold away (folded by default); the bar says what's on -->
+  <div class="m-cl-fbar">
+    <button type="button" id="m-cl-export" class="m-cl-b2" onclick="mExportCallLogs()" style="display:none">⬇ Excel</button>
+    <button type="button" id="m-cl-ftoggle" onclick="mClFiltToggle()"><span id="m-cl-flabel">＋ Add filter</span><span id="m-cl-fsum"></span><span id="m-cl-farrow">▾</span></button>
+  </div>
+  <div class="m-cl-filters m-cl-folded" id="m-cl-filters">
     <label class="m-cl-f"><span>From</span><input type="date" id="m-cl-from" class="m-disp-input"></label>
     <label class="m-cl-f"><span>To</span><input type="date" id="m-cl-to" class="m-disp-input"></label>
     <label class="m-cl-f"><span>Zone</span><select id="m-cl-zone" class="m-disp-input">
@@ -1657,10 +1672,9 @@ html[data-theme="basic"][data-theme] body:not(#hzA):not(#hzB) #m-pg-codes .m-gri
     </select></label>
     <label class="m-cl-f m-cl-wide"><span>Nature</span><select id="m-cl-nature" class="m-disp-input"><option value="">All Natures</option></select></label>
     <label class="m-cl-f"><span>Unit</span><input type="text" id="m-cl-unit" class="m-disp-input" placeholder="MC-##" autocapitalize="characters"></label>
-    <label class="m-cl-f"><span>Search</span><input type="search" id="m-cl-q" class="m-disp-input" placeholder="Address, hospital…" onkeydown="if(event.key==='Enter')mLoadCallLogs()"></label>
+    <label class="m-cl-f"><span>Search</span><input type="search" id="m-cl-q" class="m-disp-input" placeholder="Address, hospital…" onkeydown="if(event.key==='Enter'){mLoadCallLogs();mClFiltToggle(false)}"></label>
     <div class="m-cl-btns m-cl-wide">
-      <button type="button" class="m-cl-go" onclick="mLoadCallLogs()" style="background:#1d3f72;color:#ffffff;border:1px solid #1d3f72">🔍 Search</button>
-      <button type="button" id="m-cl-export" class="m-cl-b2" onclick="mExportCallLogs()" style="display:none">⬇ Excel</button>
+      <button type="button" class="m-cl-go" onclick="mLoadCallLogs();mClFiltToggle(false)" style="background:#1d3f72;color:#ffffff;border:1px solid #1d3f72">🔍 Search</button>
       <button type="button" class="m-cl-b2" onclick="mClearCLFilters()">Clear</button>
     </div>
   </div>
@@ -6303,6 +6317,7 @@ var mAllCallLogs = [];
 function mLoadCallLogs() {
   // From / To always filled in (last 30 days) so the boxes never show "mm/dd/yyyy"
   hzClFreshDates("m-cl-from", "m-cl-to");   // filled-in dates follow today (12.57 / 5.16)
+  mClFiltSummary();   // 8.46
   var el = document.getElementById("m-cl-list");
   if (!hzLogsGate(el, mLoadCallLogs)) return;   // 12.115: 🔒 code first
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading...</div>';
@@ -6603,6 +6618,30 @@ function mPopulateCLNatureFilter() {
   var sel = document.getElementById("m-cl-nature");
   if (!sel || sel.options.length > 1) return;
   sel.innerHTML = '<option value="">All Natures</option>' + hzNatureSorted().map(function(nn){ return '<option value="' + nn.value.replace(/"/g,"&quot;") + '">' + mEscHtml(nn.text) + '</option>'; }).join("") + '<option value="__custom__">✏️ Other / Custom</option>';
+}
+// 8.46 (Sam): the filter panel folds; the bar shows the dates and how many filters are on
+function mClFiltToggle(open) {
+  var f = document.getElementById("m-cl-filters"); if (!f) return;
+  var show = open === undefined ? f.classList.contains("m-cl-folded") : !!open;
+  f.classList.toggle("m-cl-folded", !show);
+  var a = document.getElementById("m-cl-farrow"); if (a) a.textContent = show ? "▴" : "▾";
+  mClFiltSummary();
+  if (show && window.hzDarkPass) setTimeout(window.hzDarkPass, 30);   // paint the fields now they show
+}
+function mClFiltSummary() {
+  var g = function(id) { var e = document.getElementById(id); return e ? String(e.value || "").trim() : ""; };
+  var fromEl = document.getElementById("m-cl-from"), toEl = document.getElementById("m-cl-to");
+  var n = 0;
+  if (fromEl && fromEl.dataset.auto && fromEl.value !== fromEl.dataset.auto) n++;
+  if (toEl && toEl.dataset.auto && toEl.value !== toEl.dataset.auto && !(fromEl && fromEl.value !== fromEl.dataset.auto)) n++;
+  ["m-cl-zone", "m-cl-disp", "m-cl-nature", "m-cl-unit", "m-cl-q"].forEach(function(id) { if (g(id)) n++; });
+  var fmt = function(v) { if (!v) return ""; var d = new Date(v + "T12:00:00"); return isNaN(d) ? v : d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
+  var dates = (g("m-cl-from") || g("m-cl-to")) ? fmt(g("m-cl-from")) + " – " + fmt(g("m-cl-to")) : "";
+  var f = document.getElementById("m-cl-filters"), open = f && !f.classList.contains("m-cl-folded");
+  var lab = document.getElementById("m-cl-flabel"), sum = document.getElementById("m-cl-fsum"), btn = document.getElementById("m-cl-ftoggle");
+  if (lab) lab.textContent = open ? "Filters" : (n ? "Filters · " + n + " on" : "＋ Add filter");
+  if (sum) sum.textContent = dates;
+  if (btn) btn.classList.toggle("m-cl-fon", n > 0);
 }
 function mClearCLFilters() {
   var today = new Date();
