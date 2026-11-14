@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.53"; window.M_BUILD = BUILD;
+  var BUILD = "8.54"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -11390,27 +11390,35 @@ function mRemoveEmptySlot(crewIdx, role, label) {
   mRemoveUnitSlot(crewIdx, role);
 }
 // 8.52 (Sam): removing a unit asks why (three reasons), then the unit and the notification group are told it was cancelled
-var M_UNIT_CANCEL_REASONS = ["Unit assigned by mistake", "Unit was reassigned to an alternate call", "Unit self canceled due to inability to respond"];
+var M_UNIT_CANCEL_REASONS = ["Unit assigned by mistake", "Unit was reassigned to an alternate call", "Unit self canceled due to inability to respond",
+  "Cancelled due to proximity", "Dispatcher discretion", "Cancelled by supervisor", "Cancelled by members on scene"];   // 8.54 (Sam): four more
 function mRemoveUnitPrompt(crewIdx, role, unit) {
   if (!unit || unit === "__added__") { mRemoveUnitSlot(crewIdx, role); return; }   // an empty "Add Responder" slot — nothing to tell anyone
   var old = document.getElementById("hz-rm-unit"); if (old) old.remove();
   var esc = function(t) { return String(t || "").replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
   var o = document.createElement("div"); o.id = "hz-rm-unit"; o.className = "hz-dlg"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true");
-  o.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg"><b style="font-size:1.1rem">Remove ' + esc(unit) + ' from this call</b><br>Why is the unit being removed?</div>' +
-    '<div class="hz-rm-list">' + M_UNIT_CANCEL_REASONS.map(function(r, i) { return '<button type="button" class="hz-rm-r" data-i="' + i + '">' + esc(r) + '</button>'; }).join("") + '</div>' +
-    '<div class="hz-dlg-row"><button type="button" class="hz-dlg-no">Cancel — keep the unit</button></div>' +
+  // 8.54 (Sam): one large box to type the reason (no reason buttons)
+  o.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg"><b style="font-size:1.1rem">Remove ' + esc(unit) + ' from this call</b><br>Why is this responder being removed?</div>' +
+    '<textarea class="hz-rm-why" rows="5" maxlength="300" placeholder="Type the reason…"></textarea>' +
+    '<div class="hz-dlg-row"><button type="button" class="hz-dlg-no">Cancel</button><button type="button" class="hz-dlg-ok hz-dlg-danger hz-rm-go" disabled>Remove &amp; notify</button></div>' +
     '<div class="hz-rm-note">' + esc(unit) + ', the other units on this call and the notification group will be told the unit was cancelled.</div></div>';
   var close = function() { o.remove(); window.removeEventListener("popstate", close); document.removeEventListener("keydown", key, true); };
   var key = function(e) { if (e.key === "Escape") { e.preventDefault(); close(); } };
   o.addEventListener("click", function(e) { if (e.target === o) close(); });
   o.querySelector(".hz-dlg-no").onclick = close;
-  o.querySelectorAll(".hz-rm-r").forEach(function(b) { b.onclick = function() { close(); mRemoveUnitSlot(crewIdx, role, M_UNIT_CANCEL_REASONS[+b.getAttribute("data-i")]); }; });
+  var why = o.querySelector(".hz-rm-why"), go = o.querySelector(".hz-rm-go");
+  why.addEventListener("input", function() { go.disabled = !why.value.trim(); });
+  go.onclick = function() { var r = why.value.trim().replace(/\s+/g, " "); if (!r) { why.focus(); return; } close(); mRemoveUnitSlot(crewIdx, role, r); };
   window.addEventListener("popstate", close); document.addEventListener("keydown", key, true);
   document.body.appendChild(o);
+  setTimeout(function() { try { why.focus(); } catch (e) {} }, 40);
 }
 (function() {
   var P = "html body:not(#hzA):not(#hzB):not(#hzC) #hz-rm-unit", st = document.createElement("style");
-  st.textContent = P + " .hz-rm-list{display:flex;flex-direction:column;gap:8px;margin:-4px 0 12px}" +
+  st.textContent = P + " .hz-rm-why{display:block;width:100%;box-sizing:border-box;min-height:130px;margin:-4px 0 12px;padding:12px;border-radius:10px;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;font-size:1rem;line-height:1.4;resize:vertical;outline:none;font-family:inherit}" +
+    P + " .hz-rm-why::placeholder{color:rgba(212,160,23,.55);-webkit-text-fill-color:rgba(212,160,23,.55)}" +
+    P + " .hz-rm-go:disabled{opacity:.45;cursor:not-allowed}" +
+    P + " .hz-rm-list{display:flex;flex-direction:column;gap:8px;margin:-4px 0 12px}" +
     P + " .hz-rm-r{min-height:50px;border-radius:10px;font-size:.95rem;font-weight:800;cursor:pointer;box-shadow:none !important;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;padding:8px 12px;line-height:1.25}" +
     P + " .hz-rm-r:active{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}" +
     P + " .hz-rm-note{margin-top:10px;font-size:.78rem;color:#e6cf8a !important;-webkit-text-fill-color:#e6cf8a;opacity:.85}";
