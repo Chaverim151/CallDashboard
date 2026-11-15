@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.57"; window.M_BUILD = BUILD;
+  var BUILD = "8.58"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -16915,8 +16915,8 @@ html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transpo
 // One year of finished calls (hzFetchCallLogs) + the open calls, worked out from each call's timeline (callEvents carry
 // exact times): call received → first unit on scene, rig assigned → rig on scene, ALS activated → ALS on scene, each
 // unit's assigned → on scene, dispatcher time to assign, call length. Hours on dispatcher duty aren't recorded anywhere,
-// so they aren't shown. Test Mode calls are left out unless the box is ticked.
-var HZ_REP = { year: new Date().getFullYear(), tests: false, logs: [], open: 0, busy: false };
+// so they aren't shown. Test Mode calls are never counted; no lock code (Sam, 8.58 / 12.422).
+var HZ_REP = { year: new Date().getFullYear(), tests: false /* Sam: test calls never count */, logs: [], open: 0, busy: false };
 function hzRepEsc(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function hzRepDur(sec) {
   if (sec == null || !isFinite(sec)) return "—";
@@ -17046,12 +17046,12 @@ function hzRepCsv() {
   var R = HZ_REP.last; if (!R || !R.rows.length) { if (typeof alert === "function") alert("No calls in " + HZ_REP.year + " to download."); return; }
   var q = function(v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   var s = function(x) { return x == null ? "" : Math.round(x); };
-  var lines = [["Call ID", "Date", "Time", "Address", "Nature", "Zone", "Dispatcher", "Outcome", "Units", "ALS", "Seconds to first assign", "Seconds to first unit on scene", "Seconds rig assigned to rig on scene", "Seconds ALS activated to ALS on scene", "Call length (seconds)", "Test call"].join(",")];
+  var lines = [["Call ID", "Date", "Time", "Address", "Nature", "Zone", "Dispatcher", "Outcome", "Units", "ALS", "Seconds to first assign", "Seconds to first unit on scene", "Seconds rig assigned to rig on scene", "Seconds ALS activated to ALS on scene", "Call length (seconds)"].join(",")];
   R.rows.slice().sort(function(a, b) { return a.created - b.created; }).forEach(function(r) {
     var l = r.l, d = r.created;
     lines.push([typeof hzCallNo === "function" ? hzCallNo(l) : (l.id || ""), d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"),
       String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"), l.address || "", l.callNature || "", l.zone || "", r.dispatcher,
-      r.cancelled ? "Cancelled" : (r.disp || "Completed"), r.units.join(" "), r.als ? "Yes" : "", s(r.toAssign), s(r.toScene), s(r.rigResp), s(r.alsResp), s(r.length), l.testMode ? "Yes" : ""].map(q).join(","));
+      r.cancelled ? "Cancelled" : (r.disp || "Completed"), r.units.join(" "), r.als ? "Yes" : "", s(r.toAssign), s(r.toScene), s(r.rigResp), s(r.alsResp), s(r.length)].map(q).join(","));
   });
   var blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
   var name = "Reports_" + HZ_REP.year + ".csv";
@@ -17061,11 +17061,9 @@ function hzRepCsv() {
 }
 function hzRepOpen() {
   var host = document.getElementById("hz-rep"); if (!host) return;
-  if (typeof hzLogsGate === "function" && !hzLogsGate(host, hzRepOpen)) return;   // same 🔒 code as Call Logs
   var y0 = new Date().getFullYear(), years = []; for (var y = y0; y >= 2025; y--) years.push(y);
   host.innerHTML = '<div class="hz-rep-top"><select id="hz-rep-year" onchange="HZ_REP.year=+this.value;hzRepLoad()">' + years.map(function(y) { return '<option value="' + y + '"' + (y === HZ_REP.year ? " selected" : "") + '>' + y + '</option>'; }).join("") + '</select>' +
     '<button type="button" class="hz-rep-dl" onclick="hzRepCsv()">⬇ Download CSV</button></div>' +
-    '<label class="hz-rep-tests"><input type="checkbox" id="hz-rep-tests"' + (HZ_REP.tests ? " checked" : "") + ' onchange="HZ_REP.tests=this.checked;hzRepLoad()"> Include Test Mode calls</label>' +
     '<div id="hz-rep-body"></div>';
   hzRepLoad();
 }
