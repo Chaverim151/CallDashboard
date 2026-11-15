@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.58"; window.M_BUILD = BUILD;
+  var BUILD = "8.59"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -16971,7 +16971,7 @@ function hzRepCall(l) {
 }
 function hzRepCompute(logs, openCount, year) {
   var rows = logs.map(hzRepCall).filter(Boolean);
-  var R = { year: year, n: rows.length, done: 0, cancelled: 0, transports: 0, rma: 0, als: 0, open: openCount || 0, months: [0,0,0,0,0,0,0,0,0,0,0,0], rows: rows };
+  var R = { year: year, n: rows.length + (openCount || 0), done: 0, cancelled: 0, transports: 0, rma: 0, als: 0, open: openCount || 0, months: [0,0,0,0,0,0,0,0,0,0,0,0], rows: rows };
   var toScene = [], rigResp = [], alsResp = [], unitAll = [], perUnit = {}, perD = {};
   rows.forEach(function(r) {
     R.months[r.created.getMonth()]++;
@@ -16992,6 +16992,8 @@ function hzRepCompute(logs, openCount, year) {
     if (r.length != null) d.length.push(r.length);
   });
   var nowY = new Date().getFullYear(), monthsSoFar = year < nowY ? 12 : year > nowY ? 0 : new Date().getMonth() + 1;
+  var firstM = R.months.findIndex(function(v) { return v > 0; });   // don't average over months before calls were in the system
+  if (firstM > 0 && monthsSoFar) monthsSoFar = Math.max(1, monthsSoFar - firstM);
   R.perMonth = monthsSoFar ? rows.length / monthsSoFar : null;
   R.toScene = { avg: hzRepAvg(toScene), n: toScene.length };
   R.rigResp = { avg: hzRepAvg(rigResp), n: rigResp.length };
@@ -16999,7 +17001,9 @@ function hzRepCompute(logs, openCount, year) {
   R.unitResp = { avg: hzRepAvg(unitAll), n: unitAll.length };
   R.units = Object.keys(perUnit).map(function(u) { var x = perUnit[u]; return { unit: u, calls: x.calls, n: x.resp.length, avg: hzRepAvg(x.resp) }; })
     .sort(function(a, b) { return b.calls - a.calls || a.unit.localeCompare(b.unit, undefined, { numeric: true }); });
-  var timed = R.units.filter(function(u) { return u.n; }).sort(function(a, b) { return a.avg - b.avg; });
+  var timed = R.units.filter(function(u) { return u.n >= 3; });   // one lucky call shouldn't make a unit "quickest"
+  if (!timed.length) timed = R.units.filter(function(u) { return u.n; });
+  timed.sort(function(a, b) { return a.avg - b.avg; });
   R.fastest = timed[0] || null; R.slowest = timed.length > 1 ? timed[timed.length - 1] : null;
   var allAssign = [];
   R.dispatchers = Object.keys(perD).map(function(k) { var d = perD[k]; allAssign = allAssign.concat(d.assign);
@@ -17014,7 +17018,7 @@ function hzRepHtml(R) {
   var over = function(n, what) { return n ? "over " + n + " " + what + (n === 1 ? "" : "s") : "no data yet"; };
   var mx = Math.max.apply(null, R.months.concat([1])), mn = ["J","F","M","A","M","J","J","A","S","O","N","D"];
   var h = '<div class="hz-rep-sec"><div class="hz-rep-grid">' +
-    box("Calls", R.n, "") + box("Completed", R.done, "") + box("Cancelled", R.cancelled, "") + box("Still open", R.open, "right now") +
+    box("Calls", R.n, "finished + open") + box("Completed", R.done, "") + box("Cancelled", R.cancelled, "") + box("Still open", R.open, "right now") +
     box("Transports", R.transports, "") + box("RMA", R.rma, "") + box("ALS activated", R.als, "") + box("Average per month", R.perMonth == null ? "—" : R.perMonth.toFixed(1), "") +
     '</div><div class="hz-rep-months">' + R.months.map(function(v, i) { return '<div class="hz-rep-m"><div class="hz-rep-mv">' + (v || "") + '</div><div class="hz-rep-mb" style="height:' + Math.round(v / mx * 60) + 'px"></div><div class="hz-rep-ml">' + mn[i] + '</div></div>'; }).join("") + '</div></div>';
   h += '<div class="hz-rep-sec"><div class="hz-rep-h">Response times</div><div class="hz-rep-note">Worked out from each call\'s timeline. A unit\'s response time runs from when it was assigned to when it was marked on scene; a rig\'s from when the rig was assigned to "On Scene with Rig"; ALS from "ALS Activated" to "ALS On Scene".</div><div class="hz-rep-grid">' +
@@ -17071,7 +17075,7 @@ function hzRepLoad() {
   var body = document.getElementById("hz-rep-body"); if (!body) return;
   body.innerHTML = '<div class="hz-rep-note" style="text-align:center;padding:24px 0">Loading ' + HZ_REP.year + '…</div>';
   var y = HZ_REP.year, from = y + "-01-01", to = y + "-12-31", tests = HZ_REP.tests;
-  var openP = db.collection("activeCalls").get().then(function(snap) {
+  var openP = db.collection("activeCalls").where("status", "==", "active").get().then(function(snap) {   // finished calls also sit in activeCalls
     var n = 0; snap.forEach(function(d) { var c = d.data() || {}; if ((tests || !c.testMode) && String(c.createdAt || "").slice(0, 4) === String(y)) n++; }); return n;
   }).catch(function() { return 0; });
   Promise.all([hzFetchCallLogs(from, to), openP]).then(function(res) {
