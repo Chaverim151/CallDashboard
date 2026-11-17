@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.82"; window.M_BUILD = BUILD;
+  var BUILD = "8.83"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10882,17 +10882,15 @@ function mBuildCrewBlock(call, crew, crewIdx) {
   var filled = respKeys.filter(function(k) { return crew[k] && crew[k] !== "__added__"; });
   var rigSuffix = function(k) { var det = mUdOf(call, crewIdx, k); return det.response === "rig" ? (crew.rig ? " → " + crew.rig : " → Rig") : ""; };
   filled.forEach(function(k) { html += mBuildUnitBox(call, crewIdx, k, ""); });   // 8.79 (Sam): no "Unit 1/2/3" — the box is titled by the responder
-  var emptyKey = "";
-  if (crewIdx === 0 && filled.length < 3) emptyKey = FIXED.filter(function(k) { return !crew[k] || crew[k] === "__added__"; })[0] || "";
-  if (!emptyKey) emptyKey = respKeys.filter(function(k) { return FIXED.indexOf(k) === -1 && (!crew[k] || crew[k] === "__added__"); })[0] || "";
-  if (emptyKey) { mHzEmptyNoPulse = filled.length >= 2; html += mBuildUnitBox(call, crewIdx, emptyKey, "Unit"); mHzEmptyNoPulse = false; }   // pulses only while a 2nd unit is still needed
+  // 8.83 (Sam): no empty "+ Assign Unit" box — Add Responder opens the unit list (and pulses while a 2nd unit is still needed)
+  var hzNeedUnit = crewIdx === 0 && filled.length < 2;
   extras.filter(function(k) { return isSup(k) || isObs(k); }).forEach(function(k) {
     html += mBuildUnitBox(call, crewIdx, k, isSup(k) ? "Supervisor" : "Observer");
   });
   var _rp = mBuildCrewRigPanel(call, crewIdx);
   if (_rp.indexOf("'back_at_base')") === -1) html += _rp;   // a "Mark rig Back at Base" step is shown under Call Disposition instead (11.73 / 4.60)
   html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
-    '<button class="m-disp-btn" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">Add Responder</button>' +
+    '<button class="m-disp-btn' + (hzNeedUnit ? ' hz-pulse-add' : '') + '" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">Add Responder</button>' +
     '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.3);color:#e8a0ff" onclick="mAddExtraRole(' + crewIdx + ',\'supervisor\')">Add Supervisor</button>' +
     '<button class="m-disp-btn" style="flex:1;border-color:rgba(138,154,181,0.3);color:var(--gray)" onclick="mAddExtraRole(' + crewIdx + ',\'observer\')">Add Observer</button>' +
   '</div>';
@@ -11501,8 +11499,9 @@ function mRemoveUnitSlot(crewIdx, role, reason) {
 function mAddExtraRole(crewIdx, base) {
   // 8.82 (Sam): straight to picking the unit — no empty "+ Assign …" box first. The seat is only written when a unit is picked.
   var call = mDispCallCache[mDispSelectedCallId] || {}, crew = (call.crews || [])[crewIdx] || {};
-  var key = base, n = 1;
-  while (crew[key] !== undefined) { key = base + n; n++; }
+  var key = "";
+  if (base === "responder") key = ["primary", "backup", "rigUnit"].filter(function(k) { return !crew[k] || crew[k] === "__added__"; })[0] || "";   // fixed seats first
+  if (!key) { key = base; var n = 1; while (crew[key] !== undefined && crew[key] !== "__added__") { key = base + n; n++; } }
   mOpenAssignSheet(crewIdx, key, "unit");
   var t = document.getElementById("m-assign-title"); if (t) t.textContent = base === "supervisor" ? "Add Supervisor" : base === "observer" ? "Add Observer" : "Add Responder";
 }
@@ -16796,7 +16795,7 @@ function hzZelloSendTone(btn, kind) {
       else if (k === "red" && (bg.a > 0.04 || bw)) { set(el, "background", RED); set(el, "border-color", RED); set(el, "color", "#fff"); next = "red"; }
       else if (k === "navy" && isBtn) { set(el, "background", GOLD); set(el, "color", "#000"); set(el, "border", "2px solid #000"); next = "gold"; }
       else if (!top && !isBtn && !boxed && !(bg && bg.a > 0.01)) { if (bw) set(el, "border-color", ctx === "dark" ? "rgba(212,160,23,.35)" : GOLD); }   // plain dividers: gold line (faint inside a black box)
-      else if (isBtn && (/^mSetUnitResponse\(/.test(el.getAttribute("onclick") || "") || el.classList.contains("hz-empty-btn") || (/^mOpenAssignSheet\(/.test(el.getAttribute("onclick") || "") && /Choose Rig/.test(el.textContent))) && !el.disabled) {   // 8.71: Choose Rig pulses too   // 8.62 / 12.426 (Sam): Scene / Rig not chosen yet — neither looks picked; borders pulse until one is
+      else if (isBtn && (/^mSetUnitResponse\(/.test(el.getAttribute("onclick") || "") || el.classList.contains("hz-empty-btn") || el.classList.contains("hz-pulse-add") || (/^mOpenAssignSheet\(/.test(el.getAttribute("onclick") || "") && /Choose Rig/.test(el.textContent))) && !el.disabled) {   // 8.71: Choose Rig pulses too   // 8.62 / 12.426 (Sam): Scene / Rig not chosen yet — neither looks picked; borders pulse until one is
         el.classList.remove("m-pulse-blue", "m-pulse-gold"); el.classList.add("hz-choose");
         set(el, "background", "#000"); set(el, "color", GOLD); set(el, "-webkit-text-fill-color", GOLD); next = "dark";
       }
