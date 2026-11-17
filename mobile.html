@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.89"; window.M_BUILD = BUILD;
+  var BUILD = "8.91"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10960,7 +10960,8 @@ function mBuildUnitBox(call, crewIdx, role, label) {
       return html;
     }
     var rigAvail = mRigAvailabilityFor(call, crewIdx);
-    var rigLbl = "To Rig" + (crew.rig ? " → " + crew.rig : "");   // rig is chosen once per crew, never per unit
+    var hzLiveRig = hzCrewRigLive(call, crewIdx, role);
+    var rigLbl = "To Rig" + (hzLiveRig ? " → " + hzLiveRig : "");   // rig is chosen once per crew, never per unit
     if (isLoadRig) {
       // LOAD A RIG call: expected flow is Base → load rig → respond with rig. Direct-to-scene is the exception (close by only).
       /* 'Load a Rig call' instructions removed — the response buttons already say what to do */
@@ -11477,6 +11478,15 @@ function mNotifyUnitCancelled(call, unit, reason) {
   // the removed unit already got its own message — leave it out of the group copy (mAdminCopy skips units on the crews)
   mAdminCopy(Object.assign({}, call, { crews: (call.crews || []).concat([{ removed: unit }]) }), "UNIT CANCELLED", unit + " cancelled from this call" + (reason ? " — " + reason : ""), "unitCancelled");
 }
+// 8.90 (Sam): a crew's rig only counts while someone is actually going to it. On a standard call, when the units
+// that chose the rig are removed, the rig id was left behind and every new unit was offered "To Rig → MC-903".
+function hzCrewRigLive(call, crewIdx, exceptRole) {
+  var crew = mCrewOf(call, crewIdx) || {}; if (!crew.rig) return "";
+  if (crewIdx > 0 || call.zone === "secondary" || call.zone === "transfer") return crew.rig;   // extra rig crews / Load a Rig: the rig is the point
+  var ud = call.unitDetails || {};
+  var live = Object.keys(crew).some(function(k) { return k !== "rig" && k !== exceptRole && crew[k] && crew[k] !== "__added__" && (ud[mUdKey(crewIdx, k)] || {}).response === "rig"; });
+  return live ? crew.rig : "";
+}
 function mRemoveUnitSlot(crewIdx, role, reason) {
   var callId = mDispSelectedCallId;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
@@ -11487,6 +11497,9 @@ function mRemoveUnitSlot(crewIdx, role, reason) {
     if (crews[crewIdx]) delete crews[crewIdx][role];
     var ud = call.unitDetails || {};
     delete ud[mUdKey(crewIdx, role)];
+    // 8.90: nobody left going to the rig → release it (standard calls), so the next unit isn't sent "To Rig → <old rig>"
+    var relRig = crews[crewIdx] && crews[crewIdx].rig && !hzCrewRigLive(Object.assign({}, call, { crews: crews, unitDetails: ud }), crewIdx) ? crews[crewIdx].rig : "";
+    if (relRig) delete crews[crewIdx].rig;
     // keep the unit in assignedUnits only if it still holds another slot on this call
     var stillAssigned = crews.some(function(cr){ return Object.keys(cr||{}).some(function(k){ return k!=="rig" && cr[k]===removedUnit; }); });
     var assignedUnits = stillAssigned ? (call.assignedUnits||[]) : (call.assignedUnits||[]).filter(function(u){ return u !== removedUnit; });
@@ -11672,7 +11685,8 @@ function mSetUnitResponse(crewIdx, role, response) {
   var callR0 = mDispCallCache[mDispSelectedCallId] || {}, crewR0 = mCrewOf(callR0, crewIdx);
   // Standard call with the rig known: heading to the rig and the rig responding are ONE step (no separate
   // "Responding to Rig" → "Mark rig Responding to Scene"). Load-a-Rig keeps the gather-and-board steps.
-  var oneStep = response === "rig" && !!crewR0.rig;
+  var liveRig = hzCrewRigLive(callR0, crewIdx, role);
+  var oneStep = response === "rig" && !!liveRig;   // 8.90: a left-over rig doesn't count — the rig gets picked fresh
   var initialStatus = response === "scene" ? "enroute_scene" : (oneStep ? "ambo_responding" : "picking_up_ambo");
   var key = "unitDetails." + mUdKey(crewIdx, role);
   var update = {};
@@ -11684,6 +11698,9 @@ function mSetUnitResponse(crewIdx, role, response) {
   update.callEvents = mEvtUnion(mEvt(unitR + (response === "rig" ? (oneStep ? " — Responding with " + crewR0.rig : " — Responding to Rig") : " — En Route to Scene" + (ervR ? " with " + ervR : "")), response === "rig" ? "🏠" : "🏃", response === "rig" ? "#ffc84a" : "#7ab8f5", "status"));
   update[key + ".statusAt"] = mNowHHMM();
   update.updatedAt = new Date().toISOString();
+  if (crewR0.rig && !liveRig) {   // 8.90: clear the left-over rig so this unit picks one
+    var crewsFix = JSON.parse(JSON.stringify(callR0.crews || [])); if (crewsFix[crewIdx]) delete crewsFix[crewIdx].rig; update.crews = crewsFix;
+  }
   db.collection("activeCalls").doc(callId).update(update).then(function() {
     // Responding to the rig → text that unit where the rig is
     if (response === "rig" && unitR && unitR !== role) mTextRigDirections(unitR, mDispCallCache[callId] || {});
@@ -17157,7 +17174,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   o.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg"><b style="font-size:1.15rem">' + esc(unitId) + ' assigned</b><br>How is ' + esc(unitId) + ' responding?</div>' +
     '<div class="hz-resp-list">' +
       '<button type="button" class="hz-resp-b" data-r="scene">Direct</button>' +
-      (rigOk ? '<button type="button" class="hz-resp-b" data-r="rig">To Rig' + (crew.rig ? ' <span class="hz-resp-rig">→ ' + esc(crew.rig) + '</span>' : '') + '</button>' : '') +
+      (rigOk ? '<button type="button" class="hz-resp-b" data-r="rig">To Rig' + (hzCrewRigLive(call, crewIdx, role) ? ' <span class="hz-resp-rig">→ ' + esc(hzCrewRigLive(call, crewIdx, role)) + '</span>' : '') + '</button>' : '') +
     '</div>' +
     (gone ? '<div class="hz-resp-note">' + esc(gone.why) + ' — this unit goes direct.</div>' : (noRig && !noRig.ok ? '<div class="hz-resp-note">No rig available — ' + esc(noRig.why) + '</div>' : '')) +
     '<button type="button" class="hz-resp-later">Decide later</button></div>';
@@ -17279,6 +17296,9 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   // 8.80 / 12.444 (Sam): "Units", "Crew 1" and "Call Notes" headings bold, like "Call Disposition"
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-units, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-notes, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-disposition > .m-disp-label{font-family:'Oswald',sans-serif !important;font-weight:700 !important;font-size:.95rem !important;letter-spacing:.06em !important;color:#1f2328 !important;-webkit-text-fill-color:#1f2328}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-crew-head{font-weight:700 !important;font-size:.85rem !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}";
+  // 8.90 / 12.454 (Sam): disposition buttons a bit smaller, Cancel Call / Mark Call Complete a bit larger
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button[onclick^='mSetDispositionRMA'], html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button[onclick^='mOpenTransportSheet'], html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button[onclick^='mSetDispositionLinden']{min-height:50px !important;font-size:.95rem !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button[onclick^='mCancelCallPrompt'], html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button[onclick^='mCompleteCall']{min-height:60px !important;font-size:1.05rem !important;font-weight:800 !important;border-radius:10px !important}";
   // 8.60 / 12.424 (Sam): more black space between the unit boxes on a call
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box{margin-bottom:14px !important;padding:10px 12px !important}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #hz-resp-ask .hz-resp-later{border:none !important;box-shadow:none !important;outline:none}";
