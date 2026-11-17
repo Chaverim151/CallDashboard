@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.78"; window.M_BUILD = BUILD;
+  var BUILD = "8.79"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10880,11 +10880,11 @@ function mBuildCrewBlock(call, crew, crewIdx) {
   var respKeys = FIXED.concat(extras.filter(function(k) { return !isSup(k) && !isObs(k); }));
   var filled = respKeys.filter(function(k) { return crew[k] && crew[k] !== "__added__"; });
   var rigSuffix = function(k) { var det = mUdOf(call, crewIdx, k); return det.response === "rig" ? (crew.rig ? " → " + crew.rig : " → Rig") : ""; };
-  filled.forEach(function(k, i) { html += mBuildUnitBox(call, crewIdx, k, "Unit " + (i + 1) + rigSuffix(k)); });
+  filled.forEach(function(k) { html += mBuildUnitBox(call, crewIdx, k, ""); });   // 8.79 (Sam): no "Unit 1/2/3" — the box is titled by the responder
   var emptyKey = "";
   if (crewIdx === 0 && filled.length < 3) emptyKey = FIXED.filter(function(k) { return !crew[k] || crew[k] === "__added__"; })[0] || "";
   if (!emptyKey) emptyKey = respKeys.filter(function(k) { return FIXED.indexOf(k) === -1 && (!crew[k] || crew[k] === "__added__"); })[0] || "";
-  if (emptyKey) html += mBuildUnitBox(call, crewIdx, emptyKey, "Unit " + (filled.length + 1));
+  if (emptyKey) { mHzEmptyNoPulse = filled.length >= 2; html += mBuildUnitBox(call, crewIdx, emptyKey, "Unit"); mHzEmptyNoPulse = false; }   // pulses only while a 2nd unit is still needed
   extras.filter(function(k) { return isSup(k) || isObs(k); }).forEach(function(k) {
     html += mBuildUnitBox(call, crewIdx, k, isSup(k) ? "Supervisor" : "Observer");
   });
@@ -10919,6 +10919,7 @@ function mRigAvailabilityFor(call, crewIdx) {
   });
   return { known: true, ok: false, why: reasons.join(" · ") };
 }
+var mHzEmptyNoPulse = false;
 function mBuildUnitBox(call, crewIdx, role, label) {
   var crew = mCrewOf(call, crewIdx);
   var unit = crew[role];
@@ -10929,13 +10930,13 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // 8.62 / 12.426 (Sam): an empty slot is ONE big box — "+ Assign Unit 2" — no separate label / badge / button
   if (!hasUnit) {
     var rmX = ["primary","backup","rigUnit"].indexOf(role) === -1 ? '<button class="hz-empty-x" title="Remove this slot" onclick="mRemoveEmptySlot(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(label) + '\')">✕</button>' : '';
-    return '<div class="m-disp-unit-box hz-empty-slot"><button class="m-disp-btn hz-empty-btn' + (/^Unit (?:[3-9]|\d{2,})/.test(label) ? ' hz-no-pulse' : '') + '" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'unit\')">+ Assign ' + label + '</button>' + rmX + '</div>';
+    return '<div class="m-disp-unit-box hz-empty-slot"><button class="m-disp-btn hz-empty-btn' + (mHzEmptyNoPulse ? ' hz-no-pulse' : '') + '" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'unit\')">+ Assign ' + label + '</button>' + rmX + '</div>';
   }
   var html = '<div class="m-disp-unit-box">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
-    '<span class="m-disp-label" style="margin-bottom:0">' + label + '</span>' +
+    (label ? '<span class="m-disp-label" style="margin-bottom:0">' + label + '</span>' : '<span class="hz-unit-title">' + mEscHtml(unit) + '</span>') +
     (hasUnit
-      ? '<span style="display:flex;align-items:center;gap:6px"><span style="font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--white);background:rgba(255,255,255,0.08);border-radius:5px;padding:2px 8px">' + unit + '</span><button onclick="mRemoveUnitPrompt(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(unit) + '\')" style="background:none;border:1px solid rgba(255,144,144,0.35);border-radius:5px;color:#ff9090;font-size:0.8rem;cursor:pointer;padding:4px 8px;line-height:1.1">✕</button></span>'
+      ? '<span style="display:flex;align-items:center;gap:6px">' + (label ? '<span style="font-family:\'Oswald\',sans-serif;font-size:0.8rem;font-weight:700;color:var(--white);background:rgba(255,255,255,0.08);border-radius:5px;padding:2px 8px">' + unit + '</span>' : '') + '<button onclick="mRemoveUnitPrompt(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(unit) + '\')" style="background:none;border:1px solid rgba(255,144,144,0.35);border-radius:5px;color:#ff9090;font-size:0.8rem;cursor:pointer;padding:4px 8px;line-height:1.1">✕</button></span>'
       : '<span style="display:flex;align-items:center;gap:6px"><span class="m-flash" style="font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5)">Assign Unit</span>' +
         (["primary","backup","rigUnit"].indexOf(role) === -1 ? '<button onclick="mRemoveEmptySlot(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(label) + '\')" style="background:none;border:1px solid rgba(255,144,144,0.35);border-radius:5px;color:#ff9090;font-size:0.8rem;cursor:pointer;padding:4px 8px;line-height:1.1">✕</button>' : '') + '</span>') +
   '</div>';
@@ -17269,6 +17270,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     M + " .hzm-btns button{min-height:52px;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important}" +
     M + " .hzm-btns .go{background:#34c759 !important;color:#000 !important;-webkit-text-fill-color:#000;border-color:#34c759 !important}" +
     M + " .hzm-btns .warn{background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;border-color:#c62828 !important}";
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-unit-title{font-family:'Oswald',sans-serif;font-size:1.25rem;font-weight:700;letter-spacing:.03em;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}";   // 8.79: responder unit as the box title
   // 8.60 / 12.424 (Sam): more black space between the unit boxes on a call
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box{margin-bottom:18px !important}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #hz-resp-ask .hz-resp-later{border:none !important;box-shadow:none !important;outline:none}";
