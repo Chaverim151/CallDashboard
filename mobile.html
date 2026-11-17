@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.61"; window.M_BUILD = BUILD;
+  var BUILD = "8.62"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10928,6 +10928,11 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   var det = mUdOf(call, crewIdx, role);
   var status = det.status || "";
   var isDriver = mIsDriverRole(call, crewIdx, role);
+  // 8.62 / 12.426 (Sam): an empty slot is ONE big box — "+ Assign Unit 2" — no separate label / badge / button
+  if (!hasUnit) {
+    var rmX = ["primary","backup","rigUnit"].indexOf(role) === -1 ? '<button class="hz-empty-x" title="Remove this slot" onclick="mRemoveEmptySlot(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(label) + '\')">✕</button>' : '';
+    return '<div class="m-disp-unit-box hz-empty-slot"><button class="m-disp-btn hz-empty-btn" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'unit\')">+ Assign ' + label + '</button>' + rmX + '</div>';
+  }
   var html = '<div class="m-disp-unit-box">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
     '<span class="m-disp-label" style="margin-bottom:0">' + label + '</span>' +
@@ -16793,6 +16798,10 @@ function hzZelloSendTone(btn, kind) {
       else if (k === "red" && (bg.a > 0.04 || bw)) { set(el, "background", RED); set(el, "border-color", RED); set(el, "color", "#fff"); next = "red"; }
       else if (k === "navy" && isBtn) { set(el, "background", GOLD); set(el, "color", "#000"); set(el, "border", "2px solid #000"); next = "gold"; }
       else if (!top && !isBtn && !boxed && !(bg && bg.a > 0.01)) { if (bw) set(el, "border-color", ctx === "dark" ? "rgba(212,160,23,.35)" : GOLD); }   // plain dividers: gold line (faint inside a black box)
+      else if (isBtn && (/^mSetUnitResponse\(/.test(el.getAttribute("onclick") || "") || el.classList.contains("hz-empty-btn")) && !el.disabled) {   // 8.62 / 12.426 (Sam): Scene / Rig not chosen yet — neither looks picked; borders pulse until one is
+        el.classList.remove("m-pulse-blue", "m-pulse-gold"); el.classList.add("hz-choose");
+        set(el, "background", "#000"); set(el, "color", GOLD); set(el, "-webkit-text-fill-color", GOLD); next = "dark";
+      }
       else if (isBtn && el.classList.contains("m-pulse-blue")) { set(el, "background", GOLD); set(el, "color", "#000"); set(el, "border", "2px solid #000"); next = "gold"; }
       else if (isBtn && (el.classList.contains("m-pick-on") || el.classList.contains("on"))) { set(el, "background", GOLD); set(el, "color", "#000"); set(el, "border-color", GOLD); next = "gold"; }
       else if (k === "light" && tag === "SPAN" && !bw && el.textContent.trim().length < 12) { set(el, "background", GOLD); set(el, "color", "#000"); next = "gold"; }   // unit-number pills
@@ -17209,6 +17218,17 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     R + " > button, " + R + " > * button{min-height:62px;width:100% !important;height:100%;margin:0 !important}" +
     // 8.61 / 12.425: a "Select Rig" style flashing tag is a label, not a button — own line, small red text, not a big box
     R + " > .m-flash{flex:0 0 100% !important;display:block !important;min-height:0 !important;height:auto !important;padding:0 !important;border:none !important;background:none !important;box-shadow:none !important;color:#ff6b6b !important;-webkit-text-fill-color:#ff6b6b;font-size:.72rem !important;text-align:left}";
+  // 8.62 / 12.426 (Sam): unpicked Respond to Scene / Respond to Rig — black, gold text, pulsing gold border
+  st.textContent += "@keyframes hzChoosePulse{0%,100%{border-color:#d4a017;box-shadow:0 0 0 0 rgba(212,160,23,.75)}50%{border-color:rgba(212,160,23,.2);box-shadow:0 0 0 5px rgba(212,160,23,0)}}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-choose{animation:hzChoosePulse 1.3s ease-in-out infinite !important;border-width:2px !important;border-style:solid !important}";
+  // 8.62 / 12.426: empty slot = one big pulsing "+ Assign Unit N" box
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-empty-slot{display:flex !important;gap:8px;padding:0 !important;border:none !important;background:none !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-empty-btn{flex:1;min-height:64px;font-size:1.05rem !important;font-weight:800 !important;border-radius:10px !important;margin:0 !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-empty-x{flex:0 0 52px;border-radius:10px;cursor:pointer;font-size:1rem;background:#000 !important;color:#ff6b6b !important;-webkit-text-fill-color:#ff6b6b;border:2px solid #c62828 !important;box-shadow:none !important}";
+  // 8.62 / 12.426 (Sam): bigger buttons under the units — Add Responder/Supervisor/Observer, Add Additional Rig, Additional Resources / Timeline headers, RMA / Transport
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mAddRigPrompt'], html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mSetDispositionRMA'], html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mOpenTransportSheet'], html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mSetDispositionLinden'], html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mAddExtraRole']{min-height:62px !important;font-size:1rem !important;font-weight:800 !important;border-radius:10px !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec{min-height:62px !important;padding-top:12px !important;padding-bottom:12px !important;border-radius:10px !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec .m-dd-sec-l{font-size:.95rem !important;white-space:nowrap}" + "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec .m-dd-sec-s{font-size:.78rem !important;white-space:normal;text-align:right;min-width:0;flex:1 1 auto}" + "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec .m-dd-sec-l{letter-spacing:.04em !important;flex:0 0 auto}";
   // 8.60 / 12.424 (Sam): more black space between the unit boxes on a call
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box{margin-bottom:18px !important}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #hz-resp-ask .hz-resp-later{border:none !important;box-shadow:none !important;outline:none}";
