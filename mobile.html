@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.75"; window.M_BUILD = BUILD;
+  var BUILD = "8.77"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10870,27 +10870,23 @@ function mBuildCrewBlock(call, crew, crewIdx) {
 
   // Slot labels don't presume a response — each unit chooses Scene or Rig. Once a unit is on the
   // rig path we append the rig it's taking, e.g. "Unit 3 → MC-902".
-  var fixedRoles = [
-    { role: "primary", label: "Unit 1" },
-    { role: "backup",  label: "Unit 2" },
-    { role: "rigUnit", label: "Unit 3" }
-  ];
-  fixedRoles.forEach(function(r) {
-    var det = mUdOf(call, crewIdx, r.role);
-    if (crew[r.role] && det.response === "rig") r.label += crew.rig ? " → " + crew.rig : " → Rig";
-  });
-  var lastFilled = -1;
-  fixedRoles.forEach(function(r, i) { if (crew[r.role]) lastFilled = i; });
-  // Crew 1 is the main response (3 slots). Extra crews exist only to carry another rig —
-  // show just the units actually on them; more can be added with the Add buttons.
-  if (crewIdx > 0) fixedRoles = fixedRoles.filter(function(r){ return crew[r.role]; });
-  fixedRoles.forEach(function(r, i) {
-    if (crew[r.role] || i <= lastFilled + 1) html += mBuildUnitBox(call, crewIdx, r.role, r.label);
-  });
-  Object.keys(crew).forEach(function(k) {
-    if (["primary","backup","rigUnit","rig"].indexOf(k) !== -1) return;
-    var label = k.indexOf("supervisor")===0||k.indexOf("sup_")===0 ? "Supervisor" : k.indexOf("observer")===0 ? "Observer" : "Responder";
-    html += mBuildUnitBox(call, crewIdx, k, label);
+  // 8.76 (Sam): units are numbered in order — whoever is on the crew is Unit 1, 2, 3, 4… whatever seat they're in
+  // (fixed Unit 1/2/3 seats or added Responder seats). Only ONE empty "+ Assign Unit N" box shows: the next fixed
+  // seat while fewer than 3 are on, otherwise an added Responder seat if the dispatcher made one.
+  var FIXED = ["primary", "backup", "rigUnit"];
+  var isSup = function(k) { return k.indexOf("supervisor") === 0 || k.indexOf("sup_") === 0; };
+  var isObs = function(k) { return k.indexOf("observer") === 0; };
+  var extras = Object.keys(crew).filter(function(k) { return k !== "rig" && FIXED.indexOf(k) === -1; });
+  var respKeys = FIXED.concat(extras.filter(function(k) { return !isSup(k) && !isObs(k); }));
+  var filled = respKeys.filter(function(k) { return crew[k] && crew[k] !== "__added__"; });
+  var rigSuffix = function(k) { var det = mUdOf(call, crewIdx, k); return det.response === "rig" ? (crew.rig ? " → " + crew.rig : " → Rig") : ""; };
+  filled.forEach(function(k, i) { html += mBuildUnitBox(call, crewIdx, k, "Unit " + (i + 1) + rigSuffix(k)); });
+  var emptyKey = "";
+  if (crewIdx === 0 && filled.length < 3) emptyKey = FIXED.filter(function(k) { return !crew[k] || crew[k] === "__added__"; })[0] || "";
+  if (!emptyKey) emptyKey = respKeys.filter(function(k) { return FIXED.indexOf(k) === -1 && (!crew[k] || crew[k] === "__added__"); })[0] || "";
+  if (emptyKey) html += mBuildUnitBox(call, crewIdx, emptyKey, "Unit " + (filled.length + 1));
+  extras.filter(function(k) { return isSup(k) || isObs(k); }).forEach(function(k) {
+    html += mBuildUnitBox(call, crewIdx, k, isSup(k) ? "Supervisor" : "Observer");
   });
   var _rp = mBuildCrewRigPanel(call, crewIdx);
   if (_rp.indexOf("'back_at_base')") === -1) html += _rp;   // a "Mark rig Back at Base" step is shown under Call Disposition instead (11.73 / 4.60)
@@ -10933,7 +10929,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // 8.62 / 12.426 (Sam): an empty slot is ONE big box — "+ Assign Unit 2" — no separate label / badge / button
   if (!hasUnit) {
     var rmX = ["primary","backup","rigUnit"].indexOf(role) === -1 ? '<button class="hz-empty-x" title="Remove this slot" onclick="mRemoveEmptySlot(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(label) + '\')">✕</button>' : '';
-    return '<div class="m-disp-unit-box hz-empty-slot"><button class="m-disp-btn hz-empty-btn' + (role === "rigUnit" ? ' hz-no-pulse' : '') + '" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'unit\')">+ Assign ' + label + '</button>' + rmX + '</div>';
+    return '<div class="m-disp-unit-box hz-empty-slot"><button class="m-disp-btn hz-empty-btn' + (/^Unit (?:[3-9]|\d{2,})/.test(label) ? ' hz-no-pulse' : '') + '" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'unit\')">+ Assign ' + label + '</button>' + rmX + '</div>';
   }
   var html = '<div class="m-disp-unit-box">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
@@ -11028,7 +11024,9 @@ function mBuildUnitBox(call, crewIdx, role, label) {
     html += '<button onclick="mDivertResponse(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(unit) + '\')" class="m-disp-btn" style="width:100%;margin-top:6px;border-color:rgba(255,200,74,0.35);color:#ffc84a">' + toLabel + '</button>';
   }
   // Unit responding to / with the rig: swap the crew's rig for another vehicle (opens the rig picker)
-  if (det.response === "rig" && crew.rig && ["back_at_base","cleared_scene","other_status"].indexOf(status) === -1)
+  // 8.77 (Sam): only until the rig is on scene — no swapping vehicles after that
+  var hzRigSt = typeof mCrewRigStatusLabel === "function" ? mCrewRigStatusLabel(call, crewIdx, crew) : "";
+  if (det.response === "rig" && crew.rig && ["", "picking_up_ambo", "onboard_rig", "ambo_responding"].indexOf(status) !== -1 && ["", "picking_up_ambo", "onboard_rig", "ambo_responding"].indexOf(hzRigSt || "") !== -1)
     html += '<button class="m-disp-btn m-divert-btn" style="width:100%;margin-top:6px;border-color:rgba(255,200,74,0.4);color:#ffc84a" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'rig\')">Divert to Alternate Vehicle</button>';
   hzActWrap();
 
@@ -12884,6 +12882,7 @@ function mCloseAllSheets() {
     <input type="text" id="m-assign-custom" class="m-disp-input" placeholder="e.g. MC-30, SPEN-12…">
     <button onclick="mConfirmAssignCustom()" style="flex-shrink:0;background:rgba(var(--gold-rgb),0.15);border:1px solid rgba(var(--gold-rgb),0.4);border-radius:8px;color:var(--gold);font-family:'Oswald',sans-serif;font-weight:700;padding:0 16px;cursor:pointer">Add</button>
   </div>
+  <button type="button" class="hz-sheet-cancel" onclick="mCloseAllSheets()">Cancel</button><!-- 8.77 (Sam) -->
 </div>
 
 <div class="m-disp-sheet" id="m-sheet-transport">
@@ -17192,8 +17191,10 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     S + " .m-disp-label{color:#e6cf8a !important;-webkit-text-fill-color:#e6cf8a}" +
     S + " > div:first-child{background:#d4a017 !important;opacity:.6}" +
     S + " #m-assign-roster .m-disp-btn{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important;font-weight:700}" +
-    S + " #m-assign-roster{gap:10px !important}" +
-    S + " #m-assign-roster .m-disp-btn{min-height:56px !important;min-width:96px;padding:8px 14px !important;font-size:1.05rem !important;border-radius:10px !important}" +   // 8.68 (Sam): bigger boxes
+    S + " .hz-sheet-cancel{position:sticky;bottom:calc(-20px - env(safe-area-inset-bottom));display:block;width:100%;min-height:56px;margin-top:16px;border-radius:10px;font-size:1.05rem;font-weight:800;cursor:pointer;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:0 -12px 14px #000 !important}" +
+    S + " #m-assign-roster{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px !important}" +   // 8.77 (Sam): 4 per row, a bit smaller
+    S + " #m-assign-roster > div, " + S + " #m-assign-roster .m-disp-btn[style*='width:100%']{grid-column:1 / -1}" +
+    S + " #m-assign-roster .m-disp-btn{min-height:50px !important;min-width:0 !important;width:100%;padding:6px 4px !important;font-size:.95rem !important;border-radius:10px !important;white-space:normal;line-height:1.15}" +   // 8.68 (Sam): bigger boxes
     S + " #m-assign-roster .m-disp-btn[style*='width:100%']{font-size:1rem !important}" +
     S + " #m-assign-custom{min-height:56px !important;font-size:1.05rem !important;border-radius:10px !important}" +
     S + " button[onclick^='mConfirmAssignCustom']{min-height:56px !important;min-width:80px;font-size:1.05rem !important;border-radius:10px !important}" +
