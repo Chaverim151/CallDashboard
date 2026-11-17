@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.81"; window.M_BUILD = BUILD;
+  var BUILD = "8.82"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -11499,16 +11499,12 @@ function mRemoveUnitSlot(crewIdx, role, reason) {
   }).then(function(u){ mToast(u && reason ? "✓ " + u + " removed — notified" : "Unit removed"); }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
 function mAddExtraRole(crewIdx, base) {
-  var callId = mDispSelectedCallId;
-  db.collection("activeCalls").doc(callId).get().then(function(snap) {
-    if (!snap.exists) return;
-    var crews = snap.data().crews || [{}];
-    while (crews.length <= crewIdx) crews.push({});
-    var key = base, n = 1;
-    while (crews[crewIdx][key] !== undefined) { key = base + n; n++; }
-    crews[crewIdx][key] = "__added__";
-    return db.collection("activeCalls").doc(callId).update({ crews: crews, updatedAt: new Date().toISOString() });
-  }).catch(function(e){ mToast("Error: "+e.message, true); });
+  // 8.82 (Sam): straight to picking the unit — no empty "+ Assign …" box first. The seat is only written when a unit is picked.
+  var call = mDispCallCache[mDispSelectedCallId] || {}, crew = (call.crews || [])[crewIdx] || {};
+  var key = base, n = 1;
+  while (crew[key] !== undefined) { key = base + n; n++; }
+  mOpenAssignSheet(crewIdx, key, "unit");
+  var t = document.getElementById("m-assign-title"); if (t) t.textContent = base === "supervisor" ? "Add Supervisor" : base === "observer" ? "Add Observer" : "Add Responder";
 }
 // "Add Rig" = another unit responds to a rig. We only have a couple of rigs, so the next
 // in-service rig that isn't committed to this or another active call is assigned automatically.
@@ -17224,15 +17220,15 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     // side-by-side action buttons on a unit box (two per row; a third wraps under them)
     R + "{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}" +
     R + " > *{flex:1 1 40%;min-width:0;width:auto !important;margin:0 !important;box-sizing:border-box}" +
-    R + " > button, " + R + " > * button{min-height:64px;width:100% !important;height:100%;margin:0 !important;font-size:1rem !important;font-weight:800 !important}" +
+    R + " > button, " + R + " > * button{min-height:50px;width:100% !important;height:100%;margin:0 !important;font-size:.9rem !important;font-weight:800 !important;padding:6px 8px !important}" +
     // 8.61 / 12.425: a "Select Rig" style flashing tag is a label, not a button — own line, small red text, not a big box
     R + " > .m-flash{flex:0 0 100% !important;display:block !important;min-height:0 !important;height:auto !important;padding:0 !important;border:none !important;background:none !important;box-shadow:none !important;color:#ff6b6b !important;-webkit-text-fill-color:#ff6b6b;font-size:.72rem !important;text-align:left}";
   // 8.62 / 12.426 (Sam): unpicked Respond to Scene / Respond to Rig — black, gold text, pulsing gold border
   st.textContent += "@keyframes hzChoosePulse{0%,100%{border-color:#d4a017;box-shadow:0 0 0 0 rgba(212,160,23,.75)}50%{border-color:rgba(212,160,23,.2);box-shadow:0 0 0 5px rgba(212,160,23,0)}}" +
-    "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-choose{animation:hzChoosePulse 1.3s ease-in-out infinite !important;border-width:2px !important;border-style:solid !important}" + "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-choose:not(.hz-empty-btn){min-height:64px !important;font-size:1.1rem !important;font-weight:800 !important;border-radius:10px !important}" + "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-choose.hz-no-pulse{animation:none !important;border-color:#d4a017 !important;box-shadow:none !important}";   // 8.65: Unit 3 is optional — no pulse
+    "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-choose{animation:hzChoosePulse 1.3s ease-in-out infinite !important;border-width:2px !important;border-style:solid !important}" + "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-choose:not(.hz-empty-btn){min-height:52px !important;font-size:.95rem !important;font-weight:800 !important;border-radius:10px !important}" + "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-choose.hz-no-pulse{animation:none !important;border-color:#d4a017 !important;box-shadow:none !important}";   // 8.65: Unit 3 is optional — no pulse
   // 8.62 / 12.426: empty slot = one big pulsing "+ Assign Unit N" box
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-empty-slot{display:flex !important;gap:8px;padding:0 !important;border:none !important;background:none !important}" +
-    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-empty-btn{flex:1;min-height:64px;font-size:1.05rem !important;font-weight:800 !important;border-radius:10px !important;margin:0 !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-empty-btn{flex:1;min-height:52px;font-size:.95rem !important;font-weight:800 !important;border-radius:10px !important;margin:0 !important}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-empty-x{flex:0 0 52px;border-radius:10px;cursor:pointer;font-size:1rem;background:#000 !important;color:#ff6b6b !important;-webkit-text-fill-color:#ff6b6b;border:2px solid #c62828 !important;box-shadow:none !important}";
   // 8.62 / 12.426 (Sam): bigger buttons under the units — Add Responder/Supervisor/Observer, Add Additional Rig, Additional Resources / Timeline headers, RMA / Transport
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mAddRigPrompt'], html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mSetDispositionRMA'], html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mOpenTransportSheet'], html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mSetDispositionLinden'], html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mAddExtraRole']{min-height:62px !important;font-size:1rem !important;font-weight:800 !important;border-radius:10px !important}" +
@@ -17271,7 +17267,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     M + " .hzm-btns button{min-height:52px;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important}" +
     M + " .hzm-btns .go{background:#34c759 !important;color:#000 !important;-webkit-text-fill-color:#000;border-color:#34c759 !important}" +
     M + " .hzm-btns .warn{background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;border-color:#c62828 !important}";
-  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-unit-title{font-family:'Oswald',sans-serif;font-size:1.25rem;font-weight:700;letter-spacing:.03em;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}";   // 8.79: responder unit as the box title
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-unit-title{font-family:'Oswald',sans-serif;font-size:1.05rem;font-weight:700;letter-spacing:.03em;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}";   // 8.79: responder unit as the box title
   // 8.80 / 12.444 (Sam): Read-only bar — room around it, "Take over" no longer jammed against the edge
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-ro-bar{display:flex !important;align-items:center !important;justify-content:space-between !important;gap:12px !important;padding:12px 14px !important;margin:0 0 14px !important;border-radius:12px !important;background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;font-size:.95rem !important;line-height:1.3 !important;box-sizing:border-box}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-ro-bar > span{flex:1 1 auto;min-width:0}" +
@@ -17280,7 +17276,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-units, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-notes, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-disposition > .m-disp-label{font-family:'Oswald',sans-serif !important;font-weight:700 !important;font-size:.95rem !important;letter-spacing:.06em !important;color:#1f2328 !important;-webkit-text-fill-color:#1f2328}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-crew-head{font-weight:700 !important;font-size:.85rem !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}";
   // 8.60 / 12.424 (Sam): more black space between the unit boxes on a call
-  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box{margin-bottom:18px !important}" +
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box{margin-bottom:14px !important;padding:10px 12px !important}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #hz-resp-ask .hz-resp-later{border:none !important;box-shadow:none !important;outline:none}";
   (document.head || document.documentElement).appendChild(st);
 })();
