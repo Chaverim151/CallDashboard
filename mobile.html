@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.70"; window.M_BUILD = BUILD;
+  var BUILD = "8.72"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -11129,8 +11129,7 @@ function mNextStepButton(call, crewIdx, role, unit) {
   }
   if (status === "picking_up_ambo") {
     if (!crew.rig) {
-      return '<div class="m-flash" style="display:inline-block;font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:6px">Select Rig</div>' +
-        '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.5);background:rgba(255,200,74,0.12);color:#ffc84a" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'rig\')">🚑 Choose Rig for ' + unit + '</button>';
+      return '<button class="m-disp-btn" style="width:100%;border-color:rgba(255,200,74,0.5);background:rgba(255,200,74,0.12);color:#ffc84a" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'rig\')">🚑 Choose Rig for ' + unit + '</button>';
     }
     return btn("Mark " + unit + " Onboard " + crew.rig, "onboard_rig", "#ffc84a", "gold");
   }
@@ -16803,7 +16802,7 @@ function hzZelloSendTone(btn, kind) {
       else if (k === "red" && (bg.a > 0.04 || bw)) { set(el, "background", RED); set(el, "border-color", RED); set(el, "color", "#fff"); next = "red"; }
       else if (k === "navy" && isBtn) { set(el, "background", GOLD); set(el, "color", "#000"); set(el, "border", "2px solid #000"); next = "gold"; }
       else if (!top && !isBtn && !boxed && !(bg && bg.a > 0.01)) { if (bw) set(el, "border-color", ctx === "dark" ? "rgba(212,160,23,.35)" : GOLD); }   // plain dividers: gold line (faint inside a black box)
-      else if (isBtn && (/^mSetUnitResponse\(/.test(el.getAttribute("onclick") || "") || el.classList.contains("hz-empty-btn")) && !el.disabled) {   // 8.62 / 12.426 (Sam): Scene / Rig not chosen yet — neither looks picked; borders pulse until one is
+      else if (isBtn && (/^mSetUnitResponse\(/.test(el.getAttribute("onclick") || "") || el.classList.contains("hz-empty-btn") || (/^mOpenAssignSheet\(/.test(el.getAttribute("onclick") || "") && /Choose Rig/.test(el.textContent))) && !el.disabled) {   // 8.71: Choose Rig pulses too   // 8.62 / 12.426 (Sam): Scene / Rig not chosen yet — neither looks picked; borders pulse until one is
         el.classList.remove("m-pulse-blue", "m-pulse-gold"); el.classList.add("hz-choose");
         set(el, "background", "#000"); set(el, "color", GOLD); set(el, "-webkit-text-fill-color", GOLD); next = "dark";
       }
@@ -17276,6 +17275,32 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box{margin-bottom:18px !important}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #hz-resp-ask .hz-resp-later{border:none !important;box-shadow:none !important;outline:none}";
   (document.head || document.documentElement).appendChild(st);
+})();
+</script>
+<script id="hz-units-noemoji">
+// 8.72 / 12.436 (Sam): no emojis anywhere in the Units area of a call (status lines, Choose Rig, crew/rig labels)
+(function() {
+  var RE = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:️|‍(?:\p{Extended_Pictographic}))*️?\s?/gu;
+  function strip(root) {
+    if (!root) return;
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n, list = [];
+    while ((n = w.nextNode())) if (RE.test(n.nodeValue)) list.push(n);
+    list.forEach(function(t) { RE.lastIndex = 0; var v = t.nodeValue.replace(RE, ""); if (v !== t.nodeValue) t.nodeValue = v.replace(/^\s+(?=\S)/, function(m) { return t.previousSibling ? m : ""; }); });
+    RE.lastIndex = 0;
+  }
+  var busy = false;
+  // the Units area = the "Units" heading and everything after it up to the next section (Additional Resources…)
+  function run() {
+    if (busy) return; busy = true;
+    try { var el = document.getElementById("m-dd-anchor-units"); while (el) { strip(el); el = el.nextElementSibling; if (el && /^m-dd-anchor-/.test(el.id || "")) break; } }
+    finally { busy = false; }
+  }
+  function hook() {
+    var c = document.getElementById("m-dd-content"); if (!c) { setTimeout(hook, 800); return; }
+    new MutationObserver(function() { if (!busy) setTimeout(run, 0); }).observe(c, { childList: true, subtree: true, characterData: true });
+    run();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook); else hook();
 })();
 </script>
 </body>
