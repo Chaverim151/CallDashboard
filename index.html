@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.432">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.434">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2775,7 +2775,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.432</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.434</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -20360,7 +20360,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.432";
+var DESKTOP_VERSION = "12.434";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -24127,7 +24127,10 @@ function mNcNatureFilter(all) {
   var q = document.getElementById("m-nc-nature-q"), box = document.getElementById("m-nc-nature-list"); if (!q || !box) return;
   var sel = document.getElementById("m-nc-nature");
   var cur = sel && sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text : "";
-  var words = (all && q.value === cur ? "" : q.value).toLowerCase().split(/\s+/).filter(Boolean);
+  // 8.69 (Sam): after "Other", tapping the box shows the whole list again (it was searching for "Other (typed below)")
+  var showing = sel && sel.value === "__custom__" ? "Other (typed below)" : cur;
+  var words = (all && (q.value === cur || q.value === showing) ? "" : q.value).toLowerCase().split(/\s+/).filter(Boolean);
+  if (all && q.value && q.value === showing) { try { q.select(); } catch (e) {} }   // typing replaces it
   mNcNatItems = hzNatureSorted().filter(function(n) { var t = n.text.toLowerCase(); return words.every(function(w) { return t.indexOf(w) !== -1; }); });
   mNcNatItems.push({ value: "__custom__", text: "✏️ Other — type it in" + (words.length ? ': "' + q.value.trim() + '"' : "…") });
   mNcNatSel = words.length ? 0 : -1;
@@ -24151,11 +24154,13 @@ function mNcNaturePick(i) {
   sel.value = it.value;
   if (sel.onchange) sel.onchange();
   sel.dispatchEvent(new Event("change", { bubbles: true }));
+  if (it.value !== "__custom__") { var cc = document.getElementById("m-nc-nature-custom"); if (cc) cc.value = ""; }   // a listed nature replaces the typed one
   if (it.value === "__custom__") {                       // carry what they typed into the custom box
     var c = document.getElementById("m-nc-nature-custom");
     if (c) { if (typed && !c.value) c.value = typed; setTimeout(function() { c.focus(); }, 30); }
   }
   mNcNatureSync(); mNcNatureClose();
+  if (it.value !== "__custom__" && q) { try { q.blur(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }   // 8.69 (Sam): close the keyboard after picking
 }
 function mNcNatureClose() { var box = document.getElementById("m-nc-nature-list"), q = document.getElementById("m-nc-nature-q"); if (box) box.style.display = "none"; if (q) q.setAttribute("aria-expanded", "false"); }
 function mNcNatureBlur() { mNcNatureClose(); mNcNatureSync(); }

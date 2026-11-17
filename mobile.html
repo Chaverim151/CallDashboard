@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.68"; window.M_BUILD = BUILD;
+  var BUILD = "8.70"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -8941,7 +8941,10 @@ function mNcNatureFilter(all) {
   var q = document.getElementById("m-nc-nature-q"), box = document.getElementById("m-nc-nature-list"); if (!q || !box) return;
   var sel = document.getElementById("m-nc-nature");
   var cur = sel && sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text : "";
-  var words = (all && q.value === cur ? "" : q.value).toLowerCase().split(/\s+/).filter(Boolean);
+  // 8.69 (Sam): after "Other", tapping the box shows the whole list again (it was searching for "Other (typed below)")
+  var showing = sel && sel.value === "__custom__" ? "Other (typed below)" : cur;
+  var words = (all && (q.value === cur || q.value === showing) ? "" : q.value).toLowerCase().split(/\s+/).filter(Boolean);
+  if (all && q.value && q.value === showing) { try { q.select(); } catch (e) {} }   // typing replaces it
   mNcNatItems = hzNatureSorted().filter(function(n) { var t = n.text.toLowerCase(); return words.every(function(w) { return t.indexOf(w) !== -1; }); });
   mNcNatItems.push({ value: "__custom__", text: "✏️ Other — type it in" + (words.length ? ': "' + q.value.trim() + '"' : "…") });
   mNcNatSel = words.length ? 0 : -1;
@@ -8965,11 +8968,13 @@ function mNcNaturePick(i) {
   sel.value = it.value;
   if (sel.onchange) sel.onchange();
   sel.dispatchEvent(new Event("change", { bubbles: true }));
+  if (it.value !== "__custom__") { var cc = document.getElementById("m-nc-nature-custom"); if (cc) cc.value = ""; }   // a listed nature replaces the typed one
   if (it.value === "__custom__") {                       // carry what they typed into the custom box
     var c = document.getElementById("m-nc-nature-custom");
     if (c) { if (typed && !c.value) c.value = typed; setTimeout(function() { c.focus(); }, 30); }
   }
   mNcNatureSync(); mNcNatureClose();
+  if (it.value !== "__custom__" && q) { try { q.blur(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }   // 8.69 (Sam): close the keyboard after picking
 }
 function mNcNatureClose() { var box = document.getElementById("m-nc-nature-list"), q = document.getElementById("m-nc-nature-q"); if (box) box.style.display = "none"; if (q) q.setAttribute("aria-expanded", "false"); }
 function mNcNatureBlur() { mNcNatureClose(); mNcNatureSync(); }
