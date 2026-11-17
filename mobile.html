@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "8.84"; window.M_BUILD = BUILD;
+  var BUILD = "8.86"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10656,7 +10656,8 @@ function mRenderDispatchDetail(call) {
     content += mBuildCrewBlock(call, crew, ci);
   });
   if (call.zone !== "transfer")   // Linden transfer area: Linden brings the rig — no MC rigs to add (12.33 / 4.96)
-    content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
+    if ((call.crews || []).some(function(c) { return c && c.rig; }))   // 8.85 (Sam): only once the call has a rig
+      content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
 
   // Additional resources — right under the units, above the disposition (12.44 / 5.07)
   var resHtml = mBuildAlsBanner(call) + mBuildBlsBanner(call) + mBuildPdBanner(call);
@@ -16934,7 +16935,7 @@ html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transpo
 // One year of finished calls (hzFetchCallLogs) + the open calls, worked out from each call's timeline (callEvents carry
 // exact times): call received → first unit on scene, rig assigned → rig on scene, ALS activated → ALS on scene, each
 // unit's assigned → on scene, dispatcher time to assign, call length. Hours on dispatcher duty aren't recorded anywhere,
-// so they aren't shown. Test Mode calls are never counted; no lock code (Sam, 8.58 / 12.422).
+// so they aren't shown. Test Mode calls are never counted; same code check as Call Logs (Sam, 8.86 / 12.450).
 var HZ_REP = { year: new Date().getFullYear(), tests: false /* Sam: test calls never count */, logs: [], open: 0, busy: false };
 function hzRepEsc(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function hzRepDur(sec) {
@@ -17084,6 +17085,7 @@ function hzRepCsv() {
 }
 function hzRepOpen() {
   var host = document.getElementById("hz-rep"); if (!host) return;
+  if (typeof hzLogsGate === "function" && !hzLogsGate(host, hzRepOpen)) return;   // 8.86 (Sam): keep the code check for Reports (same as Call Logs)
   var y0 = new Date().getFullYear(), years = []; for (var y = y0; y >= 2025; y--) years.push(y);
   host.innerHTML = '<div class="hz-rep-top"><select id="hz-rep-year" onchange="HZ_REP.year=+this.value;hzRepLoad()">' + years.map(function(y) { return '<option value="' + y + '"' + (y === HZ_REP.year ? " selected" : "") + '>' + y + '</option>'; }).join("") + '</select>' +
     '<button type="button" class="hz-rep-dl" onclick="hzRepCsv()">⬇ Download CSV</button></div>' +

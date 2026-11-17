@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.448">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.450">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2775,7 +2775,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.448</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.450</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -20361,7 +20361,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.448";
+var DESKTOP_VERSION = "12.450";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -25653,7 +25653,8 @@ function mRenderDispatchDetail(call) {
     content += mBuildCrewBlock(call, crew, ci);
   });
   if (call.zone !== "transfer")   // Linden transfer area: Linden brings the rig — no MC rigs to add (12.33 / 4.96)
-    content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
+    if ((call.crews || []).some(function(c) { return c && c.rig; }))   // 8.85 (Sam): only once the call has a rig
+      content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Add Additional Rig</button>';
 
   // Additional resources — right under the units, above the disposition (12.44 / 5.07)
   var resHtml = mBuildAlsBanner(call) + mBuildBlsBanner(call) + mBuildPdBanner(call);
@@ -31831,7 +31832,7 @@ html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-transpo
 // One year of finished calls (hzFetchCallLogs) + the open calls, worked out from each call's timeline (callEvents carry
 // exact times): call received → first unit on scene, rig assigned → rig on scene, ALS activated → ALS on scene, each
 // unit's assigned → on scene, dispatcher time to assign, call length. Hours on dispatcher duty aren't recorded anywhere,
-// so they aren't shown. Test Mode calls are never counted; no lock code (Sam, 8.58 / 12.422).
+// so they aren't shown. Test Mode calls are never counted; same code check as Call Logs (Sam, 8.86 / 12.450).
 var HZ_REP = { year: new Date().getFullYear(), tests: false /* Sam: test calls never count */, logs: [], open: 0, busy: false };
 function hzRepEsc(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function hzRepDur(sec) {
@@ -31981,6 +31982,7 @@ function hzRepCsv() {
 }
 function hzRepOpen() {
   var host = document.getElementById("hz-rep"); if (!host) return;
+  if (typeof hzLogsGate === "function" && !hzLogsGate(host, hzRepOpen)) return;   // 8.86 (Sam): keep the code check for Reports (same as Call Logs)
   var y0 = new Date().getFullYear(), years = []; for (var y = y0; y >= 2025; y--) years.push(y);
   host.innerHTML = '<div class="hz-rep-top"><select id="hz-rep-year" onchange="HZ_REP.year=+this.value;hzRepLoad()">' + years.map(function(y) { return '<option value="' + y + '"' + (y === HZ_REP.year ? " selected" : "") + '>' + y + '</option>'; }).join("") + '</select>' +
     '<button type="button" class="hz-rep-dl" onclick="hzRepCsv()">⬇ Download CSV</button></div>' +
