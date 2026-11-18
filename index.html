@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.505">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.507">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2775,7 +2775,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.505</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.507</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -20181,7 +20181,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
       <div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);padding:0 12px 8px;font-family:'Oswald',sans-serif;font-weight:700" id="m-drawer-call-label">Current Call</div>
       <button onclick="mDrawerJump('info')" class="m-drawer-item">📍 Call Info</button>
       <button onclick="mDrawerJump('units')" class="m-drawer-item">👥 Units</button>
-      <button onclick="mDrawerJump('resources')" class="m-drawer-item">Assign Additional Resources</button>
+      <button onclick="mCloseDispDrawer();hzOpenResModal()" class="m-drawer-item">Assign Additional Resources</button>
       <button onclick="mDrawerJump('disposition')" class="m-drawer-item">📋 Disposition</button>
       <button onclick="mDrawerJump('notes')" class="m-drawer-item">📝 Notes</button>
       <button onclick="mDrawerJump('timeline')" class="m-drawer-item">🕒 Timeline</button>
@@ -20357,7 +20357,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.505";
+var DESKTOP_VERSION = "12.507";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -25676,9 +25676,8 @@ function mRenderDispatchDetail(call) {
   var resOn = [call.alsActivated ? "ALS" : "", call.blsActivated ? "BLS" : "", call.pdActivated ? "PD" : ""].filter(Boolean);
   // 9.32 (Sam): Assign Additional Rig and Assign Additional Resources together, in one section under the units
   var hzAddl = '<div id="m-dd-anchor-resources" class="hz-addl hz-addl-in">' + (typeof hzAddRigBtn !== "undefined" ? hzAddRigBtn : "");
-  if (resHtml) hzAddl +=
-    mDdSecHead("resources", "Assign Additional Resources", resOn.length ? resOn.join(" · ") + " active" : "") +
-    (mDdOpen.resources ? resHtml : '');
+  if (resHtml) hzAddl += '<button class="m-disp-btn hz-res-open" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:10px" onclick="hzOpenResModal()">Assign Additional Resources' +
+    (resOn.length ? '<span class="hz-res-on">' + resOn.join(" · ") + ' active</span>' : '') + '</button>';   // 9.43 (Sam): opens a popup
   hzAddl += '</div>';
   // 9.39 (Sam): this section now sits inside the Units box, under the Assign buttons
   content += hzUnitsHtml.indexOf('<!--hz-addl-->') !== -1 ? hzUnitsHtml.replace('<!--hz-addl-->', hzAddl) : hzUnitsHtml + hzAddl;
@@ -27013,6 +27012,26 @@ function hzRigDispRMA(ci, why, by) {
     return db.collection("activeCalls").doc(callId).update(update);
   }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
+// 9.43 (Sam): Assign Additional Resources is a popup (same look as the other popups). Tapping any button in it
+// closes it first, so the ALS / BLS / PD sheet it opens is on top.
+function hzOpenResModal() {
+  var call = mDispCallCache[mDispSelectedCallId]; if (!call) return;
+  var old = document.getElementById("hz-res-dlg"); if (old) old.remove();
+  var wrap = document.createElement("div"); wrap.className = "hz-dlg"; wrap.id = "hz-res-dlg"; wrap.setAttribute("role", "dialog"); wrap.setAttribute("aria-modal", "true");
+  wrap.innerHTML = '<div class="hz-dlg-box hz-res-box"><div class="hz-dlg-msg hz-rma-h"><b>Assign Additional Resources</b></div>' +
+    '<div class="hz-res-body">' + mBuildAlsBanner(call) + mBuildBlsBanner(call) + mBuildPdBanner(call) + '</div>' +
+    '<div class="hz-dlg-row"><button type="button" class="hz-dlg-no hz-res-close">Close</button></div></div>';
+  var close = function() { wrap.remove(); window.removeEventListener("popstate", close); };
+  wrap.querySelector(".hz-res-close").onclick = close;
+  wrap.addEventListener("click", function(e) {
+    if (e.target === wrap) { close(); return; }
+    var b = e.target.closest ? e.target.closest(".hz-res-body button") : null;
+    if (b) setTimeout(close, 0);   // the button's own action runs first
+  });
+  window.addEventListener("popstate", close);
+  document.body.appendChild(wrap);
+}
+window.hzOpenResModal = hzOpenResModal;
 // 9.37 (Sam): choosing RMA asks how — "RMA Approved by Unit" (then the approving unit ID, required) or "RMA by ALS". Resolves {how, by} or null.
 function hzAskRmaBy(what, alsOn) {
   return (!alsOn ? Promise.resolve("unit") : new Promise(function(resolve) {   // 9.39: no ALS on the call → straight to the approving unit
@@ -32423,7 +32442,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   var RS = "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec[onclick*=\"'resources'\"]";
   st.textContent += RS + "{justify-content:center !important;text-align:center !important;gap:10px}" + RS + " .m-dd-sec-ar{display:none !important}" +
     RS + " .m-dd-sec-l{flex:0 1 auto !important}" + RS + " .m-dd-sec-s{flex:0 0 auto !important;text-align:center !important}" + RS + " .m-dd-sec-s:empty{display:none !important}";
-  st.textContent += RS + "{font-family:inherit !important}" + RS + " .m-dd-sec-l, html body:not(#hzA):not(#hzB):not(#hzC) button[onclick='mAddRigPrompt()']{font-family:inherit !important;font-size:16px !important;font-weight:800 !important;letter-spacing:normal !important;text-transform:none !important}";   // 9.36 / 12.505 (Sam): Assign Additional Resources and Assign Additional Rig — identical lettering, title case, phone and desktop
+  st.textContent += RS + "{font-family:inherit !important}" + RS + " .m-dd-sec-l, html body:not(#hzA):not(#hzB):not(#hzC) button[onclick='mAddRigPrompt()'], html body:not(#hzA):not(#hzB):not(#hzC) button.hz-res-open{font-family:inherit !important;font-size:16px !important;font-weight:800 !important;letter-spacing:normal !important;text-transform:none !important}";   // 9.36 / 12.507 (Sam): Assign Additional Resources and Assign Additional Rig — identical lettering, title case, phone and desktop
   // 8.96 / 12.460 (Sam): the rig's next-step button (e.g. Mark MC-902 Back at Base) pulses
   st.textContent += "@keyframes hzFillPulse{0%,100%{box-shadow:0 0 0 0 rgba(212,160,23,.85);filter:brightness(1)}50%{box-shadow:0 0 0 7px rgba(212,160,23,0);filter:brightness(1.18)}}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mSetCrewRigStatus']{animation:hzFillPulse 1.3s ease-in-out infinite !important}";
@@ -32529,6 +32548,10 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-addl-in{margin-top:14px;padding-top:14px;border-top:1px solid rgba(212,160,23,.35)}html body:not(#hzA):not(#hzB):not(#hzC) .hz-addl-in > :last-child{margin-bottom:0 !important}";   // 9.39
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) input.hz-hp-oth{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important;font-family:inherit !important}html body:not(#hzA):not(#hzB):not(#hzC) input.hz-hp-oth::placeholder{color:rgba(212,160,23,.6) !important;-webkit-text-fill-color:rgba(212,160,23,.6)}";   // 9.40
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-row.hz-hp-other{min-height:62px !important;justify-content:center !important;text-align:center !important;margin-top:4px}html body:not(#hzA):not(#hzB):not(#hzC) .hz-hp .hz-hp-other .hz-hp-n{flex:0 1 auto !important;font-size:1.1rem !important;font-weight:800 !important}";   // 9.41 (Sam): bigger Other button
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-res-open .hz-res-on{display:block;font-size:.78rem;font-weight:700;color:#fff;-webkit-text-fill-color:#fff;margin-top:3px}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-dlg .hz-res-box{max-width:420px;max-height:88vh;overflow-y:auto;text-align:left}html body:not(#hzA):not(#hzB):not(#hzC) .hz-dlg .hz-res-box .hz-dlg-msg{text-align:center}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-dlg .hz-res-body{margin-bottom:14px}";   // 9.43
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body .m-res-card{background:#000 !important;border:2px solid #d4a017 !important;border-radius:10px !important}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body .m-res-card *{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body input,html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body select,html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body textarea{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:8px !important}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body input::placeholder{color:rgba(212,160,23,.6) !important;-webkit-text-fill-color:rgba(212,160,23,.6)}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body button{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important;min-height:46px;font-weight:800 !important}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body button[onclick^='mMarkAlsOnScene'],html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body a[href^='tel:']{background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body a[href^='tel:'] *{color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body button[onclick^='mOpenCancel']{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff}";   // 9.44 (Sam): Additional Resources popup in black & gold (On Scene / call = green, Cancel = red)
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
