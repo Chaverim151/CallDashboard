@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.24"; window.M_BUILD = BUILD;
+  var BUILD = "9.25"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10642,6 +10642,20 @@ function mRenderDispatchDetail(call) {
     '</div>';
   });
   tmHtml += '</div>';
+  var hzC0rig = ((call.crews || [])[0] || {}).rig;
+  if (hzC0rig && (call.crews || []).some(function(cr, ci) { return ci > 0 && cr && cr.rig; })) tmHtml = '<div class="hz-rig-times-h" style="margin-top:0">' + mEscHtml(hzC0rig) + '</div>' + tmHtml;   // label the first row too
+  // 9.25 (Sam): each additional rig gets its own row of times (Dispatched · On Scene · En Route · Home)
+  (call.crews || []).forEach(function(cr, ci) {
+    if (!ci || !cr || !cr.rig) return;
+    if (!Object.keys(cr).some(function(k) { return k !== "rig" && cr[k] && cr[k] !== "__added__"; })) return;
+    var rt = (call.rigTimes || {})[ci] || {};
+    if (!rt.dispatched) { var u0 = Object.keys(cr).filter(function(k) { return k !== "rig"; })[0]; rt = Object.assign({ dispatched: (mUdOf(call, ci, u0) || {}).assignedAt || "" }, rt); }
+    var RT = [["dispatched", "Dispatched"], ["on_scene", "On Scene"], ["enroute", "En Route"], ["home", "Home"]];
+    tmHtml += '<div class="hz-rig-times-h">' + mEscHtml(cr.rig) + '</div><div class="m-times hz-rig-times" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:12px">' +
+      RT.map(function(t) { var v = rt[t[0]] || ""; return '<div class="m-time-cell" style="text-align:center;padding:6px 2px;border-radius:7px;background:' + (v ? "rgba(125,237,181,0.10)" : "rgba(255,255,255,0.04)") + ';border:1px solid ' + (v ? "rgba(125,237,181,0.4)" : "var(--card-border)") + '">' +
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:0.5rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:' + (v ? "#7dedb5" : "var(--gray)") + '">' + t[1] + '</div>' +
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:0.82rem;font-weight:700;color:' + (v ? "var(--white)" : "rgba(255,255,255,0.25)") + ';margin-top:2px">' + (v ? mEscHtml(v) : "--:--") + '</div></div>'; }).join("") + '</div>';
+  });
 
   // Call info
   var zoneColor = hzZoneColor(call.zone);
@@ -10667,6 +10681,7 @@ function mRenderDispatchDetail(call) {
       ((call.patientAge || call.patientAgeNum) ? '<span class="m-disp-zone hz-dd-pt" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + [call.patientAgeNum ? hzAge(call) : "", call.patientAge ? (call.patientAgeUto ? "UTO " : "") + call.patientAge : "", call.patientSex ? (call.patientSex==="male"?"M":"F") : ""].filter(Boolean).join(" ") + '</span>' : '') +
     '</div>' +
     (call.dispatchNotes ? '<div style="margin-top:8px;font-size:0.78rem;color:var(--gray)">📝 ' + mEscHtml(call.dispatchNotes) + '</div>' : '') +
+    (hzNoiAls(call) ? '<div class="hz-dd-als">🚨 ALS recommended by protocol for this NOI</div>' : '') +   // 9.25 (Sam)
     (call.accessCode ? '<div class="hz-dd-code" style="margin-top:4px;font-size:0.78rem;color:var(--gray)">🔑 ' + mEscHtml(call.accessCode) + '</div>' : '') +
     (call.callbackNumber ? '<div style="margin-top:8px;display:flex;gap:8px"><a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="flex:1;text-align:center;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.35);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;padding:6px;text-decoration:none">📞 ' + call.callbackNumber + '</a></div>' : '') +
   '</div>';
@@ -11232,6 +11247,9 @@ function mSetCrewRigStatus(crewIdx, status) {
     if (status === "at_facility" && !times.at_hospital) update["times.at_hospital"] = now;
     if (status === "clearing_facility" && !times.cleared) update["times.cleared"] = now;
     if (status === "back_at_base" && !times.home) update["times.home"] = now;
+    // 9.25 (Sam): each additional rig keeps its own times
+    if (crewIdx > 0) { var rk = { on_scene_ambo: "on_scene", transporting: "enroute", at_facility: "at_hospital", clearing_facility: "cleared", back_at_base: "home" }[status];
+      if (rk && !(((call.rigTimes || {})[crewIdx]) || {})[rk]) update["rigTimes." + crewIdx + "." + rk] = now; }
     return db.collection("activeCalls").doc(callId).update(update);
   }).catch(function(e){ mToast("Error: "+e.message, true); });
 }
@@ -11719,7 +11737,8 @@ function mAddRigWithUnit(unitId) {
       ud[idx + "_rigUnit"] = { response: "rig", status: (divert || res.rig) ? "ambo_responding" : "picking_up_ambo", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
       var assigned = (call.assignedUnits || []).slice(); if (assigned.indexOf(unitId) === -1) assigned.push(unitId);
       mTextAssignedUnit(unitId, call);
-      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assigned, updatedAt: new Date().toISOString(),
+      var rtimes = Object.assign({}, call.rigTimes || {}); rtimes[idx] = { dispatched: mNowHHMM() };   // 9.25: this rig's own times start now
+      return db.collection("activeCalls").doc(callId).update({ crews: crews, unitDetails: ud, assignedUnits: assigned, rigTimes: rtimes, updatedAt: new Date().toISOString(),
         callEvents: mEvtUnion(mEvt(divert
           ? res.rig + " diverting from " + divert.address + " — " + unitId + " responding to scene (Crew " + (idx+1) + ")"
           : unitId + " responding to " + (res.rig || "a rig"), "🚑", "#ffc84a", "assign")) })
@@ -11901,6 +11920,11 @@ function mLoadDispatchSettings() {
       if (zs.length) { M_COVERAGE_ZONES = zs; try { if (mNcAutocomplete && mCoverageBounds()) mNcAutocomplete.setBounds(mCoverageBounds()); } catch (e) {} }
     }
   }).catch(function(){});
+}
+function hzNoiAls(call) {   // 9.25: same test as the New Call form's ALS line
+  if (!call || !call.callNature) return false;
+  var f = (typeof M_CALL_NATURES !== "undefined" ? M_CALL_NATURES : []).find(function(n) { return n.value === call.callNature; });
+  return !!(f && f.als) || mIsAlsNature(call);
 }
 function mIsAlsNature(call) {
   return call.callNature && M_ALS_NATURE_CODES.some(function(n){ return (call.callNature||"").indexOf(n+" -") === 0; });
@@ -12415,6 +12439,7 @@ function hzConfirmRigTransport(ci, hospital) {
     var rigs = JSON.parse(JSON.stringify((call.disposition || {}).rigs || {})); rigs[ci] = { type: "transport", rig: crew.rig || "", hospital: hospital };
     var update = { unitDetails: ud, disposition: hzRollupDisp(call, rigs), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt((crew.rig || "Rig") + " — Transport → " + hospital, "🏥", "#ff9090", "disp")) };
     if (!times.enroute) update["times.enroute"] = nowT;
+    if (ci > 0 && !(((call.rigTimes || {})[ci]) || {}).enroute) update["rigTimes." + ci + ".enroute"] = nowT;   // 9.25
     return db.collection("activeCalls").doc(callId).update(update);
   }).then(function() { mCloseAllSheets(); mTrForCrew = null; mToast("🚑 Transport confirmed → " + hospital); }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
@@ -17527,6 +17552,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-crew-more{display:block}";
   // 9.23 (Sam): everyone on scene and no disposition yet → RMA / Transport pulse
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button.hz-disp-pulse{animation:hzChoosePulse 1.3s ease-in-out infinite !important;border-width:2px !important;border-style:solid !important}";
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rig-times-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:.85rem;letter-spacing:.05em;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin:-4px 0 4px}";   // 9.25
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content .hz-dd-als{margin-top:8px;font-size:.85rem;font-weight:800;color:#c62828 !important;-webkit-text-fill-color:#c62828}";
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
