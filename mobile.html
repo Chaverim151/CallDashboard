@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.30"; window.M_BUILD = BUILD;
+  var BUILD = "9.31"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -11010,8 +11010,11 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   var hzWithRig = det.response === "rig" && typeof hzCrewRigLive === "function" ? hzCrewRigLive(call, crewIdx) : "";   // 9.18: only once the unit has chosen the rig
   // 9.30 (Sam): several rigs transporting — dispatch only knows the rigs are transporting, not who is in which one
   var HZ_TR_ST = ["transporting","at_facility","clearing_facility","returning_base","back_at_base"];
-  var hzUnknownAboard = typeof hzDispRigs === "function" && hzDispRigs(call).length >= 2 && HZ_TR_ST.indexOf(status) !== -1;
-  if (hzUnknownAboard) hzWithRig = "";   // 9.13: "MC-20 with MC-902"
+  // 9.31 (Sam): the units that responded to a rig are known to be on it — they keep "with MC-903" and their status.
+  // Everyone else just shows "Transporting" (no vehicle) once any rig is transporting.
+  var hzMultiRig = typeof hzDispRigs === "function" && hzDispRigs(call).length >= 2;
+  var hzAnyRigTr = hzMultiRig && (call.crews || []).some(function(cr, ci) { return HZ_TR_ST.indexOf(mCrewRigStatusLabel(call, ci, cr) || "") !== -1; });
+  var hzUnknownAboard = hzMultiRig && det.response !== "rig" && (HZ_TR_ST.indexOf(status) !== -1 || (hzAnyRigTr && ["on_scene_direct","on_scene_ambo","rma_scene",""].indexOf(status) !== -1 && status !== "" ));   // 9.13: "MC-20 with MC-902"
   var html = '<div class="m-disp-unit-box" data-hz-rig-host="' + crewIdx + '_' + role + '">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
     // 8.98 (Sam): Supervisor / Observer boxes look like the others — the unit as the title, the role as a tag on the right
@@ -11077,12 +11080,12 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // they aren't being tracked individually any more. The rig keeps its own status line.
   if (sl && mIsDirectResponse(call) && !isDriver && status === "enroute_scene" && mSceneMarkedBy(call)) sl = { icon: "", text: "Presumed On Scene", color: "#34c759" };   // 8.75 (Sam): was hidden
   // 9.16 (Sam): a unit "with MC-902" reads like a responder — the rig on its way is "En Route to Scene" (same blue)
-  if (sl && hzUnknownAboard) sl = null;   // 9.30: no "Transporting · riding in MC-903" per unit
+  if (hzUnknownAboard) sl = { icon: "", text: "Transporting", color: ((M_STATUS_LOG.transporting || {}).color) || "#ffc84a", hzNoVeh: true };   // 9.31: no vehicle named
   if (sl && hzWithRig && (status === "ambo_responding" || status === "onboard_rig")) sl = { icon: "", text: "En Route to Scene", color: ((M_STATUS_LOG.enroute_scene || {}).color) || "#7ab8f5" };
   if (sl) {
     var withRig = isDriver && crew.rig && (mLoadRigBoarded(call, crewIdx) && status === "picking_up_ambo" || ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1);
     var riding = !isDriver && crew.rig && M_RIDER_STATUSES.indexOf(status) !== -1;   // scene-direct unit riding in the rig
-    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.text +   /* 8.75 (Sam): no unit name — it's in the pill */ (withRig && !hzWithRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : (det.ervVehicle && det.response === "scene" && HZ_ERV_DONE.indexOf(status) < 0 ? ' · ' + (/^ERV/i.test(det.ervVehicle) ? '🚑 ' : '🚑 ') + mEscHtml(det.ervVehicle) : '')) + '</div>';
+    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.text +   /* 8.75 (Sam): no unit name — it's in the pill */ (sl.hzNoVeh ? '' : withRig && !hzWithRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : (det.ervVehicle && det.response === "scene" && HZ_ERV_DONE.indexOf(status) < 0 ? ' · ' + (/^ERV/i.test(det.ervVehicle) ? '🚑 ' : '🚑 ') + mEscHtml(det.ervVehicle) : '')) + '</div>';
   }
 
   var nextBtn = mNextStepButton(call, crewIdx, role, unit);
@@ -11244,7 +11247,7 @@ function mSetCrewRigStatus(crewIdx, status) {
     });
     var sl2 = M_STATUS_LOG[status]; var rigName = (mCrewOf(call, crewIdx).rig) || "Rig";
     var hzNoOcc = hzDispRigs(call).length >= 2 && ["transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1;   // 9.30
-    update.callEvents = mEvtUnion(mEvt(rigName + (hzNoOcc ? "" : " + " + units.map(function(u){ return u.unit; }).join(", ")) + " — " + (sl2 ? sl2.text : status), sl2 ? sl2.icon : "🚑", sl2 ? sl2.color : "#ffc84a", "status"));
+    update.callEvents = mEvtUnion(mEvt(rigName + " + " + units.filter(function(u){ return !hzNoOcc || !u.rider; }).map(function(u){ return u.unit; }).join(", ") + " — " + (sl2 ? sl2.text : status), sl2 ? sl2.icon : "🚑", sl2 ? sl2.color : "#ffc84a", "status"));
     var times = call.times || {};
     if (status === "on_scene_ambo" && !times.first_on_scene) update["times.first_on_scene"] = now;
     if (status === "transporting" && !times.enroute) update["times.enroute"] = now;
