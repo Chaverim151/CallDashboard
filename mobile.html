@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.28"; window.M_BUILD = BUILD;
+  var BUILD = "9.29"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3533,7 +3533,7 @@ function mRenderCalls(calls) {
       });
     } catch(e) {}
 
-    var notes = call.callNotes || [];
+    var notes = typeof hzUserNotes === "function" ? hzUserNotes(call) : (call.callNotes || []);   // 9.29
     var notesHtml = "";
     if (notes.length && isAssigned) {
       notesHtml = '<div class="m-notes-section"><div class="m-notes-label">Notes</div>' +
@@ -10759,14 +10759,14 @@ function mRenderDispatchDetail(call) {
 
   // Notes
   content += '<div id="m-dd-anchor-notes" style="font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);font-family:\'Oswald\',sans-serif;margin-bottom:8px">Call Notes</div>';
-  (call.callNotes||[]).forEach(function(n) {
+  hzUserNotes(call).forEach(function(n) {
     content += '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:8px;padding:8px 10px;margin-bottom:6px">' +
       '<div style="font-size:0.6rem;color:var(--gray);margin-bottom:2px">' + (n.time||"") + ' · ' + mEscHtml(n.by||"") + '</div>' +
       '<div style="font-size:0.82rem;color:var(--white)">' + mEscHtml(n.text) + '</div>' +
     '</div>';
   });
   content += '<div style="display:flex;gap:6px;margin-bottom:16px">' +
-    '<input type="text" id="m-dd-note-input" class="m-disp-input" placeholder="' + ((call.callNotes||[]).length?"Add a note…":"Create call notes…") + '">' +
+    '<input type="text" id="m-dd-note-input" class="m-disp-input" placeholder="' + (hzUserNotes(call).length?"Add a note…":"Create call notes…") + '">' +
     '<button onclick="mAddDispNote()" style="flex-shrink:0;background:rgba(var(--gold-rgb),0.15);border:1px solid rgba(var(--gold-rgb),0.4);border-radius:8px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-weight:700;padding:0 16px;cursor:pointer">Add</button>' +
   '</div>';
 
@@ -11924,6 +11924,9 @@ function hzNoiAls(call) {   // 9.25: same test as the New Call form's ALS line
   var f = (typeof M_CALL_NATURES !== "undefined" ? M_CALL_NATURES : []).find(function(n) { return n.value === call.callNature; });
   return !!(f && f.als) || mIsAlsNature(call);
 }
+// 9.29 (Sam): automatic entries that older calls still have in Call Notes — they live in the timeline, so the notes list hides them
+var HZ_AUTO_NOTE = /^(\S+ diverted — now |📍 (Location changed|Apt \/ suite changed|Caller location updated)|🔑 Access code (changed|removed)|📞 Callback number changed|Call Cancelled — )/;
+function hzUserNotes(call) { return (call.callNotes || []).filter(function(n) { return n && n.text && !HZ_AUTO_NOTE.test(String(n.text)); }); }
 function mIsAlsNature(call) {
   return call.callNature && M_ALS_NATURE_CODES.some(function(n){ return (call.callNature||"").indexOf(n+" -") === 0; });
 }
