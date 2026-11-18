@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.31"; window.M_BUILD = BUILD;
+  var BUILD = "9.32"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10707,15 +10707,18 @@ function mRenderDispatchDetail(call) {
     // 8.88 (Sam): only once a rig is really on the call — a crew with a rig AND a unit on it (a rig left over after
     // every unit was removed doesn't count)
     if ((call.crews || []).some(function(c) { return c && c.rig && Object.keys(c).some(function(k) { return k !== "rig" && c[k] && c[k] !== "__added__"; }); }))
-      content += '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:14px" onclick="mAddRigPrompt()">🚑 Assign Additional Rig</button>';
+      var hzAddRigBtn = '<button class="m-disp-btn" style="width:100%;border-color:rgba(var(--gold-rgb),0.35);color:var(--gold);margin-bottom:10px" onclick="mAddRigPrompt()">Assign Additional Rig</button>';
 
   // Additional resources — right under the units, above the disposition (12.44 / 5.07)
   var resHtml = mBuildAlsBanner(call) + mBuildBlsBanner(call) + mBuildPdBanner(call);
   // Collapsed until opened (tap the header, or Jump to… ▸ Additional Resources); the header says what's active
   var resOn = [call.alsActivated ? "ALS" : "", call.blsActivated ? "BLS" : "", call.pdActivated ? "PD" : ""].filter(Boolean);
-  if (resHtml) content += '<div id="m-dd-anchor-resources" style="border-top:1px solid var(--card-border);padding-top:12px;margin-bottom:14px">' +
+  // 9.32 (Sam): Assign Additional Rig and Assign Additional Resources together, in one section under the units
+  content += '<div id="m-dd-anchor-resources" class="hz-addl" style="border-top:1px solid var(--card-border);padding-top:12px;margin-bottom:14px">' + (typeof hzAddRigBtn !== "undefined" ? hzAddRigBtn : "");
+  if (resHtml) content +=
     mDdSecHead("resources", "Assign Additional Resources", resOn.length ? resOn.join(" · ") + " active" : "") +
-    (mDdOpen.resources ? resHtml : '') + '</div>';
+    (mDdOpen.resources ? resHtml : '');
+  content += '</div>';
 
   // Disposition (Add Additional Rig lives under the units — not repeated here)
   var needDisp = mAllOnSceneCheck(call) && !call.disposition.type;
@@ -10766,7 +10769,7 @@ function mRenderDispatchDetail(call) {
     '</div>';
   });
   content += '<div style="display:flex;gap:6px;margin-bottom:16px">' +
-    '<input type="text" id="m-dd-note-input" class="m-disp-input" placeholder="' + (hzUserNotes(call).length?"Add a note…":"Create call notes…") + '">' +
+    '<textarea id="m-dd-note-input" class="m-disp-input" rows="3" placeholder="' + (hzUserNotes(call).length?"Add a note…":"Create call notes…") + '"></textarea>' +   // 9.32 (Sam): bigger
     '<button onclick="mAddDispNote()" style="flex-shrink:0;background:rgba(var(--gold-rgb),0.15);border:1px solid rgba(var(--gold-rgb),0.4);border-radius:8px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-weight:700;padding:0 16px;cursor:pointer">Add</button>' +
   '</div>';
 
@@ -17481,8 +17484,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "@keyframes hzFillPulse{0%,100%{box-shadow:0 0 0 0 rgba(212,160,23,.85);filter:brightness(1)}50%{box-shadow:0 0 0 7px rgba(212,160,23,0);filter:brightness(1.18)}}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mSetCrewRigStatus']{animation:hzFillPulse 1.3s ease-in-out infinite !important}";
   // 8.97 / 12.461 (Sam): call-notes box + Add same height as the RMA / Transport buttons
-  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-note-input{min-height:50px !important;height:50px !important;font-size:.95rem !important;border-radius:10px !important;box-sizing:border-box;margin:0 !important}" +
-    "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mAddDispNote']{min-height:50px !important;height:50px !important;min-width:90px;font-size:.95rem !important;font-weight:800 !important;border-radius:10px !important;font-family:inherit !important}";
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-note-input{min-height:96px !important;height:96px !important;resize:vertical;font-family:inherit !important;line-height:1.35;padding-top:10px !important;font-size:.95rem !important;border-radius:10px !important;box-sizing:border-box;margin:0 !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mAddDispNote']{min-height:96px !important;height:96px !important;min-width:90px;font-size:.95rem !important;font-weight:800 !important;border-radius:10px !important;font-family:inherit !important}";
   // 8.97 / 12.461 (Sam): more room between the last unit and the Assign buttons
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box + .hz-assign-row{margin-top:26px !important}";
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-role-tag{font-family:'Oswald',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000;border-radius:6px;padding:3px 9px}";   // 8.98: Supervisor / Observer tag
