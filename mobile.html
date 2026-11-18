@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.15"; window.M_BUILD = BUILD;
+  var BUILD = "9.17"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -11041,7 +11041,8 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Direct response: once someone is on scene, the other units' "En Route to Scene" line is stale —
   // they aren't being tracked individually any more. The rig keeps its own status line.
   if (sl && mIsDirectResponse(call) && !isDriver && status === "enroute_scene" && mSceneMarkedBy(call)) sl = { icon: "", text: "Presumed On Scene", color: "#34c759" };   // 8.75 (Sam): was hidden
-  if (sl && hzWithRig && ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1) sl = null;   // 9.15 (Sam): "MC-20 with MC-902" says it — no status line under it
+  // 9.16 (Sam): a unit "with MC-902" reads like a responder — the rig on its way is "En Route to Scene" (same blue)
+  if (sl && hzWithRig && (status === "ambo_responding" || status === "onboard_rig")) sl = { icon: "", text: "En Route to Scene", color: ((M_STATUS_LOG.enroute_scene || {}).color) || "#7ab8f5" };
   if (sl) {
     var withRig = isDriver && crew.rig && (mLoadRigBoarded(call, crewIdx) && status === "picking_up_ambo" || ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1);
     var riding = !isDriver && crew.rig && M_RIDER_STATUSES.indexOf(status) !== -1;   // scene-direct unit riding in the rig
@@ -11093,7 +11094,13 @@ function mDivertResponse(crewIdx, role, unit) {
     var now = mNowHHMM();
     var update = { updatedAt: new Date().toISOString() };
     update["unitDetails." + mUdKey(crewIdx, role) + ".response"] = toRig ? "rig" : "scene";
-    var oneStepD = toRig && !!mCrewOf(call, crewIdx).rig;   // Standard call: straight to responding with the rig
+    // 9.17 (Sam): a unit that went rig → direct → rig picks the rig again from scratch — never reuse the old rig number.
+    // Leaving the rig path: if nobody else on the crew is going to the rig, release it. Back to the rig: only a rig someone
+    // else is actually going to counts; otherwise the old one is cleared and Choose Rig comes up.
+    var liveD = typeof hzCrewRigLive === "function" ? hzCrewRigLive(call, crewIdx, role) : mCrewOf(call, crewIdx).rig;
+    var crewD = mCrewOf(call, crewIdx);
+    if (crewD && crewD.rig && !liveD) { var crewsD = JSON.parse(JSON.stringify(call.crews || [])); if (crewsD[crewIdx]) delete crewsD[crewIdx].rig; update.crews = crewsD; }
+    var oneStepD = toRig && !!liveD;   // Standard call: straight to responding with the rig — only if that rig is really in use
     update["unitDetails." + mUdKey(crewIdx, role) + ".status"] = toRig ? (oneStepD ? "ambo_responding" : "picking_up_ambo") : "enroute_scene";
     update["unitDetails." + mUdKey(crewIdx, role) + ".statusAt"] = now;
     var ervD = !toRig && typeof hzErvActiveFor === "function" ? hzErvActiveFor(unit) : "";   // 12.80 / 5.38
@@ -17429,7 +17436,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec .hz-sec-hint{flex:0 0 100% !important;order:5;display:block !important;text-align:center;font-family:inherit !important;font-size:.7rem !important;font-weight:600 !important;letter-spacing:.02em;text-transform:none !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-top:4px;opacity:1}";
   // 9.09 / 12.473 (Sam): read only still lets you open / close the Call Timeline
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-dd-ro button.m-dd-sec[onclick*=\"'timeline'\"]{pointer-events:auto !important;opacity:1 !important}";
-  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-unit-title .hz-with{font-size:.85em;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;opacity:.9}" +
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-unit-title .hz-with{font-size:.85em;color:#fff !important;-webkit-text-fill-color:#fff;opacity:1}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rig-acts{margin-top:8px}";   // 9.13
   // 9.14 / 12.477 (Sam): green next-step buttons (Mark … On Scene, rig steps) pulse slowly but clearly
   st.textContent += "@keyframes hzGreenPulse{0%,100%{box-shadow:0 0 0 0 rgba(52,199,89,.95);filter:brightness(1)}50%{box-shadow:0 0 0 10px rgba(52,199,89,0),0 0 22px 4px rgba(52,199,89,.55);filter:brightness(1.28)}}" +
