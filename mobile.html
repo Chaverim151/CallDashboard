@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.22"; window.M_BUILD = BUILD;
+  var BUILD = "9.24"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10710,10 +10710,23 @@ function mRenderDispatchDetail(call) {
   content += needDisp
     ? '<div class="m-flash" style="display:inline-block;font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:8px">Set Call Disposition</div>'
     : '<div class="m-disp-label">Call Disposition</div>';
+  var hzRigsOn = hzDispRigs(call);
+  if (hzRigsOn.length >= 2) {   // 9.23 (Sam): more than one rig → a separate disposition for each rig
+    var dr = (call.disposition || {}).rigs || {};
+    hzRigsOn.forEach(function(x) {
+      var d = dr[x.ci] || {};
+      content += '<div class="hz-rigdisp"><div class="hz-rigdisp-h">' + mEscHtml(x.rig) + '</div><div style="display:flex;gap:8px">' +
+        '<button class="m-disp-btn hz-rd-b' + (d.type === "rma" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="hzRigDispRMA(' + x.ci + ')">RMA</button>' +
+        '<button class="m-disp-btn hz-rd-b' + (d.type === "transport" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="mOpenTransportSheet(' + x.ci + ')">🚑 Transport' + (d.type === "transport" ? ' ✓' : '') + '</button></div>' +
+        (d.type === "transport" && d.hospital ? '<div class="hz-rd-dest">🏥 ' + mEscHtml(d.hospital) + '</div>' : '') + '</div>';
+    });
+    if (hzRigsOn.some(function(x) { return (dr[x.ci] || {}).type === "rma"; }))
+      content += '<div style="margin-top:8px"><div class="m-disp-label">Enter Approving Unit ID</div><input type="text" class="m-disp-input" id="m-rma-by" placeholder="' + orgPh("Unit ID, e.g. MC-16") + '" autocapitalize="characters" value="' + mEscHtml((call.disposition || {}).rmaBy || "") + '" onchange="mSetRmaBy(this.value)"></div>';
+  } else {
   content += '<div style="display:flex;gap:8px' + (call.zone === "transfer" ? ';flex-direction:column' : '') + '">' +
-    '<button onclick="mSetDispositionRMA()"' + (call.disposition.type==='rma' ? ' class="m-pick-on"' : '') + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='rma'?'rgba(125,237,181,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='rma'?'rgba(125,237,181,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='rma'?'#7dedb5':'var(--gray)') + '">RMA</button>' +
+    '<button onclick="mSetDispositionRMA()"' + (call.disposition.type==='rma' ? ' class="m-pick-on"' : (needDisp ? ' class="hz-disp-pulse"' : '')) + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='rma'?'rgba(125,237,181,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='rma'?'rgba(125,237,181,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='rma'?'#7dedb5':'var(--gray)') + '">RMA</button>' +
     (call.zone === "transfer" ? mLindenDispBtns(call) : '') +
-    (call.zone === "transfer" ? '' : '<button onclick="mOpenTransportSheet()"' + (call.disposition.type==='transport' ? ' class="m-pick-on"' : '') + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='transport'?'rgba(122,184,245,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='transport'?'rgba(122,184,245,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='transport'?'#7ab8f5':'var(--gray)') + '">🚑 Transport' + (call.disposition.type==='transport'&&call.disposition.hospital?' ✓':'') + '</button>') +
+    (call.zone === "transfer" ? '' : '<button onclick="mOpenTransportSheet()"' + (call.disposition.type==='transport' ? ' class="m-pick-on"' : (needDisp ? ' class="hz-disp-pulse"' : '')) + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='transport'?'rgba(122,184,245,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='transport'?'rgba(122,184,245,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='transport'?'#7ab8f5':'var(--gray)') + '">🚑 Transport' + (call.disposition.type==='transport'&&call.disposition.hospital?' ✓':'') + '</button>') +
   '</div>';
   if (call.disposition.type === 'rma') {
     content += '<div style="margin-top:8px"><div class="m-disp-label">Enter Approving Unit ID</div>' +
@@ -10725,6 +10738,7 @@ function mRenderDispatchDetail(call) {
   } else if (call.disposition.type === 'transport' && call.disposition.hospital) {
     content += '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px;font-size:0.78rem;color:#7ab8f5">🏥 ' + call.disposition.hospital + '</div>';
   }
+  }   // end single disposition
   // "Mark <rig> Back at Base" lives here, right under the disposition (one panel per crew that's at that step)
   (call.crews || []).forEach(function(cr, ci) { var p = mBuildCrewRigPanel(call, ci); if (p.indexOf("'back_at_base')") !== -1) content += p; });
   content += '</div>';
@@ -12124,6 +12138,32 @@ function mSetDispositionLinden(t) {
   }).catch(function(e){ mToast("Error: " + e.message, true); });
 }
 window.mSetDispositionLinden = mSetDispositionLinden;
+// 9.23 (Sam): rigs on the call that have a unit with them — 2+ means one disposition per rig
+function hzDispRigs(call) {
+  if (!call || call.zone === "transfer") return [];
+  return (call.crews || []).map(function(cr, ci) { return { ci: ci, rig: cr && cr.rig }; }).filter(function(x) {
+    var cr = call.crews[x.ci]; return x.rig && Object.keys(cr).some(function(k) { return k !== "rig" && cr[k] && cr[k] !== "__added__"; });
+  });
+}
+// The call-level disposition follows the rigs: decided once every rig is; "transport" if any rig transports, otherwise RMA
+function hzRollupDisp(call, rigsMap) {
+  var list = hzDispRigs(call), d = call.disposition || {};
+  var all = list.every(function(x) { return rigsMap[x.ci] && rigsMap[x.ci].type; });
+  var trs = list.filter(function(x) { return (rigsMap[x.ci] || {}).type === "transport"; }).map(function(x) { return { crewIdx: x.ci, rig: x.rig, hospital: rigsMap[x.ci].hospital || "" }; });
+  return { type: all ? (trs.length ? "transport" : "rma") : "", hospital: trs.length ? trs[0].hospital : "", transports: trs, rigs: rigsMap, rmaBy: d.rmaBy || "", rmaCustom: d.rmaCustom || "" };
+}
+function hzRigDispRMA(ci) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(), rigs = JSON.parse(JSON.stringify((call.disposition || {}).rigs || {})), rig = ((call.crews || [])[ci] || {}).rig || "Rig";
+    var on = (rigs[ci] || {}).type !== "rma";
+    if (on) rigs[ci] = { type: "rma", rig: rig }; else delete rigs[ci];
+    var update = { disposition: hzRollupDisp(call, rigs), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(rig + (on ? " — RMA" : " — disposition cleared"), "✋", "#7dedb5", "disp")) };
+    if (on) { var now = mNowHHMM(); mCrewRigUnits(call, ci).forEach(function(u) { if (u.status === "on_scene_ambo") { update["unitDetails." + mUdKey(ci, u.role) + ".status"] = "rma_scene"; update["unitDetails." + mUdKey(ci, u.role) + ".statusAt"] = now; } }); }
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).catch(function(e) { mToast("Error: " + e.message, true); });
+}
 function mSetDispositionRMA() {
   var callId = mDispSelectedCallId;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
@@ -12241,9 +12281,11 @@ function mConfirmTransportMulti() {
   }).then(function(){ mCloseAllSheets(); mToast("🚑 Transport confirmed — " + transports.map(function(t){ return (t.rig||"Crew") + " → " + t.hospital; }).join(", ")); })
     .catch(function(e){ mToast("Error: " + e.message, true); });
 }
-function mOpenTransportSheet() {
+var mTrForCrew = null;   // 9.23: the rig this transport is for (per-rig dispositions)
+function mOpenTransportSheet(ci) {
   var call = mDispCallCache[mDispSelectedCallId];
   if (!call) return;
+  mTrForCrew = (typeof ci === "number" && hzDispRigs(call).length >= 2) ? ci : null;
   mTmNonMap = {};
   var hospSel = document.getElementById("m-tr-hospital");
   hospSel.innerHTML = '<option value="">Select hospital…</option>' + mHospitalOptionsHTML();
@@ -12363,6 +12405,19 @@ window.mTmSetNon = mTmSetNon;
 
 // Direct response: the transport update is the destination. Everyone still on the call is recorded
 // as transporting — no one is asked who is aboard or who is clearing.
+// 9.23: one rig's transport — only that rig's units go to transporting
+function hzConfirmRigTransport(ci, hospital) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(), nowT = mNowHHMM(), ud = call.unitDetails || {}, times = call.times || {}, crew = (call.crews || [])[ci] || {};
+    Object.keys(crew).forEach(function(role) { if (role === "rig" || !crew[role] || crew[role] === "__added__") return; var id = ci + "_" + role; ud[id] = Object.assign({}, ud[id] || {}, { status: "transporting", statusAt: nowT }); });
+    var rigs = JSON.parse(JSON.stringify((call.disposition || {}).rigs || {})); rigs[ci] = { type: "transport", rig: crew.rig || "", hospital: hospital };
+    var update = { unitDetails: ud, disposition: hzRollupDisp(call, rigs), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt((crew.rig || "Rig") + " — Transport → " + hospital, "🏥", "#ff9090", "disp")) };
+    if (!times.enroute) update["times.enroute"] = nowT;
+    return db.collection("activeCalls").doc(callId).update(update);
+  }).then(function() { mCloseAllSheets(); mTrForCrew = null; mToast("🚑 Transport confirmed → " + hospital); }).catch(function(e) { mToast("Error: " + e.message, true); });
+}
 function mConfirmTransportDirect(hospital) {
   var callId = mDispSelectedCallId;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
@@ -12385,6 +12440,7 @@ function mConfirmTransportDirect(hospital) {
     .catch(function(e){ mToast("Error: " + e.message, true); });
 }
 function mConfirmTransport() {
+  if (mTrForCrew !== null) { var hz = document.getElementById("m-tr-hospital").value; if (!hz) { mUpdateTransportPrompts(); return; } return hzConfirmRigTransport(mTrForCrew, hz); }
   if (mTrMulti) return mConfirmTransportMulti();
   var hospital = document.getElementById("m-tr-hospital").value;
   if (!hospital) { mUpdateTransportPrompts(); return; }
@@ -12825,12 +12881,6 @@ function mCloseAllSheets() {
     <div class="m-disp-label">Access Code</div>
     <div style="position:relative;margin-bottom:12px"><input type="text" id="m-nc-accesscode" class="m-disp-input" style="padding-right:38px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-accesscode')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
     </div>
-    <div class="m-disp-label">Nature of Illness</div>
-    <div style="position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-q" class="m-disp-input" placeholder="Type to search… (e.g. fall, cardiac)" autocomplete="off" autocorrect="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="m-nc-nature-list" style="margin:0;padding-right:34px" oninput="mNcNatureFilter()" onfocus="mNcNatureFilter(true)" onkeydown="mNcNatureKey(event)" onblur="setTimeout(mNcNatureBlur,160)"><span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--gray)">▾</span><div id="m-nc-nature-list" role="listbox" class="m-nc-nat-list" style="display:none"></div></div>
-    <select id="m-nc-nature" class="m-disp-input" onchange="setTimeout(mNcValidateMarks,0)" style="display:none" aria-hidden="true" tabindex="-1"></select>
-    <div id="m-nc-nature-custom-wrap" style="display:none;position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-custom" class="m-disp-input" style="padding-right:38px;margin-top:6px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-nature-custom')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
-    <div id="m-nc-als-hint" style="display:none;font-size:0.82rem;font-weight:800;color:#c62828;margin:6px 0 12px">🚨 ALS recommended by protocol for this nature</div>
-    <div id="m-nc-als-hint-spacer" style="height:12px"></div>
     <div class="hz-nc-box" id="m-nc-box-pt"><!-- 12.359: patient boxed together -->
     <div class="m-disp-label">Patient</div>
     <div class="hz-nc-ptgrp"><!-- 12.360 (Sam): one red outline around age + sex while either is missing -->
@@ -12853,6 +12903,12 @@ function mCloseAllSheets() {
       <button type="button" class="m-disp-btn m-nc-opt" data-sex="female" onclick="mSetNcSex('female')" style="flex:1">♀ Female</button>
     </div>
     </div>
+    <div class="m-disp-label">NOI</div><!-- 9.24 (Sam): inside the patient box, labelled NOI -->
+    <div style="position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-q" class="m-disp-input" placeholder="Type to search… (e.g. fall, cardiac)" autocomplete="off" autocorrect="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="m-nc-nature-list" style="margin:0;padding-right:34px" oninput="mNcNatureFilter()" onfocus="mNcNatureFilter(true)" onkeydown="mNcNatureKey(event)" onblur="setTimeout(mNcNatureBlur,160)"><span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--gray)">▾</span><div id="m-nc-nature-list" role="listbox" class="m-nc-nat-list" style="display:none"></div></div>
+    <select id="m-nc-nature" class="m-disp-input" onchange="setTimeout(mNcValidateMarks,0)" style="display:none" aria-hidden="true" tabindex="-1"></select>
+    <div id="m-nc-nature-custom-wrap" style="display:none;position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-custom" class="m-disp-input" style="padding-right:38px;margin-top:6px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-nature-custom')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
+    <div id="m-nc-als-hint" style="display:none;font-size:0.82rem;font-weight:800;color:#c62828;margin:6px 0 12px">🚨 ALS recommended by protocol for this NOI</div>
+    <div id="m-nc-als-hint-spacer" style="height:4px"></div>
     </div>
 
     <div class="m-disp-label">Dispatch Notes</div>
@@ -17469,6 +17525,14 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     "html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-addrig .hz-rigchip{min-height:40px !important;width:100%;padding:4px 2px !important;font-size:.9rem !important;border-radius:10px !important;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important;font-weight:700}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-addrig .hz-rigchip.on{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-crew-more{display:block}";
+  // 9.23 (Sam): everyone on scene and no disposition yet → RMA / Transport pulse
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button.hz-disp-pulse{animation:hzChoosePulse 1.3s ease-in-out infinite !important;border-width:2px !important;border-style:solid !important}";
+  // 9.23 / 12.485: per-rig disposition rows
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rd-b{flex:1;min-height:50px !important;font-size:.95rem !important;font-weight:800 !important;border-radius:10px !important;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rd-b.m-pick-on{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rd-dest{margin-top:6px;font-size:.88rem;font-weight:700;color:#1f2328 !important;-webkit-text-fill-color:#1f2328}";
   // 8.60 / 12.424 (Sam): more black space between the unit boxes on a call
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box{margin-bottom:14px !important;padding:10px 12px !important}";
   (document.head || document.documentElement).appendChild(st);
