@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.18"; window.M_BUILD = BUILD;
+  var BUILD = "9.19"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3253,6 +3253,7 @@ auth.onAuthStateChanged(function(user) {
 function mEnterHome() {
   mGoTo("home");
   mStartCallsListener();
+  if (mCanDispatch()) setTimeout(function() { try { mStartDispatchListener(); } catch (e) {} }, 0);   // 9.19: CAD counts ready before CAD is opened
 
   // Alerts on THIS device? (its own record). Signed back in on a device that still allows notifications and wasn't
   // switched off here → turn alerts back on quietly (also moves members off the old one-record-per-member setup).
@@ -3353,27 +3354,23 @@ function mRequestLocation() {
 function mStartCallsListener() {
   if (mCallsListener) return;
   window.__hzCallsStart = Date.now(); mCallsLastSnap = 0;   // 9.11: watched by hz-live-watch
+  // 9.19 (Sam): no orderBy — Firestore leaves out any call whose createdAt is missing or stored differently, so a call
+  // could show on the desktop but never in the phone's Active Calls. Sorted here instead. Errors retry on their own.
   mCallsListener = db.collection("activeCalls")
     .where("status","==","active")
-    .orderBy("createdAt","desc")
     .onSnapshot(function(snap) {
-      mCallsLastSnap = Date.now();   // 9.11
+      mCallsLastSnap = Date.now();
       var calls = [];
       snap.forEach(function(d) { try { calls.push(hzNormCall(Object.assign({id:d.id}, d.data()))); } catch (e) { console.warn("call", d.id, e); } });
+      try { calls.sort(function(a,b) { return hzTsKey(b.createdAt).localeCompare(hzTsKey(a.createdAt)); }); } catch (e) {}
       try { mCheckNewCall(calls); } catch (e) { console.warn("new call check", e); }
       try { mRenderCalls(calls); } catch (e) { hzShowListErr("home", e); }
-    }, function() {
-      // Fallback without orderBy
-      mCallsListener = db.collection("activeCalls")
-        .where("status","==","active")
-        .onSnapshot(function(snap) {
-          mCallsLastSnap = Date.now();   // 9.11
-          var calls = [];
-          snap.forEach(function(d) { try { calls.push(hzNormCall(Object.assign({id:d.id}, d.data()))); } catch (e) { console.warn("call", d.id, e); } });
-          try { calls.sort(function(a,b) { return hzTsKey(b.createdAt).localeCompare(hzTsKey(a.createdAt)); }); } catch (e) {}
-          try { mCheckNewCall(calls); } catch (e) { console.warn("new call check", e); }
-          try { mRenderCalls(calls); } catch (e) { hzShowListErr("home", e); }
-        });
+    }, function(e) {
+      console.warn("Calls listener error", e);
+      window.__hzLastListErr = "home listener: " + (e && e.message ? e.message : e);
+      try { mCallsListener && mCallsListener(); } catch (x) {}
+      mCallsListener = null;
+      setTimeout(mStartCallsListener, 3000);
     });
 }
 
@@ -6001,6 +5998,7 @@ var mDispViewCur = (document.getElementById("desk-console-left") ? "calls" : "da
 var rigHistOpen = {}, rigHistHtml = {};
 function mDispView(v) {
   mDispViewCur = v;
+  if (typeof mStartDispatchListener === "function" && typeof db !== "undefined") { try { mStartDispatchListener(); } catch (e) {} }   // 9.19 (Sam): the CAD screen can be reached without mOpenDispatch (Back, ☰ menu, Manage) — the list must always be listening
   if (!mNav.restoring && document.getElementById("m-pg-dispatch") && document.getElementById("m-pg-dispatch").classList.contains("active")) mNavRecord(mNavKey("dispatch"));
   var desk = !!document.getElementById("desk-console-left");
   var show = function(id, on) { var e = document.getElementById(id); if (e) e.style.display = on ? "" : "none"; };
