@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.50"; window.M_BUILD = BUILD;
+  var BUILD = "9.53"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3582,7 +3582,7 @@ function mRenderCalls(calls) {
         // Patient · Units · Rig · Additional Resources · Times · Status (5.08)
         var rows = row("Patient", patientPill + naturePill) + row("Units", unitPills || '<span class="m-pill time">None yet</span>') +
                    row("Rig", rigPills) + row("Resources", resPills) +
-                   row("Times", timePills) + row("Status", (call.testMode ? '<span class="m-pill" style="background:rgba(240,165,0,0.15);border-color:rgba(240,165,0,0.45);color:#f0a500">🧪 Test</span>' : '') + dispPill);
+                   row("Times", timePills) + row("Status", (call.testMode ? '<span class="m-pill hz-test-pill" style="background:rgba(240,165,0,0.15);border-color:rgba(240,165,0,0.45);color:#f0a500">🧪 Test</span>' : '') + dispPill);
         return rows ? '<div class="m-ct">' + rows + '</div>' : "";
       })() +
       notesHtml + actions +
@@ -11967,7 +11967,7 @@ function mAlsEtaTick() {
 }
 // 9.49 (Sam): an active resource's box — phone number shown, Call and Cancel side by side
 function hzResSplit(digits, display, cancelHtml) {
-  return '<div class="hz-res-split">' + (digits ? '<a class="hz-res-call" href="tel:' + digits + '">📞 ' + mEscHtml(display || digits) + '</a>' : '') + cancelHtml + '</div>';
+  return '<div class="hz-res-split">' + (digits ? '<a class="hz-res-call" href="tel:' + digits + '"><span class="hz-ph-i">📞</span><span>' + mEscHtml(display || digits) + '</span></a>' : '') + cancelHtml + '</div>';
 }
 function hzAlsPhone(call) {
   var p = String((call && call.alsProvider) || "").toLowerCase();
@@ -11980,16 +11980,11 @@ function mBuildAlsBanner(call) {
   if (call.alsActivated) {
     var isNoALS = call.alsProvider === "No ALS Available";
     var etaLine = "";
-    if (!isNoALS && call.alsEtaMinutes && call.alsActivatedISO && !call.alsOnScene) {
-      etaLine = '<div style="font-size:0.7rem;margin-top:2px"><span id="m-als-eta-live" style="color:#ffc84a">calculating…</span></div>';
-      clearInterval(window._mAlsEtaTicker);
-      window._mAlsEtaTicker = setInterval(mAlsEtaTick, 30000);
-      setTimeout(mAlsEtaTick, 50);
-    } else if (!isNoALS && call.alsEta && !call.alsOnScene) {
-      etaLine = '<div style="font-size:0.7rem;margin-top:2px;color:var(--gray)">ETA ' + call.alsEta + ' min</div>';
-    }
+    clearInterval(window._mAlsEtaTicker);   // 9.52 (Sam): no countdown / auto "Arrived" — just the time it was activated and the ETA given
+    var _alsEta = call.alsEtaMinutes || call.alsEta;
+    if (!isNoALS && _alsEta) etaLine = '<div style="font-size:0.78rem;margin-top:2px">ETA ' + mEscHtml(String(_alsEta)) + ' min</div>';
     return '<div class="m-res-card" style="background:rgba(224,85,85,0.08);border:1px solid ' + (isNoALS?"rgba(255,255,255,0.12)":"rgba(224,85,85,0.4)") + ';border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
-      '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (isNoALS?"var(--gray)":"#ff9090") + ';font-weight:700;margin-bottom:2px">' + (isNoALS?"⚠ No ALS Available":"🚨 ALS Active") + '</div>' +
+      '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (isNoALS?"var(--gray)":"#ff9090") + ';font-weight:700;margin-bottom:2px">' + (isNoALS?"⚠ No ALS Available":"🚑 ALS Active") + '</div>' +
       (!isNoALS ? '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsActivatedAt?" · "+call.alsActivatedAt:"") + '</div>' + etaLine : '') +
       (!isNoALS ? /* 9.50 (Sam): no On Scene button for ALS */
           hzResSplit(hzAlsPhone(call).phone, hzAlsPhone(call).display, '<button class="m-disp-btn m-res-btn hz-res-cancel" onclick="mOpenCancelAlsSheet()">Cancel ALS</button>') : '') +
@@ -12103,7 +12098,7 @@ function mBuildBlsBanner(call) {
   if (call.blsActivated) {
     return '<div class="m-res-card" style="background:rgba(232,160,255,0.08);border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
       '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:2px">🚑 BLS Mutual Aid Active</div>' +
-      '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.blsProvider||"") + (call.blsEta?" · ETA "+call.blsEta+"min":"") + '</div></div>' +
+      '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.blsProvider||"") + (call.blsActivatedAt?" · "+call.blsActivatedAt:"") + '</div>' + (call.blsEta?'<div style="font-size:0.78rem;margin-top:2px">ETA '+mEscHtml(String(call.blsEta))+' min</div>':'') + '</div>' +
       hzResSplit(sugPhoneDigits, sugPhone, '<button class="m-disp-btn m-res-btn hz-res-cancel" onclick="mCancelBLS()">Cancel BLS</button>') +
     '</div>';
   }
@@ -17700,6 +17695,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .m-res-card{background:#000 !important;border:2px solid #d4a017 !important;border-radius:10px !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .m-res-card *{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body input,html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body select,html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body textarea{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:8px !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body input::placeholder{color:rgba(212,160,23,.6) !important;-webkit-text-fill-color:rgba(212,160,23,.6)}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important;min-height:46px;font-weight:800 !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mMarkAlsOnScene'],html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body a[href^='tel:']{background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body a[href^='tel:'] *{color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mOpenCancel']{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff}";   // 9.44 (Sam): Additional Resources popup in black & gold (On Scene / call = green, Cancel = red)
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button.hz-res-cancel{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;width:100%}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-inline{margin:14px 0 4px}";   // 9.45
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split{display:flex;gap:8px;margin-top:8px}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split > *{flex:1 1 0;min-width:0;width:auto !important;min-height:46px;margin:0 !important;display:flex;align-items:center;justify-content:center;border-radius:10px !important;font-weight:800 !important;text-decoration:none;font-size:.9rem;box-sizing:border-box}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split a.hz-res-call{background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000;white-space:nowrap}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mMarkAlsOnScene']{min-height:46px}";   // 9.49
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-call-card .m-ct-v .m-pill.m-pill:not(.hz-test-pill){background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .m-call-card .m-ct-v .m-pill.m-pill:not(.hz-test-pill) b{color:#fff !important;-webkit-text-fill-color:#fff}";   // 9.51 (Sam): home call card pills (rig, ALS / BLS / PD, times) all black & gold
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split a.hz-res-call{flex:1.35 1 0 !important;gap:4px;padding:0 4px !important;font-size:min(.84rem,3.7vw) !important;letter-spacing:0 !important;overflow:hidden}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split a.hz-res-call .hz-ph-i{font-size:.8em;flex-shrink:0}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split .hz-res-cancel{flex:1 1 0 !important;font-size:min(.88rem,3.9vw) !important;padding:0 6px !important;white-space:nowrap}";   // 9.53 (Sam): phone numbers fit inside the green button
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
