@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.12"; window.M_BUILD = BUILD;
+  var BUILD = "9.13"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -10820,7 +10820,7 @@ function mCrewHospital(call, crewIdx) {
   var t = (d.transports || []).filter(function(x){ return x.crewIdx === crewIdx; })[0];
   return (t && t.hospital) || d.hospital || "Facility";
 }
-function mBuildCrewRigPanel(call, crewIdx) {
+function mBuildCrewRigPanel(call, crewIdx, inlineOnly) {
   var crew = mCrewOf(call, crewIdx);
   var rigUnits = mCrewRigUnits(call, crewIdx);
   if (!rigUnits.length) return "";
@@ -10883,6 +10883,7 @@ function mBuildCrewRigPanel(call, crewIdx) {
     body += '<button class="m-disp-btn m-pulse-green" style="width:100%;margin-top:8px;border-color:rgba(125,237,181,0.5);background:rgba(125,237,181,0.12);color:#7dedb5" onclick="mClearNonRigUnits()">✓ Clear all units not on the rig (' + stillOpen.map(function(u){ return mEscHtml(u.unit); }).join(", ") + ')</button>';
   }
   if (body.indexOf("<button") === -1) return "";   // 8.74 (Sam): the rig box only shows when it has a button to press — no text-only notes
+  if (inlineOnly) return '<div class="hz-act-row hz-rig-acts">' + body + '</div>';   // 9.13: inside the unit's own box
   // 8.94 (Sam): laid out like a unit box — the rig as the title, its status line, then the button(s)
   var rst = typeof mCrewRigStatusLabel === "function" ? mCrewRigStatusLabel(call, crewIdx, crew) : "", rsl = (typeof M_STATUS_LOG !== "undefined" && M_STATUS_LOG[rst]) || null;
   return '<div class="m-disp-unit-box hz-rig-box"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span class="hz-unit-title">' + mEscHtml(rig) + '</span></div>' +
@@ -10927,7 +10928,12 @@ function mBuildCrewBlock(call, crew, crewIdx) {
     html += mBuildUnitBox(call, crewIdx, k, isSup(k) ? "Supervisor" : "Observer");
   });
   var _rp = mBuildCrewRigPanel(call, crewIdx);
-  if (_rp.indexOf("'back_at_base')") === -1) html += _rp;   // a "Mark rig Back at Base" step is shown under Call Disposition instead (11.73 / 4.60)
+  // 9.13 (Sam): no separate rig box — the rig's buttons go inside the box of the first unit with it ("MC-20 with MC-902")
+  if (_rp && _rp.indexOf("'back_at_base')") === -1) {
+    var _ud = call.unitDetails || {}, _host = Object.keys(crew).filter(function(k) { return k !== "rig" && crew[k] && crew[k] !== "__added__" && ((_ud[mUdKey(crewIdx, k)] || {}).response === "rig" || mIsDriverRole(call, crewIdx, k)); })[0];
+    if (_host && html.indexOf('data-hz-rig-host="' + crewIdx + '_' + _host + '"') !== -1) html = html.replace('<!--hz-rig-slot:' + crewIdx + '_' + _host + '-->', mBuildCrewRigPanel(call, crewIdx, true));
+    else html += _rp;
+  }   // a "Mark rig Back at Base" step is shown under Call Disposition instead (11.73 / 4.60)
   html += '<div class="hz-assign-row" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
     '<button class="m-disp-btn' + (hzNeedUnit ? ' hz-pulse-add' : '') + '" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">Assign Responder</button>' +
     '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.3);color:#e8a0ff" onclick="mAddExtraRole(' + crewIdx + ',\'supervisor\')">Assign Supervisor</button>' +
@@ -10970,10 +10976,11 @@ function mBuildUnitBox(call, crewIdx, role, label) {
     var rmX = ["primary","backup","rigUnit"].indexOf(role) === -1 ? '<button class="hz-empty-x" title="Remove this slot" onclick="mRemoveEmptySlot(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(label) + '\')">✕</button>' : '';
     return '<div class="m-disp-unit-box hz-empty-slot"><button class="m-disp-btn hz-empty-btn' + (mHzEmptyNoPulse ? ' hz-no-pulse' : '') + '" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'unit\')">+ Assign ' + label + '</button>' + rmX + '</div>';
   }
-  var html = '<div class="m-disp-unit-box">';
+  var hzWithRig = (det.response === "rig" || isDriver) && typeof hzCrewRigLive === "function" ? hzCrewRigLive(call, crewIdx) : "";   // 9.13: "MC-20 with MC-902"
+  var html = '<div class="m-disp-unit-box" data-hz-rig-host="' + crewIdx + '_' + role + '">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
     // 8.98 (Sam): Supervisor / Observer boxes look like the others — the unit as the title, the role as a tag on the right
-    (hasUnit ? '<span class="hz-unit-title">' + mEscHtml(unit) + '</span>' : '<span class="m-disp-label" style="margin-bottom:0">' + label + '</span>') +
+    (hasUnit ? '<span class="hz-unit-title">' + mEscHtml(unit) + (hzWithRig ? ' <span class="hz-with">with ' + mEscHtml(hzWithRig) + '</span>' : '') + '</span>' : '<span class="m-disp-label" style="margin-bottom:0">' + label + '</span>') +
     (hasUnit
       ? '<span style="display:flex;align-items:center;gap:6px">' + (label ? '<span class="hz-role-tag">' + mEscHtml(label) + '</span>' : '') + '<button onclick="mRemoveUnitPrompt(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(unit) + '\')" style="background:none;border:1px solid rgba(255,144,144,0.35);border-radius:5px;color:#ff9090;font-size:0.8rem;cursor:pointer;padding:4px 8px;line-height:1.1">✕</button></span>'
       : '<span style="display:flex;align-items:center;gap:6px"><span class="m-flash" style="font-size:0.55rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid rgba(255,144,144,0.5)">Assign Unit</span>' +
@@ -11037,7 +11044,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   if (sl) {
     var withRig = isDriver && crew.rig && (mLoadRigBoarded(call, crewIdx) && status === "picking_up_ambo" || ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1);
     var riding = !isDriver && crew.rig && M_RIDER_STATUSES.indexOf(status) !== -1;   // scene-direct unit riding in the rig
-    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.text +   /* 8.75 (Sam): no unit name — it's in the pill */ (withRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : (det.ervVehicle && det.response === "scene" && HZ_ERV_DONE.indexOf(status) < 0 ? ' · ' + (/^ERV/i.test(det.ervVehicle) ? '🚑 ' : '🚑 ') + mEscHtml(det.ervVehicle) : '')) + '</div>';
+    html += '<div style="font-size:0.78rem;color:' + sl.color + ';font-weight:600;margin-bottom:6px">' + sl.text +   /* 8.75 (Sam): no unit name — it's in the pill */ (withRig && !hzWithRig ? ' · ' + mEscHtml(crew.rig) : riding ? ' · riding in ' + mEscHtml(crew.rig) : (det.ervVehicle && det.response === "scene" && HZ_ERV_DONE.indexOf(status) < 0 ? ' · ' + (/^ERV/i.test(det.ervVehicle) ? '🚑 ' : '🚑 ') + mEscHtml(det.ervVehicle) : '')) + '</div>';
   }
 
   var nextBtn = mNextStepButton(call, crewIdx, role, unit);
@@ -11070,6 +11077,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   if (det.response === "rig" && crew.rig && ["", "picking_up_ambo", "onboard_rig", "ambo_responding"].indexOf(status) !== -1 && ["", "picking_up_ambo", "onboard_rig", "ambo_responding"].indexOf(hzRigSt || "") !== -1)
     html += '<button class="m-disp-btn m-divert-btn" style="width:100%;margin-top:6px;border-color:rgba(255,200,74,0.4);color:#ffc84a" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'rig\')">Divert to Alternate Vehicle</button>';
   hzActWrap();
+  html += '<!--hz-rig-slot:' + crewIdx + '_' + role + '-->';   // 9.13: the crew's rig buttons land here (first unit with the rig)
 
   html += '</div>';
   return html;
@@ -17249,7 +17257,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   var S = "html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-assign";
   st.textContent += S + "{background:#000 !important;border-top:2px solid #d4a017 !important;color:#d4a017 !important}" +
     S + " #m-assign-title{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}" +
-    S + " .m-disp-label{color:#fff !important;-webkit-text-fill-color:#fff;font-weight:800 !important;font-size:.85rem !important;letter-spacing:.06em !important}" +   // 8.99 (Sam): bold white
+    S + " .m-disp-label{color:#fff !important;-webkit-text-fill-color:#fff;font-weight:400 !important;font-size:.85rem !important;letter-spacing:.06em !important}" +   // 8.99 (Sam): bold white
     S + " #m-assign-title{display:none !important}" +
     S + " > div:first-child{background:#d4a017 !important;opacity:.6}" +
     S + " #m-assign-roster .m-disp-btn{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important;font-weight:700}" +
@@ -17365,7 +17373,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     AR + " > div:nth-child(2) > div{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}" +
     AR + " > div:nth-child(2) > button{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important;border-radius:10px !important}" +
     AR + " #m-addrig-info{color:#e6cf8a !important;-webkit-text-fill-color:#e6cf8a}" + AR + " #m-addrig-info b{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}" +
-    AR + " #m-addrig-pick > div:first-child, " + AR + " .m-disp-label{color:#fff !important;-webkit-text-fill-color:#fff;font-weight:800 !important}" +
+    AR + " #m-addrig-pick > div:first-child, " + AR + " .m-disp-label{color:#fff !important;-webkit-text-fill-color:#fff;font-weight:400 !important}" +
     AR + " #m-addrig-roster{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px !important}" +
     AR + " #m-addrig-roster .m-disp-btn{min-height:40px !important;min-width:0 !important;width:100%;padding:4px 2px !important;font-size:.9rem !important;border-radius:10px !important;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;box-shadow:none !important;font-weight:700}" +
     AR + " #m-addrig-roster .m-disp-btn[style*='255,144,144']{background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;border-color:#c62828 !important}" +
@@ -17420,6 +17428,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec .hz-sec-hint{flex:0 0 100% !important;order:5;display:block !important;text-align:center;font-family:inherit !important;font-size:.7rem !important;font-weight:600 !important;letter-spacing:.02em;text-transform:none !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-top:4px;opacity:1}";
   // 9.09 / 12.473 (Sam): read only still lets you open / close the Call Timeline
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-dd-ro button.m-dd-sec[onclick*=\"'timeline'\"]{pointer-events:auto !important;opacity:1 !important}";
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-unit-title .hz-with{font-size:.85em;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;opacity:.9}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rig-acts{margin-top:8px}";   // 9.13
   // 8.60 / 12.424 (Sam): more black space between the unit boxes on a call
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-unit-box{margin-bottom:14px !important;padding:10px 12px !important}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #hz-resp-ask .hz-resp-later{border:none !important;box-shadow:none !important;outline:none}";
