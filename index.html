@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.507">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.509">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2775,7 +2775,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.507</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.509</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -20357,7 +20357,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.507";
+var DESKTOP_VERSION = "12.509";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -25663,7 +25663,8 @@ function mRenderDispatchDetail(call) {
     if (ci === 0) hzC0 = mBuildCrewBlock(call, crew, ci);
     else hzMore += mBuildCrewBlock(call, crew, ci);
   });
-  var hzUnitsHtml = hzC0.replace('<!--hz-more-crews-->', hzMore);   // 9.22: extra rigs' units inside the same box, above the Assign buttons
+  var hzResAct = (call.alsActivated ? mBuildAlsBanner(call) : "") + (call.blsActivated ? mBuildBlsBanner(call) : "") + (call.pdActivated ? mBuildPdBanner(call) : "");
+  var hzUnitsHtml = hzC0.replace('<!--hz-more-crews-->', hzMore).replace('<!--hz-res-active-->', hzResAct ? '<div class="hz-res-body hz-res-inline">' + hzResAct + '</div>' : '');   // 9.22: extra rigs' units inside the same box, above the Assign buttons
   if (call.zone !== "transfer")   // Linden transfer area: Linden brings the rig — no MC rigs to add (12.33 / 4.96)
     // 8.88 (Sam): only once a rig is really on the call — a crew with a rig AND a unit on it (a rig left over after
     // every unit was removed doesn't count)
@@ -25920,6 +25921,7 @@ function mBuildCrewBlock(call, crew, crewIdx) {
   }   // a "Mark rig Back at Base" step is shown under Call Disposition instead (11.73 / 4.60)
   if (crewIdx > 0) { html += '</div>'; return html; }
   html += '<!--hz-more-crews-->';
+  html += '<!--hz-res-active-->';   // 9.45 (Sam): active ALS / BLS / PD, right above the Assign buttons
   html += '<div class="hz-assign-row" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' +
     '<button class="m-disp-btn' + (hzNeedUnit ? ' hz-pulse-add' : '') + '" style="flex:1;border-color:rgba(122,184,245,0.3);color:#7ab8f5" onclick="mAddExtraRole(' + crewIdx + ',\'responder\')">Assign Responder</button>' +
     '<button class="m-disp-btn" style="flex:1;border-color:rgba(232,160,255,0.3);color:#e8a0ff" onclick="mAddExtraRole(' + crewIdx + ',\'supervisor\')">Assign Supervisor</button>' +
@@ -26847,8 +26849,8 @@ function mBuildAlsBanner(call) {
       '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (isNoALS?"var(--gray)":"#ff9090") + ';font-weight:700;margin-bottom:2px">' + (isNoALS?"⚠ No ALS Available":"🚨 ALS Active") + '</div>' +
       (!isNoALS ? '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + '</div>' + etaLine : '') +
       (!isNoALS ? '<div style="display:flex;gap:6px;margin-top:8px">' +
-          (!call.alsOnScene ? '<button class="m-disp-btn m-res-btn" style="flex:1;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">✓ On Scene</button>' : '') +
-          '<button class="m-disp-btn m-res-btn" style="flex:1;border-color:rgba(255,144,144,0.35);color:#ff9090" onclick="mOpenCancelAlsSheet()">✕ Cancel ALS</button>' +
+          (!call.alsOnScene ? '<button class="m-disp-btn m-res-btn" style="flex:1;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">On Scene</button>' : '') +
+          '<button class="m-disp-btn m-res-btn" style="flex:1;border-color:rgba(255,144,144,0.35);color:#ff9090" onclick="mOpenCancelAlsSheet()">Cancel ALS</button>' +
         '</div>' : '') +
       (isNoALS ? '<button class="m-disp-btn m-res-btn" style="width:100%;margin-top:8px;border-color:rgba(224,85,85,0.4);color:#ff9090" onclick="mOpenALSSheet()">Request ALS</button>' : '') +
       (call.alsOnScene ? '<div style="margin-top:6px;font-size:0.68rem;color:#7dedb5;text-align:center">✓ ALS On Scene' + (call.alsOnSceneAt?' · '+call.alsOnSceneAt:'') + '</div>' : '') +
@@ -26860,7 +26862,7 @@ function mBuildAlsBanner(call) {
   (call.crews || []).forEach(function(cr) { Object.keys(cr||{}).forEach(function(k) { if (k !== "rig" && cr[k] && cr[k] !== "__added__") assignedCount++; }); });
   var flashNow = isRecommended && assignedCount >= 3;
   return '<div class="m-res-card" style="background:' + (isRecommended?'rgba(224,85,85,0.12)':'transparent') + ';border:' + (isRecommended?'2px solid rgba(224,85,85,0.7)':'1px solid rgba(224,85,85,0.45)') + ';border-radius:9px;padding:10px 12px;margin-bottom:8px' + (flashNow?';animation:als-flash 0.9s steps(6) infinite':'') + '">' +
-    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + 'ALS' + '</div>' +
+    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#ff9090;font-weight:700;margin-bottom:6px">' + 'ALS Info' + '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sug.prov + '</span>' +
       '<a href="tel:' + sug.phone + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + sug.display + '</a>' +
@@ -26899,14 +26901,14 @@ function mBuildBlsBanner(call) {
   var sugPhone = hit ? hit.bls.split(":").slice(1).join(":").trim() : "";
   var sugPhoneDigits = sugPhone ? mExtractPhoneDigits(sugPhone) : "";
   if (call.blsActivated) {
-    return '<div class="m-res-card" style="background:rgba(232,160,255,0.08);border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
+    return '<div class="m-res-card" style="background:rgba(232,160,255,0.08);border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;flex-direction:column;align-items:stretch;gap:8px">' +
       '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:2px">🚑 BLS Mutual Aid Active</div>' +
       '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.blsProvider||"") + (call.blsEta?" · ETA "+call.blsEta+"min":"") + '</div></div>' +
-      '<button class="m-res-btn" onclick="mCancelBLS()" style="background:none;border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:rgba(255,255,255,0.4);font-size:0.62rem;font-family:\'Oswald\',sans-serif;font-weight:700;padding:4px 8px;cursor:pointer;flex-shrink:0">✕ Cancel</button>' +
+      '<button class="m-disp-btn m-res-btn hz-res-cancel" onclick="mCancelBLS()">Cancel BLS</button>' +
     '</div>';
   }
   return '<div class="m-res-card" style="background:transparent;border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
-    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:6px">BLS Mutual Aid</div>' +
+    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:6px">BLS Info</div>' +
     (!sugName ? '<div style="font-size:0.7rem;color:var(--gray);margin-bottom:6px">No mutual-aid provider on file for this town — enter one below.</div>' : '') +
     (sugName ? '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:0.85rem;color:var(--white);font-weight:700">' + sugName + '</span>' +
       (sugPhoneDigits ? '<a href="tel:' + sugPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + sugPhone + '</a>' : '') + '</div>' : '') +
@@ -26933,21 +26935,28 @@ function mBuildPdBanner(call) {
   var pdLabel = hit ? hit.borough + " PD" : "PD";
   // Same layout as the ALS / BLS banners: label, provider + phone row, full-width action
   if (call.pdActivated) {
-    return '<div class="m-res-card" style="background:rgba(74,144,217,0.08);border:1px solid rgba(74,144,217,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">' +
+    return '<div class="m-res-card" style="background:rgba(74,144,217,0.08);border:1px solid rgba(74,144,217,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between">' +
       '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:2px">🚔 PD Dispatched</div>' +
       '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + mEscHtml(pdLabel) + (call.pdActivatedAt ? ' · ' + call.pdActivatedAt : '') + '</div></div>' +
       (pdPhoneDigits ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none;flex-shrink:0">📞 ' + mEscHtml(pdPhone) + '</a>' : '') +
+    '<button class="m-disp-btn m-res-btn hz-res-cancel" style="width:100%;margin-top:8px" onclick="mCancelPD()">Cancel PD</button>' +   // 9.45 (Sam)
     '</div>';
   }
   return '<div class="m-res-card" style="background:transparent;border:1px solid rgba(74,144,217,0.45);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
-    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:6px">PD</div>' +
+    '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:6px">PD Info</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
       '<span style="font-size:0.85rem;color:var(--white);font-weight:700">' + mEscHtml(pdLabel) + (hit ? '' : ' <span style="font-size:0.66rem;font-weight:400;color:var(--gray)">— no PD number on file for this town</span>') + '</span>' +
       (pdPhoneDigits ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none">📞 ' + mEscHtml(pdPhone) + '</a>' : '') +
     '</div>' +
-    '<button class="m-disp-btn m-res-btn" style="width:100%;border-color:rgba(74,144,217,0.5);color:#7ab8f5;background:rgba(74,144,217,0.1)" onclick="mActivatePD()">Request PD</button>' +
+    '<button class="m-disp-btn m-res-btn" style="width:100%;border-color:rgba(74,144,217,0.5);color:#7ab8f5;background:rgba(74,144,217,0.1)" onclick="mActivatePD()">Activate PD</button>' +
   '</div>';
 }
+function mCancelPD() {   // 9.45 (Sam)
+  if (!hzOk(arguments, this, "Cancel PD for this call?")) return;
+  db.collection("activeCalls").doc(mDispSelectedCallId).update({ pdActivated: false, pdActivatedAt: "", updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("PD Cancelled", "✕", "var(--gray)", "event")) })
+    .then(function(){ mToast("PD cancelled"); }).catch(function(e){ mToast("Error: "+e.message, true); });
+}
+window.mCancelPD = mCancelPD;
 function mActivatePD() {
   db.collection("activeCalls").doc(mDispSelectedCallId).update({ pdActivated: true, pdActivatedAt: mNowHHMM(), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt("PD Dispatched", "🚔", "#7ab8f5", "pd")) }).then(function(){ var cc = mDispCallCache[mDispSelectedCallId] || {}; var hit = mFindMutualAidHit(cc); mTextResourceToAssigned(cc, "🚔 PD DISPATCHED", hit && hit.borough ? hit.borough + " PD" : "PD notified"); })
     .then(function(){ mToast("🚔 PD Notified"); }).catch(function(e){ mToast("Error: "+e.message, true); });
@@ -32442,7 +32451,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   var RS = "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec[onclick*=\"'resources'\"]";
   st.textContent += RS + "{justify-content:center !important;text-align:center !important;gap:10px}" + RS + " .m-dd-sec-ar{display:none !important}" +
     RS + " .m-dd-sec-l{flex:0 1 auto !important}" + RS + " .m-dd-sec-s{flex:0 0 auto !important;text-align:center !important}" + RS + " .m-dd-sec-s:empty{display:none !important}";
-  st.textContent += RS + "{font-family:inherit !important}" + RS + " .m-dd-sec-l, html body:not(#hzA):not(#hzB):not(#hzC) button[onclick='mAddRigPrompt()'], html body:not(#hzA):not(#hzB):not(#hzC) button.hz-res-open{font-family:inherit !important;font-size:16px !important;font-weight:800 !important;letter-spacing:normal !important;text-transform:none !important}";   // 9.36 / 12.507 (Sam): Assign Additional Resources and Assign Additional Rig — identical lettering, title case, phone and desktop
+  st.textContent += RS + "{font-family:inherit !important}" + RS + " .m-dd-sec-l, html body:not(#hzA):not(#hzB):not(#hzC) button[onclick='mAddRigPrompt()'], html body:not(#hzA):not(#hzB):not(#hzC) button.hz-res-open{font-family:inherit !important;font-size:16px !important;font-weight:800 !important;letter-spacing:normal !important;text-transform:none !important}";   // 9.36 / 12.509 (Sam): Assign Additional Resources and Assign Additional Rig — identical lettering, title case, phone and desktop
   // 8.96 / 12.460 (Sam): the rig's next-step button (e.g. Mark MC-902 Back at Base) pulses
   st.textContent += "@keyframes hzFillPulse{0%,100%{box-shadow:0 0 0 0 rgba(212,160,23,.85);filter:brightness(1)}50%{box-shadow:0 0 0 7px rgba(212,160,23,0);filter:brightness(1.18)}}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mSetCrewRigStatus']{animation:hzFillPulse 1.3s ease-in-out infinite !important}";
@@ -32551,7 +32560,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) button.hz-res-open .hz-res-on{display:block;font-size:.78rem;font-weight:700;color:#fff;-webkit-text-fill-color:#fff;margin-top:3px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-dlg .hz-res-box{max-width:420px;max-height:88vh;overflow-y:auto;text-align:left}html body:not(#hzA):not(#hzB):not(#hzC) .hz-dlg .hz-res-box .hz-dlg-msg{text-align:center}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-dlg .hz-res-body{margin-bottom:14px}";   // 9.43
-  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body .m-res-card{background:#000 !important;border:2px solid #d4a017 !important;border-radius:10px !important}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body .m-res-card *{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body input,html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body select,html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body textarea{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:8px !important}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body input::placeholder{color:rgba(212,160,23,.6) !important;-webkit-text-fill-color:rgba(212,160,23,.6)}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body button{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important;min-height:46px;font-weight:800 !important}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body button[onclick^='mMarkAlsOnScene'],html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body a[href^='tel:']{background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body a[href^='tel:'] *{color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) #hz-res-dlg .hz-res-body button[onclick^='mOpenCancel']{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff}";   // 9.44 (Sam): Additional Resources popup in black & gold (On Scene / call = green, Cancel = red)
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .m-res-card{background:#000 !important;border:2px solid #d4a017 !important;border-radius:10px !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .m-res-card *{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body input,html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body select,html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body textarea{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:8px !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body input::placeholder{color:rgba(212,160,23,.6) !important;-webkit-text-fill-color:rgba(212,160,23,.6)}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important;min-height:46px;font-weight:800 !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mMarkAlsOnScene'],html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body a[href^='tel:']{background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body a[href^='tel:'] *{color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mOpenCancel']{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff}";   // 9.44 (Sam): Additional Resources popup in black & gold (On Scene / call = green, Cancel = red)
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button.hz-res-cancel{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;width:100%}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-inline{margin:14px 0 4px}";   // 9.45
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
