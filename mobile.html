@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.10"; window.M_BUILD = BUILD;
+  var BUILD = "9.11"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3352,10 +3352,12 @@ function mRequestLocation() {
 // ── CALLS LISTENER ──
 function mStartCallsListener() {
   if (mCallsListener) return;
+  window.__hzCallsStart = Date.now(); mCallsLastSnap = 0;   // 9.11: watched by hz-live-watch
   mCallsListener = db.collection("activeCalls")
     .where("status","==","active")
     .orderBy("createdAt","desc")
     .onSnapshot(function(snap) {
+      mCallsLastSnap = Date.now();   // 9.11
       var calls = [];
       snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
       mCheckNewCall(calls);
@@ -3365,6 +3367,7 @@ function mStartCallsListener() {
       mCallsListener = db.collection("activeCalls")
         .where("status","==","active")
         .onSnapshot(function(snap) {
+          mCallsLastSnap = Date.now();   // 9.11
           var calls = [];
           snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
           calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
@@ -5946,18 +5949,29 @@ function mOpenDispatch(solo) {
   mGoTo("dispatch");
   mDispView(mDispViewCur || "dash");
   mLoadLiveCodes();
-  if (!mDispatchListener) {
-    mDispatchListener = db.collection("activeCalls").where("status","==","active")
-      .onSnapshot(function(snap) {
-        var calls = [];
-        snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
-        calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
-        mActiveCallsLive = calls;              // reused for instant rig-availability checks
-        mComputeRigConflicts(mDispSelectedCallId);
-        mRenderDispatchList(calls);
-        mDashUpdateCalls(calls.filter(function(c){ return !c.status || c.status === "active"; }));
-      }, function(e) { mToast("Dispatch listener error: " + e.message, true); });
-  }
+  mStartDispatchListener();
+}
+// 9.11 (Sam): the Active Calls listener on its own, so it can be restarted when the phone's connection goes stale
+var mDispatchLastSnap = 0;
+function mStartDispatchListener() {
+  if (mDispatchListener) return;
+  window.__hzDispStart = Date.now(); mDispatchLastSnap = 0;
+  mDispatchListener = db.collection("activeCalls").where("status","==","active")
+    .onSnapshot(function(snap) {
+      mDispatchLastSnap = Date.now();
+      var calls = [];
+      snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
+      calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
+      mActiveCallsLive = calls;              // reused for instant rig-availability checks
+      try { mComputeRigConflicts(mDispSelectedCallId); } catch (e) { console.warn("rig conflicts", e); }
+      try { mRenderDispatchList(calls); } catch (e) { console.warn("dispatch list", e); }
+      try { mDashUpdateCalls(calls.filter(function(c){ return !c.status || c.status === "active"; })); } catch (e) { console.warn("dash", e); }
+    }, function(e) {
+      console.warn("Dispatch listener error", e);
+      try { mDispatchListener && mDispatchListener(); } catch (x) {}
+      mDispatchListener = null;
+      setTimeout(mStartDispatchListener, 3000);   // try again on its own
+    });
 }
 
 // ── DISPATCHER DASHBOARD: Active Calls · New Call · Rigs & Vehicles ──
@@ -17416,6 +17430,49 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     run();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook); else hook();
+})();
+</script>
+<script id="hz-live-watch">
+// ══ 9.11 (Sam): calls must show up without closing the app. A phone (iPhone above all) that sat in the background
+// can come back with its live connection to the database quietly dead — "Active Calls · Loading…", no calls.
+// When the app comes back to the front, comes back online, or a listener hasn't answered in time, kick the
+// connection and, if that isn't enough, start the call listeners again from scratch.
+window.mCallsLastSnap = window.mCallsLastSnap || 0;
+(function() {
+  var hiddenAt = 0, busy = false;
+  function restart(why) {
+    if (busy || typeof db === "undefined" || !db) return; busy = true;
+    var p = (db.disableNetwork && db.enableNetwork) ? db.disableNetwork().then(function() { return db.enableNetwork(); }).catch(function() {}) : Promise.resolve();
+    p.then(function() {
+      setTimeout(function() {
+        var now = Date.now();
+        // still nothing after the kick → throw the listeners away and listen again
+        if (typeof mCallsListener !== "undefined" && mCallsListener && now - mCallsLastSnap > 6000) {
+          try { mCallsListener(); } catch (e) {} mCallsListener = null; if (typeof mStartCallsListener === "function") mStartCallsListener();
+        }
+        if (typeof mDispatchListener !== "undefined" && mDispatchListener && now - mDispatchLastSnap > 6000) {
+          try { mDispatchListener(); } catch (e) {} mDispatchListener = null; if (typeof mStartDispatchListener === "function") mStartDispatchListener();
+        }
+        busy = false;
+      }, 6000);
+    });
+  }
+  window.hzLiveRestart = restart;
+  document.addEventListener("visibilitychange", function() {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (hiddenAt && Date.now() - hiddenAt > 20000) restart("resume");   // away 20s+ → refresh the connection
+    hiddenAt = 0;
+  });
+  window.addEventListener("pageshow", function(e) { if (e.persisted) restart("pageshow"); });
+  window.addEventListener("online", function() { restart("online"); });
+  // A listener that was started but never answered in 10s is stuck — fix it on its own.
+  setInterval(function() {
+    if (document.hidden) return;
+    var now = Date.now(), stuck = false;
+    if (typeof mCallsListener !== "undefined" && mCallsListener && !mCallsLastSnap && window.__hzCallsStart && now - window.__hzCallsStart > 10000) stuck = true;
+    if (typeof mDispatchListener !== "undefined" && mDispatchListener && !mDispatchLastSnap && window.__hzDispStart && now - window.__hzDispStart > 10000) stuck = true;
+    if (stuck) { window.__hzCallsStart = window.__hzDispStart = now; restart("stuck"); }
+  }, 5000);
 })();
 </script>
 </body>
