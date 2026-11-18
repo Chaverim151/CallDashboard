@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.36"; window.M_BUILD = BUILD;
+  var BUILD = "9.37"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1993,7 +1993,7 @@ function hzClDispText(l) {
   if (HZ_LINDEN_DISP[d.type]) return HZ_LINDEN_DISP[d.type];
   var trs = (d.transports || []).filter(function(t) { return t && t.hospital; });
   if (d.type === "transport" && trs.length > 1) return "TRANSPORT → " + trs.map(function(t) { return (t.rig ? t.rig + " → " : "") + t.hospital; }).join("; ");
-  return d.type ? d.type.toUpperCase() + (d.hospital ? " → " + d.hospital : "") + (d.type === "rma" && d.rmaBy ? " (approved by " + d.rmaBy + ")" : "") : "—";
+  return d.type ? d.type.toUpperCase() + (d.hospital ? " → " + d.hospital : "") + (d.type === "rma" && d.rmaBy ? (d.rmaHow === "als" || d.rmaBy === "ALS" ? " (by ALS)" : " (approved by " + d.rmaBy + ")") : "") : "—";
 }
 /* Call Logs dates the app filled in itself roll forward with the clock: the app stays open for days, and a "To" date
    from the day the page was first opened was hiding every newer call (12.57 / 5.16). Dates the user picked are left alone. */
@@ -10734,10 +10734,10 @@ function mRenderDispatchDetail(call) {
       content += '<div class="hz-rigdisp"><div class="m-disp-label">Call Disposition · ' + mEscHtml(x.rig) + '</div><div style="display:flex;gap:8px">' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "rma" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="hzRigDispRMA(' + x.ci + ')">RMA</button>' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "transport" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="mOpenTransportSheet(' + x.ci + ')">🚑 Transport' + (d.type === "transport" ? ' ✓' : '') + '</button></div>' +
+        (d.type === "rma" && d.rmaBy ? '<div class="hz-rma-by">' + mEscHtml(hzRmaByText({ how: d.rmaHow, by: d.rmaBy })) + '</div>' : '') +
         (d.type === "transport" && d.hospital ? '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px;font-size:0.78rem;color:#7ab8f5">🏥 ' + mEscHtml(d.hospital) + '</div>' : '') + '</div>';
     });
-    if (hzRigsOn.some(function(x) { return (dr[x.ci] || {}).type === "rma"; }))
-      content += '<div style="margin-top:8px"><div class="m-disp-label">Enter Approving Unit ID</div><input type="text" class="m-disp-input" id="m-rma-by" placeholder="' + orgPh("Unit ID, e.g. MC-16") + '" autocapitalize="characters" value="' + mEscHtml((call.disposition || {}).rmaBy || "") + '" onchange="mSetRmaBy(this.value)"></div>';
+    /* 9.37: who approved each rig's RMA shows on that rig's row (asked in a popup when RMA is picked) */
   } else {
   content += '<div style="display:flex;gap:8px' + (call.zone === "transfer" ? ';flex-direction:column' : '') + '">' +
     '<button onclick="mSetDispositionRMA()"' + (call.disposition.type==='rma' ? ' class="m-pick-on"' : (needDisp ? ' class="hz-disp-pulse"' : '')) + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='rma'?'rgba(125,237,181,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='rma'?'rgba(125,237,181,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='rma'?'#7dedb5':'var(--gray)') + '">RMA</button>' +
@@ -10745,8 +10745,7 @@ function mRenderDispatchDetail(call) {
     (call.zone === "transfer" ? '' : '<button onclick="mOpenTransportSheet()"' + (call.disposition.type==='transport' ? ' class="m-pick-on"' : (needDisp ? ' class="hz-disp-pulse"' : '')) + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='transport'?'rgba(122,184,245,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='transport'?'rgba(122,184,245,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='transport'?'#7ab8f5':'var(--gray)') + '">🚑 Transport' + (call.disposition.type==='transport'&&call.disposition.hospital?' ✓':'') + '</button>') +
   '</div>';
   if (call.disposition.type === 'rma') {
-    content += '<div style="margin-top:8px"><div class="m-disp-label">Enter Approving Unit ID</div>' +
-      '<input type="text" class="m-disp-input" id="m-rma-by" placeholder="' + orgPh("Unit ID, e.g. MC-16") + '" autocapitalize="characters" value="' + (call.disposition.rmaBy||"") + '" onchange="mSetRmaBy(this.value)"></div>';
+    if (call.disposition.rmaBy) content += '<div class="hz-rma-by">' + mEscHtml(hzRmaByText({ how: call.disposition.rmaHow, by: call.disposition.rmaBy })) + '</div>';   // 9.37: asked in a popup when RMA is picked
   }
   if (call.disposition.type === 'transport' && (call.disposition.transports||[]).length > 1) {
     content += '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px">' +
@@ -12190,26 +12189,60 @@ function hzRollupDisp(call, rigsMap) {
   var trs = list.filter(function(x) { return (rigsMap[x.ci] || {}).type === "transport"; }).map(function(x) { return { crewIdx: x.ci, rig: x.rig, hospital: rigsMap[x.ci].hospital || "" }; });
   return { type: all ? (trs.length ? "transport" : "rma") : "", hospital: trs.length ? trs[0].hospital : "", transports: trs, rigs: rigsMap, rmaBy: d.rmaBy || "", rmaCustom: d.rmaCustom || "" };
 }
-function hzRigDispRMA(ci, why) {
+function hzRigDispRMA(ci, why, by) {
   var callId = mDispSelectedCallId, _c1 = mDispCallCache[callId] || {}, _d1 = (((_c1.disposition || {}).rigs) || {})[ci] || {};
-  if (_d1.type === "transport" && !why) { hzAskTrToRma(((_c1.crews || [])[ci] || {}).rig || "").then(function(r) { if (r) hzRigDispRMA(ci, r); }); return; }
+  if (_d1.type !== "rma" && !by) {   // 9.37: turning RMA on for this rig — (Transport → RMA reason first), then who approved it
+    var _rg = ((_c1.crews || [])[ci] || {}).rig || "", _wasTr = _d1.type === "transport";
+    (_wasTr ? hzAskTrToRma(_rg) : Promise.resolve("")).then(function(r) {
+      if (_wasTr && !r) return;
+      return hzAskRmaBy(_rg).then(function(b) { if (b) hzRigDispRMA(ci, r || "", b); });
+    });
+    return;
+  }
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
     var call = snap.data(), rigs = JSON.parse(JSON.stringify((call.disposition || {}).rigs || {})), rig = ((call.crews || [])[ci] || {}).rig || "Rig";
     var on = (rigs[ci] || {}).type !== "rma";
-    if (on) rigs[ci] = { type: "rma", rig: rig }; else delete rigs[ci];
+    if (on) rigs[ci] = { type: "rma", rig: rig, rmaBy: (by || {}).by || "", rmaHow: (by || {}).how || "" }; else delete rigs[ci];
     var backToRma = [];
     if (on && why) {
       rigs[ci].changeReason = why;
       var crW = (call.crews || [])[ci] || {}, udR = call.unitDetails || {};
       Object.keys(crW).forEach(function(k) { var key = mUdKey(ci, k); if (k !== "rig" && (udR[key] || {}).status === "transporting") backToRma.push(key); });
     }
-    var update = { disposition: hzRollupDisp(call, rigs), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(rig + (on ? (why ? " — disposition changed from Transport to RMA — " + why : " — RMA") : " — disposition cleared"), "✋", "#7dedb5", "disp")) };
+    var update = { disposition: hzRollupDisp(call, rigs), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(rig + (on ? (why ? " — disposition changed from Transport to RMA" + hzRmaBySfx(by) + " — reason: " + why : " — RMA" + hzRmaBySfx(by)) : " — disposition cleared"), "✋", "#7dedb5", "disp")) };
+    update.disposition.rmaBy = Object.keys(rigs).map(function(k) { return rigs[k].type === "rma" ? hzRmaByText({ how: rigs[k].rmaHow, by: rigs[k].rmaBy }).replace(/^RMA (approved )?by /, "") : ""; }).filter(Boolean).join(" / ");   // 9.37: reports / summary
     backToRma.forEach(function(key) { update["unitDetails." + key + ".status"] = "rma_scene"; update["unitDetails." + key + ".statusAt"] = mNowHHMM(); });   // 9.33
     if (on) { var now = mNowHHMM(); mCrewRigUnits(call, ci).forEach(function(u) { if (u.status === "on_scene_ambo") { update["unitDetails." + mUdKey(ci, u.role) + ".status"] = "rma_scene"; update["unitDetails." + mUdKey(ci, u.role) + ".statusAt"] = now; } }); }
     return db.collection("activeCalls").doc(callId).update(update);
   }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
+// 9.37 (Sam): choosing RMA asks how — "RMA Approved by Unit" (then the approving unit ID, required) or "RMA by ALS". Resolves {how, by} or null.
+function hzAskRmaBy(what) {
+  return new Promise(function(resolve) {
+    var wrap = document.createElement("div"); wrap.className = "hz-dlg"; wrap.setAttribute("role", "dialog"); wrap.setAttribute("aria-modal", "true");
+    wrap.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg"><b>RMA' + (what ? ' · ' + hzDlgEsc(what) : '') + '</b></div>' +
+      '<div class="hz-dlg-row hz-dlg-col"><button type="button" class="hz-dlg-no" data-v="unit">RMA Approved by Unit</button><button type="button" class="hz-dlg-no" data-v="als">RMA by ALS</button><button type="button" class="hz-dlg-no hz-dlg-x" data-v="">Cancel</button></div></div>';
+    var done = false;
+    var finish = function(v) { if (done) return; done = true; wrap.remove(); window.removeEventListener("popstate", back); resolve(v); };
+    var back = function() { finish(""); };
+    Array.prototype.forEach.call(wrap.querySelectorAll("button"), function(b) { b.onclick = function() { finish(b.getAttribute("data-v")); }; });
+    window.addEventListener("popstate", back);
+    document.body.appendChild(wrap);
+  }).then(function(how) {
+    if (how === "als") return { how: "als", by: "ALS" };
+    if (how !== "unit") return null;
+    var ask = function(again) {
+      return hzDialog({ kind: "prompt", msg: (again ? "A unit ID is required.\n\n" : "") + "Approving unit ID:", def: "", okText: "Save", noText: "Cancel" }).then(function(v) {
+        if (v === null || v === undefined) return null;
+        v = String(v).trim().toUpperCase(); return v ? { how: "unit", by: v } : ask(true);
+      });
+    };
+    return ask(false);
+  });
+}
+function hzRmaBySfx(r) { return !r || !r.by ? "" : (r.how === "als" || r.by === "ALS" ? " by ALS" : " — approved by " + r.by); }   // timeline wording after "RMA"
+function hzRmaByText(r) { return !r || !r.by ? "" : (r.how === "als" || r.by === "ALS" ? "RMA by ALS" : "RMA approved by " + r.by); }
 // 9.33 (Sam): changing a disposition from Transport to RMA needs a yes and a reason (free text, required)
 function hzAskTrToRma(what) {
   return hzDialog({ kind: "confirm", msg: "Are you sure you wish to change the disposition" + (what ? " for " + what : "") + " from Transport to RMA?", okText: "Yes", noText: "Cancel" }).then(function(yes) {
@@ -12225,11 +12258,19 @@ function hzAskTrToRma(what) {
 }
 function mSetDispositionRMA() {
   var callId = mDispSelectedCallId, _c0 = mDispCallCache[callId] || {};
-  if (((_c0.disposition || {}).type === "transport") && !mSetDispositionRMA._reason) {
-    hzAskTrToRma("").then(function(r) { if (!r) return; mSetDispositionRMA._reason = r; try { mSetDispositionRMA(); } finally { mSetDispositionRMA._reason = null; } });
+  if (((_c0.disposition || {}).type || "") !== "rma" && !mSetDispositionRMA._by) {   // 9.37: turning RMA on — (Transport → RMA reason first), then who approved it
+    var _wasTr = (_c0.disposition || {}).type === "transport";
+    (_wasTr ? hzAskTrToRma("") : Promise.resolve("")).then(function(r) {
+      if (_wasTr && !r) return;
+      return hzAskRmaBy("").then(function(b) {
+        if (!b) return;
+        mSetDispositionRMA._reason = r || null; mSetDispositionRMA._by = b;
+        try { mSetDispositionRMA(); } finally { mSetDispositionRMA._reason = null; mSetDispositionRMA._by = null; }
+      });
+    });
     return;
   }
-  var _why = mSetDispositionRMA._reason;
+  var _why = mSetDispositionRMA._reason, _by = mSetDispositionRMA._by;
   db.collection("activeCalls").doc(callId).get().then(function(snap) {
     if (!snap.exists) return;
     var call = snap.data();
@@ -12237,8 +12278,9 @@ function mSetDispositionRMA() {
     var current = (call.disposition||{}).type || "";
     var newType = current === "rma" ? "" : "rma";
     var update = { disposition: { type: newType, hospital:"", rmaBy:"", rmaCustom:"" }, updatedAt: new Date().toISOString() };
-    if (_why && current === "transport") newType = "rma", update.disposition.type = "rma";
-    update.callEvents = mEvtUnion(mEvt(_why && current === "transport" ? "Disposition changed from Transport to RMA — " + _why : newType === "rma" ? "Disposition: RMA" : "Disposition cleared", "✋", "#7dedb5", "disp"));
+    if (_by && current !== "rma") newType = "rma", update.disposition.type = "rma";
+    if (newType === "rma" && _by) { update.disposition.rmaBy = _by.by; update.disposition.rmaHow = _by.how; }
+    update.callEvents = mEvtUnion(mEvt((_why && current === "transport" ? "Disposition changed from Transport to RMA" + hzRmaBySfx(_by) + " — reason: " + _why : newType === "rma" ? "Disposition: RMA" + hzRmaBySfx(_by) : "Disposition cleared"), "✋", "#7dedb5", "disp"));
     if (_why && current === "transport") {
       update.disposition.changeReason = _why;
       var nowW = mNowHHMM(), udW = call.unitDetails || {};   // the units that were transporting are back to RMA on scene
@@ -17128,7 +17170,7 @@ window.alert = function(m) { hzDialog({ kind: "alert", msg: m }); };
     P + " .hz-dlg-box{background:#000 !important;border:2px solid #d4a017 !important;border-radius:14px;padding:18px 16px 16px;width:100%;max-width:380px;box-shadow:0 10px 30px rgba(0,0,0,.5);text-align:center}" +
     P + " .hz-dlg-msg{color:#d4a017 !important;-webkit-text-fill-color:#d4a017;font-size:.98rem;line-height:1.45;margin-bottom:16px;word-break:break-word}" +
     P + " .hz-dlg-in{display:block;width:100%;box-sizing:border-box;margin:-4px 0 14px;padding:11px 12px;border-radius:9px;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;font-size:1rem;outline:none}" +
-    P + " .hz-dlg-row{display:flex;gap:10px}" +
+    P + " .hz-dlg-row{display:flex;gap:10px}" + P + " .hz-dlg-row.hz-dlg-col{flex-direction:column}" + P + " .hz-dlg-row.hz-dlg-col .hz-dlg-x{margin-top:6px}" +
     P + " .hz-dlg-row button{flex:1;min-height:48px;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;box-shadow:none !important}" +
     P + " .hz-dlg-no{background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important}" +
     P + " .hz-dlg-ok{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000;border:2px solid #000 !important}" +
@@ -17600,6 +17642,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button.hz-disp-pulse{animation:hzChoosePulse 1.3s ease-in-out infinite !important;border-width:2px !important;border-style:solid !important}";
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rig-times-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:.85rem;letter-spacing:.05em;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin:-4px 0 4px}";   // 9.25
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content .hz-dd-als{margin-top:8px;font-size:.85rem;font-weight:800;color:#c62828 !important;-webkit-text-fill-color:#c62828}";
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rma-by{margin-top:8px;background:#000 !important;border:2px solid #d4a017 !important;border-radius:8px;padding:8px 10px;font-size:.85rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}";   // 9.37
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
