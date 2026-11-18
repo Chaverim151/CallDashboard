@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.46"; window.M_BUILD = BUILD;
+  var BUILD = "9.50"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -5182,7 +5182,7 @@ var M_STATUS_LOG = {
   onboard_rig:      { icon:"🚑", text:"Onboard Rig",        color:"#ffc84a" },
   ambo_responding:  { icon:"🚑", text:"Rig Responding",     color:"#ffc84a" },
   on_scene_ambo:    { icon:"📍", text:"On Scene with Rig",  color:"#7dedb5" },
-  rma_scene:        { icon:"✋", text:"RMA on Scene",        color:"#7dedb5" },
+  rma_scene:        { icon:"✋", text:"RMA",        color:"#7dedb5" },
   transporting:     { icon:"🚑", text:"Transporting",        color:"#ffc84a" },
   at_facility:      { icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" },
   clearing_facility:{ icon:"✓",  text:"Cleared ER → Base", color:"#7dedb5" },
@@ -6769,7 +6769,7 @@ function mOpenCallLogDetail(id, keepPlace) {
   var E = mEscHtml;
   var dt = l.createdAt ? new Date(l.createdAt) : null;
   var dateStr = dt ? dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }) + " · " + dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "—";
-  var STATUS_LABEL = { cleared_scene:"Cleared Scene", other_status:"Other", enroute_scene:"En Route to Scene", on_scene_direct:"On Scene", picking_up_ambo:"Responding to Base", onboard_rig:"Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene w/ Rig", rma_scene:"RMA on Scene", transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Cleared ER", returning_base:"Heading Back to Base", back_at_base:"Back at Base" };
+  var STATUS_LABEL = { cleared_scene:"Cleared Scene", other_status:"Other", enroute_scene:"En Route to Scene", on_scene_direct:"On Scene", picking_up_ambo:"Responding to Base", onboard_rig:"Onboard Rig", ambo_responding:"Rig Responding", on_scene_ambo:"On Scene w/ Rig", rma_scene:"RMA", transporting:"Transporting", at_facility:"At Hospital", clearing_facility:"Cleared ER", returning_base:"Heading Back to Base", back_at_base:"Back at Base" };
   var unitRows = "";
   (l.crews || []).forEach(function(crew, ci) {
     Object.keys(crew || {}).sort().forEach(function(role) {
@@ -9891,7 +9891,7 @@ function hzLogEditBtn(l, cls) {
 }
 var HZ_LE = null;   // { log, onSaved, s: working copy }
 var HZ_LE_STATUS = { "": "—", enroute_scene: "En Route to Scene", on_scene_direct: "On Scene", picking_up_ambo: "Responding to Base", onboard_rig: "Onboard Rig",
-  ambo_responding: "Rig Responding", on_scene_ambo: "On Scene w/ Rig", rma_scene: "RMA on Scene", transporting: "Transporting", at_facility: "At Hospital",
+  ambo_responding: "Rig Responding", on_scene_ambo: "On Scene w/ Rig", rma_scene: "RMA", transporting: "Transporting", at_facility: "At Hospital",
   clearing_facility: "Cleared ER", returning_base: "Heading Back to Base", back_at_base: "Back at Base", cleared_scene: "Cleared Scene", other_status: "Other" };
 var HZ_LE_TIMES = [["dispatched", "Dispatched"], ["first_on_scene", "On Scene"], ["enroute", "En Route"], ["home", "Back at Base"]];
 function hzLeEsc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -10733,7 +10733,7 @@ function mRenderDispatchDetail(call) {
   if (hzRigsOn.length >= 2) {   // 9.23 (Sam): more than one rig → a separate disposition for each rig
     var dr = (call.disposition || {}).rigs || {};
     hzRigsOn.forEach(function(x) {
-      var d = dr[x.ci] || {};
+      var d = dr[x.ci] || ((((call.disposition || {}).transports) || []).filter(function(t) { return t && t.crewIdx === x.ci; }).map(function(t) { return { type: "transport", hospital: t.hospital || "" }; })[0]) || {};   // 9.47: a transport saved for the whole call still shows on its rig
       content += '<div class="hz-rigdisp"><div class="m-disp-label">Call Disposition · ' + mEscHtml(x.rig) + '</div><div style="display:flex;gap:8px">' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "rma" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="hzRigDispRMA(' + x.ci + ')">RMA</button>' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "transport" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="mOpenTransportSheet(' + x.ci + ')">🚑 Transport' + (d.type === "transport" ? ' ✓' : '') + '</button></div>' +
@@ -11965,6 +11965,16 @@ function mAlsEtaTick() {
   else if (remainMin <= 1) { span.textContent = "ETA 1 Minute · Expected " + etaHHMM; span.style.color = "#ff9090"; span.style.fontWeight = "700"; }
   else { span.textContent = remainMin + " min remaining · Expected " + etaHHMM; span.style.color = "#ffc84a"; span.style.fontWeight = ""; }
 }
+// 9.49 (Sam): an active resource's box — phone number shown, Call and Cancel side by side
+function hzResSplit(digits, display, cancelHtml) {
+  return '<div class="hz-res-split">' + (digits ? '<a class="hz-res-call" href="tel:' + digits + '">📞 ' + mEscHtml(display || digits) + '</a>' : '') + cancelHtml + '</div>';
+}
+function hzAlsPhone(call) {
+  var p = String((call && call.alsProvider) || "").toLowerCase();
+  if (p.indexOf("med") !== -1 && p.indexOf("central") !== -1) return { phone: "8488005053", display: "848-800-5053" };
+  if (p.indexOf("jfk") !== -1) return { phone: "7322875235", display: "732-287-5235" };
+  return mAlsSuggestion(call);
+}
 function mBuildAlsBanner(call) {
   var sug = mAlsSuggestion(call);
   if (call.alsActivated) {
@@ -11980,11 +11990,9 @@ function mBuildAlsBanner(call) {
     }
     return '<div class="m-res-card" style="background:rgba(224,85,85,0.08);border:1px solid ' + (isNoALS?"rgba(255,255,255,0.12)":"rgba(224,85,85,0.4)") + ';border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
       '<div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:' + (isNoALS?"var(--gray)":"#ff9090") + ';font-weight:700;margin-bottom:2px">' + (isNoALS?"⚠ No ALS Available":"🚨 ALS Active") + '</div>' +
-      (!isNoALS ? '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + '</div>' + etaLine : '') +
-      (!isNoALS ? '<div style="display:flex;gap:6px;margin-top:8px">' +
-          (!call.alsOnScene ? '<button class="m-disp-btn m-res-btn" style="flex:1;border-color:rgba(125,237,181,0.4);color:#7dedb5" onclick="mMarkAlsOnScene()">On Scene</button>' : '') +
-          '<button class="m-disp-btn m-res-btn" style="flex:1;border-color:rgba(255,144,144,0.35);color:#ff9090" onclick="mOpenCancelAlsSheet()">Cancel ALS</button>' +
-        '</div>' : '') +
+      (!isNoALS ? '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.alsProvider||"") + (call.alsUnit?" · "+call.alsUnit:"") + (call.alsActivatedAt?" · "+call.alsActivatedAt:"") + '</div>' + etaLine : '') +
+      (!isNoALS ? /* 9.50 (Sam): no On Scene button for ALS */
+          hzResSplit(hzAlsPhone(call).phone, hzAlsPhone(call).display, '<button class="m-disp-btn m-res-btn hz-res-cancel" onclick="mOpenCancelAlsSheet()">Cancel ALS</button>') : '') +
       (isNoALS ? '<button class="m-disp-btn m-res-btn" style="width:100%;margin-top:8px;border-color:rgba(224,85,85,0.4);color:#ff9090" onclick="mOpenALSSheet()">Request ALS</button>' : '') +
       (call.alsOnScene ? '<div style="margin-top:6px;font-size:0.68rem;color:#7dedb5;text-align:center">✓ ALS On Scene' + (call.alsOnSceneAt?' · '+call.alsOnSceneAt:'') + '</div>' : '') +
     '</div>';
@@ -12093,10 +12101,10 @@ function mBuildBlsBanner(call) {
   var sugPhone = hit ? hit.bls.split(":").slice(1).join(":").trim() : "";
   var sugPhoneDigits = sugPhone ? mExtractPhoneDigits(sugPhone) : "";
   if (call.blsActivated) {
-    return '<div class="m-res-card" style="background:rgba(232,160,255,0.08);border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;flex-direction:column;align-items:stretch;gap:8px">' +
+    return '<div class="m-res-card" style="background:rgba(232,160,255,0.08);border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
       '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#e8a0ff;font-weight:700;margin-bottom:2px">🚑 BLS Mutual Aid Active</div>' +
       '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + (call.blsProvider||"") + (call.blsEta?" · ETA "+call.blsEta+"min":"") + '</div></div>' +
-      '<button class="m-disp-btn m-res-btn hz-res-cancel" onclick="mCancelBLS()">Cancel BLS</button>' +
+      hzResSplit(sugPhoneDigits, sugPhone, '<button class="m-disp-btn m-res-btn hz-res-cancel" onclick="mCancelBLS()">Cancel BLS</button>') +
     '</div>';
   }
   return '<div class="m-res-card" style="background:transparent;border:1px solid rgba(232,160,255,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
@@ -12139,11 +12147,10 @@ function mBuildPdBanner(call) {
   var pdLabel = hit ? hit.borough + " PD" : "PD";
   // Same layout as the ALS / BLS banners: label, provider + phone row, full-width action
   if (call.pdActivated) {
-    return '<div class="m-res-card" style="background:rgba(74,144,217,0.08);border:1px solid rgba(74,144,217,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between">' +
+    return '<div class="m-res-card" style="background:rgba(74,144,217,0.08);border:1px solid rgba(74,144,217,0.35);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
       '<div><div style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:#7ab8f5;font-weight:700;margin-bottom:2px">🚔 PD Dispatched</div>' +
       '<div style="font-size:0.85rem;color:var(--white);font-weight:600">' + mEscHtml(pdLabel) + (call.pdActivatedAt ? ' · ' + call.pdActivatedAt : '') + '</div></div>' +
-      (pdPhoneDigits ? '<a href="tel:' + pdPhoneDigits + '" style="display:inline-flex;align-items:center;gap:4px;background:rgba(125,237,181,0.15);border:1px solid rgba(125,237,181,0.4);border-radius:6px;padding:5px 10px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;text-decoration:none;flex-shrink:0">📞 ' + mEscHtml(pdPhone) + '</a>' : '') +
-    '<button class="m-disp-btn m-res-btn hz-res-cancel" style="width:100%;margin-top:8px" onclick="mCancelPD()">Cancel PD</button>' +   // 9.45 (Sam)
+      hzResSplit(pdPhoneDigits, pdPhone, '<button class="m-disp-btn m-res-btn hz-res-cancel" onclick="mCancelPD()">Cancel PD</button>') +   // 9.49
     '</div>';
   }
   return '<div class="m-res-card" style="background:transparent;border:1px solid rgba(74,144,217,0.45);border-radius:9px;padding:10px 12px;margin-bottom:8px">' +
@@ -12200,10 +12207,17 @@ function hzRollupDisp(call, rigsMap) {
   var trs = list.filter(function(x) { return (rigsMap[x.ci] || {}).type === "transport"; }).map(function(x) { return { crewIdx: x.ci, rig: x.rig, hospital: rigsMap[x.ci].hospital || "" }; });
   return { type: all ? (trs.length ? "transport" : "rma") : "", hospital: trs.length ? trs[0].hospital : "", transports: trs, rigs: rigsMap, rmaBy: d.rmaBy || "", rmaCustom: d.rmaCustom || "" };
 }
+// 9.47 (Sam): is this rig transporting / at the hospital? (by its units, or a transport on record for it)
+function hzRigIsTransporting(call, ci) {
+  if (!call) return false;
+  if ((((call.disposition || {}).rigs || {})[ci] || {}).type === "transport") return true;
+  if (((call.disposition || {}).transports || []).some(function(t) { return t && t.crewIdx === ci; })) return true;
+  return mCrewRigUnits(call, ci).some(function(u) { return u.status === "transporting" || u.status === "at_facility"; });
+}
 function hzRigDispRMA(ci, why, by) {
   var callId = mDispSelectedCallId, _c1 = mDispCallCache[callId] || {}, _d1 = (((_c1.disposition || {}).rigs) || {})[ci] || {};
   if (_d1.type !== "rma" && !by) {   // 9.37: turning RMA on for this rig — (Transport → RMA reason first), then who approved it
-    var _rg = ((_c1.crews || [])[ci] || {}).rig || "", _wasTr = _d1.type === "transport";
+    var _rg = ((_c1.crews || [])[ci] || {}).rig || "", _wasTr = hzRigIsTransporting(_c1, ci);
     (_wasTr ? hzAskTrToRma(_rg) : Promise.resolve("")).then(function(r) {
       if (_wasTr && !r) return;
       return hzAskRmaBy(_rg, !!_c1.alsActivated).then(function(b) { if (b) hzRigDispRMA(ci, r || "", b); });
@@ -12215,10 +12229,13 @@ function hzRigDispRMA(ci, why, by) {
     var call = snap.data(), rigs = JSON.parse(JSON.stringify((call.disposition || {}).rigs || {})), rig = ((call.crews || [])[ci] || {}).rig || "Rig";
     var on = (rigs[ci] || {}).type !== "rma";
     if (on) rigs[ci] = { type: "rma", rig: rig, rmaBy: (by || {}).by || "", rmaHow: (by || {}).how || "" }; else delete rigs[ci];
-    var backToRma = [];
-    if (on && why) {
-      var crW = (call.crews || [])[ci] || {}, udR = call.unitDetails || {};
-      Object.keys(crW).forEach(function(k) { var key = mUdKey(ci, k); if (k !== "rig" && (udR[key] || {}).status === "transporting") backToRma.push(key); });
+    var backToRma = [], udR = call.unitDetails || {}, trSt = function(k) { var st = (udR[k] || {}).status; return st === "transporting" || st === "at_facility"; };
+    if (on) {   // 9.47: this rig's units are no longer transporting
+      var crW = (call.crews || [])[ci] || {};
+      Object.keys(crW).forEach(function(k) { var key = mUdKey(ci, k); if (k !== "rig" && trSt(key)) backToRma.push(key); });
+      // and once no rig on the call is transporting, the riders (scene units in a rig) aren't either
+      var stillTr = hzDispRigs(call).some(function(x) { return x.ci !== ci && (rigs[x.ci] ? rigs[x.ci].type === "transport" : hzRigIsTransporting(call, x.ci)); });
+      if (!stillTr) Object.keys(udR).forEach(function(k) { if (trSt(k) && backToRma.indexOf(k) === -1) backToRma.push(k); });
     }
     var update = { disposition: hzRollupDisp(call, rigs), updatedAt: new Date().toISOString(), callEvents: mEvtUnion(mEvt(rig + (on ? (why ? " — disposition changed from Transport to RMA" + hzRmaBySfx(by) : " — RMA" + hzRmaBySfx(by)) : " — disposition cleared"), "✋", "#7dedb5", "disp")) };
     update.disposition.rmaBy = Object.keys(rigs).map(function(k) { return rigs[k].type === "rma" ? (rigs[k].rmaHow === "als" ? "ALS" : rigs[k].rmaBy || "") : ""; }).filter(Boolean).join(" / ");   // 9.37: reports / summary
@@ -12288,7 +12305,7 @@ function hzAskTrToRma(what) {
 function mSetDispositionRMA() {
   var callId = mDispSelectedCallId, _c0 = mDispCallCache[callId] || {};
   if (((_c0.disposition || {}).type || "") !== "rma" && !mSetDispositionRMA._by) {   // 9.37: turning RMA on — (Transport → RMA reason first), then who approved it
-    var _wasTr = (_c0.disposition || {}).type === "transport";
+    var _wasTr = (_c0.disposition || {}).type === "transport" || Object.keys(_c0.unitDetails || {}).some(function(k) { var st = (_c0.unitDetails[k] || {}).status; return st === "transporting" || st === "at_facility"; });
     (_wasTr ? hzAskTrToRma("") : Promise.resolve("")).then(function(r) {
       if (_wasTr && !r) return;
       return hzAskRmaBy("", !!_c0.alsActivated).then(function(b) {
@@ -12310,9 +12327,9 @@ function mSetDispositionRMA() {
     if (_by && current !== "rma") newType = "rma", update.disposition.type = "rma";
     if (newType === "rma" && _by) { update.disposition.rmaBy = _by.by; update.disposition.rmaHow = _by.how; }
     update.callEvents = mEvtUnion(mEvt((_why && current === "transport" ? "Disposition changed from Transport to RMA" + hzRmaBySfx(_by) : newType === "rma" ? "Disposition: RMA" + hzRmaBySfx(_by) : "Disposition cleared"), "✋", "#7dedb5", "disp"));
-    if (_why && current === "transport") {
-      var nowW = mNowHHMM(), udW = call.unitDetails || {};   // the units that were transporting are back to RMA on scene
-      Object.keys(udW).forEach(function(k) { if ((udW[k] || {}).status === "transporting") { update["unitDetails." + k + ".status"] = "rma_scene"; update["unitDetails." + k + ".statusAt"] = nowW; } });
+    if (newType === "rma") {
+      var nowW = mNowHHMM(), udW = call.unitDetails || {};   // 9.47: anyone transporting / at the hospital is back to RMA
+      Object.keys(udW).forEach(function(k) { if ((udW[k] || {}).status === "transporting" || (udW[k] || {}).status === "at_facility") { update["unitDetails." + k + ".status"] = "rma_scene"; update["unitDetails." + k + ".statusAt"] = nowW; } });
     }
     if (newType === "rma") {
       var now = mNowHHMM();
@@ -17682,6 +17699,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-dlg .hz-res-body{margin-bottom:14px}";   // 9.43
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .m-res-card{background:#000 !important;border:2px solid #d4a017 !important;border-radius:10px !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .m-res-card *{color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body input,html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body select,html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body textarea{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:8px !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body input::placeholder{color:rgba(212,160,23,.6) !important;-webkit-text-fill-color:rgba(212,160,23,.6)}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important;min-height:46px;font-weight:800 !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mMarkAlsOnScene'],html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body a[href^='tel:']{background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body a[href^='tel:'] *{color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mOpenCancel']{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff}";   // 9.44 (Sam): Additional Resources popup in black & gold (On Scene / call = green, Cancel = red)
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button.hz-res-cancel{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;width:100%}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-inline{margin:14px 0 4px}";   // 9.45
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split{display:flex;gap:8px;margin-top:8px}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split > *{flex:1 1 0;min-width:0;width:auto !important;min-height:46px;margin:0 !important;display:flex;align-items:center;justify-content:center;border-radius:10px !important;font-weight:800 !important;text-decoration:none;font-size:.9rem;box-sizing:border-box}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split a.hz-res-call{background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000;white-space:nowrap}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mMarkAlsOnScene']{min-height:46px}";   // 9.49
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
