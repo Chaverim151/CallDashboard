@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.491">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.492">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2775,7 +2775,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.491</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.492</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -20361,7 +20361,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.491";
+var DESKTOP_VERSION = "12.492";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -25958,7 +25958,11 @@ function mBuildUnitBox(call, crewIdx, role, label) {
     var rmX = ["primary","backup","rigUnit"].indexOf(role) === -1 ? '<button class="hz-empty-x" title="Remove this slot" onclick="mRemoveEmptySlot(' + crewIdx + ',\'' + role + '\',\'' + mJsAttr(label) + '\')">✕</button>' : '';
     return '<div class="m-disp-unit-box hz-empty-slot"><button class="m-disp-btn hz-empty-btn' + (mHzEmptyNoPulse ? ' hz-no-pulse' : '') + '" onclick="mOpenAssignSheet(' + crewIdx + ',\'' + role + '\',\'unit\')">+ Assign ' + label + '</button>' + rmX + '</div>';
   }
-  var hzWithRig = det.response === "rig" && typeof hzCrewRigLive === "function" ? hzCrewRigLive(call, crewIdx) : "";   // 9.18: only once the unit has chosen the rig   // 9.13: "MC-20 with MC-902"
+  var hzWithRig = det.response === "rig" && typeof hzCrewRigLive === "function" ? hzCrewRigLive(call, crewIdx) : "";   // 9.18: only once the unit has chosen the rig
+  // 9.30 (Sam): several rigs transporting — dispatch only knows the rigs are transporting, not who is in which one
+  var HZ_TR_ST = ["transporting","at_facility","clearing_facility","returning_base","back_at_base"];
+  var hzUnknownAboard = typeof hzDispRigs === "function" && hzDispRigs(call).length >= 2 && HZ_TR_ST.indexOf(status) !== -1;
+  if (hzUnknownAboard) hzWithRig = "";   // 9.13: "MC-20 with MC-902"
   var html = '<div class="m-disp-unit-box" data-hz-rig-host="' + crewIdx + '_' + role + '">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
     // 8.98 (Sam): Supervisor / Observer boxes look like the others — the unit as the title, the role as a tag on the right
@@ -26025,6 +26029,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // they aren't being tracked individually any more. The rig keeps its own status line.
   if (sl && mIsDirectResponse(call) && !isDriver && status === "enroute_scene" && mSceneMarkedBy(call)) sl = { icon: "", text: "Presumed On Scene", color: "#34c759" };   // 8.75 (Sam): was hidden
   // 9.16 (Sam): a unit "with MC-902" reads like a responder — the rig on its way is "En Route to Scene" (same blue)
+  if (sl && hzUnknownAboard) sl = null;   // 9.30: no "Transporting · riding in MC-903" per unit
   if (sl && hzWithRig && (status === "ambo_responding" || status === "onboard_rig")) sl = { icon: "", text: "En Route to Scene", color: ((M_STATUS_LOG.enroute_scene || {}).color) || "#7ab8f5" };
   if (sl) {
     var withRig = isDriver && crew.rig && (mLoadRigBoarded(call, crewIdx) && status === "picking_up_ambo" || ["onboard_rig","ambo_responding","on_scene_ambo","rma_scene","transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1);
@@ -26187,7 +26192,8 @@ function mSetCrewRigStatus(crewIdx, status) {
       update["unitDetails." + mUdKey(crewIdx, u.role) + ".statusAt"] = now;
     });
     var sl2 = M_STATUS_LOG[status]; var rigName = (mCrewOf(call, crewIdx).rig) || "Rig";
-    update.callEvents = mEvtUnion(mEvt(rigName + " + " + units.map(function(u){ return u.unit; }).join(", ") + " — " + (sl2 ? sl2.text : status), sl2 ? sl2.icon : "🚑", sl2 ? sl2.color : "#ffc84a", "status"));
+    var hzNoOcc = hzDispRigs(call).length >= 2 && ["transporting","at_facility","clearing_facility","returning_base","back_at_base"].indexOf(status) !== -1;   // 9.30
+    update.callEvents = mEvtUnion(mEvt(rigName + (hzNoOcc ? "" : " + " + units.map(function(u){ return u.unit; }).join(", ")) + " — " + (sl2 ? sl2.text : status), sl2 ? sl2.icon : "🚑", sl2 ? sl2.color : "#ffc84a", "status"));
     var times = call.times || {};
     if (status === "on_scene_ambo" && !times.first_on_scene) update["times.first_on_scene"] = now;
     if (status === "transporting" && !times.enroute) update["times.enroute"] = now;
