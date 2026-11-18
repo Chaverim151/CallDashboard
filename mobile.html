@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.11"; window.M_BUILD = BUILD;
+  var BUILD = "9.12"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3359,9 +3359,9 @@ function mStartCallsListener() {
     .onSnapshot(function(snap) {
       mCallsLastSnap = Date.now();   // 9.11
       var calls = [];
-      snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
-      mCheckNewCall(calls);
-      mRenderCalls(calls);
+      snap.forEach(function(d) { try { calls.push(hzNormCall(Object.assign({id:d.id}, d.data()))); } catch (e) { console.warn("call", d.id, e); } });
+      try { mCheckNewCall(calls); } catch (e) { console.warn("new call check", e); }
+      try { mRenderCalls(calls); } catch (e) { hzShowListErr("home", e); }
     }, function() {
       // Fallback without orderBy
       mCallsListener = db.collection("activeCalls")
@@ -3369,10 +3369,10 @@ function mStartCallsListener() {
         .onSnapshot(function(snap) {
           mCallsLastSnap = Date.now();   // 9.11
           var calls = [];
-          snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
-          calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
-          mCheckNewCall(calls);
-          mRenderCalls(calls);
+          snap.forEach(function(d) { try { calls.push(hzNormCall(Object.assign({id:d.id}, d.data()))); } catch (e) { console.warn("call", d.id, e); } });
+          try { calls.sort(function(a,b) { return hzTsKey(b.createdAt).localeCompare(hzTsKey(a.createdAt)); }); } catch (e) {}
+          try { mCheckNewCall(calls); } catch (e) { console.warn("new call check", e); }
+          try { mRenderCalls(calls); } catch (e) { hzShowListErr("home", e); }
         });
     });
 }
@@ -5953,6 +5953,26 @@ function mOpenDispatch(solo) {
 }
 // 9.11 (Sam): the Active Calls listener on its own, so it can be restarted when the phone's connection goes stale
 var mDispatchLastSnap = 0;
+// 9.12: dates can arrive as text, a number or a Firestore time — never let one odd call stop the whole list
+function hzTsKey(v) { try { if (!v) return ""; if (typeof v === "string") return v; if (v.toDate) return v.toDate().toISOString(); if (typeof v === "number") return new Date(v).toISOString(); if (v.seconds) return new Date(v.seconds * 1000).toISOString(); return String(v); } catch (e) { return ""; } }
+// one odd field (crews saved as a map, a number where text belongs…) must not break the screens
+function hzNormCall(c) {
+  if (!c || typeof c !== "object") return c;
+  if (c.crews && !Array.isArray(c.crews)) c.crews = Object.keys(c.crews).sort(function(a, b) { return (+a) - (+b); }).map(function(k) { return c.crews[k] || {}; });
+  if (Array.isArray(c.crews)) c.crews = c.crews.map(function(cr) { return cr && typeof cr === "object" ? cr : {}; });
+  ["callNature", "address", "zone", "status"].forEach(function(k) { if (c[k] != null && typeof c[k] !== "string") c[k] = String(c[k]); });
+  if (c.assignedUnits && !Array.isArray(c.assignedUnits)) c.assignedUnits = typeof c.assignedUnits === "string" ? [c.assignedUnits] : Object.values(c.assignedUnits);
+  ["unitDetails", "times"].forEach(function(k) { if (!c[k] || typeof c[k] !== "object") c[k] = {}; });
+  ["callEvents", "callNotes"].forEach(function(k) { if (c[k] && !Array.isArray(c[k])) c[k] = typeof c[k] === "object" ? Object.values(c[k]) : []; });
+  if (c.createdAt && typeof c.createdAt !== "string") c.createdAt = hzTsKey(c.createdAt);
+  return c;
+}
+function hzShowListErr(where, e) {
+  console.warn(where, e);
+  var t = "Couldn't show calls (" + where + "): " + (e && e.message ? e.message : e);
+  var sub = document.getElementById("m-dash-calls-sub"); if (sub && /Loading/.test(sub.textContent)) sub.textContent = t;
+  window.__hzLastListErr = t;
+}
 function mStartDispatchListener() {
   if (mDispatchListener) return;
   window.__hzDispStart = Date.now(); mDispatchLastSnap = 0;
@@ -5960,12 +5980,12 @@ function mStartDispatchListener() {
     .onSnapshot(function(snap) {
       mDispatchLastSnap = Date.now();
       var calls = [];
-      snap.forEach(function(d) { calls.push(Object.assign({id:d.id}, d.data())); });
-      calls.sort(function(a,b) { return (b.createdAt||"").localeCompare(a.createdAt||""); });
+      snap.forEach(function(d) { try { calls.push(hzNormCall(Object.assign({id:d.id}, d.data()))); } catch (e) { console.warn("call", d.id, e); } });
+      try { calls.sort(function(a,b) { return hzTsKey(b.createdAt).localeCompare(hzTsKey(a.createdAt)); }); } catch (e) {}
       mActiveCallsLive = calls;              // reused for instant rig-availability checks
       try { mComputeRigConflicts(mDispSelectedCallId); } catch (e) { console.warn("rig conflicts", e); }
-      try { mRenderDispatchList(calls); } catch (e) { console.warn("dispatch list", e); }
-      try { mDashUpdateCalls(calls.filter(function(c){ return !c.status || c.status === "active"; })); } catch (e) { console.warn("dash", e); }
+      try { mDashUpdateCalls(calls.filter(function(c){ return !c.status || c.status === "active"; })); } catch (e) { hzShowListErr("dashboard", e); }
+      try { mRenderDispatchList(calls); } catch (e) { hzShowListErr("list", e); }
     }, function(e) {
       console.warn("Dispatch listener error", e);
       try { mDispatchListener && mDispatchListener(); } catch (x) {}
