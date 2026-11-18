@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.25"; window.M_BUILD = BUILD;
+  var BUILD = "9.28"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -8792,16 +8792,15 @@ function mEditCallSave() {
       var z = typeof mDetectZoneInfo === "function" ? mDetectZoneInfo(loc.lat, loc.lng) : null;
       var zNote = (z && z.type && call.zone && z.type !== call.zone) ? " — note: the new spot is " + (z.type === "primary" ? "in the standard response area" : z.type === "secondary" ? "a Load a Rig area" : z.type === "transfer" ? "a Linden transfer area (stabilize, Linden brings the rig)" : "outside the coverage area") : "";
       notes.push("📍 Location changed to " + loc.address + (oldAddr ? " (was " + oldAddr + ")" : "") + zNote);
-      evs.push(mEvt("Location changed", "📍", "#7ab8f5", "loc"));
+      evs.push(mEvt("Location changed to " + loc.address + (oldAddr ? " (was " + oldAddr + ")" : "") + zNote, "📍", "#7ab8f5", "loc"));
     }
-    if (aptChanged) { upd.apt = aptIn; if (!loc) notes.push("📍 Apt / suite changed to " + (aptIn || "none")); }
-    if (codeChanged) { upd.accessCode = codeIn; notes.push(codeIn ? "🔑 Access code changed to " + codeIn : "🔑 Access code removed"); evs.push(mEvt(codeIn ? "Access code changed" : "Access code removed", "🔑", "#7ab8f5", "code")); }
-    if (cbChanged) { upd.callbackNumber = cbIn; notes.push("📞 Callback number changed to " + (cbIn || "none")); evs.push(mEvt("Callback changed", "📞", "#7ab8f5", "cb")); }
+    if (aptChanged) { upd.apt = aptIn; evs.push(mEvt("Apt / suite changed to " + (aptIn || "none"), "📍", "#7ab8f5", "loc")); }
+    if (codeChanged) { upd.accessCode = codeIn; notes.push(codeIn ? "🔑 Access code changed to " + codeIn : "🔑 Access code removed"); evs.push(mEvt(codeIn ? "Access code changed to " + codeIn : "Access code removed", "🔑", "#7ab8f5", "code")); }
+    if (cbChanged) { upd.callbackNumber = cbIn; notes.push("📞 Callback number changed to " + (cbIn || "none")); evs.push(mEvt("Callback number changed to " + (cbIn || "none"), "📞", "#7ab8f5", "cb")); }
     return db.collection("activeCalls").doc(call.id).get().then(function(snap) {
       if (!snap.exists) throw new Error("Call not found");
       var cn = (snap.data().callNotes || []).slice();
-      notes.forEach(function(t) { cn.push({ text: t, time: mNowHHMM(), by: by, byUid: byUid, createdAt: now }); });
-      upd.callNotes = cn;
+      // 9.28 (Sam): these changes are logged in the timeline only (with the details), not in Call Notes
       if (evs.length) upd.callEvents = firebase.firestore.FieldValue.arrayUnion.apply(null, evs);
       return db.collection("activeCalls").doc(call.id).update(upd);
     }).then(function() {
@@ -10596,9 +10595,8 @@ function mDdPushLocation() {
   db.collection("activeCalls").doc(call.id).get().then(function(snap) {
     if (!snap.exists) throw new Error("Call not found");
     var notes = (snap.data().callNotes || []).slice();
-    notes.push({ text: noteText, time: mNowHHMM(), by: mCurrentUserUnit || "Dispatch", byUid: mCurrentUser ? mCurrentUser.uid : "", createdAt: now });
-    return db.collection("activeCalls").doc(call.id).update({
-      lat: lat, lng: lng, mapsLink: maps, callNotes: notes, updatedAt: now,
+    return db.collection("activeCalls").doc(call.id).update({   // 9.28: timeline only
+      lat: lat, lng: lng, mapsLink: maps, updatedAt: now, callEvents: mEvtUnion(mEvt(noteText.replace(/^📍 /, ""), "📍", "#7ab8f5", "loc")),
       locUpdate: { at: now, by: mCurrentUserUnit || "", accuracy: acc, token: mDdLocToken, from: (call.lat && call.lng) ? { lat: call.lat, lng: call.lng } : null }
     });
   }).then(function() {
@@ -10681,7 +10679,7 @@ function mRenderDispatchDetail(call) {
       ((call.patientAge || call.patientAgeNum) ? '<span class="m-disp-zone hz-dd-pt" style="background:rgba(255,255,255,0.06);color:var(--gray);border:1px solid var(--card-border)">' + [call.patientAgeNum ? hzAge(call) : "", call.patientAge ? (call.patientAgeUto ? "UTO " : "") + call.patientAge : "", call.patientSex ? (call.patientSex==="male"?"M":"F") : ""].filter(Boolean).join(" ") + '</span>' : '') +
     '</div>' +
     (call.dispatchNotes ? '<div style="margin-top:8px;font-size:0.78rem;color:var(--gray)">📝 ' + mEscHtml(call.dispatchNotes) + '</div>' : '') +
-    (hzNoiAls(call) ? '<div class="hz-dd-als">🚨 ALS recommended by protocol for this NOI</div>' : '') +   // 9.25 (Sam)
+    (hzNoiAls(call) ? '<div class="hz-dd-als">🚨 ALS recommended for this NOI</div>' : '') +   // 9.25 (Sam)
     (call.accessCode ? '<div class="hz-dd-code" style="margin-top:4px;font-size:0.78rem;color:var(--gray)">🔑 ' + mEscHtml(call.accessCode) + '</div>' : '') +
     (call.callbackNumber ? '<div style="margin-top:8px;display:flex;gap:8px"><a href="tel:' + call.callbackNumber.replace(/\D/g,"") + '" style="flex:1;text-align:center;background:rgba(125,237,181,0.12);border:1px solid rgba(125,237,181,0.35);border-radius:6px;color:#7dedb5;font-family:\'Oswald\',sans-serif;font-size:0.72rem;font-weight:700;padding:6px;text-decoration:none">📞 ' + call.callbackNumber + '</a></div>' : '') +
   '</div>';
@@ -10722,7 +10720,7 @@ function mRenderDispatchDetail(call) {
   // Disposition (Add Additional Rig lives under the units — not repeated here)
   var needDisp = mAllOnSceneCheck(call) && !call.disposition.type;
   content += '<div id="m-dd-anchor-disposition" style="border-top:1px solid var(--card-border);padding-top:12px;margin-bottom:14px">';
-  content += needDisp
+  content += hzDispRigs(call).length >= 2 ? '' : needDisp
     ? '<div class="m-flash" style="display:inline-block;font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:8px">Set Call Disposition</div>'
     : '<div class="m-disp-label">Call Disposition</div>';
   var hzRigsOn = hzDispRigs(call);
@@ -10730,10 +10728,10 @@ function mRenderDispatchDetail(call) {
     var dr = (call.disposition || {}).rigs || {};
     hzRigsOn.forEach(function(x) {
       var d = dr[x.ci] || {};
-      content += '<div class="hz-rigdisp"><div class="hz-rigdisp-h">' + mEscHtml(x.rig) + '</div><div style="display:flex;gap:8px">' +
+      content += '<div class="hz-rigdisp"><div class="m-disp-label">Call Disposition · ' + mEscHtml(x.rig) + '</div><div style="display:flex;gap:8px">' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "rma" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="hzRigDispRMA(' + x.ci + ')">RMA</button>' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "transport" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="mOpenTransportSheet(' + x.ci + ')">🚑 Transport' + (d.type === "transport" ? ' ✓' : '') + '</button></div>' +
-        (d.type === "transport" && d.hospital ? '<div class="hz-rd-dest">🏥 ' + mEscHtml(d.hospital) + '</div>' : '') + '</div>';
+        (d.type === "transport" && d.hospital ? '<div style="margin-top:8px;background:rgba(122,184,245,0.08);border:1px solid rgba(122,184,245,0.3);border-radius:6px;padding:8px 10px;font-size:0.78rem;color:#7ab8f5">🏥 ' + mEscHtml(d.hospital) + '</div>' : '') + '</div>';
     });
     if (hzRigsOn.some(function(x) { return (dr[x.ci] || {}).type === "rma"; }))
       content += '<div style="margin-top:8px"><div class="m-disp-label">Enter Approving Unit ID</div><input type="text" class="m-disp-input" id="m-rma-by" placeholder="' + orgPh("Unit ID, e.g. MC-16") + '" autocapitalize="characters" value="' + mEscHtml((call.disposition || {}).rmaBy || "") + '" onchange="mSetRmaBy(this.value)"></div>';
@@ -11139,8 +11137,8 @@ function mDivertResponse(crewIdx, role, unit) {
     var ervD = !toRig && typeof hzErvActiveFor === "function" ? hzErvActiveFor(unit) : "";   // 12.80 / 5.38
     update["unitDetails." + mUdKey(crewIdx, role) + ".ervVehicle"] = ervD;
     var notes = call.callNotes || [];
-    notes.push({ text: unit + " diverted — now " + (toRig ? "responding to the rig" : "responding direct to scene" + (ervD ? " with " + ervD : "")), time: now, by: mCurrentUserUnit || "Dispatch" });
-    update.callNotes = notes;
+    if (false) notes.push({ text: unit + " diverted — now " + (toRig ? "responding to the rig" : "responding direct to scene" + (ervD ? " with " + ervD : "")), time: now, by: mCurrentUserUnit || "Dispatch" });
+    // 9.28 (Sam): timeline only — not repeated in Call Notes
     update.callEvents = mEvtUnion(mEvt(unit + " diverted → " + (toRig ? "the rig" : "direct to scene"), "↔", "#ffc84a", "event"));
     return db.collection("activeCalls").doc(callId).update(update);
   }).then(function(){ mToast(unit + " diverted"); }).catch(function(e){ mToast("Error: "+e.message, true); });
@@ -12663,8 +12661,7 @@ function mConfirmCancelCall() {
     if (!snap.exists) return Promise.reject(new Error("Call not found"));
     var data = snap.data();
     var notes = data.callNotes || [];
-    notes.push({ text: noteText, time: timeStr, by: cancelledBy, createdAt: now.toISOString() });
-    var unitDetails = data.unitDetails || {};
+    var unitDetails = data.unitDetails || {};   // 9.28: the cancellation goes in the timeline, not Call Notes
     var RESPONDING = ["enroute_scene","picking_up_ambo","ambo_responding"];
     Object.keys(unitDetails).forEach(function(key) {
       var det = unitDetails[key];
@@ -12673,7 +12670,7 @@ function mConfirmCancelCall() {
     return db.collection("activeCalls").doc(callId).set({
       status: "cancelled", cancelReason: reason, cancelNote: extraNote, cancelledBy: cancelledBy,
       cancelledAt: now.toISOString(), completedAt: now.toISOString(), completedByUid: mCurrentUser.uid, closedTs: firebase.firestore.FieldValue.serverTimestamp(),
-      callNotes: notes, unitDetails: unitDetails, disposition: { type: "cancelled" }, updatedAt: now.toISOString()
+      unitDetails: unitDetails, disposition: { type: "cancelled" }, updatedAt: now.toISOString(), callEvents: mEvtUnion(mEvt(noteText, "✕", "#c62828", "event"))
     }, { merge: true });
   }).then(function() {
     mCloseAllSheets(); mToast("✕ Call cancelled — " + reason); mCloseDispatchDetail();
@@ -12932,7 +12929,7 @@ function mCloseAllSheets() {
     <div style="position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-q" class="m-disp-input" placeholder="Type to search… (e.g. fall, cardiac)" autocomplete="off" autocorrect="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="m-nc-nature-list" style="margin:0;padding-right:34px" oninput="mNcNatureFilter()" onfocus="mNcNatureFilter(true)" onkeydown="mNcNatureKey(event)" onblur="setTimeout(mNcNatureBlur,160)"><span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--gray)">▾</span><div id="m-nc-nature-list" role="listbox" class="m-nc-nat-list" style="display:none"></div></div>
     <select id="m-nc-nature" class="m-disp-input" onchange="setTimeout(mNcValidateMarks,0)" style="display:none" aria-hidden="true" tabindex="-1"></select>
     <div id="m-nc-nature-custom-wrap" style="display:none;position:relative;margin-bottom:4px"><input type="text" id="m-nc-nature-custom" class="m-disp-input" style="padding-right:38px;margin-top:6px;"><button type="button" tabindex="-1" onclick="mNcClearField('m-nc-nature-custom')" aria-label="Clear" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid var(--card-border);color:var(--gray);font-size:0.85rem;line-height:1;cursor:pointer;padding:0">✕</button></div>
-    <div id="m-nc-als-hint" style="display:none;font-size:0.82rem;font-weight:800;color:#c62828;margin:6px 0 12px">🚨 ALS recommended by protocol for this NOI</div>
+    <div id="m-nc-als-hint" style="display:none;font-size:0.82rem;font-weight:800;color:#c62828;margin:6px 0 12px">🚨 ALS recommended for this NOI</div>
     <div id="m-nc-als-hint-spacer" style="height:4px"></div>
     </div>
 
@@ -17459,7 +17456,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-ro-bar > span{flex:1 1 auto;min-width:0}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-ro-bar .m-dd-ro-take{flex:0 0 auto !important;min-height:44px !important;padding:8px 16px !important;margin:0 !important;border-radius:10px !important;font-size:.95rem !important;font-weight:800 !important;background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000;border:2px solid #d4a017 !important;white-space:nowrap}";
   // 8.80 / 12.444 (Sam): "Units", "Crew 1" and "Call Notes" headings bold, like "Call Disposition"
-  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-units, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-notes, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-disposition > .m-disp-label{font-family:'Oswald',sans-serif !important;font-weight:700 !important;font-size:.95rem !important;letter-spacing:.06em !important;color:#1f2328 !important;-webkit-text-fill-color:#1f2328}" +
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-units, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-notes, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-disposition > .m-disp-label, html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-anchor-disposition .hz-rigdisp > .m-disp-label{font-family:'Oswald',sans-serif !important;font-weight:700 !important;font-size:.95rem !important;letter-spacing:.06em !important;color:#1f2328 !important;-webkit-text-fill-color:#1f2328}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-crew-head{font-weight:700 !important;font-size:.85rem !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}";
   // 8.90 / 12.454 (Sam): disposition buttons a bit smaller, Cancel Call / Mark Call Complete a bit larger
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button[onclick^='mSetDispositionRMA'], html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button[onclick^='mOpenTransportSheet'], html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content button[onclick^='mSetDispositionLinden']{min-height:50px !important;font-size:.95rem !important}" +
