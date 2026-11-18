@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.39"; window.M_BUILD = BUILD;
+  var BUILD = "9.40"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -12305,7 +12305,7 @@ function mSetRmaBy(val) {
 }
 
 var mTmNonMap = {}; // { "crewIdx_role": { status: "on_scene_direct"|"cleared_scene"|"other", label } }
-// ── Hospital search (API Ninjas through the hospitalSearch server function — the key is not in this page). Local hospitals stay as quick picks in the dropdown. ──
+// ── (9.40: no longer used — the search box was replaced by "Other" + a text field) Hospital search (API Ninjas through the hospitalSearch server function — the key is not in this page). Local hospitals stay as quick picks in the dropdown. ──
 var mHospSearchTimer = null;
 function mHospSearchInput() {
   var inp = document.getElementById("m-tr-hosp-search"), list = document.getElementById("m-tr-hosp-results");
@@ -12352,7 +12352,7 @@ function mConfirmTransportMulti() {
   var transports = [], allChecked = [], allUnchecked = [], problem = "";
   blocks.forEach(function(blk) {
     var ci = parseInt(blk.getAttribute("data-crew"), 10);
-    var hosp = (document.getElementById("m-tr-hosp-" + ci) || {}).value || "";
+    var hosp = hzTrHosp("m-tr-hosp-" + ci);
     var checked = Array.prototype.slice.call(blk.querySelectorAll("input:checked"));
     var unchecked = Array.prototype.slice.call(blk.querySelectorAll("input:not(:checked)"));
     allChecked = allChecked.concat(checked); allUnchecked = allUnchecked.concat(unchecked);
@@ -12402,7 +12402,7 @@ function mOpenTransportSheet(ci) {
   var hospSel = document.getElementById("m-tr-hospital");
   hospSel.innerHTML = '<option value="">Select hospital…</option>' + mHospitalOptionsHTML();
   hospSel.value = "";
-  var hs = document.getElementById("m-tr-hosp-search"); if (hs) hs.value = "";
+  var hs = document.getElementById("m-tr-hospital-other"); if (hs) { hs.value = ""; hs.style.display = "none"; }
   var hr = document.getElementById("m-tr-hosp-results"); if (hr) { hr.style.display = "none"; hr.innerHTML = ""; }
   var hc = document.getElementById("m-tr-hosp-chosen"); if (hc) hc.style.display = "none";
   var checks = document.getElementById("m-tr-unit-checks");
@@ -12462,7 +12462,7 @@ function mOpenTransportSheet(ci) {
 var mTmUnitsTouched = false;
 var mTrMulti = false;   // true when 2+ rigs are on the call and each needs its own destination
 function mUpdateTransportPrompts() {
-  var hosp = document.getElementById("m-tr-hospital").value;
+  var hosp = hzTrHosp("m-tr-hospital");
   document.getElementById("m-tr-dest-flash").className = hosp ? "m-disp-label" : "m-disp-label m-flash";
   var checked = document.querySelectorAll("#m-tr-unit-checks input:checked").length;
   var total = document.querySelectorAll("#m-tr-unit-checks input").length;
@@ -12553,9 +12553,9 @@ function mConfirmTransportDirect(hospital) {
     .catch(function(e){ mToast("Error: " + e.message, true); });
 }
 function mConfirmTransport() {
-  if (mTrForCrew !== null) { var hz = document.getElementById("m-tr-hospital").value; if (!hz) { mUpdateTransportPrompts(); return; } return hzConfirmRigTransport(mTrForCrew, hz); }
+  if (mTrForCrew !== null) { var hz = hzTrHosp("m-tr-hospital"); if (!hz) { mUpdateTransportPrompts(); return; } return hzConfirmRigTransport(mTrForCrew, hz); }
   if (mTrMulti) return mConfirmTransportMulti();
-  var hospital = document.getElementById("m-tr-hospital").value;
+  var hospital = hzTrHosp("m-tr-hospital");
   if (!hospital) { mUpdateTransportPrompts(); return; }
   var _call0 = mDispCallCache[mDispSelectedCallId];
   if (mIsDirectResponse(_call0)) return mConfirmTransportDirect(hospital);
@@ -13156,11 +13156,7 @@ function mCloseAllSheets() {
   <div id="m-tr-single-dest">
   <div class="m-disp-label" id="m-tr-dest-flash">Select Transport Destination</div>
   <select id="m-tr-hospital" class="m-disp-input" style="margin-bottom:8px" onchange="mUpdateTransportPrompts()"></select>
-  <div style="position:relative;margin-bottom:14px">
-    <input type="text" id="m-tr-hosp-search" class="m-disp-input" placeholder="🔍 Search any hospital by name…" autocomplete="off" oninput="mHospSearchInput()">
-    <div id="m-tr-hosp-results" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;background:#16283f;border:1px solid var(--card-border);border-radius:8px;z-index:40;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,0.5);max-height:260px;overflow-y:auto"></div>
-    <div id="m-tr-hosp-chosen" style="display:none;font-size:0.78rem;color:#7dedb5;margin-top:6px"></div>
-  </div>
+  <!-- 9.40 (Sam): hospital search removed — "Other" in the list opens a text field -->
   </div>
   <div id="m-tr-multi-note" style="display:none;font-size:0.76rem;color:var(--gray);margin-bottom:10px">More than one rig is on this call — set a destination for each. They can go to different facilities.</div>
   <div id="m-tr-units-wrap">
@@ -14096,6 +14092,11 @@ function hzDvIdText(h, call) {
 }
 // ── 12.188 (Sam): the Transport hospital picker is the app's own list, not the system pop-up ──
 // The <select> stays (hidden) and still holds the value; the list is drawn under it and kept in step.
+function hzTrHosp(id) {   // 9.40: the picked destination; "Other" → what was typed ("" until something is typed)
+  var sel = document.getElementById(id); if (!sel) return "";
+  if (sel.value !== "Other") return sel.value || "";
+  var t = document.getElementById(id + "-other"); return t ? t.value.trim() : "";
+}
 function hzHpIsSel(el) { return el && el.tagName === "SELECT" && /^m-tr-hosp(ital|-\d+)$/.test(el.id || ""); }
 function hzHpDraw(sel) {
   if (!hzHpIsSel(sel)) return;
@@ -14110,8 +14111,7 @@ function hzHpDraw(sel) {
   var rowsHtml = Array.prototype.map.call(sel.options, function(o, i) {
     if (!o.value || o.value === "__none__") return "";
     var on = sel.value === o.value, other = o.value === "Other";
-    if (other && sel.id === "m-tr-hospital" && document.getElementById("m-tr-hosp-search")) return "";   // 12.189: the search box under the list is the "Other" — no duplicate
-    if (other) return '<button type="button" class="hz-hp-row hz-hp-other' + (on ? ' on' : '') + '" data-i="' + i + '"><span class="hz-hp-n">🔍 Other… <small>search any hospital</small></span></button>';
+    if (other) return '<button type="button" class="hz-hp-row hz-hp-other' + (on ? ' on' : '') + '" data-i="' + i + '"><span class="hz-hp-n">Other</span></button>';   // 9.40 (Sam): Other → type the destination
     var id = o.getAttribute("data-hz-id"), h = id ? by[id] : null, s = id && !(h && h.custom) ? hzDvStatusFor(id) : null, mi = "";
     // 12.192 (Sam): road (travel) distance from the incident to the facility — Google Maps; no straight line, no drive time (12.194 drive time undone)
     var et = id && incEta ? incEta[id] : null; if (et) mi = hzDvFmtMi(et.mi) + " from the incident";
@@ -14130,20 +14130,23 @@ function hzHpDraw(sel) {
   var ck = HZ_DV.data && HZ_DV.data.checkedAt ? new Date(HZ_DV.data.checkedAt) : null, old = ck && Date.now() - ck.getTime() > 20 * 60000;
   var upd = ck ? '<div class="hz-hp-upd' + (old ? ' old' : '') + '">🏥 Divert status ' + (old ? '⚠️ last checked ' : 'updated ') + ck.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + (old ? ' — may be out of date' : '') + '</div>' : '';
   box.innerHTML = upd + head + '<div class="hz-hp-list"' + (box._open ? '' : ' style="display:none"') + '>' + rowsHtml + '</div>';
+  var oth = document.getElementById(sel.id + "-other");   // 9.40 (Sam): "Other" → free-text destination
+  if (!oth) { oth = document.createElement("input"); oth.type = "text"; oth.id = sel.id + "-other"; oth.className = "m-disp-input hz-hp-oth"; oth.placeholder = "Type the destination"; oth.autocomplete = "off"; oth.oninput = function() { if (typeof mUpdateTransportPrompts === "function") mUpdateTransportPrompts(); }; box.parentNode.insertBefore(oth, box.nextSibling); }
+  if (sel.value === "Other") { oth.style.display = "block"; } else { oth.style.display = "none"; oth.value = ""; }
   box.onclick = function(e) {
     var hd = e.target.closest ? e.target.closest(".hz-hp-head") : null;
     if (hd) { box._open = !box._open; hzHpDraw(sel); return; }
     var r = e.target.closest ? e.target.closest(".hz-hp-row") : null; if (!r) return;
     var o = sel.options[+r.getAttribute("data-i")]; if (!o) return;
     box._open = false;
-    if (o.value === "Other") { var q = document.getElementById("m-tr-hosp-search"); if (q && sel.id === "m-tr-hospital") { hzHpDraw(sel); q.focus(); q.scrollIntoView({ block: "center" }); return; } }
     sel.value = o.value; sel.dispatchEvent(new Event("change", { bubbles: true })); hzHpDraw(sel);
+    if (o.value === "Other") { var q = document.getElementById(sel.id + "-other"); if (q) { q.focus(); q.scrollIntoView({ block: "center" }); } }
   };
 }
 function hzHpAll() { document.querySelectorAll("select").forEach(function(s) { if (hzHpIsSel(s)) hzHpDraw(s); }); }
 (function() {
   var css = document.createElement("style");
-  css.textContent = ".hz-hp{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}"
+  css.textContent = ".hz-hp{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}.hz-hp-oth{margin:0 0 14px !important}"
     + ".hz-hp-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px !important;border:2px solid #0b5cad !important;border-radius:10px !important;background:#fff !important;color:#1f2328 !important;font:inherit;cursor:pointer;box-shadow:none !important;min-height:0 !important}"
     + "html:not([data-theme=basic]) .hz-hp-row{background:transparent !important;color:var(--white) !important}"
     + ".hz-hp-row.on{background:#e8f1fb !important;box-shadow:inset 0 0 0 1px #0b5cad !important}.hz-hp-row.on .hz-hp-n:before{content:'✓ ';color:#0b5cad;font-weight:800}"
@@ -17644,6 +17647,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-dd-content .hz-dd-als{margin-top:8px;font-size:.85rem;font-weight:800;color:#c62828 !important;-webkit-text-fill-color:#c62828}";
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rma-by{margin-top:8px;background:#000 !important;border:2px solid #d4a017 !important;border-radius:8px;padding:8px 10px;font-size:.85rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}";   // 9.37
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-addl-in{margin-top:14px;padding-top:14px;border-top:1px solid rgba(212,160,23,.35)}html body:not(#hzA):not(#hzB):not(#hzC) .hz-addl-in > :last-child{margin-bottom:0 !important}";   // 9.39
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) input.hz-hp-oth{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important;font-family:inherit !important}html body:not(#hzA):not(#hzB):not(#hzC) input.hz-hp-oth::placeholder{color:rgba(212,160,23,.6) !important;-webkit-text-fill-color:rgba(212,160,23,.6)}";   // 9.40
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
