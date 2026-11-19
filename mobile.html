@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.63"; window.M_BUILD = BUILD;
+  var BUILD = "9.65"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1597,7 +1597,7 @@ html[data-theme="basic"][data-theme] body:not(#hzA):not(#hzB) #m-pg-codes .m-gri
       </button>
       <button class="m-tile" data-sec="important" onclick="mGoTo('important')"><!-- 9.63 (Sam) -->
         <div class="m-tile-inner">
-          <span class="m-tile-icon">📟</span>
+          <span class="m-tile-icon">📞</span>
           <span class="m-tile-label">Important Numbers</span>
           <span class="m-tile-sub">Poison Control and more</span>
         </div>
@@ -8227,6 +8227,7 @@ function mOneTimestamp(body) {
   }).join("\n");
 }
 function mSendClickSendSMS(toNumbers, message) {
+  window.hzLastSmsError = "";
   message = mOneTimestamp(hzSmsPlain(message));
   toNumbers = (toNumbers || []).filter(function(n){ return /^\+1\d{10}$/.test(n); }); // drop malformed numbers client-side too
   if (!toNumbers.length || !message) return Promise.resolve();
@@ -8236,12 +8237,14 @@ function mSendClickSendSMS(toNumbers, message) {
   var phoneUnits = {}; toNumbers.forEach(function(n) { if (mPhoneUnitMap[n]) phoneUnits[n] = mPhoneUnitMap[n]; });
   var payload = { type: "sms", log: { kind: mLogKind(message), phoneUnits: phoneUnits }, messages: toNumbers.map(function(n){ return { to: n, body: message }; }) };
   if (MSysTestingMode) {
-    if (!mCurrentUser) return Promise.resolve();
+    // 12.531 (Sam): signed in = Firebase's own user (mCurrentUser is only filled once the dispatch console opens,
+    // so on the Admin page every test text in Test Mode stopped here without sending)
+    if (!(firebase.auth && firebase.auth().currentUser)) return Promise.reject(new Error("Not signed in — message not sent"));
     payload.testMode = true;
     return mRelay("sendSms", payload).then(function(r) {
       if (r && r.error) mToast(/^test mode/i.test(r.error) ? r.error : "Test Mode: " + r.error, true);
       return r;
-    }).catch(function(e){ console.warn("SMS test send failed:", e); mToast("⚠ Test SMS failed: " + ((e && e.message) || e), true); });
+    }).catch(function(e){ window.hzLastSmsError = (e && e.message) || String(e); console.warn("SMS test send failed:", e); mToast("⚠ Test SMS failed: " + ((e && e.message) || e), true); });
   }
   return mRelay("sendSms", payload).then(function(r) {
     // Some numbers rejected (e.g. landline, invalid): say who, so the dispatcher can reach them another way.
@@ -8250,7 +8253,7 @@ function mSendClickSendSMS(toNumbers, message) {
       mToast("⚠ " + r.failedCount + " text" + (r.failedCount === 1 ? "" : "s") + " not accepted: " + who + " — see Notification Log", true);
     }
     return r;
-  }).catch(function(e){ console.warn("SMS send failed:", e); mToast("⚠ SMS failed: " + ((e && e.message) || e), true); });
+  }).catch(function(e){ window.hzLastSmsError = (e && e.message) || String(e); console.warn("SMS send failed:", e); mToast("⚠ SMS failed: " + ((e && e.message) || e), true); });
 }
 /* New-call broadcast SMS removed — the first text a member gets is their assignment */
 function mPushCallbackSMS() {
