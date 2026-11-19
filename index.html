@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.522">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.524">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2775,7 +2775,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.522</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.524</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -20346,7 +20346,6 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
   <div class="m-disp-label">Reason</div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
     <button type="button" class="m-disp-btn m-als-cancel-pill" onclick="mSelectAlsCancelReason(this,'Cancelled by BLS / Proximity')">Cancelled by BLS / Proximity</button>
-    <button type="button" class="m-disp-btn m-als-cancel-pill" onclick="mSelectAlsCancelReason(this,'No ALS available')">No ALS Available</button>
     <button type="button" class="m-disp-btn m-als-cancel-pill" onclick="mSelectAlsCancelReason(this,'Cancelled by BLS / Not needed')">Cancelled by BLS / Not Needed</button>
     <button type="button" class="m-disp-btn m-als-cancel-pill" onclick="mSelectAlsCancelReason(this,'Other')">Other</button>
   </div>
@@ -20357,7 +20356,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.522";
+var DESKTOP_VERSION = "12.524";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -21773,7 +21772,7 @@ var M_STATUS_LOG = {
   at_facility:      { icon:"🏥", text:"Arrived at Hospital", color:"#ff9090" },
   clearing_facility:{ icon:"✓",  text:"Cleared ER → Base", color:"#7dedb5" },
   returning_base:   { icon:"🏠", text:"Heading Back to Base",     color:"#7ab8f5" },
-  back_at_base:     { icon:"🏠", text:"Back at Base",        color:"var(--gray)" }
+  back_at_base:     { icon:"🏠", text:"Back at Base",        color:"#34c759" }   // 9.60 (Sam): green
 };
 var M_TRANSPORT_STATUSES = ["transporting","at_facility","clearing_facility","returning_base","back_at_base"];
 var M_ONSCENE_STATUSES = ["on_scene_direct","on_scene_ambo"];
@@ -23992,6 +23991,10 @@ function mEditCallSave() {
       upd.mapsLink = "https://www.google.com/maps/dir/?api=1&destination=" + loc.lat + "," + loc.lng + "&travelmode=driving";
       var z = typeof mDetectZoneInfo === "function" ? mDetectZoneInfo(loc.lat, loc.lng) : null;
       var zNote = (z && z.type && call.zone && z.type !== call.zone) ? " — note: the new spot is " + (z.type === "primary" ? "in the standard response area" : z.type === "secondary" ? "a Load a Rig area" : z.type === "transfer" ? "a Linden transfer area (stabilize, Linden brings the rig)" : "outside the coverage area") : "";
+      if (z && z.type && z.type !== (call.zone || "")) {   // 9.61 (Sam): the call's zone follows the new address
+        upd.zone = z.type; upd.zoneArea = z.area || "";
+        zNote = " — zone updated to " + hzZoneLabel(z.type) + (z.area ? " (" + (typeof mZoneAreaLabel === "function" ? mZoneAreaLabel(z.area) : z.area) + ")" : "");
+      } else if (z && z.area && z.area !== (call.zoneArea || "")) { upd.zoneArea = z.area; }
       notes.push("📍 Location changed to " + loc.address + (oldAddr ? " (was " + oldAddr + ")" : "") + zNote);
       evs.push(mEvt("Location changed to " + loc.address + (oldAddr ? " (was " + oldAddr + ")" : "") + zNote, "📍", "#7ab8f5", "loc"));
     }
@@ -24172,6 +24175,12 @@ function mBindNcValidation() {
   ["input", "change", "click", "blur"].forEach(function(ev) {
     form.addEventListener(ev, function(){ setTimeout(mNcValidateMarks, 0); }, true);
   });
+  // 9.61 (Sam): on iPhone, tapping a button doesn't close the keyboard — so tapping any button on the form
+  // (Years / UTO / Adult / Female / Dispatch…) puts the keyboard away instead of leaving it over the form
+  form.addEventListener("click", function(e) {
+    var t = e.target && e.target.closest ? e.target.closest("button, [role=button], .hz-hp-row") : null; if (!t) return;
+    var a = document.activeElement; if (a && a !== t && /^(INPUT|TEXTAREA)$/.test(a.tagName)) { try { a.blur(); } catch (x) {} }
+  }, true);
 }
 // Age: a number in Years or Months — or UTO (unable to obtain), which then asks Pediatric or Adult.
 // (A typed age is NOT turned into Pediatric/Adult — only UTO asks for that.)
@@ -25688,14 +25697,14 @@ function mRenderDispatchDetail(call) {
   var needDisp = mAllOnSceneCheck(call) && !call.disposition.type;
   content += '<div id="m-dd-anchor-disposition" style="border-top:1px solid var(--card-border);padding-top:12px;margin-bottom:14px">';
   content += hzDispRigs(call).length >= 2 ? '' : needDisp
-    ? '<div class="m-flash" style="display:inline-block;font-size:0.6rem;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid rgba(255,144,144,0.5);margin-bottom:8px">Set Call Disposition</div>'
+    ? '<div class="m-disp-label hz-disp-slow">Call Disposition</div>'   /* 9.60 (Sam): no red flashing box — the heading itself slowly pulses */
     : '<div class="m-disp-label">Call Disposition</div>';
   var hzRigsOn = hzDispRigs(call);
   if (hzRigsOn.length >= 2) {   // 9.23 (Sam): more than one rig → a separate disposition for each rig
     var dr = (call.disposition || {}).rigs || {};
     hzRigsOn.forEach(function(x) {
       var d = dr[x.ci] || ((((call.disposition || {}).transports) || []).filter(function(t) { return t && t.crewIdx === x.ci; }).map(function(t) { return { type: "transport", hospital: t.hospital || "" }; })[0]) || {};   // 9.47: a transport saved for the whole call still shows on its rig
-      content += '<div class="hz-rigdisp"><div class="m-disp-label">Call Disposition · ' + mEscHtml(x.rig) + '</div><div style="display:flex;gap:8px">' +
+      content += '<div class="hz-rigdisp"><div class="m-disp-label' + (needDisp && !d.type ? ' hz-disp-slow' : '') + '">Call Disposition · ' + mEscHtml(x.rig) + '</div><div style="display:flex;gap:8px">' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "rma" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="hzRigDispRMA(' + x.ci + ')">RMA</button>' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "transport" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="mOpenTransportSheet(' + x.ci + ')">🚑 Transport' + (d.type === "transport" ? ' ✓' : '') + '</button></div>' +
         /* 9.59 (Sam): destination shows in the rig's box */ '' + '</div>';
@@ -25926,9 +25935,11 @@ function mBuildCrewBlock(call, crew, crewIdx) {
   var _rp = mBuildCrewRigPanel(call, crewIdx);
   // 9.13 (Sam): no separate rig box — the rig's buttons go inside the box of the first unit with it ("MC-20 with MC-902")
   if (_rp && _rp.indexOf("'back_at_base')") === -1) {
-    var _ud = call.unitDetails || {}, _host = Object.keys(crew).filter(function(k) { return k !== "rig" && crew[k] && crew[k] !== "__added__" && ((_ud[mUdKey(crewIdx, k)] || {}).response === "rig" || mIsDriverRole(call, crewIdx, k)); })[0];
-    if (_host && html.indexOf('data-hz-rig-host="' + crewIdx + '_' + _host + '"') !== -1) html = html.replace('<!--hz-rig-slot:' + crewIdx + '_' + _host + '-->', mBuildCrewRigPanel(call, crewIdx, true));
-    else html += _rp;
+    var _ud = call.unitDetails || {}, _hosts = Object.keys(crew).filter(function(k) { return k !== "rig" && crew[k] && crew[k] !== "__added__" && ((_ud[mUdKey(crewIdx, k)] || {}).response === "rig" || mIsDriverRole(call, crewIdx, k)); });
+    // 9.61 (Sam): every unit box riding the rig gets the rig's button ("Mark MC-903 On Scene"), not just the first
+    var _placed = 0, _inl = mBuildCrewRigPanel(call, crewIdx, true), _inlNoDest = _inl.replace(/^<div class="hz-rig-dest">[\s\S]*?<\/div>/, "");
+    _hosts.forEach(function(h) { if (html.indexOf('data-hz-rig-host="' + crewIdx + '_' + h + '"') !== -1) { html = html.replace('<!--hz-rig-slot:' + crewIdx + '_' + h + '-->', _placed ? _inlNoDest : _inl); _placed++; } });
+    if (!_placed) html += _rp;
   }   // a "Mark rig Back at Base" step is shown under Call Disposition instead (11.73 / 4.60)
   if (crewIdx > 0) { html += '</div>'; return html; }
   html += '<!--hz-more-crews-->';
@@ -26008,7 +26019,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
     }
     var rigAvail = mRigAvailabilityFor(call, crewIdx);
     var hzLiveRig = hzCrewRigLive(call, crewIdx, role);
-    var rigLbl = "To Rig" + (hzLiveRig ? " → " + hzLiveRig : "");   // rig is chosen once per crew, never per unit
+    var rigLbl = "To Rig";   // 9.61 (Sam): never assume the rig — tapping it asks which rig when there's one to choose
     if (isLoadRig) {
       // LOAD A RIG call: expected flow is Base → load rig → respond with rig. Direct-to-scene is the exception (close by only).
       if (rigAvail.ok) html += '<div style="background:rgba(240,165,0,0.12);border:1px solid rgba(240,165,0,0.45);border-radius:7px;padding:7px 9px;margin-bottom:8px">' +
@@ -26023,7 +26034,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
         return html;
       }
       // Respond to the rig (main choice). With the crew's rig known it's one step: straight to "Rig Responding".
-      html += '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(255,200,74,0.6);background:rgba(255,200,74,0.15);color:#ffc84a;margin-bottom:6px" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>';
+      html += '<button class="m-disp-btn m-pulse-gold" style="width:100%;border-color:rgba(255,200,74,0.6);background:rgba(255,200,74,0.15);color:#ffc84a;margin-bottom:6px" onclick="hzRigResponse(' + crewIdx + ',\'' + role + '\')">' + rigLbl + '</button>';
       html += '<button class="m-disp-btn" style="width:100%;border-color:rgba(122,184,245,0.3);color:var(--gray);font-size:0.62rem" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">Direct <span style="opacity:0.7">(only if close to the scene)</span></button>';
       html += '</div>';
       return html;
@@ -26031,7 +26042,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
     html += '<div style="display:flex;gap:6px">' +
       '<button class="m-disp-btn m-pulse-blue" style="flex:1;border-color:rgba(122,184,245,0.6);background:rgba(122,184,245,0.12);color:#7ab8f5" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'scene\')">Direct</button>' +
       (rigAvail.ok
-        ? '<button class="m-disp-btn m-pulse-gold" style="flex:1;border-color:rgba(232,160,255,0.6);background:rgba(232,160,255,0.12);color:#e8a0ff" onclick="mSetUnitResponse(' + crewIdx + ',\'' + role + '\',\'rig\')">' + rigLbl + '</button>'
+        ? '<button class="m-disp-btn m-pulse-gold" style="flex:1;border-color:rgba(232,160,255,0.6);background:rgba(232,160,255,0.12);color:#e8a0ff" onclick="hzRigResponse(' + crewIdx + ',\'' + role + '\')">' + rigLbl + '</button>'
         : '<button class="m-disp-btn" disabled title="' + mEscHtml(rigAvail.why) + '" style="flex:1;border-color:rgba(255,255,255,0.12);color:var(--gray);opacity:0.55">No rig available</button>') +
     '</div>' +
     (rigAvail.ok ? '' : '<div style="font-size:0.64rem;color:#ffb3b3;margin-top:5px;line-height:1.35">' + mEscHtml(rigAvail.why) + ' — <span style="color:#a78bfa;text-decoration:underline" onclick="mOpenBLSSheet()">request BLS mutual aid</span></div>');
@@ -26561,12 +26572,14 @@ function mAddExtraRole(crewIdx, base) {
   mOpenAssignSheet(crewIdx, key, "unit");
   var t = document.getElementById("m-assign-title"); if (t) t.textContent = base === "supervisor" ? "Assign Supervisor" : base === "observer" ? "Assign Observer" : "Assign Responder";
 }
-function mAddRigPrompt() {
+function mAddRigPrompt(moving) {
+  if (!moving) hzMoveUnit = null;   // 9.61: set only when a unit on the call asked for "Another Rig"
   var _lzc = mDispCallCache[mDispSelectedCallId]; if (_lzc && _lzc.zone === "transfer") { mToast("Linden Hatzolah brings the rig on this call", true); return; }
   var call = mDispCallCache[mDispSelectedCallId] || {};
   var onCall = {};
   (call.crews || []).forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] && cr[k] !== "__added__") onCall[cr[k]] = true; }); });
   var avail = (mAllRespondersCache || []).filter(function(u){ return !onCall[u.unit]; });
+  if (hzMoveUnit) avail = [{ unit: hzMoveUnit.unit }].concat(avail.filter(function(u) { return u.unit !== hzMoveUnit.unit; }));   // 9.61: the unit moving to another rig, first
   document.getElementById("m-addrig-roster").innerHTML = avail.map(function(u) {
     var conflict = mUnitConflictMap[u.unit];
     var style = conflict ? "padding:6px 10px;border-color:rgba(255,144,144,0.5);color:#ff9090;background:rgba(224,85,85,0.08)" : "padding:6px 10px";
@@ -26607,8 +26620,8 @@ function mAddRigPrompt() {
       // 8.99 (Sam): both rigs out → ask straight away instead of leaving the dispatcher in the sheet
       var why = (res.taken || []).map(function(id) { var b = mRigConflictMap[id]; return id + " — " + ((res.oos && res.oos[id]) ? "out of service" : b ? mRigBusyPhrase(b.status, b.address) : "already on this call"); }).join("\n");
       mCloseAllSheets();
-      hzDialog({ kind: "answer", msg: "No rigs are available" + (why ? ":\n" + why : ".") + "\n\nDo you wish to activate mutual aid?", okText: "Yes, mutual aid", noText: "No" })
-        .then(function(yes) { if (yes) mOpenBLSSheet(); });
+      hzDialog({ kind: "answer", msg: "No rigs are available" + (why ? ":\n" + why : ".") + "\n\nDo you wish to activate mutual aid?", okText: "Yes", noText: "No" })
+        .then(function(yes) { if (yes) hzPickMutualAid(); });   // 9.61 (Sam): ask which agency, with its number
     }
   });
 }
@@ -26660,8 +26673,14 @@ function mAddRigWithUnit(unitId) {
       if (!snap.exists) return;
       var call = snap.data(), crews = call.crews || [{}];
       var dupe = false;
+      var mv = hzMoveUnit && hzMoveUnit.unit === unitId && (crews[hzMoveUnit.ci] || {})[hzMoveUnit.role] === unitId ? hzMoveUnit : null;   // 9.61
       crews.forEach(function(cr){ Object.keys(cr||{}).forEach(function(k){ if (k !== "rig" && cr[k] === unitId) dupe = true; }); });
-      if (dupe) { mToast(unitId + " is already assigned on this call", true); return; }
+      if (dupe && !mv) { mToast(unitId + " is already assigned on this call", true); return; }
+      hzMoveUnit = null;
+      if (mv) {   // take the unit off its old rig first
+        delete crews[mv.ci][mv.role]; if (call.unitDetails) delete call.unitDetails[mUdKey(mv.ci, mv.role)];
+        if (mv.ci === 0 && crews[0].rig && !hzCrewRigLive(Object.assign({}, call, { crews: crews }), 0)) delete crews[0].rig;
+      }
       var idx = crews.length;
       var crew = { rigUnit: unitId };
       if (res.rig) crew.rig = res.rig;
@@ -26719,6 +26738,54 @@ function mTextRigDirections(unitId, call) {
     });
   });
 }
+// 9.61 (Sam): a unit heading to a rig — never assume which. If a rig on this call can still be joined, ask:
+// each such rig, or "Another Rig" (2 patients → a second rig). Nothing to choose → as before (pick the rig after).
+function hzRigResponse(crewIdx, role) {
+  var call = mDispCallCache[mDispSelectedCallId] || {}, crews = call.crews || [], unit = (crews[crewIdx] || {})[role] || role;
+  var opts = [];
+  crews.forEach(function(cr, i) {
+    if (!cr || !cr.rig || opts.some(function(o) { return o.rig === cr.rig; })) return;
+    if (typeof mCrewRigGone === "function" && mCrewRigGone(call, i)) return;
+    if (i === crewIdx ? !hzCrewRigLive(call, i, role) : !Object.keys(cr).some(function(k) { return k !== "rig" && cr[k] && cr[k] !== "__added__"; })) return;
+    opts.push({ ci: i, rig: cr.rig });
+  });
+  if (!opts.length) { mSetUnitResponse(crewIdx, role, "rig"); return; }
+  var wrap = document.createElement("div"); wrap.className = "hz-dlg"; wrap.setAttribute("role", "dialog"); wrap.setAttribute("aria-modal", "true");
+  wrap.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg hz-rma-h"><b>' + hzDlgEsc(unit) + ' — To Rig</b><br>Which rig?</div><div class="hz-dlg-row hz-dlg-col">' +
+    opts.map(function(o, i) { return '<button type="button" class="hz-dlg-no" data-i="' + i + '">' + hzDlgEsc(o.rig) + '</button>'; }).join("") +
+    '<button type="button" class="hz-dlg-no" data-i="new">Another Rig</button><button type="button" class="hz-dlg-no hz-dlg-x" data-i="">Return to Previous Screen</button></div></div>';
+  var close = function() { wrap.remove(); window.removeEventListener("popstate", close); };
+  Array.prototype.forEach.call(wrap.querySelectorAll("button"), function(b) {
+    b.onclick = function() {
+      var v = b.getAttribute("data-i"); close();
+      if (v === "") return;
+      if (v === "new") { hzMoveUnit = { ci: crewIdx, role: role, unit: unit }; mAddRigPrompt(true); return; }
+      var o = opts[+v];
+      if (o.ci === crewIdx) mSetUnitResponse(crewIdx, role, "rig"); else hzMoveUnitToCrew(crewIdx, role, o.ci);
+    };
+  });
+  window.addEventListener("popstate", close);
+  document.body.appendChild(wrap);
+}
+var hzMoveUnit = null;   // a unit already on the call being put on another (new) rig
+function hzMoveUnitToCrew(fromCi, role, toCi) {
+  var callId = mDispSelectedCallId;
+  db.collection("activeCalls").doc(callId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var call = snap.data(), crews = JSON.parse(JSON.stringify(call.crews || [{}])), unit = (crews[fromCi] || {})[role];
+    if (!unit || !crews[toCi] || !crews[toCi].rig) return;
+    var keys = ["responder", "responder2", "responder3", "responder4", "responder5", "responder6", "responder7", "responder8"], nk = keys.filter(function(k) { return !crews[toCi][k]; })[0] || ("responder" + Date.now());
+    delete crews[fromCi][role]; crews[toCi][nk] = unit;
+    var upd = { crews: crews, updatedAt: new Date().toISOString() };
+    upd["unitDetails." + mUdKey(fromCi, role)] = firebase.firestore.FieldValue.delete();
+    upd["unitDetails." + mUdKey(toCi, nk)] = { response: "rig", status: "ambo_responding", statusAt: mNowHHMM(), assignedAt: mNowHHMM() };
+    var left = Object.assign({}, call, { crews: crews });
+    if (fromCi === 0 && crews[0].rig && !hzCrewRigLive(left, 0)) delete crews[0].rig;   // nobody left going to that rig → release it
+    upd.callEvents = mEvtUnion(mEvt(unit + " — Responding with " + crews[toCi].rig, "🚑", "#ffc84a", "status"));
+    return db.collection("activeCalls").doc(callId).update(upd).then(function() { mToast(unit + " → " + crews[toCi].rig); });
+  }).catch(function(e) { mToast("Error: " + e.message, true); });
+}
+window.hzRigResponse = hzRigResponse;
 function mSetUnitResponse(crewIdx, role, response) {
   var callId = mDispSelectedCallId;
   var callR0 = mDispCallCache[mDispSelectedCallId] || {}, crewR0 = mCrewOf(callR0, crewIdx);
@@ -26929,10 +26996,34 @@ function mBuildBlsBanner(call) {
     '<button class="m-disp-btn m-res-btn" style="width:100%;border-color:rgba(232,160,255,0.35);color:#e8a0ff;background:rgba(232,160,255,0.1)" onclick="mOpenBLSSheet()">BLS Info</button>' +
   '</div>';
 }
-function mOpenBLSSheet() {
+// 9.61 (Sam): "activate mutual aid" → which agency to call (works for out-of-area calls too): every BLS agency on file
+// with a number to tap; this area's agency first. Picking one (or calling it) opens BLS Info with it filled in.
+function hzPickMutualAid() {
+  var call = mDispCallCache[mDispSelectedCallId] || {}, hit = mFindMutualAidHit(call), seen = {}, list = [];
+  var add = function(str, here) {
+    var m = String(str || "").match(/^(.*?):\s*([\d\-() ]{10,})$/); if (!m) return;
+    var name = m[1].trim(), ph = m[2].trim(), key = name + "|" + ph; if (seen[key]) return; seen[key] = 1;
+    list.push({ name: name, phone: ph, digits: ph.replace(/\D/g, ""), here: here });
+  };
+  if (hit) add(hit.bls, true);
+  M_MUTUAL_AID_911.forEach(function(r) { add(r.bls, false); });
+  var wrap = document.createElement("div"); wrap.className = "hz-dlg"; wrap.id = "hz-ma-dlg"; wrap.setAttribute("role", "dialog"); wrap.setAttribute("aria-modal", "true");
+  wrap.innerHTML = '<div class="hz-dlg-box hz-res-box"><div class="hz-dlg-msg hz-rma-h"><b>Mutual Aid</b><br>Which agency are you calling?</div><div class="hz-res-body">' +
+    list.map(function(a, i) { return '<div class="hz-ma-row"><button type="button" class="hz-dlg-no hz-ma-name" data-i="' + i + '">' + hzDlgEsc(a.name) + (a.here ? '<small>This area</small>' : '') + '</button>' +
+      '<a class="hz-res-call hz-ma-call" data-i="' + i + '" href="tel:' + a.digits + '"><span class="hz-ph-i">📞</span><span>' + hzDlgEsc(a.phone) + '</span></a></div>'; }).join("") +
+    '</div><div class="hz-dlg-row hz-dlg-col"><button type="button" class="hz-dlg-no" data-i="other">Other Agency</button><button type="button" class="hz-dlg-no hz-dlg-x" data-i="">Return to Previous Screen</button></div></div>';
+  var close = function() { wrap.remove(); window.removeEventListener("popstate", close); };
+  var go = function(v, delay) { close(); if (v === "" || v === null) return; setTimeout(function() { mOpenBLSSheet(v === "other" ? "" : list[+v].name); }, delay || 0); };
+  Array.prototype.forEach.call(wrap.querySelectorAll("button"), function(b) { b.onclick = function() { go(b.getAttribute("data-i")); }; });
+  Array.prototype.forEach.call(wrap.querySelectorAll("a.hz-ma-call"), function(a) { a.addEventListener("click", function() { go(a.getAttribute("data-i"), 700); }); });   // the call goes out; BLS Info is ready when they're back
+  window.addEventListener("popstate", close);
+  document.body.appendChild(wrap);
+}
+window.hzPickMutualAid = hzPickMutualAid;
+function mOpenBLSSheet(provider) {
   var call = mDispCallCache[mDispSelectedCallId];
   var hit = call ? mFindMutualAidHit(call) : null;
-  document.getElementById("m-bls-provider").value = hit ? hit.bls.split(":")[0].trim() : "";
+  document.getElementById("m-bls-provider").value = typeof provider === "string" ? provider : (hit ? hit.bls.split(":")[0].trim() : "");
   document.getElementById("m-bls-unit").value = "";
   document.getElementById("m-bls-eta").value = "";
   mOpenSheet("m-sheet-bls");
@@ -26943,7 +27034,7 @@ function hzAskCancelReason(what, choices) {
     var wrap = document.createElement("div"); wrap.className = "hz-dlg"; wrap.setAttribute("role", "dialog"); wrap.setAttribute("aria-modal", "true");
     wrap.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg hz-rma-h"><b>Cancel ' + hzDlgEsc(what) + '</b><br>Reason for cancelling:</div>' +
       '<div class="hz-dlg-row hz-dlg-col">' + choices.concat(["Other"]).map(function(c) { return '<button type="button" class="hz-dlg-no" data-v="' + hzDlgEsc(c) + '">' + hzDlgEsc(c) + '</button>'; }).join("") +
-      '<button type="button" class="hz-dlg-no hz-dlg-x" data-v="">Back</button></div></div>';
+      '<button type="button" class="hz-dlg-no hz-dlg-x" data-v="">Return to Previous Screen</button></div></div>';
     var done = false;
     var finish = function(v) { if (done) return; done = true; wrap.remove(); window.removeEventListener("popstate", back); resolve(v); };
     var back = function() { finish(""); };
@@ -26954,7 +27045,7 @@ function hzAskCancelReason(what, choices) {
     if (!v) return null;
     if (v !== "Other") return v;
     var ask = function(again) {
-      return hzDialog({ kind: "prompt", msg: (again ? "A reason is required.\n\n" : "") + "Reason for cancelling " + what + ":", def: "", okText: "Save", noText: "Back" }).then(function(t) {
+      return hzDialog({ kind: "prompt", msg: (again ? "A reason is required.\n\n" : "") + "Reason for cancelling " + what + ":", def: "", okText: "Save", noText: "Return to Previous Screen" }).then(function(t) {
         if (t === null || t === undefined) return null;
         t = String(t).trim(); return t ? t : ask(true);
       });
@@ -32371,7 +32462,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   o.innerHTML = '<div class="hz-dlg-box"><div class="hz-dlg-msg"><b style="font-size:1.15rem">' + esc(unitId) + ' assigned</b><br>How is ' + esc(unitId) + ' responding?</div>' +
     '<div class="hz-resp-list">' +
       '<button type="button" class="hz-resp-b" data-r="scene">Direct</button>' +
-      (rigOk ? '<button type="button" class="hz-resp-b" data-r="rig">To Rig' + (hzCrewRigLive(call, crewIdx, role) ? ' <span class="hz-resp-rig">→ ' + esc(hzCrewRigLive(call, crewIdx, role)) + '</span>' : '') + '</button>' : '') +
+      (rigOk ? '<button type="button" class="hz-resp-b" data-r="rig">To Rig</button>' : '') +
     '<button type="button" class="hz-resp-b hz-resp-later">Decide Later</button>' +   // 9.20 (Sam): a real button, same size as the others
     '</div>' +
     (gone ? '<div class="hz-resp-note">' + esc(gone.why) + ' — this unit goes direct.</div>' : (noRig && !noRig.ok ? '<div class="hz-resp-note">No rig available — ' + esc(noRig.why) + '</div>' : '')) +
@@ -32386,7 +32477,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       if (mDispSelectedCallId !== callId) return;
       var c = mDispCallCache[callId] || {}, cr = mCrewOf(c, crewIdx) || {};
       if (cr[role] !== unitId) { (c.crews = c.crews || [])[crewIdx] = Object.assign({}, c.crews[crewIdx] || {}); c.crews[crewIdx][role] = unitId; }   // the call list may not have caught up yet
-      mSetUnitResponse(crewIdx, role, b.getAttribute("data-r"));
+      if (b.getAttribute("data-r") === "rig") hzRigResponse(crewIdx, role); else mSetUnitResponse(crewIdx, role, b.getAttribute("data-r"));   // 9.61: which rig?
     };
   });
   document.addEventListener("keydown", key, true);
@@ -32504,7 +32595,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   var RS = "html body:not(#hzA):not(#hzB):not(#hzC) button.m-dd-sec[onclick*=\"'resources'\"]";
   st.textContent += RS + "{justify-content:center !important;text-align:center !important;gap:10px}" + RS + " .m-dd-sec-ar{display:none !important}" +
     RS + " .m-dd-sec-l{flex:0 1 auto !important}" + RS + " .m-dd-sec-s{flex:0 0 auto !important;text-align:center !important}" + RS + " .m-dd-sec-s:empty{display:none !important}";
-  st.textContent += RS + "{font-family:inherit !important}" + RS + " .m-dd-sec-l, html body:not(#hzA):not(#hzB):not(#hzC) button[onclick='mAddRigPrompt()'], html body:not(#hzA):not(#hzB):not(#hzC) button.hz-res-open{font-family:inherit !important;font-size:16px !important;font-weight:800 !important;letter-spacing:normal !important;text-transform:none !important}";   // 9.36 / 12.522 (Sam): Assign Additional Resources and Assign Additional Rig — identical lettering, title case, phone and desktop
+  st.textContent += RS + "{font-family:inherit !important}" + RS + " .m-dd-sec-l, html body:not(#hzA):not(#hzB):not(#hzC) button[onclick='mAddRigPrompt()'], html body:not(#hzA):not(#hzB):not(#hzC) button.hz-res-open{font-family:inherit !important;font-size:16px !important;font-weight:800 !important;letter-spacing:normal !important;text-transform:none !important}";   // 9.36 / 12.524 (Sam): Assign Additional Resources and Assign Additional Rig — identical lettering, title case, phone and desktop
   // 8.96 / 12.460 (Sam): the rig's next-step button (e.g. Mark MC-902 Back at Base) pulses
   st.textContent += "@keyframes hzFillPulse{0%,100%{box-shadow:0 0 0 0 rgba(212,160,23,.85);filter:brightness(1)}50%{box-shadow:0 0 0 7px rgba(212,160,23,0);filter:brightness(1.18)}}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick^='mSetCrewRigStatus']{animation:hzFillPulse 1.3s ease-in-out infinite !important}";
@@ -32617,11 +32708,13 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button.hz-res-cancel{background:#c62828 !important;border:2px solid #c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff;width:100%}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-inline{margin:14px 0 4px}";   // 9.45
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split{display:grid !important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:8px}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split > *{flex:1 1 0;min-width:0;width:auto !important;min-height:46px;margin:0 !important;display:flex;align-items:center;justify-content:center;border-radius:10px !important;font-weight:800 !important;text-decoration:none;font-size:.9rem;box-sizing:border-box}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split a.hz-res-call{background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000;white-space:nowrap}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body button[onclick^='mMarkAlsOnScene']{min-height:46px}";   // 9.49
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-call-card .m-ct-v .m-pill.m-pill:not(.hz-test-pill){background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .m-call-card .m-ct-v .m-pill.m-pill:not(.hz-test-pill) b{color:#fff !important;-webkit-text-fill-color:#fff}";   // 9.51 (Sam): home call card pills (rig, ALS / BLS / PD, times) all black & gold
-  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .call-card .dk-ct-v .call-pill.call-pill{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .call-card .dk-ct-v .call-pill.call-pill b{color:#fff !important;-webkit-text-fill-color:#fff}";   // 12.522 (Sam): desktop home call card pills black & gold
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .call-card .dk-ct-v .call-pill.call-pill{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .call-card .dk-ct-v .call-pill.call-pill b{color:#fff !important;-webkit-text-fill-color:#fff}";   // 12.524 (Sam): desktop home call card pills black & gold
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split a.hz-res-call{flex:1 1 0 !important;gap:3px;padding:0 3px !important;font-size:min(.84rem,3.5vw) !important;letter-spacing:0 !important;overflow:hidden}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split a.hz-res-call .hz-ph-i{font-size:.8em;flex-shrink:0}html body:not(#hzA):not(#hzB):not(#hzC) .hz-res-body .hz-res-split .hz-res-cancel{flex:1 1 0 !important;font-size:min(.88rem,3.9vw) !important;padding:0 6px !important;white-space:nowrap}";   // 9.53 (Sam): phone numbers fit inside the green button
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als{background:#000 !important;border-top:2px solid #d4a017 !important;color:#d4a017 !important}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als > div:first-child,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls > div:first-child,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als > div:first-child{background:#d4a017 !important;opacity:.6}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als > div:nth-child(2),html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls > div:nth-child(2),html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als > div:nth-child(2){color:#fff !important;-webkit-text-fill-color:#fff}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als .m-disp-label,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls .m-disp-label,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als .m-disp-label{color:#d4a017 !important;-webkit-text-fill-color:#d4a017;background:transparent !important;box-shadow:none !important}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als .m-disp-label.m-flash,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls .m-disp-label.m-flash,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als .m-disp-label.m-flash{animation:none !important;opacity:1 !important}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als input,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls input,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als input{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als input::placeholder,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls input::placeholder,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als input::placeholder{color:rgba(212,160,23,.55) !important;-webkit-text-fill-color:rgba(212,160,23,.55)}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als button,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls button,html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als button{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border-radius:10px !important;box-shadow:none !important;min-height:48px}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-als button[onclick^='mConfirmALS'],html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-bls button[onclick^='mConfirmBLS']{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als .m-als-cancel-pill.hz-sel{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) #m-sheet-cancel-als #m-als-cancel-confirm-btn:not([disabled]){background:#c62828 !important;border-color:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff}@keyframes hzGoldBlink{0%,100%{opacity:1}50%{opacity:.35}}";   // 9.54 (Sam): Request ALS / Request BLS / Cancel ALS sheets in black & gold
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-addl-in button[onclick='mAddRigPrompt()'],html body:not(#hzA):not(#hzB):not(#hzC) .hz-addl-in button.hz-res-open{min-height:62px !important;height:auto !important;padding:10px !important;box-sizing:border-box;display:flex !important;flex-direction:column;align-items:center;justify-content:center}";   // 9.58 (Sam): same size
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rig-dest{font-size:.9rem;font-weight:700;color:#fff !important;-webkit-text-fill-color:#fff;margin:2px 0 8px;line-height:1.3}";   // 9.59
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-label.hz-disp-slow{animation:hzDispSlow 2.6s ease-in-out infinite !important;background:transparent !important;border:0 !important;box-shadow:none !important}@keyframes hzDispSlow{0%,100%{opacity:1}50%{opacity:.25}}";   // 9.60
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-bottom:8px}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row > *{min-height:50px;margin:0 !important;border-radius:10px !important;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:min(.9rem,3.6vw) !important;padding:4px !important;box-sizing:border-box;text-decoration:none}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row a.hz-ma-call{flex-direction:row;gap:3px;background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000;white-space:nowrap}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-name small{display:block;font-size:.7rem;font-weight:600;color:#fff;-webkit-text-fill-color:#fff}";   // 9.61
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
