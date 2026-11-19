@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.533">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.534">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2780,7 +2780,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.533</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.534</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -6035,7 +6035,10 @@ function hzRegionalOpen(listId) {   // the list an admin saved (Admin ▸ Protoc
 function hzRegionalRender(listId, q) { var el = document.getElementById(listId); if (el) el.innerHTML = hzRegionalHtml(q); }
 // ── 9.63 / 12.528 (Sam): ☎️ Important Numbers (Contacts ▸ Important Numbers). Admins edit the list in
 // Admin ▸ Protocols & Dispatch ▸ Important Numbers (saved as dispatchSettings.importantNumbers); else the built-in one.
-var HZ_IMPORTANT_DEFAULT = [{ name: "Poison Control Hotline", note: "National · 24/7", phones: ["1-800-222-1222"] }];
+var HZ_IMPORTANT_DEFAULT = [{ name: "Poison Control Hotline", note: "National · 24/7", phones: ["1-800-222-1222"] },
+  { name: "Child Abuse Hotline", note: "NJ · 1-877-NJ ABUSE · 24/7", phones: ["1-877-652-2873"] },   // 9.67 (Sam)
+  { name: "Elder Abuse Hotline", note: "NJ Adult Protective Services · 855-TELL-APS", phones: ["1-855-835-5277"] }];
+var HZ_IMPORTANT_SEED = 2;   // 9.67: bump when built-in numbers are added — a saved list gets the new ones once (never re-adds a removed one)
 var HZ_IMPORTANT = HZ_IMPORTANT_DEFAULT.map(function(r) { return { name: r.name, note: r.note, phones: r.phones.slice() }; });
 function hzImportantHtml(q) {
   q = String(q || "").toLowerCase().trim();
@@ -6119,6 +6122,12 @@ function hzImportantOpen(listId) {
   hzImportantRender(listId, "");
   db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
     var r = s.exists && s.data().importantNumbers;
+    if (Array.isArray(r) && (Number(s.data().importantNumbersSeed) || 1) < HZ_IMPORTANT_SEED && hzImpIsAdmin()) {   // 9.67: add the new built-in numbers to a saved list, once
+      var have = {}; r.forEach(function(x) { have[String(x.name || "").toLowerCase()] = 1; });
+      var add = HZ_IMPORTANT_DEFAULT.slice(1).filter(function(x) { return !have[x.name.toLowerCase()]; }).map(function(x) { return { name: x.name, note: x.note, phones: x.phones.slice() }; });
+      r = r.concat(add);
+      db.collection("appdata").doc("dispatchSettings").set({ importantNumbers: r, importantNumbersSeed: HZ_IMPORTANT_SEED }, { merge: true }).catch(function() {});
+    }
     if (Array.isArray(r)) { HZ_IMPORTANT = r; var box = document.getElementById(listId); var q = box && box.parentElement.querySelector("input"); hzImportantRender(listId, q ? q.value : ""); }
   }).catch(function() {});
 }
@@ -20532,7 +20541,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.533";
+var DESKTOP_VERSION = "12.534";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {

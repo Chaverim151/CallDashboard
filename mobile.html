@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.66"; window.M_BUILD = BUILD;
+  var BUILD = "9.67"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2348,7 +2348,10 @@ function hzRegionalOpen(listId) {   // the list an admin saved (Admin ▸ Protoc
 function hzRegionalRender(listId, q) { var el = document.getElementById(listId); if (el) el.innerHTML = hzRegionalHtml(q); }
 // ── 9.63 / 12.526 (Sam): ☎️ Important Numbers (Contacts ▸ Important Numbers). Admins edit the list in
 // Admin ▸ Protocols & Dispatch ▸ Important Numbers (saved as dispatchSettings.importantNumbers); else the built-in one.
-var HZ_IMPORTANT_DEFAULT = [{ name: "Poison Control Hotline", note: "National · 24/7", phones: ["1-800-222-1222"] }];
+var HZ_IMPORTANT_DEFAULT = [{ name: "Poison Control Hotline", note: "National · 24/7", phones: ["1-800-222-1222"] },
+  { name: "Child Abuse Hotline", note: "NJ · 1-877-NJ ABUSE · 24/7", phones: ["1-877-652-2873"] },   // 9.67 (Sam)
+  { name: "Elder Abuse Hotline", note: "NJ Adult Protective Services · 855-TELL-APS", phones: ["1-855-835-5277"] }];
+var HZ_IMPORTANT_SEED = 2;   // 9.67: bump when built-in numbers are added — a saved list gets the new ones once (never re-adds a removed one)
 var HZ_IMPORTANT = HZ_IMPORTANT_DEFAULT.map(function(r) { return { name: r.name, note: r.note, phones: r.phones.slice() }; });
 function hzImportantHtml(q) {
   q = String(q || "").toLowerCase().trim();
@@ -2432,6 +2435,12 @@ function hzImportantOpen(listId) {
   hzImportantRender(listId, "");
   db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
     var r = s.exists && s.data().importantNumbers;
+    if (Array.isArray(r) && (Number(s.data().importantNumbersSeed) || 1) < HZ_IMPORTANT_SEED && hzImpIsAdmin()) {   // 9.67: add the new built-in numbers to a saved list, once
+      var have = {}; r.forEach(function(x) { have[String(x.name || "").toLowerCase()] = 1; });
+      var add = HZ_IMPORTANT_DEFAULT.slice(1).filter(function(x) { return !have[x.name.toLowerCase()]; }).map(function(x) { return { name: x.name, note: x.note, phones: x.phones.slice() }; });
+      r = r.concat(add);
+      db.collection("appdata").doc("dispatchSettings").set({ importantNumbers: r, importantNumbersSeed: HZ_IMPORTANT_SEED }, { merge: true }).catch(function() {});
+    }
     if (Array.isArray(r)) { HZ_IMPORTANT = r; var box = document.getElementById(listId); var q = box && box.parentElement.querySelector("input"); hzImportantRender(listId, q ? q.value : ""); }
   }).catch(function() {});
 }
