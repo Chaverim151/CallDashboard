@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.65"; window.M_BUILD = BUILD;
+  var BUILD = "9.66"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1728,6 +1728,7 @@ html[data-theme="basic"][data-theme] body:not(#hzA):not(#hzB) #m-pg-codes .m-gri
     <button class="m-disp-btn m-tk-tab" data-status="in-progress" onclick="mSetTicketTab('in-progress',this)">🔵 In Progress</button>
     <button class="m-disp-btn m-tk-tab" data-status="resolved" onclick="mSetTicketTab('resolved',this)">🟢 Completed</button>
     <button class="m-disp-btn m-tk-tab" data-status="all" onclick="mSetTicketTab('all',this)">All</button>
+    <input type="search" id="m-tk-search" class="hz-tk-search" placeholder="🔍 Search requests — #number, words, unit…" autocomplete="off" oninput="mRenderTickets()"><!-- 9.66 (Sam) -->
   </div>
   <div class="m-scroll" id="m-tickets-list">
     <div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">Loading...</div>
@@ -2359,7 +2360,74 @@ function hzImportantHtml(q) {
       '<div class="hz-reg-phones">' + (r.phones || []).map(function(p) { return '<a class="hz-reg-call" href="tel:' + String(p).replace(/[^\d+]/g, "") + '">📞 ' + esc(p) + '</a>'; }).join("") + '</div></div>';
   }).join("");
 }
-function hzImportantRender(listId, q) { var el = document.getElementById(listId); if (el) el.innerHTML = hzImportantHtml(q); }
+function hzImportantRender(listId, q) {
+  var el = document.getElementById(listId); if (!el) return;
+  el.innerHTML = hzImportantHtml(q);
+  if (!hzImpIsAdmin()) return;   // 9.66 / 12.533: admins can add / edit / remove right here
+  q = String(q || "").toLowerCase().trim();
+  var cards = el.querySelectorAll(".hz-reg-card"), shown = HZ_IMPORTANT.map(function(r, i) { return i; }).filter(function(i) { var r = HZ_IMPORTANT[i]; return !q || (r.name + " " + (r.note || "") + " " + (r.phones || []).join(" ")).toLowerCase().indexOf(q) !== -1; });
+  Array.prototype.forEach.call(cards, function(c, n) {
+    var i = shown[n]; if (i == null) return;
+    var bar = document.createElement("div"); bar.className = "hz-imp-adm";
+    bar.innerHTML = '<button type="button" onclick="hzImpEdit(\'' + listId + '\',' + i + ')">Edit</button><button type="button" class="hz-imp-del" onclick="hzImpRemove(\'' + listId + '\',' + i + ')">Remove</button>';
+    c.classList.add("hz-imp-card"); c.appendChild(bar);
+  });
+  var add = document.createElement("button"); add.type = "button"; add.className = "hz-imp-add"; add.textContent = "＋ Add a Number";
+  add.onclick = function() { hzImpEdit(listId, -1); };
+  el.appendChild(add);
+}
+// 9.66 / 12.533 (Sam): admins add / edit / remove Important Numbers right on the page (same list as Admin ▸ Protocols & Dispatch)
+function hzImpIsAdmin() {
+  try { if (typeof currentRole !== "undefined" && currentRole === "admin") return true; } catch (e) {}
+  try { if (typeof mIsAdminUser === "function" && mIsAdminUser()) return true; } catch (e) {}
+  return false;
+}
+function hzImpSave(list, listId, msg) {
+  return db.collection("appdata").doc("dispatchSettings").set({ importantNumbers: list }, { merge: true }).then(function() {
+    HZ_IMPORTANT = list;
+    if (typeof DISPATCH_SETTINGS !== "undefined" && DISPATCH_SETTINGS) DISPATCH_SETTINGS.importantNumbers = list;
+    hzImportantRender(listId, "");
+    (typeof showToast === "function" ? showToast : mToast)(msg || "✓ Saved");
+  }).catch(function(e) { (typeof showToast === "function" ? showToast : mToast)("Couldn't save: " + e.message, true); });
+}
+function hzImpEdit(listId, idx) {   // idx = -1 → add a new number
+  var cur = idx >= 0 ? HZ_IMPORTANT[idx] : { name: "", note: "", phones: [] };
+  var ask = function(msg, def) { return hzDialog({ kind: "prompt", msg: msg, def: def || "", okText: "Next", noText: "Cancel" }); };
+  ask((idx >= 0 ? "Edit" : "Add a number") + "\n\nName (e.g. Poison Control Hotline):", cur.name).then(function(name) {
+    if (name === null || name === undefined) return; name = String(name).trim(); if (!name) return hzDialog({ kind: "alert", msg: "A name is required." });
+    return ask("Phone number(s) for " + name + "\n(more than one: separate with commas)", (cur.phones || []).join(", ")).then(function(ph) {
+      if (ph === null || ph === undefined) return;
+      var phones = String(ph).split(",").map(function(p) { return p.trim(); }).filter(Boolean);
+      if (!phones.length) return hzDialog({ kind: "alert", msg: "At least one phone number is required." });
+      return hzDialog({ kind: "prompt", msg: "Note (optional, e.g. National · 24/7):", def: cur.note || "", okText: "Save", noText: "Cancel" }).then(function(note) {
+        if (note === null || note === undefined) return;
+        var list = HZ_IMPORTANT.map(function(r) { return { name: r.name, note: r.note || "", phones: (r.phones || []).slice() }; });
+        var row = { name: name, note: String(note).trim(), phones: phones };
+        if (idx >= 0) list[idx] = row; else list.push(row);
+        return hzImpSave(list, listId, idx >= 0 ? "✓ " + name + " updated" : "✓ " + name + " added");
+      });
+    });
+  });
+}
+function hzImpRemove(listId, idx) {
+  var r = HZ_IMPORTANT[idx]; if (!r) return;
+  hzDialog({ kind: "confirm", msg: "Remove " + r.name + " from Important Numbers?", okText: "Remove", noText: "Cancel" }).then(function(yes) {
+    if (!yes) return;
+    var list = HZ_IMPORTANT.filter(function(x, i) { return i !== idx; }).map(function(x) { return { name: x.name, note: x.note || "", phones: (x.phones || []).slice() }; });
+    hzImpSave(list, listId, "✓ Removed");
+  });
+}
+
+
+// 9.66 / 12.533 (Sam): search Service Requests — number (#41 or 41), title, details, who sent it / is on it, category
+function hzTkMatch(t, q) {
+  q = String(q || "").toLowerCase().trim(); if (!q) return true;
+  var num = String(t.number || t.ticketNo || "").toLowerCase();
+  if (/^#?\d+$/.test(q) && num === q.replace("#", "")) return true;
+  var hay = [t.title, t.details, t.description, t.unit, t.submittedBy, t.submittedByUnit, t.assignedTo, t.assignedUnit, t.category, t.location, num ? "#" + num : ""]
+    .map(function(x) { return Array.isArray(x) ? x.join(" ") : String(x || ""); }).join(" ").toLowerCase();
+  return q.split(/\s+/).every(function(w) { return hay.indexOf(w) !== -1; });
+}
 function hzImportantOpen(listId) {
   hzImportantRender(listId, "");
   db.collection("appdata").doc("dispatchSettings").get().then(function(s) {
@@ -6911,14 +6979,15 @@ function mLoadTickets() {
   }).catch(function(e) { document.getElementById("m-tickets-list").innerHTML = '<div style="color:#ff9090;font-size:0.82rem;padding:20px 0;text-align:center">Error: ' + e.message + '</div>'; });
 }
 function mRenderTickets() {
-  var list = mTicketStatusFilter === "all" ? mAllTickets : mAllTickets.filter(function(t) { return t.status === mTicketStatusFilter; });
+  var hzQ = ((document.getElementById("m-tk-search") || {}).value || "").trim();   // 9.66: a search looks through every request, whatever tab is on
+  var list = (mTicketStatusFilter === "all" || hzQ) ? mAllTickets.filter(function(t) { return hzTkMatch(t, hzQ); }) : mAllTickets.filter(function(t) { return t.status === mTicketStatusFilter; });
   // 12.108 / 5.63: in "All" — by status (Open → Accepted → In Progress → Completed), newest first within each
-  if (mTicketStatusFilter === "all") { var hzSR = { open: 0, accepted: 1, "in-progress": 2, resolved: 3 }; list = list.slice().sort(function(a, b) {
+  if (mTicketStatusFilter === "all" || hzQ) { var hzSR = { open: 0, accepted: 1, "in-progress": 2, resolved: 3 }; list = list.slice().sort(function(a, b) {
     var ra = hzSR[a.status || "open"], rb = hzSR[b.status || "open"]; ra = ra == null ? 4 : ra; rb = rb == null ? 4 : rb;
     return ra !== rb ? ra - rb : (b.createdAt || "").localeCompare(a.createdAt || ""); }); }
   if (typeof hzErvHidden === "function") list = list.filter(function(t){ return !hzErvHidden(t); });   // 12.89: denied ERV requests — admins and the driver only
   var el = document.getElementById("m-tickets-list");
-  if (!list.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">No service requests.</div>'; return; }
+  if (!list.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:20px 0;text-align:center">' + (hzQ ? 'No service requests match “' + mEscHtml(hzQ) + '”.' : 'No service requests.') + '</div>'; return; }
   var statusColor = { open: "#ff9090", accepted: "#ffb26b", "in-progress": "#ffc84a", resolved: "#7dedb5" };
   el.innerHTML = list.map(function(t) {
     var date = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—";
@@ -17881,6 +17950,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-label.hz-disp-slow{animation:hzDispSlow 2.6s ease-in-out infinite !important;background:transparent !important;border:0 !important;box-shadow:none !important}@keyframes hzDispSlow{0%,100%{opacity:1}50%{opacity:.25}}";   // 9.60
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-bottom:8px}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row > *{min-height:50px;margin:0 !important;border-radius:10px !important;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:min(.9rem,3.6vw) !important;padding:4px !important;box-sizing:border-box;text-decoration:none}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row a.hz-ma-call{flex-direction:row;gap:3px;background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000;white-space:nowrap}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-name small{display:block;font-size:.7rem;font-weight:600;color:#fff;-webkit-text-fill-color:#fff}";   // 9.61
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-tk-idlbl{display:inline-block;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.04em;color:#d4a017;border:2px solid #d4a017;background:#000;border-radius:8px;padding:3px 10px;margin:0 0 10px}";   // 9.62
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-reg-card .hz-imp-adm{display:flex;gap:8px;margin-top:10px;flex:0 0 100% !important;width:100% !important;grid-column:1 / -1;order:9}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-adm button{flex:1;min-height:38px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;border-radius:8px;font-weight:700;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-adm button.hz-imp-del{background:#c62828;border-color:#c62828;color:#fff;-webkit-text-fill-color:#fff}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-add{display:block;width:100%;min-height:52px;margin-top:12px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;border-radius:10px;font-weight:800;font-size:1rem;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-reg-card.hz-imp-card{flex-wrap:wrap !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-tk-search{width:100%;box-sizing:border-box;margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;font-size:.95rem}html body:not(#hzA):not(#hzB):not(#hzC) .hz-tk-search::placeholder{color:rgba(212,160,23,.6);-webkit-text-fill-color:rgba(212,160,23,.6)}";   // 9.66 / 12.533
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
