@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.67"; window.M_BUILD = BUILD;
+  var BUILD = "9.69"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -1911,7 +1911,11 @@ function hzZoneColor(z) { return z === "primary" ? "#7dedb5" : z === "secondary"
    in place of Transport. RMA stays. */
 var HZ_LINDEN_DISP = { linden_stabilized: "MC unit stabilized. Transferred to Linden.", linden_noresp: "No MC unit available. Transferred to Linden." };
 var HZ_LINDEN_DISP_SHORT = { linden_stabilized: "MC stabilized → Linden", linden_noresp: "No MC unit → Linden" };
-function hzDispName(t) { t = t || ""; return HZ_LINDEN_DISP[t] || (t === "rma" ? "RMA" : t === "transport" ? "Transport" : t === "cancelled" ? "Cancelled" : t); }
+function hzDispName(t) { t = t || ""; return HZ_LINDEN_DISP[t] || (t === "rma" ? "RMA" : t === "transport" ? "Transport" : t === "other_agency" ? "Transported by Another Agency" : t === "cancelled" ? "Cancelled" : t); }
+// 9.69 / 12.539 (Sam): third disposition — "Transported by Another Agency" (type other_agency, disposition.agency). MC did not transport,
+// so for the rig it works like RMA (free, Back at Base); units keep their on-scene status (nothing says "RMA").
+function hzNoMcTr(t) { return t === "rma" || t === "other_agency"; }
+function hzOaText(d) { d = d || {}; return "Transported by " + (d.agency || "another agency"); }
 function hzDispShort(t) { return HZ_LINDEN_DISP_SHORT[t] || hzDispName(t); }
 /* "MC unit stabilized" needs at least one MC unit on the call before it can be completed (12.38 / 5.01) */
 function hzLindenNeedsUnit(call) {
@@ -2012,6 +2016,7 @@ function hzClDispText(l) {
   if (HZ_LINDEN_DISP[d.type]) return HZ_LINDEN_DISP[d.type];
   var trs = (d.transports || []).filter(function(t) { return t && t.hospital; });
   if (d.type === "transport" && trs.length > 1) return "TRANSPORT → " + trs.map(function(t) { return (t.rig ? t.rig + " → " : "") + t.hospital; }).join("; ");
+  if (d.type === "other_agency") return hzOaText(d);
   return d.type ? d.type.toUpperCase() + (d.hospital ? " → " + d.hospital : "") + (d.type === "rma" && d.rmaBy ? (d.rmaHow === "als" || d.rmaBy === "ALS" ? " (by ALS)" : " (approved by " + d.rmaBy + ")") : "") : "—";
 }
 /* Call Logs dates the app filled in itself roll forward with the clock: the app stays open for days, and a "To" date
@@ -2366,7 +2371,7 @@ function hzImportantHtml(q) {
 function hzImportantRender(listId, q) {
   var el = document.getElementById(listId); if (!el) return;
   el.innerHTML = hzImportantHtml(q);
-  if (!hzImpIsAdmin()) return;   // 9.66 / 12.533: admins can add / edit / remove right here
+  return;   // 9.68 (Sam): on the phone the page is just the list — adding / editing / removing is on the desktop
   q = String(q || "").toLowerCase().trim();
   var cards = el.querySelectorAll(".hz-reg-card"), shown = HZ_IMPORTANT.map(function(r, i) { return i; }).filter(function(i) { var r = HZ_IMPORTANT[i]; return !q || (r.name + " " + (r.note || "") + " " + (r.phones || []).join(" ")).toLowerCase().indexOf(q) !== -1; });
   Array.prototype.forEach.call(cards, function(c, n) {
@@ -3636,6 +3641,7 @@ function mRenderCalls(calls) {
     var dispPill = disp === "transport" && _trs.length > 1 ? _trs.map(function(t){ return '<span class="m-pill disp-transport">' + (t.rig ? mEscHtml(t.rig) + ' → ' : 'Transport → ') + mEscHtml(t.hospital) + '</span>'; }).join("") :
                    disp === "transport" ? '<span class="m-pill disp-transport">Transport' + ((call.disposition||{}).hospital?" → "+mEscHtml(call.disposition.hospital):"") + '</span>' :
                    disp === "rma" ? '<span class="m-pill disp-rma">RMA</span>' :
+                   disp === "other_agency" ? '<span class="m-pill disp-oa">' + mEscHtml(hzOaText(call.disposition)) + '</span>' :
                    HZ_LINDEN_DISP[disp] ? '<span class="m-pill disp-linden">' + hzDispShort(disp) + '</span>' : "";
 
     var times = call.times || {};
@@ -5237,7 +5243,7 @@ function mComputeRigConflicts(excludeCallId) {
   (mActiveCallsLive || []).forEach(function(data) {
     if (!data || data.id === excludeCallId || (data.status && data.status !== "active")) return;
     var addr = (data.address||"").split(",")[0], ud = data.unitDetails || {};
-    var isRMA = data.disposition && data.disposition.type === "rma";
+    var isRMA = data.disposition && hzNoMcTr(data.disposition.type);
     (data.crews||[]).forEach(function(crew, ci) {
       if (!crew || !crew.rig) return;
       var busy = false, wrapping = "";
@@ -5247,11 +5253,11 @@ function mComputeRigConflicts(excludeCallId) {
         if (det.response !== "rig") return;
         var st = det.status || "";
         if (M_RIG_FREE_STATUSES.indexOf(st) !== -1) { if (st === "clearing_facility" || st === "returning_base") wrapping = st; return; }
-        if (isRMA && ["transporting","at_facility"].indexOf(st) === -1) { wrapping = "rma"; return; }
+        if ((isRMA || ((((data.disposition || {}).rigs) || {})[ci] || {}).type === "other_agency") && ["transporting","at_facility"].indexOf(st) === -1) { wrapping = "rma"; return; }
         busy = true;
       });
       if (busy) map[crew.rig] = { id: data.id, address: addr, status: mCrewRigStatusLabel(data, ci, crew) };
-      else if (wrapping) freeing[crew.rig] = { id: data.id, address: addr, why: wrapping === "rma" ? "RMA — no transport" : wrapping === "clearing_facility" ? "cleared the ER" : "heading back to base" };
+      else if (wrapping) freeing[crew.rig] = { id: data.id, address: addr, why: wrapping === "rma" ? ((data.disposition || {}).type === "rma" ? "RMA — no transport" : "another agency transported") : wrapping === "clearing_facility" ? "cleared the ER" : "heading back to base" };
     });
   });
   mRigConflictMap = map; mRigFreeingMap = freeing; return map;
@@ -6404,7 +6410,7 @@ function mRenderDispatchList(calls) {
   var elapsedTxt = elapsedMin === null ? "" : (elapsedMin < 60 ? elapsedMin + "m" : Math.floor(elapsedMin/60) + "h " + (elapsedMin%60) + "m");
   var destTxt = (call.disposition && call.disposition.type === "transport")
     ? ((call.disposition.transports||[]).length > 1 ? call.disposition.transports.length + " destinations" : (call.disposition.hospital || ""))
-    : (call.disposition && call.disposition.type === "rma" ? "RMA" : call.disposition && HZ_LINDEN_DISP[call.disposition.type] ? hzDispShort(call.disposition.type) : "");
+    : (call.disposition && call.disposition.type === "rma" ? "RMA" : call.disposition && call.disposition.type === "other_agency" ? hzOaText(call.disposition) : call.disposition && HZ_LINDEN_DISP[call.disposition.type] ? hzDispShort(call.disposition.type) : "");
     var addr = mPoiName(call.address) || (mCleanAddress(call.address)||"Unknown").split(",")[0];
     var addrStreet = mPoiName(call.address) ? mStreetPart(call.address) : "";
     return '<div class="m-disp-card" onclick="mOpenDispatchCall(\'' + call.id + '\')">' +
@@ -6742,7 +6748,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
   var statusName = function(s) { var m = (typeof M_STATUS_LOG !== "undefined" && M_STATUS_LOG[s]) || null; return m ? m.text : (s || ""); };
   var asDate = function(iso) { var d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d : null; };
   var calls = [], units = [];
-  var nT = 0, nR = 0, nAls = 0, nL = 0, nC = 0;
+  var nT = 0, nR = 0, nO = 0, nAls = 0, nL = 0, nC = 0;
   logs.forEach(function(l) {
     var dt = asDate(l.createdAt), t = l.times || {}, disp = l.disposition || {};
     var unitList = [], rigs = [];
@@ -6759,7 +6765,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
       });
     });
     var hosp = (disp.transports && disp.transports.length > 1) ? disp.transports.map(function(x) { return (x.rig ? x.rig + " → " : "") + x.hospital; }).join("; ") : (disp.hospital || "");
-    if (l.status === "cancelled") nC++; else if (disp.type === "transport") nT++; else if (disp.type === "rma") nR++; else if (HZ_LINDEN_DISP[disp.type]) nL++; if (l.alsActivated) nAls++;
+    if (l.status === "cancelled") nC++; else if (disp.type === "transport") nT++; else if (disp.type === "rma") nR++; else if (disp.type === "other_agency") nO++; else if (HZ_LINDEN_DISP[disp.type]) nL++; if (l.alsActivated) nAls++;
     calls.push([dt, dt ? dt.toTimeString().slice(0, 5) : "", l.address || "", l.apt || "", zoneName(l.zone), l.zoneArea || "", natureName(l.callNature),
       l.patientAgeNum ? Number(l.patientAgeNum) || l.patientAgeNum : (l.patientAge || ""), l.patientSex || "", unitList.join(", "), rigs.join(", "),
       t.dispatched || "", t.first_on_scene || "", t.enroute || "", t.cleared || "", t.home || "",
@@ -6770,7 +6776,7 @@ function hzExportCallLogsXlsx(logs, filterLines) {
   });
   var summary = [["Exported", new Date().toLocaleString()], ["By", (typeof mCurrentUserUnit !== "undefined" && mCurrentUserUnit) || (typeof currentUserUnit !== "undefined" && currentUserUnit) || ""], ["", ""]]
     .concat((filterLines || []).map(function(f) { return f; }))
-    .concat([["", ""], ["Calls", logs.length], ["Transports", nT], ["RMA", nR], ["Transferred to Linden", nL], ["Cancelled", nC], ["ALS activated", nAls]]);
+    .concat([["", ""], ["Calls", logs.length], ["Transports", nT], ["RMA", nR], ["Transported by another agency", nO], ["Transferred to Linden", nL], ["Cancelled", nC], ["ALS activated", nAls]]);
   var sheets = [
     { name: "Calls", cols: [{ h: "Date", w: 12, t: "d" }, { h: "Time", w: 7 }, { h: "Address", w: 38 }, { h: "Apt", w: 7 }, { h: "Zone", w: 12 }, { h: "Area", w: 14 }, { h: "Nature", w: 24 },
       { h: "Age", w: 6, t: "n" }, { h: "Sex", w: 7 }, { h: "Units", w: 22 }, { h: "Rigs", w: 10 }, { h: "Dispatched", w: 10 }, { h: "On Scene", w: 9 }, { h: "En Route", w: 9 },
@@ -6843,7 +6849,7 @@ function mRenderCallLogs(logs) {
     if (l.patientSex === "male") who.push("M"); else if (l.patientSex === "female") who.push("F");
     var line2 = [town, nature, who.join(" ")].filter(Boolean).join(" · ");
     var units = (l.assignedUnits || []).map(function(u) { return String(u).toUpperCase().replace(/^([A-Z]+)(\d)/, "$1-$2"); });
-    var d = l.status === "cancelled" ? ["Cancelled", "var(--gray)"] : l.disposition && l.disposition.type === "transport" ? ["Transport", "#7ab8f5"] : l.disposition && l.disposition.type === "rma" ? ["RMA", "#7dedb5"] : l.disposition && HZ_LINDEN_DISP[l.disposition.type] ? [hzDispShort(l.disposition.type), "#5fe0d2"] : ["Open", "var(--gray)"];
+    var d = l.status === "cancelled" ? ["Cancelled", "var(--gray)"] : l.disposition && l.disposition.type === "transport" ? ["Transport", "#7ab8f5"] : l.disposition && l.disposition.type === "rma" ? ["RMA", "#7dedb5"] : l.disposition && l.disposition.type === "other_agency" ? [hzOaText(l.disposition), "#f0b35a"] : l.disposition && HZ_LINDEN_DISP[l.disposition.type] ? [hzDispShort(l.disposition.type), "#5fe0d2"] : ["Open", "var(--gray)"];
     var hosp = l.disposition && l.disposition.type === "transport" && l.disposition.hospital ? " → " + l.disposition.hospital : "";
     return '<div class="m-disp-card m-cl-card" onclick="mOpenCallLogDetail(\'' + l.id + '\')">' +
       '<div class="m-cl-r"><span class="m-cl-dot" style="background:' + zoneColor + '"></span><span class="m-cl-addr">' + mEscHtml(street) + '</span><span class="m-cl-when">' + mEscHtml(when) + '</span></div>' +
@@ -10090,7 +10096,7 @@ function hzLeRender() {
   // disposition
   h += '<div class="hz-le-sec"><h4>🏁 ' + (l.status === "cancelled" ? "Cancelled" : "Disposition") + '</h4><div class="hz-le-g">';
   if (l.status === "cancelled") h += inp("cancelReason", "Reason", l.cancelReason) + inp("cancelNote", "Details", l.cancelNote);
-  else h += sel("d_type", "Disposition", d.type || "", [["", "—"], ["transport", "Transport"], ["rma", "RMA"], ["linden_stabilized", "MC stabilized → Linden"], ["linden_noresp", "No MC unit → Linden"]])
+  else h += sel("d_type", "Disposition", d.type || "", [["", "—"], ["transport", "Transport"], ["rma", "RMA"], ["other_agency", "Transported by Another Agency"], ["linden_stabilized", "MC stabilized → Linden"], ["linden_noresp", "No MC unit → Linden"]])
     + sel("d_hospital", "Hospital", d.hospital || "", [["", "—"]].concat(hosp)) + inp("d_hospitalOther", "…or another hospital", "") + inp("d_rmaBy", "RMA approved by", d.rmaBy === "__custom__" ? d.rmaCustom : (d.rmaBy || ""));
   h += '</div>';
   if (l.status !== "cancelled" && s.transports.length) h += '<div style="margin-top:8px"><label>Transports (one per rig)</label>' + s.transports.map(function(t, i) {
@@ -10251,6 +10257,7 @@ function hzSaveLogEdit() {
     var d = Object.assign({}, l.disposition || {}), hosp = v.d_hospitalOther || v.d_hospital;
     d.type = v.d_type; d.hospital = d.type === "transport" ? hosp : (d.type ? "" : hosp);
     if (d.type === "rma") { d.rmaBy = v.d_rmaBy; d.rmaCustom = ""; } else { d.rmaBy = ""; d.rmaCustom = ""; }
+    if (d.type !== "other_agency") d.agency = "";
     if (s.transports.length || (l.disposition || {}).transports) d.transports = s.transports.filter(function(t) { return t.rig || t.hospital; });
     put("disposition", d, "disposition");
   }
@@ -10871,6 +10878,7 @@ function mRenderDispatchDetail(call) {
       content += '<div class="hz-rigdisp"><div class="m-disp-label' + (needDisp && !d.type ? ' hz-disp-slow' : '') + '">Call Disposition · ' + mEscHtml(x.rig) + '</div><div style="display:flex;gap:8px">' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "rma" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="hzRigDispRMA(' + x.ci + ')">RMA</button>' +
         '<button class="m-disp-btn hz-rd-b' + (d.type === "transport" ? ' m-pick-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="mOpenTransportSheet(' + x.ci + ')">🚑 Transport' + (d.type === "transport" ? ' ✓' : '') + '</button></div>' +
+        '<button class="m-disp-btn hz-rd-b hz-oa-btn' + (d.type === "other_agency" ? ' m-pick-on hz-oa-on' : (needDisp && !d.type ? ' hz-disp-pulse' : '')) + '" onclick="hzRigDispOther(' + x.ci + ')">' + (d.type === "other_agency" ? mEscHtml(hzOaText(d)) + ' ✓' : 'Transported by Another Agency') + '</button>' +
         /* 9.59 (Sam): destination shows in the rig's box */ '' + '</div>';
     });
     /* 9.37: who approved each rig's RMA shows on that rig's row (asked in a popup when RMA is picked) */
@@ -10879,7 +10887,8 @@ function mRenderDispatchDetail(call) {
     '<button onclick="mSetDispositionRMA()"' + (call.disposition.type==='rma' ? ' class="m-pick-on"' : (needDisp ? ' class="hz-disp-pulse"' : '')) + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='rma'?'rgba(125,237,181,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='rma'?'rgba(125,237,181,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='rma'?'#7dedb5':'var(--gray)') + '">RMA</button>' +
     (call.zone === "transfer" ? mLindenDispBtns(call) : '') +
     (call.zone === "transfer" ? '' : '<button onclick="mOpenTransportSheet()"' + (call.disposition.type==='transport' ? ' class="m-pick-on"' : (needDisp ? ' class="hz-disp-pulse"' : '')) + ' style="flex:1;font-family:\'Oswald\',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;border:1px solid ' + (call.disposition.type==='transport'?'rgba(122,184,245,0.6)':'var(--card-border)') + ';background:' + (call.disposition.type==='transport'?'rgba(122,184,245,0.15)':'rgba(255,255,255,0.03)') + ';color:' + (call.disposition.type==='transport'?'#7ab8f5':'var(--gray)') + '">🚑 Transport' + (call.disposition.type==='transport'&&call.disposition.hospital?' ✓':'') + '</button>') +
-  '</div>';
+  '</div>' +
+  (call.zone === "transfer" ? '' : '<button onclick="mSetDispositionOther()" class="m-disp-btn hz-oa-btn' + (call.disposition.type === 'other_agency' ? ' m-pick-on hz-oa-on' : (needDisp ? ' hz-disp-pulse' : '')) + '">' + (call.disposition.type === 'other_agency' ? mEscHtml(hzOaText(call.disposition)) + ' ✓' : 'Transported by Another Agency') + '</button>');   // 9.69 (Sam)
   if (call.disposition.type === 'rma') {
     /* 9.39 (Sam): who approved the RMA shows in the timeline only */
   }
@@ -11013,7 +11022,7 @@ function mBuildCrewRigPanel(call, crewIdx, inlineOnly) {
   // RMA (11.55 / 4.47): the rig can be marked Back at Base from any point before transport — turned around
   // on the way, still at base, on scene, or heading back
   var RMA_BACK = ["", "picking_up_ambo", "onboard_rig", "ambo_responding", "on_scene_ambo", "rma_scene", "returning_base"];
-  if (crew.rig && (call.disposition || {}).type === "rma" && st.length && st.every(function(x){ return RMA_BACK.indexOf(x) !== -1; })) {
+  if (crew.rig && (hzNoMcTr((call.disposition || {}).type) || ((((call.disposition || {}).rigs) || {})[crewIdx] || {}).type === "other_agency") && st.length && st.every(function(x){ return RMA_BACK.indexOf(x) !== -1; })) {
     body = btn("Mark " + rig + " Back at Base", "back_at_base", "#7ab8f5", "blue");
   } else if (!crew.rig) {
     return "";   // 8.73 (Sam): no "Rig — Select the crew's rig above…" box; the pulsing Choose Rig button covers it
@@ -11252,7 +11261,7 @@ function mBuildUnitBox(call, crewIdx, role, label) {
   // Once a unit is onboard / the rig is responding, they're on the ambulance — no divert.
   var canDivert = (det.response === "scene" && status === "enroute_scene" && !mCrewRigGone(call, crewIdx)) // A unit with the rig can still divert direct to the scene until the rig is marked on scene
     || (det.response === "rig" && M_LR_PRESCENE.indexOf(status) !== -1);
-  if ((call.disposition || {}).type === "rma") canDivert = false;   // RMA — nobody is still heading in
+  if (hzNoMcTr((call.disposition || {}).type)) canDivert = false;   // RMA — nobody is still heading in
   if (canDivert) {
     var toLabel = det.response === "rig" ? "Divert Direct" : "Divert to Rig";   // 8.67 (Sam): no emojis
     if (det.response !== "rig") {                      // diverting TO a rig needs a rig to exist
@@ -11348,7 +11357,7 @@ function mNextStepButton(call, crewIdx, role, unit) {
   var isDriver = mIsDriverRole(call, crewIdx, role);
   var crew = mCrewOf(call, crewIdx);
   // RMA: the rig's own Back at Base button replaces the rig unit's "responding / on scene" steps
-  if (det.response === "rig" && crew.rig && (call.disposition || {}).type === "rma" && ["", "picking_up_ambo", "onboard_rig", "ambo_responding", "on_scene_ambo"].indexOf(status) !== -1) return "";
+  if (det.response === "rig" && crew.rig && (hzNoMcTr((call.disposition || {}).type) || ((((call.disposition || {}).rigs) || {})[crewIdx] || {}).type === "other_agency") && ["", "picking_up_ambo", "onboard_rig", "ambo_responding", "on_scene_ambo"].indexOf(status) !== -1) return "";
   function btn(label, next, color, flash) {
     return '<button class="m-disp-btn' + (flash?' m-pulse-'+flash:'') + '" style="width:100%;border-color:' + color + '66;background:' + color + '18;color:' + color + '" onclick="mSetUnitStatus(' + crewIdx + ',\'' + role + '\',\'' + next + '\')">' + label + '</button>';
   }
@@ -11471,7 +11480,7 @@ function mLoadRigConflicts(excludeCallId) {
     snap.forEach(function(d) {
       if (d.id === excludeCallId) return;
       var data = d.data(), addr = (data.address||"").split(",")[0], ud = data.unitDetails || {};
-      var isRMA = data.disposition && data.disposition.type === "rma";   // no patient — the rig can be diverted
+      var isRMA = data.disposition && hzNoMcTr(data.disposition.type);   // no patient — the rig can be diverted
       (data.crews||[]).forEach(function(crew, ci) {
         if (!crew || !crew.rig) return;
         // A rig is free once it has no patient and no leg left to run: back at base, cleared,
@@ -11484,11 +11493,11 @@ function mLoadRigConflicts(excludeCallId) {
           var st = det.status || "";
           if (M_RIG_FREE_STATUSES.indexOf(st) !== -1) { if (st === "clearing_facility" || st === "returning_base") wrapping = st; return; }
           // RMA frees the rig only if nobody's aboard — a transport already under way still counts as busy
-          if (isRMA && ["transporting","at_facility"].indexOf(st) === -1) { wrapping = "rma"; return; }
+          if ((isRMA || ((((data.disposition || {}).rigs) || {})[ci] || {}).type === "other_agency") && ["transporting","at_facility"].indexOf(st) === -1) { wrapping = "rma"; return; }
           busy = true;
         });
         if (busy) map[crew.rig] = { id: d.id, address: addr, status: mCrewRigStatusLabel(data, ci, crew) };
-        else if (wrapping) freeing[crew.rig] = { id: d.id, address: addr, why: wrapping === "rma" ? "RMA — no transport" : wrapping === "clearing_facility" ? "cleared the ER" : "heading back to base" };
+        else if (wrapping) freeing[crew.rig] = { id: d.id, address: addr, why: wrapping === "rma" ? ((data.disposition || {}).type === "rma" ? "RMA — no transport" : "another agency transported") : wrapping === "clearing_facility" ? "cleared the ER" : "heading back to base" };
       });
     });
     mRigConflictMap = map; mRigFreeingMap = freeing;
@@ -12457,7 +12466,9 @@ function hzRollupDisp(call, rigsMap) {
   var list = hzDispRigs(call), d = call.disposition || {};
   var all = list.every(function(x) { return rigsMap[x.ci] && rigsMap[x.ci].type; });
   var trs = list.filter(function(x) { return (rigsMap[x.ci] || {}).type === "transport"; }).map(function(x) { return { crewIdx: x.ci, rig: x.rig, hospital: rigsMap[x.ci].hospital || "" }; });
-  return { type: all ? (trs.length ? "transport" : "rma") : "", hospital: trs.length ? trs[0].hospital : "", transports: trs, rigs: rigsMap, rmaBy: d.rmaBy || "", rmaCustom: d.rmaCustom || "" };
+  var oas = list.filter(function(x) { return (rigsMap[x.ci] || {}).type === "other_agency"; }).map(function(x) { return rigsMap[x.ci].agency || ""; });   // 9.69
+  return { type: all ? (trs.length ? "transport" : oas.length ? "other_agency" : "rma") : "", hospital: trs.length ? trs[0].hospital : "", transports: trs, rigs: rigsMap, rmaBy: d.rmaBy || "", rmaCustom: d.rmaCustom || "",
+    agency: oas.filter(function(a, i) { return a && oas.indexOf(a) === i; }).join(" / ") };
 }
 // 9.47 (Sam): is this rig transporting / at the hospital? (by its units, or a transport on record for it)
 function hzRigIsTransporting(call, ci) {
@@ -12496,6 +12507,73 @@ function hzRigDispRMA(ci, why, by) {
     return db.collection("activeCalls").doc(callId).update(update);
   }).catch(function(e) { mToast("Error: " + e.message, true); });
 }
+// 9.69 / 12.539 (Sam): "Transported by Another Agency" — asks which agency (required), Transport → this needs a yes first.
+function hzAskOtherAgency(what, def) {
+  var ask = function(again) {
+    return hzDialog({ kind: "prompt", msg: (again ? "An agency name is required.\n\n" : "") + "Transported by which agency?" + (what ? " (" + what + ")" : ""), def: def || "", okText: "Save", noText: "Cancel" }).then(function(v) {
+      if (v === null || v === undefined) return null;
+      v = String(v).trim().slice(0, 80); return v ? v : ask(true);
+    });
+  };
+  return ask(false);
+}
+function hzAskTrToOther(what) {
+  return hzDialog({ kind: "confirm", msg: "Are you sure you wish to change the disposition" + (what ? " for " + what : "") + " from Transport to Transported by Another Agency?", okText: "Yes", noText: "Cancel" });
+}
+function hzOaUnitFix(call, update, onlyCi) {   // whoever was marked transporting / at the hospital is back on scene (MC didn't transport)
+  var ud = call.unitDetails || {}, now = mNowHHMM();
+  Object.keys(ud).forEach(function(k) {
+    var st = (ud[k] || {}).status; if (st !== "transporting" && st !== "at_facility") return;
+    if (onlyCi != null && String(k).split("_")[0] !== String(onlyCi)) return;
+    update["unitDetails." + k + ".status"] = (ud[k] || {}).response === "rig" ? "on_scene_ambo" : "on_scene_direct"; update["unitDetails." + k + ".statusAt"] = now;
+  });
+}
+function mSetDispositionOther() {
+  var callId = mDispSelectedCallId, c0 = mDispCallCache[callId] || {}, cur = (c0.disposition || {}).type || "";
+  var write = function(agency, wasTr) {
+    return db.collection("activeCalls").doc(callId).get().then(function(snap) {
+      if (!snap.exists) return;
+      var call = snap.data(), on = !!agency;
+      var update = { disposition: { type: on ? "other_agency" : "", agency: agency || "", hospital: "", rmaBy: "", rmaCustom: "" }, updatedAt: new Date().toISOString() };
+      if (on) hzOaUnitFix(call, update, null);
+      update.callEvents = mEvtUnion(mEvt(on ? (wasTr ? "Disposition changed from Transport to " : "Disposition: ") + "Transported by " + agency : "Disposition cleared", "🚑", "#f0b35a", "disp"));
+      return db.collection("activeCalls").doc(callId).update(update);
+    }).catch(function(e) { mToast("Error: " + e.message, true); });
+  };
+  if (cur === "other_agency") { write("", false); return; }   // tap again to clear
+  var wasTr = cur === "transport" || Object.keys(c0.unitDetails || {}).some(function(k) { var st = (c0.unitDetails[k] || {}).status; return st === "transporting" || st === "at_facility"; });
+  (wasTr ? hzAskTrToOther("") : Promise.resolve(true)).then(function(ok) {
+    if (!ok) return;
+    return hzAskOtherAgency("", "").then(function(a) { if (a) write(a, wasTr); });
+  });
+}
+window.mSetDispositionOther = mSetDispositionOther;
+function hzRigDispOther(ci) {
+  var callId = mDispSelectedCallId, c0 = mDispCallCache[callId] || {}, d0 = (((c0.disposition || {}).rigs) || {})[ci] || {}, rg = ((c0.crews || [])[ci] || {}).rig || "";
+  var write = function(agency, wasTr) {
+    return db.collection("activeCalls").doc(callId).get().then(function(snap) {
+      if (!snap.exists) return;
+      var call = snap.data(), rigs = JSON.parse(JSON.stringify((call.disposition || {}).rigs || {})), rig = ((call.crews || [])[ci] || {}).rig || "Rig";
+      if (agency) rigs[ci] = { type: "other_agency", rig: rig, agency: agency }; else delete rigs[ci];
+      var update = { disposition: hzRollupDisp(call, rigs), updatedAt: new Date().toISOString() };
+      update.disposition.rmaBy = Object.keys(rigs).map(function(k) { return rigs[k].type === "rma" ? (rigs[k].rmaHow === "als" ? "ALS" : rigs[k].rmaBy || "") : ""; }).filter(Boolean).join(" / ");
+      if (agency) {
+        hzOaUnitFix(call, update, ci);
+        var stillTr = hzDispRigs(call).some(function(x) { return x.ci !== ci && (rigs[x.ci] ? rigs[x.ci].type === "transport" : hzRigIsTransporting(call, x.ci)); });
+        if (!stillTr) hzOaUnitFix(call, update, null);
+      }
+      update.callEvents = mEvtUnion(mEvt(rig + (agency ? (wasTr ? " — disposition changed from Transport to " : " — ") + "Transported by " + agency : " — disposition cleared"), "🚑", "#f0b35a", "disp"));
+      return db.collection("activeCalls").doc(callId).update(update);
+    }).catch(function(e) { mToast("Error: " + e.message, true); });
+  };
+  if (d0.type === "other_agency") { write("", false); return; }
+  var wasTr = hzRigIsTransporting(c0, ci);
+  (wasTr ? hzAskTrToOther(rg) : Promise.resolve(true)).then(function(ok) {
+    if (!ok) return;
+    return hzAskOtherAgency(rg, "").then(function(a) { if (a) write(a, wasTr); });
+  });
+}
+window.hzRigDispOther = hzRigDispOther;
 // 9.43 (Sam): Assign Additional Resources is a popup (same look as the other popups). Tapping any button in it
 // closes it first, so the ALS / BLS / PD sheet it opens is on top.
 function hzOpenResModal() {
@@ -12936,6 +13014,7 @@ function mBuildDispTimeline(call) {
     if (call.blsActivated) entries.push({ time: call.blsActivatedAt||"", icon:"🔵", text:"BLS Requested", color:"#a78bfa" });
     if (call.pdActivated) entries.push({ time: call.pdActivatedAt||"", icon:"🚔", text:"PD Notified", color:"#7ab8f5" });
     if (call.disposition && call.disposition.type === "transport" && call.disposition.hospital) entries.push({ time: t.enroute||"", icon:"🏥", text:"Transport → "+call.disposition.hospital, color:"#ff9090" });
+    if (call.disposition && call.disposition.type === "other_agency" && !((call.callEvents || []).some(function(e) { return e && /Transported by/.test(e.text || ""); }))) entries.push({ time:"", icon:"🚑", text:hzOaText(call.disposition), color:"#f0b35a" });
     if (call.disposition && call.disposition.type === "rma") entries.push({ time:"", icon:"✋", text:(call.disposition.rmaBy ? hzRmaByText({ how: call.disposition.rmaHow, by: call.disposition.rmaBy }) : "RMA"), color:"#7dedb5" });
     if (call.disposition && HZ_LINDEN_DISP[call.disposition.type]) entries.push({ time:"", icon:"💠", text:HZ_LINDEN_DISP[call.disposition.type], color:"#5fe0d2" });
     entries.sort(function(a,b){ return (a.time||"").localeCompare(b.time||""); });
@@ -17557,13 +17636,14 @@ function hzRepCall(l) {
 }
 function hzRepCompute(logs, openCount, year) {
   var rows = logs.map(hzRepCall).filter(Boolean);
-  var R = { year: year, n: rows.length + (openCount || 0), done: 0, cancelled: 0, transports: 0, rma: 0, als: 0, open: openCount || 0, months: [0,0,0,0,0,0,0,0,0,0,0,0], rows: rows };
+  var R = { year: year, n: rows.length + (openCount || 0), done: 0, cancelled: 0, transports: 0, rma: 0, oa: 0, als: 0, open: openCount || 0, months: [0,0,0,0,0,0,0,0,0,0,0,0], rows: rows };
   var toScene = [], rigResp = [], alsResp = [], unitAll = [], perUnit = {}, perD = {};
   rows.forEach(function(r) {
     R.months[r.created.getMonth()]++;
     if (r.cancelled) R.cancelled++; else R.done++;
     if (!r.cancelled && r.disp === "transport") R.transports++;
     if (!r.cancelled && r.disp === "rma") R.rma++;
+    if (!r.cancelled && r.disp === "other_agency") R.oa++;
     if (r.als) R.als++;
     if (r.toScene != null) toScene.push(r.toScene);
     if (r.rigResp != null) rigResp.push(r.rigResp);
@@ -17605,7 +17685,7 @@ function hzRepHtml(R) {
   var mx = Math.max.apply(null, R.months.concat([1])), mn = ["J","F","M","A","M","J","J","A","S","O","N","D"];
   var h = '<div class="hz-rep-sec"><div class="hz-rep-grid">' +
     box("Calls", R.n, "finished + open") + box("Completed", R.done, "") + box("Cancelled", R.cancelled, "") + box("Still open", R.open, "right now") +
-    box("Transports", R.transports, "") + box("RMA", R.rma, "") + box("ALS activated", R.als, "") + box("Average per month", R.perMonth == null ? "—" : R.perMonth.toFixed(1), "") +
+    box("Transports", R.transports, "") + box("RMA", R.rma, "") + box("Transported by another agency", R.oa, "") + box("ALS activated", R.als, "") + box("Average per month", R.perMonth == null ? "—" : R.perMonth.toFixed(1), "") +
     '</div><div class="hz-rep-months">' + R.months.map(function(v, i) { return '<div class="hz-rep-m"><div class="hz-rep-mv">' + (v || "") + '</div><div class="hz-rep-mb" style="height:' + Math.round(v / mx * 60) + 'px"></div><div class="hz-rep-ml">' + mn[i] + '</div></div>'; }).join("") + '</div></div>';
   h += '<div class="hz-rep-sec"><div class="hz-rep-h">Response times</div><div class="hz-rep-note">Worked out from each call\'s timeline. A unit\'s response time runs from when it was assigned to when it was marked on scene; a rig\'s from when the rig was assigned to "On Scene with Rig"; ALS from "ALS Activated" to "ALS On Scene".</div><div class="hz-rep-grid">' +
     box("Call received → first unit on scene", hzRepDur(R.toScene.avg), "average, " + over(R.toScene.n, "call")) +
@@ -17960,6 +18040,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-bottom:8px}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row > *{min-height:50px;margin:0 !important;border-radius:10px !important;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:min(.9rem,3.6vw) !important;padding:4px !important;box-sizing:border-box;text-decoration:none}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-row a.hz-ma-call{flex-direction:row;gap:3px;background:#34c759 !important;border:2px solid #34c759 !important;color:#000 !important;-webkit-text-fill-color:#000;white-space:nowrap}html body:not(#hzA):not(#hzB):not(#hzC) #hz-ma-dlg .hz-ma-name small{display:block;font-size:.7rem;font-weight:600;color:#fff;-webkit-text-fill-color:#fff}";   // 9.61
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-tk-idlbl{display:inline-block;font-family:\'Oswald\',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.04em;color:#d4a017;border:2px solid #d4a017;background:#000;border-radius:8px;padding:3px 10px;margin:0 0 10px}";   // 9.62
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-reg-card .hz-imp-adm{display:flex;gap:8px;margin-top:10px;flex:0 0 100% !important;width:100% !important;grid-column:1 / -1;order:9}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-adm button{flex:1;min-height:38px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;border-radius:8px;font-weight:700;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-adm button.hz-imp-del{background:#c62828;border-color:#c62828;color:#fff;-webkit-text-fill-color:#fff}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-add{display:block;width:100%;min-height:52px;margin-top:12px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;border-radius:10px;font-weight:800;font-size:1rem;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-reg-card.hz-imp-card{flex-wrap:wrap !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-tk-search{width:100%;box-sizing:border-box;margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;font-size:.95rem}html body:not(#hzA):not(#hzB):not(#hzC) .hz-tk-search::placeholder{color:rgba(212,160,23,.6);-webkit-text-fill-color:rgba(212,160,23,.6)}";   // 9.66 / 12.533
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-oa-btn{display:block;width:100%;margin:8px 0 10px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;background:#000;border:2px solid #d4a017;color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .hz-oa-btn.hz-oa-on{background:rgba(240,179,90,0.15);border-color:rgba(240,179,90,0.7);color:#f0b35a;text-transform:none;letter-spacing:0.02em}html body:not(#hzA):not(#hzB):not(#hzC) .m-pill.disp-oa{background:rgba(240,179,90,0.15);border:1px solid rgba(240,179,90,0.45);color:#f0b35a}";   // 9.69 / 12.539: Transported by Another Agency
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
