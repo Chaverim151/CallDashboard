@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.544">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.545">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -1767,10 +1767,9 @@ function hzWaLoad() {
     if (u && !u.value) u.value = r.url || ""; if (se && !se.value) se.value = r.session || ""; if (k) k.placeholder = r.hasKey ? "API key (saved — leave blank to keep)" : "API key";
   }).catch(function(e) { hzWaMsg("Couldn't load: " + orgEsc(e.message) + (/not found|404/i.test(e.message) ? " — run the server update first" : ""), true); });
 }
-function hzWaAllow(on) {
-  db.collection("appdata").doc("whatsapp").set({ allowed: !!on, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" }, { merge: true })
-    .then(function() { showToast(on ? "✓ WhatsApp allowed — members can now choose it in My Settings" : "WhatsApp off — everyone gets texts"); })
-    .catch(function(e) { showToast(e.message, true); var c = document.getElementById("wa-allow"); if (c) c.checked = !on; });
+function hzWaAllowNow(on) {
+  return db.collection("appdata").doc("whatsapp").set({ allowed: !!on, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" }, { merge: true })
+    .then(function() { showToast(on ? "✓ WhatsApp allowed — members can now choose it in My Settings" : "WhatsApp off — everyone gets texts"); });
 }
 function hzWaSave() {
   var v = function(id) { return String((document.getElementById(id) || {}).value || "").trim(); };
@@ -2780,7 +2779,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.544</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.545</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -4705,6 +4704,10 @@ function friendlyError(code) {
   return "Sign-in failed (" + code + ")";
 }
 function showPage(name) {
+  // 12.545: leaving the Admin panel with unsaved setting changes asks first
+  var _pa = document.getElementById("pg-admin");
+  if (name !== "admin" && typeof hzPendCount === "function" && hzPendCount() && _pa && _pa.classList.contains("active")) { hzPendGuard(function() { showPage(name); }); return; }
+  setTimeout(function() { if (typeof hzPendBar === "function") hzPendBar(); }, 0);
   if (typeof deskReleaseBody === "function" && arguments[0] !== "console") deskReleaseBody();
   document.querySelectorAll(".page").forEach(function(p) { p.classList.remove("active"); });
   var pg = document.getElementById("pg-" + name);
@@ -11838,7 +11841,7 @@ function renderCallAlerts() {
     if (!renderCallAlerts._busy) { renderCallAlerts._busy = true; loadDispatchSettings().then(function() { if (!DISPATCH_SETTINGS) DISPATCH_SETTINGS = {}; renderCallAlerts._busy = false; renderCallAlerts(); }); }
     return;
   }
-  var mins = Number((typeof DISPATCH_SETTINGS !== "undefined" && DISPATCH_SETTINGS && DISPATCH_SETTINGS.callIdleMinutes) || 15);
+  var mins = HZ_PEND_VAL.callIdle != null ? HZ_PEND_VAL.callIdle : Number((typeof DISPATCH_SETTINGS !== "undefined" && DISPATCH_SETTINGS && DISPATCH_SETTINGS.callIdleMinutes) || 15);
   var on = function(ch) { return typeof tplSendIsOn === "function" && tplSendIsOn("callIdle", ch); };
   var sw = function(ch, label) { var v = on(ch); return '<label class="tpl-st-box' + (v ? '' : ' off') + '" style="display:inline-flex;gap:8px;align-items:center;margin-right:14px;cursor:pointer"><input type="checkbox" ' + (v ? 'checked ' : '') + 'onchange="setTemplateSend(\'callIdle\',\'' + ch + '\',this.checked);setTimeout(renderCallAlerts,400)"><span>' + label + ' — ' + (v ? 'On' : 'Off') + '</span></label>'; };
   el.innerHTML = '<div class="add-user-form" style="max-width:680px">' +
@@ -11852,18 +11855,18 @@ function renderCallAlerts() {
     '<div class="form-msg" id="ca-msg" style="margin-top:12px"></div></div>';
 }
 window.renderCallAlerts = renderCallAlerts;
-function setCallIdleMinutes(v) {   // 12.528 (Sam): Admin ▸ Notification Settings — minutes before the "no activity" alert
+function setCallIdleMinutesNow(v) {   // 12.528 (Sam): Admin ▸ Notification Settings — minutes before the "no activity" alert
   var asked = Math.round(Number(v) || 15), n = Math.max(5, Math.min(240, asked));   // 12.544 (Sam): any whole number — the server checks every 5 min and uses 5–240
-  db.collection("appdata").doc("dispatchSettings").set({ callIdleMinutes: n }, { merge: true }).then(function() {
+  return db.collection("appdata").doc("dispatchSettings").set({ callIdleMinutes: n }, { merge: true }).then(function() {
     if (typeof DISPATCH_SETTINGS !== "undefined") { if (!DISPATCH_SETTINGS) DISPATCH_SETTINGS = {}; DISPATCH_SETTINGS.callIdleMinutes = n; }
     if (typeof DS_EDIT !== "undefined" && DS_EDIT) DS_EDIT.callIdleMinutes = n;
     var m = document.getElementById("tpl-send-msg"); if (m) { m.textContent = "✓ Saved — alert after " + n + " minutes"; m.style.color = "#7dedb5"; }
     var m2 = document.getElementById("ca-msg"); if (m2) { m2.className = "form-msg success"; m2.textContent = "✓ Saved — alert after " + n + " minutes" + (asked < 5 ? " (5 is the shortest)" : asked > 240 ? " (240 is the longest)" : ""); }
     var inp = document.getElementById("ca-idle-min"); if (inp) inp.value = n;
     renderTemplateSend();
-  }).catch(function(e) { showToast("Couldn't save: " + e.message, true); });
+  });
 }
-function setTemplateSend(which, ch, on) {
+function setTemplateSendNow(which, ch, on) {
   var msg = function(t, c) { var m = document.getElementById("tpl-send-msg"); if (m) { m.textContent = t; m.style.color = c || ""; } };
   var p;
   if ((which === "rigOut" || which === "rigBack") && ch === "sms") {
@@ -11879,10 +11882,8 @@ function setTemplateSend(which, ch, on) {
       M_SMS_TEMPLATES._send[which] = Object.assign({}, M_SMS_TEMPLATES._send[which] || {}, patch._send[which]);
     });
   }
-  p.then(function() { renderTemplateSend(); msg(on ? "✓ On" : "✓ Off — not sent", on ? "#7dedb5" : "#ffc84a"); })
-   .catch(function(e) { renderTemplateSend(); msg("Couldn't save: " + e.message, "#ff9090"); });
+  return p.then(function() { renderTemplateSend(); msg(on ? "✓ On" : "✓ Off — not sent", on ? "#7dedb5" : "#ffc84a"); });
 }
-window.setTemplateSend = setTemplateSend;
 function renderTemplateVars() {
   var el = document.getElementById("tpl-vars"); if (!el) return;
   var which = tplWhich(), list = TPL_OWN_VARS[which] || TPL_VARS.concat(TPL_CALL_EXTRA_VARS[which] || []);
@@ -14733,6 +14734,108 @@ function extraCodesEditorAdmin(sec, i, item) {
   }).join("");
   return h + '<button class="edit-mode-btn" style="font-size:0.7rem;padding:5px 10px" onclick="(function(){var it=window.LIVE_DATA[\'' + sec + '\'][' + i + '];if(!Array.isArray(it.codes)||!it.codes.length)it.codes=[{label:\'\',code:it.code||\'\'}];it.codes.push({label:\'\',code:\'\'});renderCodesEditor();})()">+ Add another code</button>';
 }
+
+// ═══ 12.545 (Sam): admin settings never save on their own — every change waits for 💾 Save changes ═══
+// The switches that used to save the moment they were clicked (send-by Push / Text / Email boxes, the ⏰ Call Alerts
+// minutes and boxes, the dispatch-stage channels, "Allow WhatsApp") now show the change right away but only queue it.
+// A bar at the bottom of the Admin panel shows how many changes are waiting: 💾 Save changes or Discard. Leaving the
+// Admin panel with changes waiting asks first (in-app dialog). Settings that already had a Save button are unchanged.
+var HZ_PEND = {}, HZ_PEND_VAL = {}, HZ_PEND_SNAP = null;
+function hzPendCount() { return Object.keys(HZ_PEND).length; }
+function hzPendSnap() {   // what was saved before the first queued change — Discard puts it back
+  if (HZ_PEND_SNAP) return;
+  HZ_PEND_SNAP = { send: JSON.parse(JSON.stringify((M_SMS_TEMPLATES && M_SMS_TEMPLATES._send) || {})), fleet: JSON.parse(JSON.stringify((typeof fleetAlertCfg !== "undefined" && fleetAlertCfg) || {})) };
+}
+function hzPendSet(key, label, save, undo) {
+  if (HZ_PEND[key]) { HZ_PEND[key].save = save; HZ_PEND[key].label = label; }
+  else HZ_PEND[key] = { label: label, save: save, undo: undo };
+  hzPendBar();
+}
+function hzPendRerender() {
+  try { if (typeof renderTemplateSend === "function") renderTemplateSend(); } catch (e) {}
+  try { if (typeof renderCallAlerts === "function") renderCallAlerts(); } catch (e) {}
+}
+function hzPendBar() {
+  var bar = document.getElementById("hz-pend-bar"), n = hzPendCount();
+  if (!bar) {
+    bar = document.createElement("div"); bar.id = "hz-pend-bar";
+    bar.innerHTML = '<span id="hz-pend-txt"></span><button type="button" class="hz-pend-save" onclick="hzPendSave()">💾 Save changes</button><button type="button" class="hz-pend-no" onclick="hzPendDiscardAsk()">Discard</button>';
+    document.body.appendChild(bar);
+    var st = document.createElement("style");
+    st.textContent = "#hz-pend-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9990;display:none;align-items:center;gap:12px;background:#000;border:2px solid #d4a017;border-radius:12px;padding:10px 14px;box-shadow:0 8px 28px rgba(0,0,0,.55);font-family:'Oswald',sans-serif}"
+      + "#hz-pend-txt{color:#d4a017;font-weight:700;letter-spacing:.03em;font-size:.95rem}"
+      + "#hz-pend-bar button{border-radius:8px;padding:9px 16px;font-family:'Oswald',sans-serif;font-weight:700;font-size:.9rem;letter-spacing:.04em;cursor:pointer}"
+      + "#hz-pend-bar .hz-pend-save{background:#34c759;color:#000;border:2px solid #34c759}#hz-pend-bar .hz-pend-no{background:#c62828;color:#fff;border:2px solid #c62828}";
+    document.head.appendChild(st);
+  }
+  var onAdmin = !!(document.getElementById("pg-admin") && document.getElementById("pg-admin").classList.contains("active"));
+  bar.style.display = n && onAdmin ? "flex" : "none";
+  var t = document.getElementById("hz-pend-txt");
+  if (t) { t.textContent = n + " unsaved change" + (n === 1 ? "" : "s"); t.title = Object.keys(HZ_PEND).map(function(k) { return HZ_PEND[k].label; }).join("\n"); }
+}
+function hzPendSave() {
+  var keys = Object.keys(HZ_PEND); if (!keys.length) return Promise.resolve(true);
+  var t = document.getElementById("hz-pend-txt"); if (t) t.textContent = "Saving…";
+  var failed = [];
+  return keys.reduce(function(chain, k) {
+    return chain.then(function() { return Promise.resolve().then(HZ_PEND[k].save).then(function() { delete HZ_PEND[k]; }).catch(function(e) { failed.push(HZ_PEND[k].label + ": " + e.message); }); });
+  }, Promise.resolve()).then(function() {
+    if (!hzPendCount()) { HZ_PEND_SNAP = null; HZ_PEND_VAL = {}; }
+    hzPendBar(); hzPendRerender();
+    if (failed.length) { showToast("Some changes weren't saved — " + failed[0], true); return false; }
+    showToast("✓ Saved"); return true;
+  });
+}
+function hzPendDiscard() {
+  Object.keys(HZ_PEND).forEach(function(k) { try { if (HZ_PEND[k].undo) HZ_PEND[k].undo(); } catch (e) {} });
+  if (HZ_PEND_SNAP) {
+    if (M_SMS_TEMPLATES) M_SMS_TEMPLATES._send = HZ_PEND_SNAP.send;
+    if (typeof fleetAlertCfg !== "undefined") fleetAlertCfg = HZ_PEND_SNAP.fleet;
+  }
+  HZ_PEND = {}; HZ_PEND_VAL = {}; HZ_PEND_SNAP = null;
+  hzPendBar(); hzPendRerender();
+}
+function hzPendDiscardAsk() {
+  return hzDialog({ kind: "confirm", msg: "Discard " + hzPendCount() + " unsaved change" + (hzPendCount() === 1 ? "" : "s") + "?", okText: "Discard", noText: "Keep editing" }).then(function(y) { if (y) hzPendDiscard(); return !!y; });
+}
+function hzPendGuard(go) {   // leaving the Admin panel with changes waiting
+  if (!hzPendCount()) return go();
+  hzDialog({ kind: "answer", msg: "You have " + hzPendCount() + " unsaved setting change" + (hzPendCount() === 1 ? "" : "s") + ". Save before leaving?", okText: "💾 Save", noText: "Don't save" }).then(function(y) {
+    if (y) return hzPendSave().then(function(ok) { if (ok) go(); });
+    return hzPendDiscardAsk().then(function(d) { if (d) go(); });
+  });
+}
+// queued versions of the switches that used to save straight away
+function setTemplateSend(which, ch, on) {
+  hzPendSnap();
+  if ((which === "rigOut" || which === "rigBack") && ch === "sms") { fleetAlertCfg = Object.assign({}, fleetAlertCfg || {}); fleetAlertCfg[which === "rigOut" ? "oosSms" : "backSms"] = !!on; }
+  else { M_SMS_TEMPLATES._send = M_SMS_TEMPLATES._send || {}; M_SMS_TEMPLATES._send[which] = Object.assign({}, M_SMS_TEMPLATES._send[which] || {}); M_SMS_TEMPLATES._send[which][ch] = !!on; }
+  var nm = (typeof TPL_LABELS !== "undefined" && TPL_LABELS[which]) || which;
+  hzPendSet("send|" + which + "|" + ch, nm + " — " + ch + ": " + (on ? "On" : "Off"), function() { return setTemplateSendNow(which, ch, on); });
+  renderTemplateSend();
+  var m = document.getElementById("tpl-send-msg"); if (m) { m.textContent = "Not saved yet — press 💾 Save changes"; m.style.color = "#ffc84a"; }
+}
+window.setTemplateSend = setTemplateSend;
+function dsSetStageChannel(k, ch, on) {
+  hzPendSnap();
+  M_SMS_TEMPLATES._send = M_SMS_TEMPLATES._send || {}; M_SMS_TEMPLATES._send[k] = Object.assign({}, M_SMS_TEMPLATES._send[k] || {}); M_SMS_TEMPLATES._send[k][ch] = !!on;
+  hzPendSet("send|" + k + "|" + ch, k + " — " + ch + ": " + (on ? "On" : "Off"), function() { return dsSetStageChannelNow(k, ch, on); });
+  renderTemplateSend();
+  var m = document.getElementById("ds-stage-msg"); if (m) { m.textContent = "Not saved yet — press 💾 Save changes"; m.style.color = "#ffc84a"; }
+}
+window.dsSetStageChannel = dsSetStageChannel;
+function setCallIdleMinutes(v) {
+  var asked = Math.round(Number(v) || 15), n = Math.max(5, Math.min(240, asked));
+  HZ_PEND_VAL.callIdle = n;
+  hzPendSet("callIdleMinutes", "No activity alert after " + n + " minutes", function() { return setCallIdleMinutesNow(asked); }, function() { delete HZ_PEND_VAL.callIdle; });
+  var inp = document.getElementById("ca-idle-min"); if (inp) inp.value = n;
+  var m2 = document.getElementById("ca-msg"); if (m2) { m2.className = "form-msg"; m2.textContent = "Not saved yet — press 💾 Save changes" + (asked < 5 ? " (5 is the shortest)" : asked > 240 ? " (240 is the longest)" : ""); }
+}
+function hzWaAllow(on) {
+  var key = "waAllow", was = HZ_PEND[key] ? HZ_PEND[key].was : !on;
+  hzPendSet(key, "Allow WhatsApp: " + (on ? "On" : "Off"), function() { return hzWaAllowNow(on); }, function() { var c = document.getElementById("wa-allow"); if (c) c.checked = was; });
+  HZ_PEND[key].was = was;
+}
 // ══ DISPATCH CONSOLE SETTINGS (admin) ══
 var dsTab = "mutualAid", DS_EDIT = null;
 // 12.400 (Sam): the editors could be built before the saved settings had loaded (renderCodesEditor draws them
@@ -15158,16 +15261,14 @@ function dsRenderStageChannels() {
   el.innerHTML = '<div class="tpl-st-wrap"><table class="tpl-st"><tr><th>Stage</th>' + cols.map(function(c) { return '<th>' + c[1] + '</th>'; }).join("") + '</tr>' + rows + '</table></div>' +
     '<div class="tpl-st-foot">Off = that stage is not sent that way. The wording is in Message Templates. <span id="ds-stage-msg"></span></div>';
 }
-function dsSetStageChannel(k, ch, on) {
+function dsSetStageChannelNow(k, ch, on) {
   var msg = function(t, c) { var m = document.getElementById("ds-stage-msg"); if (m) { m.textContent = t; m.style.color = c || ""; } };
   var patch = { _send: {} }; patch._send[k] = {}; patch._send[k][ch] = !!on;
-  db.collection("appdata").doc("smsTemplates").set(patch, { merge: true }).then(function() {
+  return db.collection("appdata").doc("smsTemplates").set(patch, { merge: true }).then(function() {
     M_SMS_TEMPLATES._send = M_SMS_TEMPLATES._send || {};
     M_SMS_TEMPLATES._send[k] = Object.assign({}, M_SMS_TEMPLATES._send[k] || {}, patch._send[k]);
-    renderTemplateSend(); var m = document.getElementById("tpl-send-msg"); if (m) { m.textContent = on ? "✓ On" : "✓ Off — not sent"; m.style.color = on ? "#7dedb5" : "#ffc84a"; }
-  }).catch(function(e) { renderTemplateSend(); var m = document.getElementById("tpl-send-msg"); if (m) { m.textContent = "Couldn't save: " + e.message; m.style.color = "#ff9090"; } });
+  });
 }
-window.dsSetStageChannel = dsSetStageChannel;
 function renderDsNotify(el) {
   el.innerHTML =
     '<div class="admin-label" style="margin-bottom:4px">Who receives what</div>' +
@@ -20634,7 +20735,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.544";
+var DESKTOP_VERSION = "12.545";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
