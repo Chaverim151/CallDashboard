@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.75"; window.M_BUILD = BUILD;
+  var BUILD = "9.77"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -9775,27 +9775,47 @@ function mNcPostBtnsIdle() {
   if (a) { a.disabled = false; a.innerHTML = "Dispatch <b>WITH</b> Tone"; }   // 12.375 (Sam): WITH / WITHOUT in caps + bold
   if (b) { b.disabled = false; b.innerHTML = "Dispatch <b>WITHOUT</b> Tone"; }
 }
-// 9.75 / 12.547 (Sam): NOI missing → a popup to pick it, then the call posts. Cancel goes back to the form.
-function mNcNoiAsk() {
+// 9.75 / 12.547, 9.76 / 12.548 (Sam): any red field missing (NOI, patient age, sex) → one popup asks for just those,
+// then the call posts. Cancel goes back to the form. (Address keeps its own lookup / override popup.)
+function mNcMissingAsk() {
   var sel = document.getElementById("m-nc-nature"); if (!sel) return;
+  var natVal = sel.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom") || {}).value || "").trim() : sel.value;
+  var need = { noi: !natVal, age: !mNcHasAge(), sex: !(typeof mNcSex !== "undefined" && mNcSex) };
   var opts = Array.prototype.filter.call(sel.options, function(o) { return o.value && o.value !== "__custom__"; })
     .map(function(o) { return { value: o.value, label: (typeof hzNatureLabel === "function" ? hzNatureLabel(o.textContent || o.value) : (o.textContent || o.value)).trim() }; })
     .sort(function(a, b) { return a.label.localeCompare(b.label); });
   var hasOther = Array.prototype.some.call(sel.options, function(o) { return o.value === "__custom__"; });
   var esc = function(t) { return String(t || "").replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var names = [need.noi ? "NOI" : "", need.age ? "patient age" : "", need.sex ? "sex" : ""].filter(Boolean);
   var wrap = document.createElement("div"); wrap.className = "hz-dlg hz-noi-dlg"; wrap.setAttribute("role", "dialog"); wrap.setAttribute("aria-modal", "true");
   wrap.innerHTML = '<div class="hz-dlg-box hz-noi-box">' +
-    '<div class="hz-noi-h">NOI required</div>' +
-    '<div class="hz-noi-sub">Pick the NOI and the call will post.</div>' +
-    '<input class="hz-dlg-in hz-noi-q" type="text" placeholder="Type to search… (e.g. fall, cardiac)" autocomplete="off" autocorrect="off" spellcheck="false">' +
-    '<div class="hz-noi-list"></div>' +
-    (hasOther ? '<div class="hz-noi-other" style="display:none"><input class="hz-dlg-in hz-noi-otin" type="text" placeholder="Type the NOI" autocomplete="off"></div>' : '') +
-    '<div class="hz-dlg-row"><button type="button" class="hz-noi-cancel">Cancel</button><button type="button" class="hz-noi-go" disabled>Set NOI &amp; Post</button></div></div>';
+    '<div class="hz-noi-h">Required: ' + esc(names.join(", ")) + '</div>' +
+    '<div class="hz-noi-sub">Fill ' + (names.length > 1 ? "these" : "this") + ' in and the call will post.</div>' +
+    (need.noi ? '<div class="hz-noi-lab">NOI</div><input class="hz-dlg-in hz-noi-q" type="text" placeholder="Type to search… (e.g. fall, cardiac)" autocomplete="off" autocorrect="off" spellcheck="false">' +
+      '<div class="hz-noi-list"></div>' + (hasOther ? '<div class="hz-noi-other" style="display:none"><input class="hz-dlg-in hz-noi-otin" type="text" placeholder="Type the NOI" autocomplete="off"></div>' : '') : '') +
+    (need.age ? '<div class="hz-noi-lab">Patient age</div><div class="hz-noi-row"><input class="hz-dlg-in hz-noi-age" type="number" inputmode="numeric" min="0" placeholder="Age">' +
+      '<button type="button" class="hz-noi-opt" data-unit="years">Years</button><button type="button" class="hz-noi-opt" data-unit="months">Months</button><button type="button" class="hz-noi-opt" data-uto="1">UTO</button></div>' +
+      '<div class="hz-noi-row hz-noi-uto" style="display:none"><button type="button" class="hz-noi-opt" data-cat="pediatric">Pediatric</button><button type="button" class="hz-noi-opt" data-cat="adult">Adult</button></div>' : '') +
+    (need.sex ? '<div class="hz-noi-lab">Sex</div><div class="hz-noi-row"><button type="button" class="hz-noi-opt" data-sex="male">♂ Male</button><button type="button" class="hz-noi-opt" data-sex="female">♀ Female</button></div>' : '') +
+    '<div class="hz-dlg-row" style="margin-top:6px"><button type="button" class="hz-noi-cancel">Cancel</button><button type="button" class="hz-noi-go" disabled>Save &amp; Post</button></div></div>';
   document.body.appendChild(wrap);
-  var q = wrap.querySelector(".hz-noi-q"), list = wrap.querySelector(".hz-noi-list"), go = wrap.querySelector(".hz-noi-go"), other = wrap.querySelector(".hz-noi-other"), otin = wrap.querySelector(".hz-noi-otin");
-  var picked = null;
-  var ready = function() { go.disabled = !(picked && (picked !== "__custom__" || (otin && otin.value.trim()))); };
+  var $ = function(c) { return wrap.querySelector(c); };
+  var q = $(".hz-noi-q"), list = $(".hz-noi-list"), go = $(".hz-noi-go"), other = $(".hz-noi-other"), otin = $(".hz-noi-otin"), ageIn = $(".hz-noi-age");
+  var picked = null, unit = "", uto = false, cat = "", sex = "";
+  var paint = function() {
+    wrap.querySelectorAll("[data-unit]").forEach(function(b) { b.classList.toggle("on", !uto && b.getAttribute("data-unit") === unit); b.disabled = uto; });
+    wrap.querySelectorAll("[data-uto]").forEach(function(b) { b.classList.toggle("on", uto); });
+    wrap.querySelectorAll("[data-cat]").forEach(function(b) { b.classList.toggle("on", uto && b.getAttribute("data-cat") === cat); });
+    wrap.querySelectorAll("[data-sex]").forEach(function(b) { b.classList.toggle("on", b.getAttribute("data-sex") === sex); });
+    var ur = $(".hz-noi-uto"); if (ur) ur.style.display = uto ? "flex" : "none";
+    if (ageIn) { ageIn.disabled = uto; if (uto) ageIn.value = ""; }
+    var okNoi = !need.noi || (picked && (picked !== "__custom__" || (otin && otin.value.trim())));
+    var okAge = !need.age || (uto ? !!cat : (ageIn && String(ageIn.value).trim() !== "" && !!unit));
+    var okSex = !need.sex || !!sex;
+    go.disabled = !(okNoi && okAge && okSex);
+  };
   var draw = function() {
+    if (!list) return;
     var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
     var rows = opts.filter(function(o) { var l = o.label.toLowerCase(); return words.every(function(w) { return l.indexOf(w) !== -1; }); });
     list.innerHTML = rows.map(function(o) { return '<button type="button" class="hz-noi-it' + (picked === o.value ? ' on' : '') + '" data-v="' + esc(o.value) + '">' + esc(o.label) + '</button>'; }).join("") +
@@ -9805,34 +9825,47 @@ function mNcNoiAsk() {
       picked = b.getAttribute("data-v");
       if (other) other.style.display = picked === "__custom__" ? "block" : "none";
       if (picked === "__custom__" && otin) { if (!otin.value && q.value.trim()) otin.value = q.value.trim(); setTimeout(function() { otin.focus(); }, 20); }
-      draw(); ready();
+      draw(); paint();
     }; });
   };
+  wrap.querySelectorAll("[data-unit]").forEach(function(b) { b.onclick = function() { var u = b.getAttribute("data-unit"); unit = unit === u ? "" : u; paint(); }; });
+  wrap.querySelectorAll("[data-uto]").forEach(function(b) { b.onclick = function() { uto = !uto; cat = ""; paint(); }; });
+  wrap.querySelectorAll("[data-cat]").forEach(function(b) { b.onclick = function() { cat = b.getAttribute("data-cat"); paint(); }; });
+  wrap.querySelectorAll("[data-sex]").forEach(function(b) { b.onclick = function() { var v = b.getAttribute("data-sex"); sex = sex === v ? "" : v; paint(); }; });
+  if (ageIn) ageIn.oninput = function() { if (ageIn.value !== "" && uto) { uto = false; cat = ""; } paint(); };
   var close = function() { document.removeEventListener("keydown", key); window.removeEventListener("popstate", close); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); };
   var key = function(e) { if (e.key === "Escape") { e.preventDefault(); close(); } else if (e.key === "Enter" && !go.disabled) { e.preventDefault(); go.click(); } };
   document.addEventListener("keydown", key); window.addEventListener("popstate", close);   // phone Back closes it
-  q.oninput = draw; if (otin) otin.oninput = ready;
-  wrap.querySelector(".hz-noi-cancel").onclick = function() { close(); var nq = document.getElementById("m-nc-nature-q"); if (nq) { try { nq.focus(); } catch (e) {} } };
+  if (q) q.oninput = draw; if (otin) otin.oninput = paint;
+  $(".hz-noi-cancel").onclick = function() { close(); };
   go.onclick = function() {
     if (go.disabled) return;
-    sel.value = picked;
-    if (sel.onchange) sel.onchange();
-    sel.dispatchEvent(new Event("change", { bubbles: true }));
-    var cc = document.getElementById("m-nc-nature-custom"), cw = document.getElementById("m-nc-nature-custom-wrap");
-    if (picked === "__custom__") { if (cc) cc.value = otin.value.trim(); if (cw) cw.style.display = "block"; }
-    else { if (cc) cc.value = ""; if (cw) cw.style.display = "none"; }
-    if (typeof mNcNatureSync === "function") mNcNatureSync();
+    if (need.noi) {
+      sel.value = picked;
+      if (sel.onchange) sel.onchange();
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      var cc = document.getElementById("m-nc-nature-custom"), cw = document.getElementById("m-nc-nature-custom-wrap");
+      if (picked === "__custom__") { if (cc) cc.value = otin.value.trim(); if (cw) cw.style.display = "block"; }
+      else { if (cc) cc.value = ""; if (cw) cw.style.display = "none"; }
+      if (typeof mNcNatureSync === "function") mNcNatureSync();
+    }
+    if (need.age) {
+      if (uto) mSetNcAge(cat);
+      else { var n = document.getElementById("m-nc-age-num"); if (n) n.value = String(ageIn.value).trim(); mNcUto = false; mNcAge = ""; mNcAgeUnit = unit; mPaintNcAge(); }
+    }
+    if (need.sex) { mNcSex = sex; mPaintNcSex(); }
     mNcValidateMarks(); close();
     mPostNewCall();   // carries on posting (same Dispatch / no-tone choice)
   };
-  draw(); setTimeout(function() { try { q.focus(); } catch (e) {} }, 30);
+  draw(); paint(); setTimeout(function() { try { (q || ageIn || go).focus(); } catch (e) {} }, 30);
 }
 function mPostNewCall() {
   var address = mCleanAddress(document.getElementById("m-nc-address").value.trim());
   if (!address) { mToast("Enter an address", true); return; }
   // 9.74 / 12.546 / 12.547 (Sam): NOI is required — if it's missing, a popup asks for it and then posts
   var _nat = document.getElementById("m-nc-nature"), _natVal = _nat ? (_nat.value === "__custom__" ? ((document.getElementById("m-nc-nature-custom") || {}).value || "").trim() : _nat.value) : "x";
-  if (!_natVal) { mNcValidateMarks(); mNcNoiAsk(); return; }
+  // 9.76 / 12.548 (Sam): every red field is required — age and sex too
+  if (!_natVal || !mNcHasAge() || !(typeof mNcSex !== "undefined" && mNcSex)) { mNcValidateMarks(); mNcMissingAsk(); return; }
   // Never assume the zone: if the address hasn't resolved to coordinates yet, resolve it now, then post
   if (!document.getElementById("m-nc-lat").value) {
     var pbtn = document.getElementById("m-nc-post-btn"); if (pbtn) { mNcPostBtnsBusy("Locating…"); }
@@ -18099,6 +18132,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-reg-card .hz-imp-adm{display:flex;gap:8px;margin-top:10px;flex:0 0 100% !important;width:100% !important;grid-column:1 / -1;order:9}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-adm button{flex:1;min-height:38px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;border-radius:8px;font-weight:700;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-adm button.hz-imp-del{background:#c62828;border-color:#c62828;color:#fff;-webkit-text-fill-color:#fff}html body:not(#hzA):not(#hzB):not(#hzC) .hz-imp-add{display:block;width:100%;min-height:52px;margin-top:12px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;border-radius:10px;font-weight:800;font-size:1rem;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-reg-card.hz-imp-card{flex-wrap:wrap !important}html body:not(#hzA):not(#hzB):not(#hzC) .hz-tk-search{width:100%;box-sizing:border-box;margin:10px 0 4px;padding:10px 12px;border-radius:10px;background:#000;border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;font-size:.95rem}html body:not(#hzA):not(#hzB):not(#hzC) .hz-tk-search::placeholder{color:rgba(212,160,23,.6);-webkit-text-fill-color:rgba(212,160,23,.6)}";   // 9.66 / 12.533
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-oa-btn{display:block;width:100%;margin:8px 0 10px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;font-size:0.72rem;padding:10px;border-radius:8px;cursor:pointer;background:#000;border:2px solid #d4a017;color:#d4a017}html body:not(#hzA):not(#hzB):not(#hzC) .hz-oa-btn.hz-oa-on{background:rgba(240,179,90,0.15);border-color:rgba(240,179,90,0.7);color:#f0b35a;text-transform:none;letter-spacing:0.02em}html body:not(#hzA):not(#hzB):not(#hzC) .m-pill.disp-oa{background:rgba(240,179,90,0.15);border:1px solid rgba(240,179,90,0.45);color:#f0b35a}";   // 9.69 / 12.539: Transported by Another Agency
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-box{max-width:440px;text-align:left}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1.15rem;letter-spacing:.04em;color:#fff;-webkit-text-fill-color:#fff;text-align:center;margin-bottom:4px}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-sub{color:#d4a017;-webkit-text-fill-color:#d4a017;font-size:.88rem;text-align:center;margin-bottom:12px}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-list{max-height:min(46vh,340px);overflow-y:auto;border:2px solid #d4a017;border-radius:9px;margin:0 0 12px;background:#000}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-it{display:block;width:100%;text-align:left;background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border:0;border-bottom:1px solid rgba(212,160,23,.25);padding:11px 12px;font-size:.92rem;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-it.on{background:#d4a017;color:#000;-webkit-text-fill-color:#000;font-weight:700}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-it-other{font-style:italic}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-none{color:#d4a017;padding:12px;text-align:center}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-cancel,html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-go{flex:1;border-radius:9px;padding:12px;font-family:'Oswald',sans-serif;font-weight:700;font-size:.95rem;letter-spacing:.04em;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-cancel{background:#c62828;color:#fff;-webkit-text-fill-color:#fff;border:2px solid #c62828}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-go{background:#34c759;color:#000;-webkit-text-fill-color:#000;border:2px solid #34c759}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-go:disabled{opacity:.45;cursor:default}";   // 9.75 / 12.547: NOI popup
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-lab{color:#fff;-webkit-text-fill-color:#fff;font-family:'Oswald',sans-serif;font-weight:700;font-size:.85rem;letter-spacing:.05em;text-transform:uppercase;margin:4px 0 6px}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-row{display:flex;gap:6px;margin-bottom:12px;align-items:stretch}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-row .hz-noi-age{flex:1 1 70px;margin:0;min-width:0}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-opt{flex:1;background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017;border-radius:9px;padding:10px 6px;font-weight:700;font-size:.88rem;cursor:pointer}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-opt.on{background:#d4a017;color:#000;-webkit-text-fill-color:#000}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-opt:disabled{opacity:.4}html body:not(#hzA):not(#hzB):not(#hzC) .hz-noi-box{max-height:92vh;overflow-y:auto}";   // 9.76 / 12.548: required-fields popup
+  st.textContent += "html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-rig-status-list .m-rig-hist,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .m-rig-hist{background:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .m-rig-hist .m-rig-hist-h{color:#fff !important;-webkit-text-fill-color:#fff !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .m-rig-hist *:not(.m-rig-hist-dot){background-color:transparent !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .m-rig-hist .m-rig-hist-row,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .m-rig-hist .m-rig-hist-row *{color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .m-rig-hist .m-rig-hist-why,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .m-rig-hist .m-rig-hist-empty{color:rgba(212,160,23,.8) !important;-webkit-text-fill-color:rgba(212,160,23,.8) !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .m-rig-hist > div:last-child:not(.m-rig-hist-row){color:#fff !important;-webkit-text-fill-color:#fff !important;border-top-color:rgba(212,160,23,.35) !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) input.hz-tk-search,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) input.hz-tk-search:focus{background:#000 !important;background-color:#000 !important;border:2px solid #d4a017 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;box-shadow:none !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) input.hz-tk-search::placeholder{color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;opacity:.7 !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-rig-status-list .m-rig-hist::after{color:#fff !important;-webkit-text-fill-color:#fff !important;border-top-color:rgba(212,160,23,.35) !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-rig-status-list .m-rig-hist .m-rig-hist-row,html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-rig-status-list .m-rig-hist .m-rig-hist-row *:not(.m-rig-hist-dot){color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important}html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) #m-rig-status-list .m-rig-hist .m-rig-hist-why{color:rgba(212,160,23,.8) !important;-webkit-text-fill-color:rgba(212,160,23,.8) !important}";   // 9.77 / 12.549 (Sam): vehicle history + ticket search black/gold in every theme
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
