@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.69"; window.M_BUILD = BUILD;
+  var BUILD = "9.70"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2263,8 +2263,12 @@ function hzTileDefault(sec, role) {
 }
 var HZ_TILE_ACCESS_ADMIN = false;   // 12.192 (Sam): the grid has an Admin column — admins follow it too
 function hzApplyTileAccess(isAdmin, roles) {
-  if (!HZ_TILE_ACCESS || (isAdmin && !HZ_TILE_ACCESS_ADMIN)) return;
-  var mine = isAdmin ? ["admin"] : (roles || []).map(function(r) { return String(r).toLowerCase(); });
+  if (!HZ_TILE_ACCESS) return;
+  // 9.70 / 12.540 (Sam): an Admin column with nothing ticked would hide every tile from admins — treat it as "not set" (admins see all)
+  var adminTicked = Object.keys(HZ_TILE_ACCESS).some(function(sec) { var a = HZ_TILE_ACCESS[sec]; return Array.isArray(a) && a.some(function(r) { return String(r).toLowerCase() === "admin"; }); });
+  if (isAdmin && (!HZ_TILE_ACCESS_ADMIN || !adminTicked)) return;
+  // 9.70 / 12.540: an admin also gets the tiles their other roles (Responder, Dispatcher…) are ticked for
+  var mine = (roles || []).map(function(r) { return String(r).toLowerCase(); }); if (isAdmin) mine.push("admin");
   Object.keys(HZ_TILE_ACCESS).forEach(function(sec) {
     var allowed = HZ_TILE_ACCESS[sec]; if (!Array.isArray(allowed)) return;
     var ok = allowed.some(function(r) { return mine.indexOf(String(r).toLowerCase()) !== -1; });
