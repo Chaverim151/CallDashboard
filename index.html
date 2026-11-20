@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.542">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.543">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2780,7 +2780,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.542</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.543</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -11828,6 +11828,11 @@ window.tplPick = tplPick;
 // 12.532 (Sam): Notification Settings ▸ ⏰ Call Alerts — everything about the "no activity on a call" alert in one card
 function renderCallAlerts() {
   var el = document.getElementById("ns-callalerts-content"); if (!el) return;
+  if (typeof DISPATCH_SETTINGS === "undefined" || !DISPATCH_SETTINGS) {   // 12.543: wait for the saved settings (otherwise it showed 15)
+    el.innerHTML = '<div style="color:var(--gray);font-size:0.85rem">Loading…</div>';
+    if (!renderCallAlerts._busy) { renderCallAlerts._busy = true; loadDispatchSettings().then(function() { if (!DISPATCH_SETTINGS) DISPATCH_SETTINGS = {}; renderCallAlerts._busy = false; renderCallAlerts(); }); }
+    return;
+  }
   var mins = Number((typeof DISPATCH_SETTINGS !== "undefined" && DISPATCH_SETTINGS && DISPATCH_SETTINGS.callIdleMinutes) || 15);
   var on = function(ch) { return typeof tplSendIsOn === "function" && tplSendIsOn("callIdle", ch); };
   var sw = function(ch, label) { var v = on(ch); return '<label class="tpl-st-box' + (v ? '' : ' off') + '" style="display:inline-flex;gap:8px;align-items:center;margin-right:14px;cursor:pointer"><input type="checkbox" ' + (v ? 'checked ' : '') + 'onchange="setTemplateSend(\'callIdle\',\'' + ch + '\',this.checked);setTimeout(renderCallAlerts,400)"><span>' + label + ' — ' + (v ? 'On' : 'Off') + '</span></label>'; };
@@ -11845,7 +11850,7 @@ window.renderCallAlerts = renderCallAlerts;
 function setCallIdleMinutes(v) {   // 12.528 (Sam): Admin ▸ Notification Settings — minutes before the "no activity" alert
   var n = Math.max(5, Math.min(240, Math.round(Number(v) || 15)));
   db.collection("appdata").doc("dispatchSettings").set({ callIdleMinutes: n }, { merge: true }).then(function() {
-    if (typeof DISPATCH_SETTINGS !== "undefined" && DISPATCH_SETTINGS) DISPATCH_SETTINGS.callIdleMinutes = n;
+    if (typeof DISPATCH_SETTINGS !== "undefined") { if (!DISPATCH_SETTINGS) DISPATCH_SETTINGS = {}; DISPATCH_SETTINGS.callIdleMinutes = n; }
     if (typeof DS_EDIT !== "undefined" && DS_EDIT) DS_EDIT.callIdleMinutes = n;
     var m = document.getElementById("tpl-send-msg"); if (m) { m.textContent = "✓ Saved — alert after " + n + " minutes"; m.style.color = "#7dedb5"; }
     var m2 = document.getElementById("ca-msg"); if (m2) { m2.className = "form-msg success"; m2.textContent = "✓ Saved — alert after " + n + " minutes"; }
@@ -15671,6 +15676,9 @@ function saveDispatchSettings(msgId) {
     notifyRules: (function(){ var o = {}; Object.keys(DS_EDIT.notifyRules || {}).forEach(function(k){ o[k] = dsCleanEntries(DS_EDIT.notifyRules[k]); }); return o; })(),
     updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || (currentUser ? currentUser.email : "")
   };
+  // 12.543 (Sam: Call Alerts minutes kept going back to 15): this save rewrites the whole doc — keep every saved setting
+  // it doesn't manage itself (callIdleMinutes, importantNumbersSeed…) instead of wiping them
+  Object.keys(DISPATCH_SETTINGS || {}).forEach(function(k) { if (!(k in data)) data[k] = DISPATCH_SETTINGS[k]; });
   db.collection("appdata").doc("dispatchSettings").set(data).then(function() {
     DISPATCH_SETTINGS = data; applyDispatchSettings(data);
     if (typeof ITR_CFG !== "undefined" && ITR_CFG && document.getElementById("itr-body")) itrRender();   // 12.399: ImageTrend nature list follows renamed natures
@@ -20621,7 +20629,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.542";
+var DESKTOP_VERSION = "12.543";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
