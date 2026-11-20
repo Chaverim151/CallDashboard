@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.72"; window.M_BUILD = BUILD;
+  var BUILD = "9.73"; window.M_BUILD = BUILD;
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -2254,6 +2254,7 @@ var HZ_TILES = [
 var HZ_TILE_ACCESS = null;   // { sec: [roles] } once loaded
 function hzTileDefault(sec, role) {
   role = String(role || "").toLowerCase();
+  if (role === "admin") return true;   // 9.73: same as desktop — the Admin column starts with every tile
   if (hzTitleList().indexOf(role) !== -1) role = "responder";   // titles have Responder access
   if (["rma", "epcr", "portal", "hospital", "storage"].indexOf(sec) !== -1) return role !== "dispatcher";
   if (sec === "maps" || sec === "calllogs") return role === "dispatcher";   // Captain / Chief are titles now (11.65)
@@ -5888,7 +5889,7 @@ function mPlaceLandmarks() {
       mDropLandmarkPin(lm);
       if (--pending === 0 && Object.keys(updates).length > 1) {
         // write back so desktop and mobile share one resolved cache and neither pays to geocode twice
-        db.collection("appdata").doc("landmarkCoords").set(updates).catch(function(){});
+        db.collection("appdata").doc("landmarkCoords").set(updates, cache._v === M_LANDMARK_GEO_VERSION ? { merge: true } : {}).catch(function(){});   // 9.73 / 12.544: add to the saved spots (was wiping them)
       }
     }
     // Resolve a named POI: Places text search first (accurate for hospitals), Geocoder as fallback — identical to desktop
