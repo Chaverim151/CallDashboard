@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.550">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.551">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2779,7 +2779,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.550</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.551</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -8635,6 +8635,37 @@ document.addEventListener("DOMContentLoaded", function() {
 // Directions open in the member's chosen map app (My Settings ▸ Map app). Same name as on the phone.
 // Apple Maps exists only on iPhone, iPad and Mac (iPads report themselves as "Macintosh")
 function hzIsApple() { return /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent || ""); }
+// 9.79 / 12.551 (Sam: a call at 32 S 6th Ave sent crews to S 5th Ave): directions go to the STREET ADDRESS, not the
+// map point. A point in the middle of a deep lot routes to whichever street is closest (here the one behind the house).
+// The point is still used when there's no real street address: coordinates-only, highway, or the caller's live location.
+function hzNavAddr(call) {
+  if (!call || call.onHighway || call.navByPin) return "";
+  var a = (typeof mCleanAddress === "function" ? mCleanAddress(call.address || "") : String(call.address || "")).trim(); if (!a) return "";
+  if (a.indexOf(" — ") !== -1) a = a.split(" — ").slice(1).join(" — ");   // "ShopRite — 123 Main St, …" → the street part
+  if (/^\s*-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+\s*$/.test(a)) return "";   // just coordinates
+  return a.split(",").map(function(s) { return s.trim(); }).filter(function(s) { return s && !/^(USA|United States)$/i.test(s); }).join(", ");
+}
+function hzGmapsLink(call, lat, lng) {
+  var a = hzNavAddr(call);
+  if (a) return "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(a) + "&travelmode=driving";
+  return (lat && lng) ? "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving" : "";
+}
+function hzWazeLink(call, lat, lng) {
+  var a = hzNavAddr(call);
+  if (a) return "https://waze.com/ul?q=" + encodeURIComponent(a) + "&navigate=yes";
+  return (lat && lng) ? "https://waze.com/ul?ll=" + lat + "," + lng + "&navigate=yes" : "";
+}
+function hzCallDirUrl(call) {   // the member's own map app (My Settings ▸ Map app), to this call
+  var a = hzNavAddr(call);
+  if (!a) return (call && call.lat && call.lng) ? mDirUrl(call.lat, call.lng) : ((call && call.mapsLink) || "#");
+  var app = ""; try { app = localStorage.getItem("hzMapApp") || ""; } catch (e) {}
+  app = (typeof mPrefs !== "undefined" && mPrefs.mapApp) || app;
+  if (app === "apple" && !hzIsApple()) app = "google";
+  var q = encodeURIComponent(a);
+  if (app === "waze") return "https://waze.com/ul?q=" + q + "&navigate=yes";
+  if (app === "apple") return "https://maps.apple.com/?daddr=" + q + "&dirflg=d";
+  return "https://www.google.com/maps/dir/?api=1&destination=" + q + "&travelmode=driving";
+}
 function mDirUrl(lat, lng) {
   var app = ""; try { app = localStorage.getItem("hzMapApp") || ""; } catch (e) {}
   app = hzPrefs.mapApp || app;
@@ -20735,7 +20766,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.550";
+var DESKTOP_VERSION = "12.551";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -23487,7 +23518,7 @@ function mCallVars(call) {
       var s = call.patientSex === "male" ? "M" : call.patientSex === "female" ? "F" : "";
       return (base + (s ? " " + s : "")).trim();
     })(),
-    wazeLink: (lat && lng) ? ("https://waze.com/ul?ll=" + lat + "," + lng + "&navigate=yes") : "",
+    wazeLink: hzWazeLink(call, lat, lng),
     baseName: (typeof M_BASE !== "undefined" && M_BASE.name) ? M_BASE.name : "",
     baseAddress: (typeof M_BASE !== "undefined" && M_BASE.address) ? M_BASE.address : "",
     baseMapsLink: (typeof M_BASE === "undefined") ? "" : (M_BASE.lat && M_BASE.lng
@@ -23517,8 +23548,7 @@ function mCallVars(call) {
     callback: call.callbackNumber || "",
     notes: call.dispatchNotes || "",
     als: (call.alsActivated && call.alsProvider) ? (call.alsProvider + (call.alsEta ? " (ETA " + call.alsEta + " min)" : "")) : "",
-    mapsLink: (lat && lng) ? ("https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lng + "&travelmode=driving")
-            : (call.mapsLink || ""),
+    mapsLink: hzGmapsLink(call, lat, lng) || (call.mapsLink || ""),
     time: mSmsStamp(now)
   };
 }
@@ -24375,8 +24405,8 @@ function mEditCallSave() {
     var now = new Date().toISOString(), upd = { updatedAt: now }, notes = [], evs = [];
     var by = mCurrentUserUnit || "Dispatch", byUid = mCurrentUser ? mCurrentUser.uid : "";
     if (loc) {
-      upd.address = loc.address; upd.lat = loc.lat; upd.lng = loc.lng;
-      upd.mapsLink = "https://www.google.com/maps/dir/?api=1&destination=" + loc.lat + "," + loc.lng + "&travelmode=driving";
+      upd.address = loc.address; upd.lat = loc.lat; upd.lng = loc.lng; upd.navByPin = false;
+      upd.mapsLink = hzGmapsLink({ address: loc.address, onHighway: call.onHighway }, loc.lat, loc.lng);
       var z = typeof mDetectZoneInfo === "function" ? mDetectZoneInfo(loc.lat, loc.lng) : null;
       var zNote = (z && z.type && call.zone && z.type !== call.zone) ? " — note: the new spot is " + (z.type === "primary" ? "in the standard response area" : z.type === "secondary" ? "a Load a Rig area" : z.type === "transfer" ? "a Linden transfer area (stabilize, Linden brings the rig)" : "outside the coverage area") : "";
       if (z && z.type && z.type !== (call.zone || "")) {   // 9.61 (Sam): the call's zone follows the new address
@@ -25245,6 +25275,8 @@ function mPostNewCallNow() {
     lat: parseFloat(document.getElementById("m-nc-lat").value) || null,
     lng: parseFloat(document.getElementById("m-nc-lng").value) || null,
     mapsLink: document.getElementById("m-nc-mapslink").value || "",
+    // 9.79: the caller's live location is the pin → directions go to the pin, not the typed address
+    navByPin: !!(mLocApplied && mLocAppliedLat != null && Math.abs((parseFloat(document.getElementById("m-nc-lat").value) || 0) - mLocAppliedLat) < 1e-7),
     zone: mNcZone, // always a detected value — posting is blocked below if it's unknown
     zoneArea: mNcZoneArea || "",   // which coverage area it fell in, for the card and call info
     onHighway: !!mNcHighway,
@@ -25278,6 +25310,7 @@ function mPostNewCallNow() {
     updatedAt: now.toISOString(),
     noTone: mNcNoTone === true   // 12.373: "Dispatch without Tone" — the server skips the Zello Alert Tone
   };
+  call.mapsLink = hzGmapsLink(call, call.lat, call.lng) || call.mapsLink;   // 9.79 / 12.551: to the street address
   db.collection("activeCalls").add(call).then(function(ref) {
     mNotifyAdminUnits(Object.assign({ id: ref.id }, call));   // chiefs are told about every call
     mNcPosted = true; mNcDraftClear();
@@ -26043,7 +26076,7 @@ function mDdPushLocation() {
     if (!snap.exists) throw new Error("Call not found");
     var notes = (snap.data().callNotes || []).slice();
     return db.collection("activeCalls").doc(call.id).update({   // 9.28: timeline only
-      lat: lat, lng: lng, mapsLink: maps, updatedAt: now, callEvents: mEvtUnion(mEvt(noteText.replace(/^📍 /, ""), "📍", "#7ab8f5", "loc")),
+      lat: lat, lng: lng, mapsLink: maps, navByPin: true, updatedAt: now, callEvents: mEvtUnion(mEvt(noteText.replace(/^📍 /, ""), "📍", "#7ab8f5", "loc")),
       locUpdate: { at: now, by: mCurrentUserUnit || "", accuracy: acc, token: mDdLocToken, from: (call.lat && call.lng) ? { lat: call.lat, lng: call.lng } : null }
     });
   }).then(function() {
@@ -26109,7 +26142,7 @@ function mRenderDispatchDetail(call) {
     (call.lat && call.lng
       ? '<div style="display:flex;gap:8px;margin-bottom:10px">' +
           '<img src="https://maps.googleapis.com/maps/api/streetview?size=200x150&location=' + call.lat + ',' + call.lng + '&fov=90&pitch=0&key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo" style="flex:1;border-radius:8px;object-fit:cover;height:110px;background:rgba(255,255,255,0.04)" onerror="this.style.display=\'none\'">' +
-          '<a href="' + (call.mapsLink||('https://www.google.com/maps/dir/?api=1&destination='+call.lat+','+call.lng)) + '" target="_blank" style="flex:1;display:block;border-radius:8px;overflow:hidden;height:110px;position:relative;text-decoration:none">' +
+          '<a href="' + (hzGmapsLink(call, call.lat, call.lng) || call.mapsLink || '#') + '" target="_blank" style="flex:1;display:block;border-radius:8px;overflow:hidden;height:110px;position:relative;text-decoration:none">' +
             '<img src="https://maps.googleapis.com/maps/api/staticmap?center=' + call.lat + ',' + call.lng + '&zoom=16&size=200x150&maptype=roadmap&markers=color:red%7C' + call.lat + ',' + call.lng + '&key=AIzaSyB5A1yLequWoCAVK-lPSo6qJc2BIm_5mHo" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display=\'none\'">' +
           '</a>' +
         '</div>'
