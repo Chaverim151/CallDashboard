@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.86"; window.M_BUILD = BUILD;
+  var BUILD = "9.87"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -3297,6 +3297,7 @@ function mForgotPw() {
 }
 
 function mSignOut() {
+  try { sessionStorage.removeItem("hzImp"); } catch (e) {}   // 9.87: a deliberate sign-out while acting as someone
   if (mCallsListener) { mCallsListener(); mCallsListener = null; }
   // This phone stops getting this member's alerts (waits at most ~1.5 s; with no signal it signs out anyway)
   var uid = mCurrentUser && mCurrentUser.uid;
@@ -18322,7 +18323,13 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
   function watch() {
     if (!(window.firebase && firebase.auth)) { setTimeout(watch, 300); return; }
     firebase.auth().onAuthStateChanged(function(u) {
-      if (!u) { sessionStorage.removeItem("hzImp"); bar(null); return; }
+      if (!u) {
+        // 9.87 / 12.561 (Sam: first try stuck on the login page, worked after a reload): right after switching, the
+        // sign-in can come back empty on the first load — reload once by itself before giving up on it
+        if (get() && !sessionStorage.getItem("hzImpRetry")) { try { sessionStorage.setItem("hzImpRetry", "1"); } catch (e) {} setTimeout(function() { location.reload(); }, 700); return; }
+        sessionStorage.removeItem("hzImp"); sessionStorage.removeItem("hzImpRetry"); bar(null); return;
+      }
+      try { sessionStorage.removeItem("hzImpRetry"); } catch (e) {}
       u.getIdTokenResult().then(function(t) {
         var by = t.claims && t.claims.hzImpBy, v = get();
         if (!by) {
