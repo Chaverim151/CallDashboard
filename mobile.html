@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.88"; window.M_BUILD = BUILD;
+  var BUILD = "9.89"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -2855,6 +2855,7 @@ function mSettingsRender() {
       (mRcCan() ? (function() { var rc = mPrefs.rollCallSms || {}, on = rc.on === true, hrs = Math.max(1, Math.min(24, +rc.hours || 2));   // 12.250 (Sam)
         return line('🕯️ Erev Shabbos roll call text', (on ? '<select class="m-disp-input m-set-rc-h" onchange="mSetRollCall(true, +this.value)" style="width:auto;padding:4px 6px;margin-right:6px">' + [1, 2, 3, 4, 5, 6, 8, 10, 12, 24].map(function(h) { return '<option value="' + h + '"' + (h === hrs ? " selected" : "") + '>' + h + ' h before</option>'; }).join("") + '</select>' : '') + sw(on, "mSetRollCall(" + (!on) + ")", "Erev Shabbos roll call text"),
           on ? 'Texted ' + hrs + ' hour' + (hrs === 1 ? '' : 's') + ' before candle lighting (Shabbos and Yom Tov). It\'s accurate as of when it\'s sent — things can change after that.' : 'Get the roll call by text before Shabbos / Yom Tov'); })() : '') +
+      (hzNightRemCan(mCurrentUserUnit, mSettingsRender) ? line('🌙 Night shift reminder', sw(mPrefs.nightReminder !== false, "mSetNightRem()", "Night shift reminder"), hzNightRemNote(mPrefs.nightReminder !== false)) : '') +
       (pk ? line('👆 ' + mEscHtml(face), sw(mPasskeyStored(), mPasskeyStored() ? "mRemovePasskey();mSettingsRender()" : "mSetFlow.pw=\'face\';mSettingsRender()", face)) : '') +
       line('🔒 Password', pwOpen ? '' : '<button class="m-set-mini" onclick="mSetFlow.pw=\'pw\';mSettingsRender()">Change</button>') + pwPanel) +
     // Home screen order: the mini grid shows the order; the numbered dropdowns open only when changing it
@@ -2955,6 +2956,27 @@ function mSetTestAlert() {
 }
 // 12.250 (Sam): Erev Shabbos / Yom Tov roll call text — responders and admins choose it for themselves (sent by the server)
 function mRcCan() { var r = (mCurrentUserRoles || []).map(function(x) { return String(x).toLowerCase(); }); return mCurrentRole === "admin" || r.indexOf("admin") !== -1 || r.some(function(x) { return ["responder", "captain", "chief", "backup"].indexOf(x) !== -1; }); }
+// 9.89 / 12.565 (Sam): 🌙 Night shift reminder on / off — for members on the night shift list (appdata/shifts).
+// users/<uid>.prefs.nightReminder === false = don't send it to me (the server skips them; default on).
+function hzNightRemCan(unit, rerender) {
+  if (window.HZ_SHIFTS_DOC === undefined) {
+    window.HZ_SHIFTS_DOC = null;
+    db.collection("appdata").doc("shifts").get().then(function(s) { window.HZ_SHIFTS_DOC = s.exists ? (s.data() || {}) : {}; if (rerender) rerender(); }).catch(function() { window.HZ_SHIFTS_DOC = {}; });
+    return false;
+  }
+  var d = window.HZ_SHIFTS_DOC; if (!d) return false;
+  var me = String(unit || "").trim().toUpperCase(); if (!me) return false;
+  return (d.shifts || []).some(function(s) { return (s.units || []).some(function(u) { return String((u && typeof u === "object") ? (u.unit || u.name || "") : (u || "")).trim().toUpperCase() === me; }); });
+}
+function hzNightRemNote(on) {
+  if (!(window.HZ_SHIFTS_DOC && window.HZ_SHIFTS_DOC.reminderOn === true)) return "Night shift reminders are switched off for everyone right now (Admin ▸ Night Watch)";
+  return on ? "A reminder before your night shift" : "Off — you won't get the night shift reminder";
+}
+function mSetNightRem() {
+  var on = mPrefs.nightReminder === false;
+  mSetPrefs("nightReminder", on).then(function() { mToast(on ? "✓ Night shift reminder on" : "Night shift reminder off"); }).catch(function(e) { mToast(e.message, true); });
+  mSettingsRender();
+}
 function mSetRollCall(on, hours) {
   var cur = mPrefs.rollCallSms || {}, v = { on: !!on, hours: Math.max(1, Math.min(24, +(hours || cur.hours) || 2)) };
   mSetPrefs("rollCallSms", v).then(function() { mToast(v.on ? "✓ You'll get the roll call by text " + v.hours + " h before candle lighting" : "Roll call text off"); }).catch(function(e) { mToast(e.message, true); });
