@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.83"; window.M_BUILD = BUILD;
+  var BUILD = "9.84"; window.M_BUILD = BUILD;
   window.hzImpGet = window.hzImpGet || function() { try { var v = JSON.parse(localStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.83 / 12.555: acting as a member (set early for the sign-in guards)
   try {
     var params = new URLSearchParams(location.search);
@@ -18280,6 +18280,9 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
     b.innerHTML = '<span>🎭 Acting as ' + esc((v.unit || "this member") + (v.name ? " " + v.name : "")) + '<span class="hz-imp-more"> — changes save to their account</span></span><button type="button" onclick="hzImpExit()">Exit</button>';
     b.style.display = "flex"; document.documentElement.classList.add("hz-imp-on");
   }
+  // 12.557: a computer that isn't "remembered" keeps the sign-in only in memory — keep it for this tab so the reload after switching doesn't sign out
+  function notRemembered() { return typeof hzRemembered === "function" && !hzRemembered(); }
+  function keepForTab() { return notRemembered() ? firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(function() {}) : Promise.resolve(); }
   window._hzImpBar = bar;
   window.hzImpStart = function(uid, label) {
     if (get()) { say("Exit the member you're acting as first", true); return; }
@@ -18289,14 +18292,14 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
       var me = firebase.auth().currentUser, myUid = me ? me.uid : "";
       relay("impersonateStart", { uid: uid }).then(function(r) {
         localStorage.setItem("hzImp", JSON.stringify({ byUid: myUid, byUnit: r.byUnit || "", unit: r.unit || "", name: r.name || "", at: Date.now() }));
-        return firebase.auth().signInWithCustomToken(r.token);
+        return keepForTab().then(function() { return firebase.auth().signInWithCustomToken(r.token); });
       }).then(function() { location.reload(); })
         .catch(function(e) { localStorage.removeItem("hzImp"); hzDialog({ kind: "alert", msg: "Couldn't switch: " + ((e && e.message) || e) }); });
     });
   };
   window.hzImpExit = function() {
     var b = document.querySelector("#hz-imp-bar button"); if (b) { b.disabled = true; b.textContent = "Switching back…"; }
-    relay("impersonateExit", {}).then(function(r) { return firebase.auth().signInWithCustomToken(r.token); })
+    relay("impersonateExit", {}).then(function(r) { try { sessionStorage.setItem("hzImpBack", "1"); } catch (e) {} return keepForTab().then(function() { return firebase.auth().signInWithCustomToken(r.token); }); })
       .then(function() { localStorage.removeItem("hzImp"); location.reload(); })
       .catch(function(e) {
         if (b) { b.disabled = false; b.textContent = "Exit"; }
@@ -18311,7 +18314,12 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
       if (!u) { localStorage.removeItem("hzImp"); bar(null); return; }
       u.getIdTokenResult().then(function(t) {
         var by = t.claims && t.claims.hzImpBy, v = get();
-        if (!by) { if (v) localStorage.removeItem("hzImp"); bar(null); return; }
+        if (!by) {
+          if (v) localStorage.removeItem("hzImp"); bar(null);
+          // back as yourself after Exit: a computer that isn't remembered goes back to memory-only (signed out when the page closes)
+          try { if (sessionStorage.getItem("hzImpBack") === "1") { sessionStorage.removeItem("hzImpBack"); if (notRemembered()) firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE).catch(function() {}); } } catch (e) {}
+          return;
+        }
         if (!v || v.byUid !== by) { v = { byUid: by, byUnit: t.claims.hzImpUnit || "", unit: "", name: "" }; localStorage.setItem("hzImp", JSON.stringify(v)); }
         bar(v);
         if (!v.unit) firebase.firestore().collection("users").doc(u.uid).get().then(function(s) {
