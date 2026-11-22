@@ -27,8 +27,12 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.85"; window.M_BUILD = BUILD;
-  window.hzImpGet = window.hzImpGet || function() { try { var v = JSON.parse(localStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.83 / 12.555: acting as a member (set early for the sign-in guards)
+  var BUILD = "9.86"; window.M_BUILD = BUILD;
+  window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
+  window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
+    if (window.hzImpGet()) return Promise.resolve(true);
+    try { var u = firebase.auth().currentUser; if (!u) return Promise.resolve(false); return u.getIdTokenResult().then(function(t) { return !!(t && t.claims && t.claims.hzImpBy); }).catch(function() { return false; }); } catch (e) { return Promise.resolve(false); }
+  };
   try {
     var params = new URLSearchParams(location.search);
     // First-load only: tag the URL if it has no version at all. Never rewrite an existing tag —
@@ -3043,8 +3047,10 @@ function hzDeviceLabel() {
   return kind + " · " + app;
 }
 // Save this device's token for the member; tidy the older one-per-member record if it was this same device.
-function hzPushSave(uid, unit, token) {
-  if (window.hzImpGet && hzImpGet()) return Promise.resolve();   // 9.83 / 12.555: acting as a member — never register their notifications here
+function hzPushSave(uid, unit, token) {   // 9.83 / 12.555, 9.86 / 12.560: acting as a member — never register their notifications here
+  return hzImpCheck().then(function(imp) { return imp ? undefined : hzPushSaveNow(uid, unit, token); });
+}
+function hzPushSaveNow(uid, unit, token) {
   if (!uid || !token) return Promise.resolve();
   hzSetAlertsOffHere(uid, false);
   return db.collection("pushTokens").doc(hzPushDocId(uid)).set({
@@ -3145,8 +3151,10 @@ function hzDevTouch(uid, first) {
 // A NEW device (no record yet) is refused when the member is already on that many active devices.
 // System admins are never limited.
 var HZ_DEV_MAX_DEFAULT = 2;
-function hzDevLimitCheck(uid, exempt, personalMax) {
-  if (window.hzImpGet && hzImpGet()) return Promise.resolve({ ok: true });   // 9.83 / 12.555: acting as a member — not their device
+function hzDevLimitCheck(uid, exempt, personalMax) {   // 9.83 / 12.555, 9.86 / 12.560: acting as a member — not their device
+  return hzImpCheck().then(function(imp) { return imp ? { ok: true } : hzDevLimitCheckNow(uid, exempt, personalMax); });
+}
+function hzDevLimitCheckNow(uid, exempt, personalMax) {
   var ref = hzDevRef(uid);
   var own = (typeof personalMax === "number" && isFinite(personalMax) && personalMax >= 0) ? personalMax : null;   // this member's own limit (Edit User ▸ Max devices)
   return ref.get().then(function(s) {
@@ -3164,8 +3172,10 @@ function hzDevLimitCheck(uid, exempt, personalMax) {
 function hzDevBlockedMsg(r) {
   return "You're already signed in on " + r.count + " device" + (r.count === 1 ? "" : "s") + " (the limit is " + r.max + "). Sign out on one of them first, or ask an admin to sign you out of one.";
 }
-function hzDevStart(uid, onForced) {
-  if (window.hzImpGet && hzImpGet()) return;   // 9.83 / 12.555
+function hzDevStart(uid, onForced) {   // 9.83 / 12.555, 9.86 / 12.560
+  hzImpCheck().then(function(imp) { if (!imp) hzDevStartNow(uid, onForced); });
+}
+function hzDevStartNow(uid, onForced) {
   hzDevStop(); if (!uid || typeof db === "undefined") return;
   HZ_DEV_FORCED = false; HZ_DEV_UID = uid;
   // "Sign out everywhere" applies to sessions that began before it — judged by when THIS device signed in
@@ -18258,9 +18268,9 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
    sign-in for that member (claim hzImpBy = the admin's uid) and this browser signs in AS them — same screens, same rules,
    changes saved to their account. A gold bar at the top shows who you're acting as, with Exit (switches back to you).
    While acting as someone this device is never registered for their notifications or counted as their device, and
-   their "change your password" / passkey prompts are skipped. localStorage "hzImp" = { byUid, byUnit, unit, name }. */
+   their "change your password" / passkey prompts are skipped. sessionStorage "hzImp" (this tab; 9.86 / 12.560) = { byUid, byUnit, unit, name }; a new tab rebuilds it from the sign-in claim. */
 (function() {
-  function get() { try { var v = JSON.parse(localStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } }
+  function get() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } }
   window.hzImpGet = get;
   function relay(fn, d) { var r = (typeof hzRelay === "function") ? hzRelay : (typeof mRelay === "function" ? mRelay : null); return r ? r(fn, d) : Promise.reject(new Error("Not ready yet — try again in a moment")); }
   function say(t, bad) { try { if (typeof showToast === "function") showToast(t, bad); else if (typeof mToast === "function") mToast(t, bad); } catch (e) {} }
@@ -18291,41 +18301,41 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
       say("Switching…");
       var me = firebase.auth().currentUser, myUid = me ? me.uid : "";
       relay("impersonateStart", { uid: uid }).then(function(r) {
-        localStorage.setItem("hzImp", JSON.stringify({ byUid: myUid, byUnit: r.byUnit || "", unit: r.unit || "", name: r.name || "", at: Date.now() }));
+        sessionStorage.setItem("hzImp", JSON.stringify({ byUid: myUid, byUnit: r.byUnit || "", unit: r.unit || "", name: r.name || "", at: Date.now() }));
         return keepForTab().then(function() { return firebase.auth().signInWithCustomToken(r.token); });
       }).then(function() { location.reload(); })
-        .catch(function(e) { localStorage.removeItem("hzImp"); hzDialog({ kind: "alert", msg: "Couldn't switch: " + ((e && e.message) || e) }); });
+        .catch(function(e) { sessionStorage.removeItem("hzImp"); hzDialog({ kind: "alert", msg: "Couldn't switch: " + ((e && e.message) || e) }); });
     });
   };
   window.hzImpExit = function() {
     var b = document.querySelector("#hz-imp-bar button"); if (b) { b.disabled = true; b.textContent = "Switching back…"; }
     window._hzImpExiting = true;   // 12.559: don't drop back to memory-only until AFTER the reload (that signed MC-01 out)
     relay("impersonateExit", {}).then(function(r) { try { sessionStorage.setItem("hzImpBack", "1"); } catch (e) {} return keepForTab().then(function() { return firebase.auth().signInWithCustomToken(r.token); }); })
-      .then(function() { localStorage.removeItem("hzImp"); location.reload(); })
+      .then(function() { sessionStorage.removeItem("hzImp"); location.reload(); })
       .catch(function(e) {
         window._hzImpExiting = false; if (b) { b.disabled = false; b.textContent = "Exit"; }
         hzDialog({ kind: "confirm", msg: "Couldn't switch back automatically (" + ((e && e.message) || e) + ").\n\nSign out now and sign in again as yourself?", okText: "Sign out", noText: "Stay" }).then(function(y) {
-          if (!y) return; localStorage.removeItem("hzImp"); firebase.auth().signOut().then(function() { location.reload(); });
+          if (!y) return; sessionStorage.removeItem("hzImp"); firebase.auth().signOut().then(function() { location.reload(); });
         });
       });
   };
   function watch() {
     if (!(window.firebase && firebase.auth)) { setTimeout(watch, 300); return; }
     firebase.auth().onAuthStateChanged(function(u) {
-      if (!u) { localStorage.removeItem("hzImp"); bar(null); return; }
+      if (!u) { sessionStorage.removeItem("hzImp"); bar(null); return; }
       u.getIdTokenResult().then(function(t) {
         var by = t.claims && t.claims.hzImpBy, v = get();
         if (!by) {
-          if (v) localStorage.removeItem("hzImp"); bar(null);
+          if (v) sessionStorage.removeItem("hzImp"); bar(null);
           // back as yourself after Exit: a computer that isn't remembered goes back to memory-only (signed out when the page closes)
           try { if (!window._hzImpExiting && sessionStorage.getItem("hzImpBack") === "1") { sessionStorage.removeItem("hzImpBack"); if (notRemembered()) firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE).catch(function() {}); } } catch (e) {}
           return;
         }
-        if (!v || v.byUid !== by) { v = { byUid: by, byUnit: t.claims.hzImpUnit || "", unit: "", name: "" }; localStorage.setItem("hzImp", JSON.stringify(v)); }
+        if (!v || v.byUid !== by) { v = { byUid: by, byUnit: t.claims.hzImpUnit || "", unit: "", name: "" }; sessionStorage.setItem("hzImp", JSON.stringify(v)); }
         bar(v);
         if (!v.unit) firebase.firestore().collection("users").doc(u.uid).get().then(function(s) {
           var d = s.exists ? s.data() : {}; v.unit = d.unit || ""; v.name = ((d.firstName || "") + " " + (d.lastName || "")).trim();
-          localStorage.setItem("hzImp", JSON.stringify(v)); bar(v);
+          sessionStorage.setItem("hzImp", JSON.stringify(v)); bar(v);
         }).catch(function() {});
       }).catch(function() {});
     });
