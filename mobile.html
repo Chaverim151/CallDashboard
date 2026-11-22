@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.84"; window.M_BUILD = BUILD;
+  var BUILD = "9.85"; window.M_BUILD = BUILD;
   window.hzImpGet = window.hzImpGet || function() { try { var v = JSON.parse(localStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.83 / 12.555: acting as a member (set early for the sign-in guards)
   try {
     var params = new URLSearchParams(location.search);
@@ -18299,10 +18299,11 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
   };
   window.hzImpExit = function() {
     var b = document.querySelector("#hz-imp-bar button"); if (b) { b.disabled = true; b.textContent = "Switching back…"; }
+    window._hzImpExiting = true;   // 12.559: don't drop back to memory-only until AFTER the reload (that signed MC-01 out)
     relay("impersonateExit", {}).then(function(r) { try { sessionStorage.setItem("hzImpBack", "1"); } catch (e) {} return keepForTab().then(function() { return firebase.auth().signInWithCustomToken(r.token); }); })
       .then(function() { localStorage.removeItem("hzImp"); location.reload(); })
       .catch(function(e) {
-        if (b) { b.disabled = false; b.textContent = "Exit"; }
+        window._hzImpExiting = false; if (b) { b.disabled = false; b.textContent = "Exit"; }
         hzDialog({ kind: "confirm", msg: "Couldn't switch back automatically (" + ((e && e.message) || e) + ").\n\nSign out now and sign in again as yourself?", okText: "Sign out", noText: "Stay" }).then(function(y) {
           if (!y) return; localStorage.removeItem("hzImp"); firebase.auth().signOut().then(function() { location.reload(); });
         });
@@ -18317,7 +18318,7 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
         if (!by) {
           if (v) localStorage.removeItem("hzImp"); bar(null);
           // back as yourself after Exit: a computer that isn't remembered goes back to memory-only (signed out when the page closes)
-          try { if (sessionStorage.getItem("hzImpBack") === "1") { sessionStorage.removeItem("hzImpBack"); if (notRemembered()) firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE).catch(function() {}); } } catch (e) {}
+          try { if (!window._hzImpExiting && sessionStorage.getItem("hzImpBack") === "1") { sessionStorage.removeItem("hzImpBack"); if (notRemembered()) firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE).catch(function() {}); } } catch (e) {}
           return;
         }
         if (!v || v.byUid !== by) { v = { byUid: by, byUnit: t.claims.hzImpUnit || "", unit: "", name: "" }; localStorage.setItem("hzImp", JSON.stringify(v)); }
