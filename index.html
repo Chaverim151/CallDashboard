@@ -34309,7 +34309,37 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       else if (typeof v === "object" && depth < 4 && !(v.toDate)) flatten(v, path, out, depth + 1);
     });
   }
+  var DB_NICE = { "shifts:shifts": "Night Watch ▸ Weekly schedule", "dispatchSettings:natures": "Protocols & Dispatch ▸ Call natures", "divertPlaces:list": "Traffic ▸ Divert places" };   // 12.584: plain names for common lists
+  // 12.584 (Sam: "the response looks very confusing"): a list change in plain words —
+  // "Tuesday: MC-24, MC-15 → MC-24, MC-15, MC-16" / "Adds: Stroke" / "Removes: Fall"
+  function recDiff(was, now) {
+    var DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    var lab = function(o, i) {
+      var k = ["name", "label", "title", "day", "night", "date", "area", "unit", "value"].filter(function(f) { return o && o[f] != null && o[f] !== ""; })[0];
+      if (!k) return "Entry " + (i + 1);
+      var v = o[k]; if ((k === "day" || k === "night") && /^\d$/.test(String(v))) v = DAYS[+v] || v;
+      return String(v);
+    };
+    var val = function(v) { if (Array.isArray(v)) return v.length ? v.map(function(x) { return typeof x === "object" ? JSON.stringify(x) : String(x); }).join(", ") : "(none)"; if (v && typeof v === "object") return JSON.stringify(v); return v === "" || v == null ? "(empty)" : String(v); };
+    var nice = function(f) { return f.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, function(c) { return c.toUpperCase(); }); };
+    var wl = was.map(lab), nl = now.map(lab), lines = [];
+    var uniq = function(l) { return l.every(function(x, i) { return l.indexOf(x) === i; }); };
+    var byName = uniq(wl) && uniq(nl);
+    var pairs = [];
+    if (byName) { nl.forEach(function(n, i) { var j = wl.indexOf(n); if (j === -1) lines.push("Adds: " + n); else pairs.push([was[j], now[i], n]); }); wl.forEach(function(w) { if (nl.indexOf(w) === -1) lines.push("Removes: " + w); }); }
+    else { for (var i = 0; i < Math.max(was.length, now.length); i++) { if (i >= was.length) lines.push("Adds: " + nl[i]); else if (i >= now.length) lines.push("Removes: " + wl[i]); else pairs.push([was[i], now[i], nl[i]]); } }
+    pairs.forEach(function(p) {
+      var keys = Object.keys(Object.assign({}, p[0], p[1]));
+      var ch = keys.filter(function(k) { return JSON.stringify(p[0][k]) !== JSON.stringify(p[1][k]); });
+      if (!ch.length) return;
+      var showKey = ch.length > 1 || keys.length > 2;
+      lines.push(p[2] + ": " + ch.map(function(k) { return (showKey ? nice(k) + " " : "") + val(p[0][k]) + " → " + val(p[1][k]); }).join("; "));
+    });
+    if (!lines.length) return "No change";
+    return lines.slice(0, 8).join("\n") + (lines.length > 8 ? "\n…and " + (lines.length - 8) + " more" : "");
+  }
   function dbLabel(doc, path) {
+    if (DB_NICE[doc + ":" + path]) return DB_NICE[doc + ":" + path];
     var m = path.match(/^_send\.([^.]+)\.(push|sms|email|admin)$/);
     if (doc === "smsTemplates" && m) return "Notification: " + ((typeof TPL_LABELS !== "undefined" && TPL_LABELS[m[1]]) || m[1]) + " — " + { push: "Push", sms: "Text / WhatsApp", email: "Email", admin: "Notification group" }[m[2]];
     if (doc === "smsTemplates" && typeof TPL_LABELS !== "undefined" && TPL_LABELS[path]) return "Message wording: " + TPL_LABELS[path];
@@ -34343,10 +34373,10 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   }
   function loadUnits(force) {
     if (SA.units && !force) return Promise.resolve(SA.units);
-    return db.collection("users").get().then(function(q) { var m = {}, em = {}; q.forEach(function(d) { var u = d.data() || {}; if (u.unit) m[String(u.unit).toUpperCase()] = d.id; if (u.email) em[String(u.email).toLowerCase()] = String(u.unit || d.id);
+    return db.collection("users").get().then(function(q) { var m = {}, em = {}; q.forEach(function(d) { var u = d.data() || {}; if (u.unit) { m[String(u.unit).toUpperCase()] = d.id; var uu = SA.unitUidsTmp = SA.unitUidsTmp || {}; (uu[String(u.unit).toUpperCase()] = uu[String(u.unit).toUpperCase()] || []).push(d.id); } if (u.email) em[String(u.email).toLowerCase()] = String(u.unit || d.id);
       (SA.membersTmp = SA.membersTmp || []).push({ uid: d.id, unit: u.unit || "", name: ((u.firstName || "") + " " + (u.lastName || "")).trim(), phone: u.phone || "", email: u.email || "", whatsapp: u.whatsapp || "", emsLicense: u.emsLicense || "", firstName: u.firstName || "", lastName: u.lastName || "", roles: (u.roles || []).map(function(r) { return String(r).toLowerCase(); }), admin: u.role === "admin",
-        emsLevel: u.emsLevel || "", ervDriver: !!u.ervDriver, rigDriver: !!u.rigDriver, daytimeResponder: !!u.daytimeResponder, ticketSupervisor: !!u.ticketSupervisor, cjCadAccess: !!u.cjCadAccess, maxDevices: typeof u.maxDevices === "number" ? u.maxDevices : "" }); });
-      SA.members = SA.membersTmp || []; SA.membersTmp = null; SA.units = m; SA.emails = em; return m; }).catch(function() { SA.units = {}; SA.emails = {}; return {}; });
+        emsLevel: u.emsLevel || "", ervDriver: !!u.ervDriver, rigDriver: !!u.rigDriver, daytimeResponder: !!u.daytimeResponder, ticketSupervisor: !!u.ticketSupervisor, cjCadAccess: !!u.cjCadAccess, maxDevices: typeof u.maxDevices === "number" ? u.maxDevices : "", notifyVia: (u.prefs || {}).notifyVia || "sms" }); });
+      SA.members = SA.membersTmp || []; SA.membersTmp = null; SA.unitUids = SA.unitUidsTmp || {}; SA.unitUidsTmp = null; SA.units = m; SA.emails = em; return m; }).catch(function() { SA.units = {}; SA.emails = {}; return {}; });
   }
   // who sees which tile where, and who can do what — per role, so "can MC-22 see the CAD?" can be answered
   function accessView(D) {
@@ -34419,7 +34449,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
           units: Object.keys(D.units).sort(),
           access: accessView(D),
           nightWatch: D.nw,
-          members: (SA.members || []).map(function(x) { var o = { unit: x.unit, name: x.name, roles: x.roles, phone: x.phone, email: x.email }; if (x.whatsapp) o.whatsapp = x.whatsapp; if (x.admin) o.systemAdmin = true; ["ervDriver", "rigDriver", "daytimeResponder", "ticketSupervisor", "cjCadAccess"].forEach(function(k) { if (x[k]) o[k] = true; }); if (x.emsLevel) o.emsLevel = x.emsLevel; return o; }), currentTilePlaces: D.acc.place || {}, currentExceptions: Object.keys(D.acc.userPerms || {}).length + " member(s) have exceptions" },
+          members: (SA.members || []).map(function(x) { var o = { unit: x.unit, name: x.name, roles: x.roles, phone: x.phone, email: x.email }; if (x.whatsapp) o.whatsapp = x.whatsapp; if (x.admin) o.systemAdmin = true; ["ervDriver", "rigDriver", "daytimeResponder", "ticketSupervisor", "cjCadAccess"].forEach(function(k) { if (x[k]) o[k] = true; }); if (x.emsLevel) o.emsLevel = x.emsLevel; o.textsBy = ({ wa: "WhatsApp", both: "Both (text + WhatsApp)" })[x.notifyVia] || "Text (SMS)"; return o; }), whatsappAllowed: (SA.ui || []).some(function(u) { return u.id === "db:whatsapp:allowed" && u.current === true; }) || window.HZ_WA_ON === true, currentTilePlaces: D.acc.place || {}, currentExceptions: Object.keys(D.acc.userPerms || {}).length + " member(s) have exceptions" },
         actions: [{ id: "member.delete", what: "Remove members from the system (Users ▸ Remove) — PERMANENT", value: { units: "required — the list of unit numbers to remove, taken from vocab.members (e.g. everyone whose roles include observer)" } },
           { id: "role.delete", what: "Delete a role or title (Users ▸ Add User & Roles) — it is taken off every member who has it; the members stay", value: { role: "required — a role / title id from vocab.roles (responder, dispatcher, captain and chief can't be deleted)" } },
           { id: "member.update", what: "Change an existing member (Admin ▸ Users ▸ Edit) — find them in vocab.members by unit or name", value: { unit: "required — which member", roles: "optional — their FULL new list of roles / titles", admin: "optional true/false — System Admin", firstName: "optional", lastName: "optional", phone: "optional", email: "optional", emsLevel: "optional", ervDriver: "optional true/false — approved to drive the vehicle (ERV)", rigDriver: "optional true/false — approved to drive rigs", daytimeResponder: "optional true/false", ticketSupervisor: "optional true/false — Logistics Supervisor", cjCadAccess: "optional true/false", maxDevices: "optional 0–20" } }, { id: "member.create", what: "Add a new member (Admin ▸ Users ▸ Add User)", value: { firstName: "required", lastName: "required", email: "required — their sign-in email", unit: "unit number, e.g. 45 or MC-45 (ask for it)", phone: "10-digit US mobile (ask for it)", roles: "required — at least one from vocab.roles (titles like captain go here too)", admin: "true only if they should be a System Admin", maxDevices: "optional number 0–20" }, notes: "No password is set here — they get an email link to set their own. Units already used: see vocab.units." }],
@@ -34506,9 +34536,10 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
         if (!muid) { skipped.push("couldn't find member " + (c.unit || "")); return; }
         if (!tt) { skipped.push("couldn't find that tile"); return; }
         if (tv !== "clear" && cat.vocab.places.indexOf(tv) === -1) { skipped.push("not a place a tile can go"); return; }
-        var curT = ((SA.D.acc.userTiles || {})[muid] || {})[tt.k] || "clear"; if (curT === tv) return;
+        var curT = ((SA.D.acc.userTiles || {})[muid] || {})[tt.k] || "clear"; if (curT === tv && ((SA.unitUids || {})[mt] || [muid]).every(function(x) { return ((((SA.D.acc.userTiles || {})[x] || {})[tt.k]) || "clear") === tv; })) return;
         var mnm = (SA.members || []).filter(function(x) { return x.uid === muid; })[0];
-        rows.push({ kind: "memberTile", label: "🧩 " + mt + (mnm ? " " + mnm.name : "") + " — " + tileName(tt.k), from: curT === "clear" ? "follows their roles" : placeName(curT), to: tv === "clear" ? "follows their roles" : placeName(tv), c: { uid: muid, tile: tt.k, value: tv }, go: { tab: "security", sec: "access", acc: "members", member: muid } });
+        var muids = ((SA.unitUids || {})[mt] || []).length ? SA.unitUids[mt].slice() : [muid];   // 12.584: a unit with more than one account (old / second sign-in) gets it on each
+        rows.push({ kind: "memberTile", label: "🧩 " + mt + (mnm ? " " + mnm.name : "") + " — " + tileName(tt.k) + (muids.length > 1 ? " (" + muids.length + " accounts)" : ""), from: curT === "clear" ? "follows their roles" : placeName(curT), to: tv === "clear" ? "follows their roles" : placeName(tv), c: { uid: muid, uids: muids, tile: tt.k, value: tv }, go: { tab: "security", sec: "access", acc: "members", member: muid } });
         return;
       }
       if (c.id === "exception") {
@@ -34519,7 +34550,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
         var ce = ((SA.D.acc.userPerms || {})[uid] || {})[p.k] || "clear";
         if (ce === ev) return;
         var nm = { allow: "✅ Always allow", deny: "⛔ Never allow", clear: "Follow their roles" };
-        rows.push({ kind: "exception", label: String(c.unit).toUpperCase() + " — " + p.l, from: nm[ce], to: nm[ev], c: { uid: uid, perm: p.k, value: ev }, go: { tab: "security", sec: "access", acc: "members", member: uid } });
+        var euids = ((SA.unitUids || {})[String(c.unit || "").toUpperCase()] || []).length ? SA.unitUids[String(c.unit).toUpperCase()].slice() : [uid];
+        rows.push({ kind: "exception", label: String(c.unit).toUpperCase() + " — " + p.l, from: nm[ce], to: nm[ev], c: { uid: uid, uids: euids, perm: p.k, value: ev }, go: { tab: "security", sec: "access", acc: "members", member: uid } });
         return;
       }
       var it = cat.items[c.id]; if (!it) { skipped.push("\"" + c.id + "\""); return; }
@@ -34543,11 +34575,10 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
         if (de) { skipped.push(de); return; }
         if (JSON.stringify(du.current) === JSON.stringify(dv)) return;
         var sh = function(v) {
-          if (du.kind === "records") { var nm = function(o) { return String(o.name || o.label || o.value || o.area || o.title || JSON.stringify(o).slice(0, 30)); }; var was = (du.current || []).map(nm), now = v.map(nm);
-            var add = now.filter(function(x) { return was.indexOf(x) === -1; }), gone = was.filter(function(x) { return now.indexOf(x) === -1; });
-            return v.length + " entries" + (v === dv ? (add.length ? " · adds " + add.slice(0, 5).join(", ") : "") + (gone.length ? " · removes " + gone.slice(0, 5).join(", ") : "") + (!add.length && !gone.length ? " · entries edited" : "") : ""); }
+          if (du.kind === "records") return v === dv ? recDiff(du.current || [], v) : "";
           return du.kind === "bool" ? (v ? "On" : "Off") : Array.isArray(v) ? (v.join(", ") || "(none)") : (String(v) === "" ? "(empty)" : String(v).length > 140 ? String(v).slice(0, 140) + "…" : String(v)); };
-        rows.push({ kind: "db", label: du.name, from: sh(du.current), to: sh(dv), u: du, v: dv, go: { tab: du.tab } });
+        if (du.kind === "records" && JSON.stringify(du.current) === JSON.stringify(dv)) return;
+        rows.push({ kind: "db", label: du.name, from: du.kind === "records" ? "" : sh(du.current), to: sh(dv), u: du, v: dv, go: { tab: du.tab } });
       } else if (it.kind === "ui") {
         var u = it.u, nv = c.value, er = "";
         if (u.kind === "bool") nv = nv === true || nv === "true" || nv === "on" || nv === 1;
@@ -34655,8 +34686,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       else {
         accTouched = true; what.push(r.label + " → " + r.to);
         if (r.kind === "perm") { acc.perms[r.p.k] = r.v.slice(); acc.permsRoles[r.p.k] = r.v.slice(); }
-        if (r.kind === "memberTile") { acc.userTiles = acc.userTiles || {}; var et = acc.userTiles[r.c.uid] = acc.userTiles[r.c.uid] || {}; if (r.c.value === "clear") delete et[r.c.tile]; else et[r.c.tile] = r.c.value; if (!Object.keys(et).length) delete acc.userTiles[r.c.uid]; }
-        if (r.kind === "exception") { var e = acc.userPerms[r.c.uid] = acc.userPerms[r.c.uid] || {}; if (r.c.value === "clear") delete e[r.c.perm]; else e[r.c.perm] = r.c.value; if (!Object.keys(e).length) delete acc.userPerms[r.c.uid]; }
+        if (r.kind === "memberTile") { acc.userTiles = acc.userTiles || {}; (r.c.uids || [r.c.uid]).forEach(function(xu) { var et = acc.userTiles[xu] = acc.userTiles[xu] || {}; if (r.c.value === "clear") delete et[r.c.tile]; else et[r.c.tile] = r.c.value; if (!Object.keys(et).length) delete acc.userTiles[xu]; }); }
+        if (r.kind === "exception") (r.c.uids || [r.c.uid]).forEach(function(xu) { var e = acc.userPerms[xu] = acc.userPerms[xu] || {}; if (r.c.value === "clear") delete e[r.c.perm]; else e[r.c.perm] = r.c.value; if (!Object.keys(e).length) delete acc.userPerms[xu]; });
         if (r.kind === "tile") {
           var k = r.c.tile, role = r.c.role, cur = (D.ta.tiles || {})[k];
           var list = taPatch[k] || (Array.isArray(cur) ? cur.map(function(x) { return String(x).toLowerCase(); }) : (typeof hzTileGridRoles === "function" ? hzTileGridRoles() : []).filter(function(x) { return typeof hzTileDefault === "function" && !/^tool-/.test(k) ? hzTileDefault(k, x) : true; }));
@@ -34827,7 +34858,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   }
   function propCard(p) {
     if (!p.rows.length) return p.skipped.length ? '<div class="sa-card"><div class="sa-bad">Couldn\'t use: ' + esc(p.skipped.join(" · ")) + '</div></div>' : "";
-    return '<div class="sa-card" id="hz-sa-prop"><h4>Approve these changes?</h4>' + p.rows.map(function(r) { return '<div class="sa-row"><b>' + esc(r.label) + '</b><span>' + (r.from && r.from !== "—" ? '<s>' + esc(r.from) + '</s> → ' : '') + '<em>' + esc(r.to) + '</em></span></div>'; }).join("") +
+    return '<div class="sa-card" id="hz-sa-prop"><h4>Approve these changes?</h4>' + p.rows.map(function(r) { return '<div class="sa-row"><b>' + esc(r.label) + '</b><span>' + (r.from && r.from !== "—" ? '<s>' + esc(r.from) + '</s> → ' : '') + '<em>' + esc(r.to).replace(/\n/g, "<br>") + '</em></span></div>'; }).join("") +
       (p.skipped.length ? '<div class="sa-bad" style="font-size:.78rem;margin-top:6px">Left out: ' + esc(p.skipped.join(" · ")) + '</div>' : '') +
       (p.rows.some(function(r) { return r.danger; }) ? '<div class="sa-warn">⚠️ Deleting is permanent — it can\'t be undone.</div>' : '') +
       '<div class="sa-btns"><button type="button" class="' + (p.rows.some(function(r) { return r.danger; }) ? 'sa-no' : 'sa-ok') + '" onclick="hzSaApprove()">' + (p.rows.some(function(r) { return r.danger; }) ? '🗑 Approve &amp; delete' : '✅ Approve &amp; save') + '</button><button type="button" class="' + (p.rows.some(function(r) { return r.danger; }) ? 'sa-ok' : 'sa-no') + '" onclick="hzSaCancel()">✕ Cancel</button></div></div>';
@@ -34864,7 +34895,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       SA.busy = false;
       var ok = res.filter(function(x) { return x.ok; }), bad = res.filter(function(x) { return !x.ok; });
       var card = '<div class="sa-card"><h4>' + (bad.length ? "Done " + ok.length + " of " + res.length : "✓ Done — " + ok.length + " change" + (ok.length === 1 ? "" : "s")) + '</h4>' +
-        res.map(function(x) { return '<div class="sa-row"><b>' + (x.ok ? "✓ " : "✕ ") + esc(x.r.label) + '</b><span>' + (x.ok ? '<em>' + esc(x.r.to) + '</em>' + (x.note ? ' <span class="sa-bad">(' + esc(x.note) + ' — press that screen\'s Save)</span>' : '') + (x.note2 ? '<br><small>' + esc(x.note2) + '</small>' : '') + ' <a class="sa-lnk" href="' + esc(linkFor(x.r.go)) + '">🔗 Check it</a>' : '<span class="sa-bad">' + esc(x.err || "not saved") + '</span>') + '</span></div>'; }).join("") + '</div>';
+        res.map(function(x) { return '<div class="sa-row"><b>' + (x.ok ? "✓ " : "✕ ") + esc(x.r.label) + '</b><span>' + (x.ok ? '<em>' + esc(x.r.to).replace(/\n/g, "<br>") + '</em>' + (x.note ? ' <span class="sa-bad">(' + esc(x.note) + ' — press that screen\'s Save)</span>' : '') + (x.note2 ? '<br><small>' + esc(x.note2) + '</small>' : '') + ' <a class="sa-lnk" href="' + esc(linkFor(x.r.go)) + '">🔗 Check it</a>' : '<span class="sa-bad">' + esc(x.err || "not saved") + '</span>') + '</span></div>'; }).join("") + '</div>';
       SA.msgs.forEach(function(m) { if (m.card) m.card = m.card.replace("Approved — saving…", bad.length ? "Approved — see below" : "Approved ✓"); });   // 12.584: the old card no longer says "saving…"
       SA.msgs.push({ role: "assistant", text: "", card: card });
       draw();
@@ -34893,7 +34924,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     if (on && !fab) { el(); fab = document.getElementById("hz-sa-fab"); }
     if (fab) { fab.style.display = on ? "inline-block" : "none"; fab.textContent = SA.open ? "🤖 Close assistant" : "🤖 Settings assistant"; }
     if (!isAdm() && SA.open) openSa(false);
-  }, 800);
+    var dr = document.getElementById("hz-sa"); if (dr) dr.style.display = on ? "" : "none";   // 12.584 (Sam): hidden outside the Admin panel — the chat is kept and comes back when you return
+  }, 300);
   window.hzSaTest = { deepScan: deepScan, findUi: findUi, proposal: proposal, buildCatalog: buildCatalog, applyAll: applyAll, curPlace: curPlace, state: SA, go: go };
 })();
 </script>
