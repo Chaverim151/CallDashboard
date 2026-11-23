@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.89"; window.M_BUILD = BUILD;
+  var BUILD = "9.93"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -2277,6 +2277,7 @@ function hzApplyTileAccess(isAdmin, roles) {
   Object.keys(HZ_TILE_ACCESS).forEach(function(sec) {
     var allowed = HZ_TILE_ACCESS[sec]; if (!Array.isArray(allowed)) return;
     var ok = allowed.some(function(r) { return mine.indexOf(String(r).toLowerCase()) !== -1; });
+    if (ok && typeof hzTilePermOk === "function" && !hzTilePermOk(sec)) ok = false;   // 12.568 / 9.92: a saved Control & Access permission also gates its tile
     document.querySelectorAll('.m-tile[data-sec="' + sec + '"], .big-btn[data-sec="' + sec + '"]').forEach(function(t) { t.style.display = ok ? "" : "none"; });
   });
 }
@@ -2287,7 +2288,8 @@ function hzGroupTiles() {
   var changed = false;
   Object.keys(HZ_TILE_GROUPS).forEach(function(g) {
     var t = grid.querySelector('[data-sec="' + g + '"]'); if (!t) return;
-    var any = HZ_TILE_GROUPS[g].some(function(k) { return Array.prototype.some.call(document.querySelectorAll('.page [data-sec="' + k + '"]'), function(e) { return e.style.display !== "none"; }); });
+    var any = HZ_TILE_GROUPS[g].some(function(k) { return Array.prototype.some.call(document.querySelectorAll('.page [data-sec="' + k + '"]'), function(e) { return e.style.display !== "none" && !e.hasAttribute("data-hz-promo") && !e.classList.contains("hz-promo-src"); }); });   // 9.90 / 12.566: tiles moved to their own home tile don't keep the group tile up
+    if (!any) { var gp = document.getElementById((document.getElementById("m-home-grid") ? "m-pg-" : "pg-") + g); if (gp) any = Array.prototype.some.call(gp.querySelectorAll("[data-hz-promo]"), function(e) { return e.style.display !== "none"; }); }   // 12.569: tiles moved INTO this group
     if (!any && t.style.display !== "none") { t.style.display = "none"; t.setAttribute("data-hz-grp-hid", "1"); changed = true; }
     else if (any && t.getAttribute("data-hz-grp-hid")) { t.style.display = ""; t.removeAttribute("data-hz-grp-hid"); changed = true; }
   });
@@ -2781,9 +2783,9 @@ function mSetPrefs(key, val) {
   return db.collection("users").doc(mCurrentUser.uid).update(up);
 }
 // Optional New Call tile (12.58 / 5.17): off by default; each dispatcher turns it on in My Settings ▸ Home screen
-function mCanDispatchNow() { var r = (mCurrentUserRoles || []).map(function(x) { return String(x).toLowerCase(); }); return mCurrentRole === "admin" || r.indexOf("dispatcher") !== -1; }
+function mCanDispatchNow() { if (typeof hzCan === "function") return hzCan("calls.manage"); var r = (mCurrentUserRoles || []).map(function(x) { return String(x).toLowerCase(); }); return mCurrentRole === "admin" || r.indexOf("dispatcher") !== -1; }   // 9.90: Control & Access (built-in: admins + dispatchers)
 function mNewCallTileOn() { return (mPrefs.optTiles || []).indexOf("newcall") !== -1; }
-function mApplyNewCallTile() { var t = document.getElementById("m-newcall-tile"); if (t) t.style.display = (mCanDispatchNow() && mNewCallTileOn()) ? "" : "none"; }
+function mApplyNewCallTile() { var t = document.getElementById("m-newcall-tile"); if (t) t.style.display = ((typeof hzCan === "function" ? hzCan("calls.create") : mCanDispatchNow()) && mNewCallTileOn()) ? "" : "none"; }
 function mToggleNewCallTile() {
   if (!mCurrentUser || !mCanDispatchNow()) return;
   var on = !mNewCallTileOn(), list = (mPrefs.optTiles || []).filter(function(k) { return k !== "newcall"; });
@@ -3472,22 +3474,30 @@ function mEnterHome() {
   // Request permissions on first login
   setTimeout(mRequestPermissions, 800);
 
+  mAccHomeApply();
+  hzApplyTileAccess(mCurrentRole === "admin", mCurrentUserRoles);   // admin's role / tile grid overrides the rules above
+  hzLoadTileAccess(mCurrentRole === "admin", mCurrentUserRoles);
+}
+// 9.92: everything on the home screen that depends on roles / Control & Access — run at sign-in and again
+// whenever Control & Access is saved (so changes show without signing out)
+function mAccHomeApply() {
   // Show education tile for field members
   var roles = (mCurrentUserRoles||[]).map(function(r){ return r.toLowerCase(); });
-  var canEdu = mCurrentRole==="admin"||roles.includes("captain")||roles.includes("chief")||roles.includes("responder")||roles.includes("observer");
+  var canEdu = typeof hzCan === "function" ? hzCan("education.view") : (mCurrentRole==="admin"||roles.includes("captain")||roles.includes("chief")||roles.includes("responder")||roles.includes("observer"));   // 9.91: Control & Access
   paiShowEntry("m-protocolai-tile", mCurrentRole === "admin", roles);
   document.body.classList.toggle("hz-is-admin", mCurrentRole === "admin");   // 8.57: admins-only tiles (Reports)
   var eduTile = document.getElementById("m-edu-tile");
   if (eduTile) eduTile.style.display = canEdu ? "" : "none";
 
   // Show Dispatch tile for dispatcher-capable roles
-  var canDispatch = mCurrentRole==="admin"||roles.includes("dispatcher");
+  var canDispatch = typeof hzCan === "function" ? (hzCan("calls.manage") || hzCan("calls.create")) : (mCurrentRole==="admin"||roles.includes("dispatcher"));   // 9.92: CAD follows Control & Access
   var dispatchTile = document.getElementById("m-dispatch-tile");
   if (dispatchTile) dispatchTile.style.display = canDispatch ? "" : "none";
   var homeTestRow = document.getElementById("m-home-test-row"); if (homeTestRow) homeTestRow.style.display = "none";   // Test Mode lives in My Settings now
   var callLogsTile = document.getElementById("m-calllogs-tile");
-  if (callLogsTile) callLogsTile.style.display = canDispatch ? "" : "none";   // 12.111: Call Logs lives in the Dispatch Console (dashboard row + ☰ menu)
-  var callLogsMenu = document.getElementById("m-drawer-calllogs"); if (callLogsMenu) callLogsMenu.style.display = canDispatch ? "" : "none";
+  var canLogs = typeof hzCan === "function" ? hzCan("calls.logs") : canDispatch;   // 9.91: Control & Access
+  if (callLogsTile) callLogsTile.style.display = canLogs ? "" : "none";   // 12.111: Call Logs lives in the Dispatch Console (dashboard row + ☰ menu)
+  var callLogsMenu = document.getElementById("m-drawer-calllogs"); if (callLogsMenu) callLogsMenu.style.display = canLogs ? "" : "none";
   mApplyNewCallTile();
   mApplyTilePrefs();
   // Same rules as the computer: eSchedule and Hospital Diverts are dispatcher tools (and admins');
@@ -3495,8 +3505,6 @@ function mEnterHome() {
   var isDispRole = roles.includes("dispatcher"), isField = roles.includes("responder") || roles.includes("captain") || roles.includes("chief");
   ["edispatches", "diverts"].forEach(function(sec) { var t = document.querySelector('.m-tile[data-sec="' + sec + '"]'); if (t) t.style.display = (isDispRole || mCurrentRole === "admin") ? "" : "none"; });
   ["rma", "epcr", "portal"].forEach(function(sec) { var t = document.querySelector('.m-tile[data-sec="' + sec + '"]'); /* 12.111: RMA lives in 📒 Directory now */ if (t) t.style.display = (isDispRole && !isField && mCurrentRole !== "admin") ? "none" : ""; });
-  hzApplyTileAccess(mCurrentRole === "admin", mCurrentUserRoles);   // admin's role / tile grid overrides the rules above
-  hzLoadTileAccess(mCurrentRole === "admin", mCurrentUserRoles);
 }
 
 function mRequestPermissions() {
@@ -4220,7 +4228,7 @@ function mEduApplyAdminUI() {
 }
 function mInitEducation() {
   var roles = (mCurrentUserRoles||[]).map(function(r){ return r.toLowerCase(); });
-  mEduIsAdmin = mCurrentRole === "admin" || roles.includes("admin");   // Captain / Chief are titles since 11.65
+  mEduIsAdmin = mCurrentRole === "admin" || roles.includes("admin") || (typeof hzCan === "function" && hzAccessSaved("education.admin") && hzCan("education.admin"));   // Captain / Chief are titles since 11.65; 9.91: Control & Access
   mSetEduTab("upcoming");
 }
 
@@ -6134,7 +6142,7 @@ function mUpsertCallPin(call) {
 
 // ── ENTRY ──
 var mRigSolo = false;   // 12.374 (Sam): Vehicle Status opened on its own from the home tile (captains / chiefs)
-function mRigSoloUser() { var r = (mCurrentUserRoles || []).map(function(x) { return String(x).toLowerCase(); }); return r.indexOf("captain") !== -1 || r.indexOf("chief") !== -1; }
+function mRigSoloUser() { if (typeof hzAccessSaved === "function" && (hzAccessSaved("vehicles.oos") || hzAccessSaved("calls.manage"))) return hzCan("vehicles.oos") && !mCanDispatchNow(); var r = (mCurrentUserRoles || []).map(function(x) { return String(x).toLowerCase(); }); return r.indexOf("captain") !== -1 || r.indexOf("chief") !== -1; }   // 9.90: once Control & Access sets who can take rigs out of service, they get the full Vehicle Status page from the tile
 function mOpenRigSolo() {
   mRigSolo = true; mDispViewCur = "rigs";   // one history step: home → Vehicle Status, so Back goes straight home
   mOpenDispatch(true);
@@ -6423,7 +6431,7 @@ function mRenderRigStatus() {
     }
     return '<div class="m-rig-card" data-rig="' + mEscHtml(String(id)) + '" data-kind="' + (v.kind === "erv" ? "erv" : "rig") + '"><div class="m-rig-top"><div class="m-rig-id">' + (v.kind === "erv" ? "🚑 " : "🚑 ") + id + '</div>' + pill + '</div>' +
       (sub ? '<div class="m-rig-sub">' + sub + '</div>' : '') +
-      (st.s === "out" ? '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
+      (typeof hzCan === "function" && !hzCan("vehicles.oos") ? '' : st.s === "out" ? '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
                       : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take OOS</button>')) +
       rigHistBlock(v.docId, "m-rig-hist-" + v.docId) +
     '</div>';
@@ -6442,6 +6450,7 @@ function mRigPickDur(btn) {
   var u = document.getElementById("m-rig-until"); if (u) u.style.display = btn.getAttribute("data-dur") === "at" ? "" : "none";
 }
 function mRigSetOut(docId) {
+  if (typeof hzCan === "function" && !hzCan("vehicles.oos")) { mToast("You don't have permission to take vehicles out of service", true); return; }   // 9.90 / 12.566
   var whoEl = document.getElementById("m-rig-who"), who = rigWhoValue("m-rig");
   if (!who) { mToast("Tap the unit that took the vehicle out of service", true); return; }
   var reasonEl = document.getElementById("m-rig-reason");
@@ -6460,6 +6469,7 @@ function mRigSetOut(docId) {
     .catch(function(e) { mToast(/permission/i.test(e.message) ? "You don't have permission to change rig status" : "Error: " + e.message, true); });
 }
 function mRigSetIn(docId) {
+  if (typeof hzCan === "function" && !hzCan("vehicles.oos")) { mToast("You don't have permission to put vehicles back in service", true); return; }   // 9.90 / 12.566
   db.collection("vehicles").doc(docId).set({ serviceStatus: "in", outUntil: null, outReason: "", statusBy: mCurrentUserUnit || "", statusByUid: mCurrentUser ? mCurrentUser.uid : "", statusAt: new Date().toISOString() }, { merge: true })
     .then(function() { mToast("✓ Rig back in service"); if (typeof mPrefetchRigs === "function") mPrefetchRigs(); })
     .catch(function(e) { mToast(/permission/i.test(e.message) ? "You don't have permission to change rig status" : "Error: " + e.message, true); });
@@ -8204,6 +8214,7 @@ function mTicketEntryApplies(e, unit, roles) {
 function mCanManageTickets() {
   if (mCurrentRole === "admin" || (mCurrentUserRoles || []).includes("admin")) return true;
   if (typeof hzTkaMe === "function" && hzTkaMe().ticketSupervisor === true) return true;   // 12.320: Logistics Supervisor
+  if (typeof hzAccessSaved === "function" && hzAccessSaved("tickets.manage")) return hzCan("tickets.manage") || (M_TICKET_MANAGERS.length && M_TICKET_MANAGERS.some(function(e){ return mTicketEntryApplies(e, mCurrentUserUnit, mCurrentUserRoles); }));   // 9.90 / 12.566
   if (M_TICKET_MANAGERS.length) return M_TICKET_MANAGERS.some(function(e){ return mTicketEntryApplies(e, mCurrentUserUnit, mCurrentUserRoles); });
   return (mCurrentUserRoles || []).includes("logistics");
 }
@@ -9059,6 +9070,7 @@ function mNcTestModeWarn() {
   ]);
 }
 function mOpenNewCallForm() {
+  if (typeof hzCan === "function" && !hzCan("calls.create")) { mToast("You don't have permission to post calls", true); return; }   // 9.90 / 12.566: Control & Access
   mNcAddrOverride = false;   // 8.48: a fresh form never carries an old address override
   setTimeout(mNcTestModeWarn, 50);
   mNcPosted = false;
@@ -10513,6 +10525,7 @@ window.mDdTakeOverNow = mDdTakeOverNow;
 // ── CALL DETAIL ──
 // Opening a call checks who's dispatching it first (see ONE DISPATCHER PER CALL above).
 function mOpenDispatchCall(callId) {
+  if (typeof hzCan === "function" && !hzCan("calls.manage")) { mOpenDispatchCallNow(callId, true); return; }   // 12.569 / 9.93: 👁 View-only CAD — see the call, no change buttons
   var go = function(call) {
     if (!call) { mOpenDispatchCallNow(callId, false); return; }
     if (mIOwnCall(call)) { if (!call.dispatcherUid) mClaimCall(call, false).catch(function() {}); mOpenDispatchCallNow(callId, false); return; }
@@ -13984,7 +13997,7 @@ function hzErvOnCall(call) {
 // ── who may use it ──
 function hzErvApplyAccess() {
   var me = HZ_ERV.me || {};
-  HZ_ERV.isAdmin = me.role === "admin" || (me.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; });
+  HZ_ERV.isAdmin = me.role === "admin" || (me.roles || []).some(function(r){ return String(r).toLowerCase() === "admin"; }) || (typeof hzAccessSaved === "function" && hzAccessSaved("tickets.erv") && hzCan("tickets.erv"));   // 9.90 / 12.566
   HZ_ERV.allowed = HZ_ERV.isAdmin || (HZ_ERV.access === "drivers" && (me.ervDriver === true || me.rigDriver === true) && !(typeof hzPureDispatcher === "function" && hzPureDispatcher(me)));   // 12.136: not for dispatchers   // 12.90: or rig shifts
   document.querySelectorAll(".hz-erv-entry").forEach(function(el){ el.style.display = HZ_ERV.allowed ? "" : "none"; });
   document.querySelectorAll(".hz-erv-testing").forEach(function(el){ el.style.display = HZ_ERV.allowed && HZ_ERV.access !== "drivers" ? "" : "none"; });
@@ -18288,6 +18301,216 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
     if (typeof mDispatchListener !== "undefined" && mDispatchListener && !mDispatchLastSnap && window.__hzDispStart && now - window.__hzDispStart > 10000) stuck = true;
     if (stuck) { window.__hzCallsStart = window.__hzDispStart = now; restart("stuck"); }
   }, 5000);
+})();
+</script>
+<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
+   set in Admin ▸ Security ▸ 🛡️ Control & Access. Saved in appdata/access:
+     groups      { id: { name, roles: [...] } }               named role groups ("Field" = responder + captain + …)
+     perms       { permKey: ["dispatcher", "group:field", …] } only permissions an admin actually changed
+     permsRoles  { permKey: ["dispatcher", "captain", …] }    the same, groups expanded (what the database rules read)
+     tileFormat  { role: { tileKey: "tile" | "group" } }      only changed cells; "tile" = its own home tile
+     userPerms   { uid: { permKey: "allow" | "deny" } }        12.567: per-member exceptions (beat the member's roles)
+   Nothing saved for a permission = it works exactly as before (the built-in rule below). Admins can always do everything. */
+var HZ_PERMS = [
+  { k: "vehicles.oos",      area: "🚑 Vehicles",               l: "Take a vehicle out of service / put it back",               def: ["dispatcher", "captain", "chief"] },
+  { k: "fleet.manage",      area: "🚑 Vehicles",               l: "Manage the fleet — rigs, fleet alerts (Admin ▸ Fleet)",       def: [], adminTab: "fleet" },
+  { k: "calls.create",      area: "🚨 Calls",                  l: "Post new calls",                                            def: ["dispatcher"] },
+  { k: "calls.manage",      area: "🚨 Calls",                  l: "Manage calls — assign units, statuses, location, disposition, close", def: ["dispatcher"] },
+  { k: "calls.logs",        area: "🚨 Calls",                  l: "Open Call Logs (past calls)",                               def: ["dispatcher"], note: "Calls closed more than 24 hours ago still need the 6-digit code check" },
+  { k: "calls.map",         area: "🚨 Calls",                  l: "Open the dispatcher map (computer)",                        def: ["dispatcher"] },
+  { k: "tickets.manage",    area: "🛠️ Service tickets",        l: "Manage service tickets — accept, assign, change status, complete", def: ["logistics"], note: "Members on the Ticket Managers list and Logistics Supervisors keep their access too" },
+  { k: "tickets.erv",       area: "🛠️ Service tickets",        l: "Approve / deny vehicle usage requests (Admin ▸ Vehicle Usage Request)", def: [], adminTab: "ervshifts" },
+  { k: "nightwatch.edit",   area: "🌙 Night Watch & closures", l: "Edit the night shift list (Admin ▸ Night Shifts)",          def: [], adminTab: "shifts" },
+  { k: "availability.manage", area: "🌙 Night Watch & closures", l: "Manage the Availability poll (Admin ▸ Availability)",     def: [], adminTab: "availability" },
+  { k: "closures.road",     area: "🌙 Night Watch & closures", l: "Post road closures",                                        def: ["dispatcher"], adminTab: "traffic" },
+  { k: "closures.hospital", area: "🌙 Night Watch & closures", l: "Post hospital diverts (Admin ▸ Closure Notifications)",     def: [], adminTab: "traffic" },
+  { k: "codes.edit",        area: "🔑 Codes & Locations",      l: "Edit building codes & locations (Admin ▸ Codes & Locations)", def: [], adminTab: "codes", note: "Private homes' door codes stay admins only" },
+  { k: "education.view",    area: "🎓 Education",              l: "Open Education — classes, RSVP, attendance",                def: ["responder", "observer", "captain", "chief"] },
+  { k: "education.admin",   area: "🎓 Education",              l: "Create and manage education events",                        def: [] }
+];
+// Admin-panel screens: a permission with adminTab opens that one Admin tab for the roles / members it's given —
+// only once it has been saved in Control & Access (so nothing changes for anyone until then).
+
+var HZ_ACCESS = null;
+function hzMyRoles() {
+  var main = (typeof mCurrentRole !== "undefined" && mCurrentRole) || (typeof currentRole !== "undefined" && currentRole) || "";
+  var rs = (typeof mCurrentUserRoles !== "undefined" && mCurrentUserRoles && mCurrentUserRoles.length) ? mCurrentUserRoles : ((typeof currentUserRoles !== "undefined" && currentUserRoles) || []);
+  // 12.568: only the roles list counts (the main "role" field is "responder" for every non-admin — it only marks admins)
+  main = String(main || "").toLowerCase().trim();
+  return (main === "admin" ? ["admin"] : []).concat((rs || []).map(function(r) { return String(r || "").toLowerCase().trim(); })).filter(Boolean);
+}
+function hzPermDef(k) { for (var i = 0; i < HZ_PERMS.length; i++) if (HZ_PERMS[i].k === k) return HZ_PERMS[i]; return null; }
+function hzMyUid() {
+  try { if (typeof mCurrentUser !== "undefined" && mCurrentUser && mCurrentUser.uid) return mCurrentUser.uid; } catch (e) {}
+  try { if (typeof currentUser !== "undefined" && currentUser && currentUser.uid) return currentUser.uid; } catch (e) {}
+  try { var u = window.firebase && firebase.auth && firebase.auth().currentUser; return u ? u.uid : ""; } catch (e) { return ""; }
+}
+function hzMyOverride(k) {   // 12.567: per-member exception — "allow" / "deny" / ""
+  var up = HZ_ACCESS && HZ_ACCESS.userPerms, me = hzMyUid();
+  var v = up && me && up[me] && up[me][k]; return v === "allow" || v === "deny" ? v : "";
+}
+function hzAccessSaved(k) { return !!(HZ_ACCESS && HZ_ACCESS.permsRoles && Array.isArray(HZ_ACCESS.permsRoles[k])) || !!hzMyOverride(k); }
+function hzPermRoles(k) {   // who may do it right now (groups expanded)
+  if (hzAccessSaved(k)) return HZ_ACCESS.permsRoles[k].map(function(r) { return String(r).toLowerCase(); });
+  var d = hzPermDef(k); return d ? d.def.slice() : [];
+}
+function hzCan(k) {
+  var mine = hzMyRoles();
+  if (mine.indexOf("admin") !== -1) return true;   // admins can always do everything
+  var ov = hzMyOverride(k); if (ov) return ov === "allow";
+  var list = hzPermRoles(k);
+  return mine.some(function(r) { return list.indexOf(r) !== -1; });
+}
+function hzIsAdminNow() { return hzMyRoles().indexOf("admin") !== -1; }
+// The Admin tabs this member may open ([] = no Admin panel). Admins: every tab.
+function hzAdminTabsFor() {
+  if (hzIsAdminNow()) return null;   // null = all
+  var out = [];
+  HZ_PERMS.forEach(function(p) { if (p.adminTab && hzAccessSaved(p.k) && hzCan(p.k) && out.indexOf(p.adminTab) === -1) out.push(p.adminTab); });
+  return out;
+}
+// 12.568 / 9.92: tiles that need a permission. Only once one of these permissions has been SAVED does it hide the
+// tile (before that the tile grid decides, exactly as before).
+var HZ_TILE_PERMS = { education: ["education.view"], newcall: ["calls.create"] };   // 12.569: the CAD tile follows its place (Hidden / View only / Change), not calls.manage
+function hzTilePermOk(sec) {
+  var ps = HZ_TILE_PERMS[sec]; if (!ps || hzIsAdminNow()) return true;
+  if (!ps.some(hzAccessSaved)) return true;
+  return ps.some(hzCan);
+}
+// Re-apply everything on the home screen that depends on permissions (after Control & Access changes)
+function hzAccessReapply() {
+  try { if (typeof mAccHomeApply === "function" && typeof mCurrentRole !== "undefined" && mCurrentRole) mAccHomeApply(); } catch (e) {}
+  try { if (typeof hzAccDeskHomeApply === "function" && typeof currentRole !== "undefined" && currentRole) hzAccDeskHomeApply(); } catch (e) {}
+  try {
+    if (typeof hzApplyTileAccess === "function") {
+      if (typeof mCurrentRole !== "undefined" && mCurrentRole) hzApplyTileAccess(mCurrentRole === "admin", mCurrentUserRoles);
+      else if (typeof currentRole !== "undefined" && currentRole) hzApplyTileAccess(currentRole === "admin", currentUserRoles);
+    }
+  } catch (e) {}
+  try { hzTileFormatApply(); } catch (e) {}
+  try { if (typeof hzAdminLimitedApply === "function") hzAdminLimitedApply(); } catch (e) {}
+}
+// ── 9.93 / 12.569 (Sam): 🧩 TILE PLACES — any tile can sit anywhere, per role ──
+// appdata/access.place   { gridRole: { tileKey: "home" | "g:vehicles" | "g:contactsgrp" | "f:<folderId>" } }  only changed cells
+// appdata/access.folders { folderId: { name, icon, sub } }   admin-made folder tiles on the home screen
+// (tileFormat { role: { tile: "tile" } } from 12.566 still counts as "home".) Shown / hidden stays in the tile grid
+// (appdata/tileAccess); View only / Change follows the tile's permissions (HZ_TILE_LEVEL).
+var HZ_TILE_LEVEL = {   // tiles that have something to change → the permission(s) "✏️ Change" gives
+  rigstatus: ["vehicles.oos"], maps: ["calls.manage", "calls.create"], shifts: ["nightwatch.edit"], avail: ["availability.manage"],
+  codes: ["codes.edit"], buildings: ["codes.edit"], shuls: ["codes.edit"], hospital: ["codes.edit"], storage: ["codes.edit"],
+  diverts: ["closures.hospital"], service: ["tickets.manage"], education: ["education.admin"], erv: ["tickets.erv"]
+};
+function hzPlaceCols() {   // the tile-grid columns this member follows (titles → Responder; admins → Admin only)
+  var mine = hzMyRoles();
+  if (mine.indexOf("admin") !== -1) return ["admin"];
+  var tl = typeof hzTitleList === "function" ? hzTitleList() : [];
+  return mine.map(function(r) { return tl.indexOf(r) !== -1 ? "responder" : r; });
+}
+function hzTileGroupOf(k) { if (typeof HZ_TILE_GROUPS === "undefined") return ""; for (var g in HZ_TILE_GROUPS) if (HZ_TILE_GROUPS[g].indexOf(k) !== -1) return g; return ""; }
+function hzTileDefaultPlace(k) { var g = hzTileGroupOf(k); return g ? "g:" + g : "home"; }
+function hzTilePlaceFor(k) {
+  var a = HZ_ACCESS || {}, pl = a.place || {}, tf = a.tileFormat || {}, folders = a.folders || {}, cols = hzPlaceCols(), found = [];
+  cols.forEach(function(c) {
+    var v = pl[c] && pl[c][k];
+    if (!v && tf[c] && tf[c][k] === "tile") v = "home";
+    if (v && /^f:/.test(v) && !folders[v.slice(2)]) v = "";   // folder deleted
+    if (v) found.push(v);
+  });
+  if (!found.length) return hzTileDefaultPlace(k);
+  if (found.indexOf("home") !== -1) return "home";   // several roles disagree: the home screen wins
+  return found[0];
+}
+function hzTileFormatFor(tile) { return hzTilePlaceFor(tile) === "home" ? "tile" : "group"; }   // (12.566 name)
+function hzHomeGrid() { return document.getElementById("m-home-grid") || document.getElementById("home-btn-grid"); }
+function hzIsPhone() { return !!document.getElementById("m-home-grid"); }
+function hzGroupGrid(g) { var pg = document.getElementById((hzIsPhone() ? "m-pg-" : "pg-") + g); return pg ? pg.querySelector(".m-grid, .btn-grid") : null; }
+function hzTileSrc(k) {   // the real tile (not a copy)
+  return Array.prototype.filter.call(document.querySelectorAll('.m-tile[data-sec="' + k + '"], .big-btn[data-sec="' + k + '"]'), function(e) { return !e.hasAttribute("data-hz-promo") && !e.hasAttribute("data-hz-fld"); })[0] || null;
+}
+function hzTileCopy(src, k) { var c = src.cloneNode(true); c.setAttribute("data-hz-promo", k); c.classList.remove("hz-promo-src"); c.removeAttribute("id"); c.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); }); return c; }
+var HZ_FLD_OPEN = "";
+function hzTileFormatApply() {
+  var grid = hzHomeGrid(); if (!grid || typeof HZ_TILES === "undefined") return;
+  var folders = (HZ_ACCESS && HZ_ACCESS.folders) || {}, inFolder = {};
+  HZ_TILES.forEach(function(t) {
+    var k = t.k; if (typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[k]) return;   // group tiles themselves stay put
+    var src = hzTileSrc(k); if (!src) return;
+    var place = hzTilePlaceFor(k), def = hzTileDefaultPlace(k);
+    var hidden = src.style.display === "none";
+    document.querySelectorAll('[data-hz-promo="' + k + '"]').forEach(function(c) {
+      if (c.closest("#m-pg-hzfld, #pg-hzfld")) return;   // folder page copies are rebuilt when it opens
+      var want = place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null);
+      if (place === def || c.parentNode !== want) c.parentNode.removeChild(c);
+    });
+    if (place === def) { src.classList.remove("hz-promo-src"); return; }
+    src.classList.add("hz-promo-src");
+    if (/^f:/.test(place)) { var fid = place.slice(2); (inFolder[fid] = inFolder[fid] || []).push(k); if (!hidden) inFolder[fid].vis = true; return; }
+    var host = place === "home" ? grid : hzGroupGrid(place.slice(2)); if (!host) { src.classList.remove("hz-promo-src"); return; }
+    var copy = host.querySelector('[data-hz-promo="' + k + '"]');
+    if (!copy) { copy = hzTileCopy(src, k); host.appendChild(copy); }
+    copy.style.display = hidden ? "none" : "";
+  });
+  // folder tiles on the home screen (only if something inside is open to this member)
+  Object.keys(folders).forEach(function(fid) {
+    var f = folders[fid] || {}, tile = grid.querySelector('[data-hz-fld="' + fid + '"]'), show = !!(inFolder[fid] && inFolder[fid].vis);
+    if (!tile) {
+      var tpl = grid.querySelector('.m-tile[data-sec], .big-btn[data-sec]'); if (!tpl) return;
+      tile = tpl.cloneNode(true); tile.removeAttribute("id"); tile.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); });
+      tile.classList.remove("hz-promo-src", "hz-more-x"); tile.removeAttribute("data-hz-promo"); tile.removeAttribute("data-hz-grp-hid");
+      tile.setAttribute("data-hz-fld", fid); tile.setAttribute("data-sec", "fld-" + fid); tile.setAttribute("onclick", "hzFolderOpen('" + fid + "')");
+      grid.appendChild(tile);
+    }
+    var ic = tile.querySelector(".m-tile-icon, .btn-icon"), lb = tile.querySelector(".m-tile-label, .btn-label"), sb = tile.querySelector(".m-tile-sub, .btn-sub");
+    if (ic) ic.textContent = f.icon || "📁"; if (lb) lb.textContent = f.name || "Folder"; if (sb) sb.textContent = f.sub || ((inFolder[fid] || []).length + " inside");
+    tile.style.display = show ? "" : "none";
+  });
+  grid.querySelectorAll("[data-hz-fld]").forEach(function(t) { if (!folders[t.getAttribute("data-hz-fld")]) t.parentNode.removeChild(t); });
+  window.HZ_FLD_ITEMS = inFolder;
+  if (HZ_FLD_OPEN) hzFolderFill(HZ_FLD_OPEN);
+}
+function hzFolderPage() {   // one shared page for every folder, made from the Vehicles group page
+  var ph = hzIsPhone(), id = ph ? "m-pg-hzfld" : "pg-hzfld", pg = document.getElementById(id);
+  if (pg) return pg;
+  var tpl = document.getElementById(ph ? "m-pg-vehicles" : "pg-vehicles"); if (!tpl) return null;
+  pg = tpl.cloneNode(true); pg.id = id; pg.classList.remove("active");
+  pg.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); });
+  var g = pg.querySelector(".m-grid, .btn-grid"); if (g) g.innerHTML = "";
+  tpl.parentNode.insertBefore(pg, tpl.nextSibling);
+  return pg;
+}
+function hzFolderFill(fid) {
+  var pg = hzFolderPage(); if (!pg) return;
+  var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[fid] || {}, t = pg.querySelector(".m-page-title, .page-title"); if (t) t.textContent = (f.icon ? f.icon + " " : "") + (f.name || "Folder");
+  var g = pg.querySelector(".m-grid, .btn-grid"); if (!g) return; g.innerHTML = "";
+  ((window.HZ_FLD_ITEMS || {})[fid] || []).forEach(function(k) { var src = hzTileSrc(k); if (!src || src.style.display === "none") return; g.appendChild(hzTileCopy(src, k)); });
+  if (!g.children.length) g.innerHTML = '<div style="color:var(--gray);font-size:0.85rem;padding:10px">Nothing here for you.</div>';
+}
+function hzFolderOpen(fid) {
+  HZ_FLD_OPEN = fid; hzFolderFill(fid);
+  if (hzIsPhone() && typeof mGoTo === "function") mGoTo("hzfld"); else if (typeof showPage === "function") showPage("hzfld");
+}
+window.hzFolderOpen = hzFolderOpen;
+(function() {
+  var st = document.createElement("style");
+  st.textContent = ".hz-promo-src{display:none !important}";
+  document.head.appendChild(st);
+  var unsub = null, started = false;
+  function start() {
+    if (!(window.firebase && firebase.auth && firebase.firestore)) { setTimeout(start, 400); return; }
+    if (started) return; started = true;
+    firebase.auth().onAuthStateChanged(function(u) {
+      if (unsub) { try { unsub(); } catch (e) {} unsub = null; }
+      if (!u) { HZ_ACCESS = null; return; }
+      unsub = firebase.firestore().collection("appdata").doc("access").onSnapshot(function(s) {
+        HZ_ACCESS = s.exists ? (s.data() || null) : null;
+        hzAccessReapply();
+        try { if (typeof mApplyNewCallTile === "function") mApplyNewCallTile(); } catch (e) {}
+        try { if (typeof mDispViewCur !== "undefined" && mDispViewCur === "rigs" && typeof mRenderRigStatus === "function") mRenderRigStatus(); } catch (e) {}
+      }, function() {});
+    });
+  }
+  start();
+  setInterval(function() { try { hzTileFormatApply(); } catch (e) {} }, 1500);
 })();
 </script>
 <script id="hz-imp">/* 9.83 / 12.555 (Sam): 🎭 ACT AS A MEMBER. An admin presses 🎭 Act as in Admin ▸ Users; the server returns a one-time
