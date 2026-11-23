@@ -34347,6 +34347,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     return (tabBtn ? tabBtn.textContent.replace(/^[^A-Za-z]+/, "").trim() : doc) + " ▸ " + path.replace(/\./g, " ▸ ").replace(/([a-z])([A-Z])/g, "$1 $2");
   }
   function readDb() {   // reads appdata only
+    if (SA.dbAt && Date.now() - SA.dbAt < 60000 && SA.ui) return Promise.resolve(SA.ui);   // 12.586: read once a minute, not on every message
     var trk = Promise.resolve([]);   // 12.583 (Sam): no access to the Compliance Tracker yet
     var docs = Promise.all(Object.keys(DB_DOCS).map(function(d) { return getDoc(d).then(function(x) { return [d, x]; }); }));
     return Promise.all([docs, trk]).then(function(r) {
@@ -34359,7 +34360,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
             name: trkDoc ? "Compliance Tracker ▸ " + pair[0].slice(4) + " ▸ " + x.path.replace(/\./g, " ▸ ") : dbLabel(pair[0], x.path), tab: DB_DOCS[pair[0]] || "" });
         });
       });
-      SA.ui = items; SA.uiAt = Date.now(); return items;
+      SA.ui = items; SA.uiAt = Date.now(); SA.dbAt = Date.now(); return items;
     });
   }
   function nested(path, v) { var o = {}, cur = o, ks = path.split("."); ks.forEach(function(k, i) { if (i === ks.length - 1) cur[k] = v; else cur = cur[k] = {}; }); return o; }
@@ -34432,10 +34433,19 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     }).then(function(r) {
       var items = {}, list = [];
       FIXED.forEach(function(f) { var c = f.cur(D); items[f.id] = { kind: "fixed", f: f }; list.push({ id: f.id, name: f.l, type: f.type, min: f.min, max: f.max, current: c }); });
-      var budget = 150000;   // keep the request under the server's limit — plain settings first, entry lists after
+      // 12.586 (Sam: the bot got slow): big items (lists of entries, long wording) are sent in full only when the
+      // conversation is about them — otherwise just their name and size, so Gemini reads far less and answers faster
+      var talk = (SA.msgs || []).filter(function(m) { return m.role === "user"; }).slice(-3).map(function(m) { return m.text; }).join(" ").toLowerCase();
+      var stem = function(w) { return w.length > 5 ? w.slice(0, 5) : w.replace(/s$/, ""); };   // "natures" ≈ "nature", "shifts" ≈ "shift"
+      var words = talk.split(/[^a-z0-9]+/).filter(function(w) { return w.length > 2; }).map(stem);
+      var about = function(u) { var nm = (u.name + " " + u.path + " " + u.doc).replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(function(w) { return w.length > 2; }).map(stem); return nm.some(function(w) { return words.indexOf(w) !== -1; }); };
+      var budget = 60000;
       (SA.ui || []).slice().sort(function(a, b) { return (a.kind === "records") - (b.kind === "records"); }).forEach(function(u) {
+        var big = u.kind === "records" || (u.kind === "text" && String(u.current).length > 300) || (u.kind === "list" && u.current.length > 30);
         var row = { id: u.id, name: u.name, type: u.kind, current: u.current }, n = JSON.stringify(row).length;
-        if (u.kind === "records" && n > budget) return; budget -= n; items[u.id] = { kind: "db", u: u }; list.push(row); });
+        if (big && (!about(u) || n > budget)) row = { id: u.id, name: u.name, type: u.kind, current: "(" + (Array.isArray(u.current) ? u.current.length + " entries" : String(u.current).length + " characters") + " — not shown; if the admin wants to change it, ask them to say which one so it can be loaded)" }, n = 200;
+        else if (big) budget -= n;
+        items[u.id] = { kind: "db", u: u }; list.push(row); });
       var pr = (D.acc.permsRoles || {});
       (typeof HZ_PERMS !== "undefined" ? HZ_PERMS : []).forEach(function(p) { var id = "perm:" + p.k; items[id] = { kind: "perm", p: p }; list.push({ id: id, name: "Who can: " + p.l, type: "roles", current: Array.isArray(pr[p.k]) ? pr[p.k] : p.def }); });
       var tiles = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(t) { return !(typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[t.k]); }).map(function(t) { return { k: t.k, name: tileName(t.k), normally: typeof hzTileDefaultPlace === "function" ? hzTileDefaultPlace(t.k) : "home" }; })
@@ -34629,6 +34639,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   }
   // ── save the approved changes ──
   function applyAll(rows) {
+    SA.dbAt = 0;   // the next message reads the saved settings again
     SA.touched = {};
     return applyAllNow(rows).then(function(res) { refreshAfter(); return res; });
   }
@@ -34847,7 +34858,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       "#hz-sa .sa-ct{margin-top:8px;padding:10px;border:2px solid #d4a017;border-radius:10px;background:#000}#hz-sa .sa-ct b{display:block;color:#d4a017;margin-bottom:6px}" +
       "#hz-sa .sa-cb{display:inline-block;margin:0 6px 6px 0;padding:7px 12px;border-radius:999px;font-weight:700;text-decoration:none;border:2px solid #d4a017;background:#000;color:#d4a017;font-size:.85rem}#hz-sa .sa-cb.call{background:#34c759;border-color:#34c759;color:#000}" +
       "#hz-sa .sa-lnk{display:inline-block;margin:4px 6px 0 0;color:#d4a017;font-weight:700;text-decoration:underline}#hz-sa .sa-bad{color:#ff8a80}" +
-      "#hz-sa .sa-in{display:flex;gap:6px;padding:8px 10px;border-top:1px solid rgba(212,160,23,.35)}#hz-sa textarea{flex:1;resize:none;height:44px;background:#000;color:#d4a017;border:2px solid #d4a017;border-radius:10px;padding:8px 10px;font-size:.9rem;font-family:inherit}#hz-sa textarea::placeholder{color:rgba(212,160,23,.55)}" +
+      "#hz-sa .sa-in{display:flex;gap:6px;padding:8px 10px;border-top:1px solid rgba(212,160,23,.35)}html body #hz-sa .sa-in textarea#hz-sa-in{flex:1 1 auto !important;min-width:0 !important;width:auto !important;box-sizing:border-box !important;resize:none !important;height:44px;min-height:44px !important;max-height:120px !important;overflow-y:auto !important;margin:0 !important;background:#000 !important;color:#d4a017 !important;border:2px solid #d4a017 !important;border-radius:10px !important;padding:10px 12px !important;font-size:.9rem !important;line-height:1.35 !important;font-family:inherit !important;box-shadow:none !important;outline:none !important}html body #hz-sa .sa-in textarea#hz-sa-in:focus{border-color:#f0c040 !important}html body #hz-sa .sa-in{align-items:flex-end}html body #hz-sa .sa-in .sa-send{flex:0 0 auto;height:44px;box-sizing:border-box}html body #hz-sa .sa-in textarea#hz-sa-in::placeholder{color:rgba(212,160,23,.55) !important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
       "#hz-sa .sa-send{background:#000;color:#d4a017;border:2px solid #d4a017;border-radius:10px;padding:0 14px;font-weight:700;cursor:pointer}#hz-sa .sa-send:disabled{opacity:.5}" +
       "#hz-sa .sa-tips{font-size:.78rem;color:#9aa4b5;line-height:1.6}#hz-sa .sa-tip{display:inline-block;margin:4px 4px 0 0;padding:4px 9px;border:1px solid #d4a017;border-radius:14px;color:#d4a017;cursor:pointer}" +
       "body.hz-sa-stealth .admin-section[data-admin-tab].tab-visible:not(.hz-sa-keep){position:fixed !important;left:-40000px !important;top:0 !important;width:1180px !important;max-height:none !important;display:block !important;visibility:visible !important;pointer-events:none !important;opacity:0 !important;transform:translateX(-300vw) !important;clip-path:inset(0 0 100% 0) !important;z-index:-1 !important}" +
@@ -34866,7 +34877,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     var bar = document.querySelector("#pg-admin .inner-topbar"); if (bar) bar.appendChild(fab); else document.body.appendChild(fab);
     d = document.createElement("div"); d.id = "hz-sa"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "Settings assistant");
     d.innerHTML = '<div class="sa-h"><b>🤖 SETTINGS ASSISTANT</b><button type="button" class="sa-x" onclick="hzSaOpen(false)">✕</button></div><div class="sa-log" id="hz-sa-log"></div>' +
-      '<div class="sa-in"><textarea id="hz-sa-in" placeholder="e.g. set the night shift from 22:00 to 06:00" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();hzSaSend();}"></textarea><button type="button" class="sa-send" id="hz-sa-send" onclick="hzSaSend()">Send</button></div>';
+      '<div class="sa-in"><textarea id="hz-sa-in" rows="1" placeholder="Ask, or say what to change…" oninput="this.style.height=\'44px\';this.style.height=Math.min(this.scrollHeight+4,120)+\'px\'" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();hzSaSend();}"></textarea><button type="button" class="sa-send" id="hz-sa-send" onclick="hzSaSend()">Send</button></div>';
     document.body.appendChild(d);
     return d;
   }
@@ -34893,7 +34904,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   }
   function send() {
     var t = document.getElementById("hz-sa-in"), text = String((t && t.value) || "").trim(); if (!text || SA.busy) return;
-    t.value = ""; SA.prop = null; SA.msgs.forEach(function(m) { if (m.card && /hz-sa-prop/.test(m.card)) m.card = m.card.replace(/<div class="sa-btns">[\s\S]*?<\/div><\/div>$/, '<div class="sa-tips">(not saved)</div></div>'); });
+    t.value = ""; t.style.height = "44px"; SA.prop = null; SA.msgs.forEach(function(m) { if (m.card && /hz-sa-prop/.test(m.card)) m.card = m.card.replace(/<div class="sa-btns">[\s\S]*?<\/div><\/div>$/, '<div class="sa-tips">(not saved)</div></div>'); });
     SA.msgs.push({ role: "user", text: text, who: (typeof currentUserUnit !== "undefined" && currentUserUnit) || "You" }); SA.busy = true; draw();
     var fresh = !(SA.ui && Date.now() - SA.uiAt < 10 * 60000);
     var undoWords = /^\s*(undo|revert|reverse|roll ?back|put (it|that|them) back|change (it|that) back|undo that|revert that|revert it|undo it|go back)\b[\s\S]{0,30}$/i.test(text);
