@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.96"; window.M_BUILD = BUILD;
+  var BUILD = "9.97"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -18307,13 +18307,14 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
   }, 5000);
 })();
 </script>
-<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570, 9.95 / 12.572: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
+<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570, 9.95 / 12.572, 9.97 / 12.580: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
    set in Admin ▸ Security ▸ 🛡️ Control & Access. Saved in appdata/access:
      groups      { id: { name, roles: [...] } }               named role groups ("Field" = responder + captain + …)
      perms       { permKey: ["dispatcher", "group:field", …] } only permissions an admin actually changed
      permsRoles  { permKey: ["dispatcher", "captain", …] }    the same, groups expanded (what the database rules read)
      tileFormat  { role: { tileKey: "tile" | "group" } }      only changed cells; "tile" = its own home tile
      userPerms   { uid: { permKey: "allow" | "deny" } }        12.567: per-member exceptions (beat the member's roles)
+     userTiles   { uid: { tileKey: "off" | place } }             12.580: per-member tile exceptions
    Nothing saved for a permission = it works exactly as before (the built-in rule below). Admins can always do everything. */
 var HZ_PERMS = [
   { k: "vehicles.oos",      area: "🚑 Vehicles",               l: "Take a vehicle out of service / put it back",               def: ["dispatcher", "captain", "chief"] },
@@ -18383,6 +18384,9 @@ function hzTilePermOk(sec) {
 }
 // Re-apply everything on the home screen that depends on permissions (after Control & Access changes)
 function hzAccessReapply() {
+  // undo last round's per-member tile exceptions first, so the role rules below start from scratch
+  document.querySelectorAll("[data-hz-uhid]").forEach(function(e) { e.removeAttribute("data-hz-uhid"); if (e.style.display === "none") e.style.display = ""; });
+  document.querySelectorAll("[data-hz-ushow]").forEach(function(e) { e.removeAttribute("data-hz-ushow"); e.style.display = "none"; });
   try { if (typeof mAccHomeApply === "function" && typeof mCurrentRole !== "undefined" && mCurrentRole) mAccHomeApply(); } catch (e) {}
   try { if (typeof hzAccDeskHomeApply === "function" && typeof currentRole !== "undefined" && currentRole) hzAccDeskHomeApply(); } catch (e) {}
   try {
@@ -18427,6 +18431,7 @@ function hzSubList() {
 function hzSubDef(k) { var l = hzSubList(); for (var i = 0; i < l.length; i++) if (l[i].k === k) return l[i]; return null; }
 function hzTileDefaultPlace(k) { var sd = /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) return "p:" + sd.parent; var g = hzTileGroupOf(k); return g ? "g:" + g : "home"; }
 function hzSubVisible(k) {   // the tile grid's Shown / Hidden for a screen (nothing saved = shown, as today)
+  var mov = hzMyTileOverride(k); if (mov) return mov !== "off";
   var ta = typeof HZ_TILE_ACCESS !== "undefined" ? HZ_TILE_ACCESS : null; if (!ta || !Array.isArray(ta[k])) return true;
   var cols = hzPlaceCols(); if (cols[0] === "admin" && typeof HZ_TILE_ACCESS_ADMIN !== "undefined" && !HZ_TILE_ACCESS_ADMIN) return true;
   var mine = hzMyRoles().indexOf("admin") !== -1 ? ["admin"] : hzMyRoles();
@@ -18447,7 +18452,16 @@ function hzSubOpen(k) {
   if (sd.parent === "tools" && typeof hzToolsOpen === "function") { hzToolsOpen(); HZ_TL.direct = true; hzTlGo(sd.id); }
 }
 window.hzSubOpen = hzSubOpen;
+// 9.97 / 12.580 (Sam: "hide RMA Hotline specifically for MC-16"): per-member tile exceptions —
+// appdata/access.userTiles = { uid: { tileKey: "off" | "home" | "g:…" | "p:tools" | "f:…" } } beat the member's roles.
+function hzMyTileOverride(k) {
+  var ut = HZ_ACCESS && HZ_ACCESS.userTiles, me = hzMyUid(), v = ut && me && ut[me] && ut[me][k];
+  if (!v) return "";
+  if (/^f:/.test(v) && !(((HZ_ACCESS && HZ_ACCESS.folders) || {})[v.slice(2)])) return "";
+  return String(v);
+}
 function hzTilePlaceFor(k) {
+  var mov = hzMyTileOverride(k); if (mov && mov !== "off") return mov;
   var a = HZ_ACCESS || {}, pl = a.place || {}, tf = a.tileFormat || {}, folders = a.folders || {}, cols = hzPlaceCols(), found = [];
   cols.forEach(function(c) {
     var v = pl[c] && pl[c][k];
@@ -18516,6 +18530,11 @@ function hzTileFormatApply() {
   // 1) real tiles (incl. group tiles and rule-based tiles)
   HZ_TILES.concat(window.HZ_TILES_MORE || []).forEach(function(t) {
     var k = t.k, src = hzTileSrc(k); if (!src) return;
+    var mov = hzMyTileOverride(k);   // this member's own exception (remembered so it can be undone exactly)
+    if (mov === "off") { if (src.style.display !== "none") { src.setAttribute("data-hz-uhid", "1"); src.style.display = "none"; } }
+    else if (mov) { if (src.style.display === "none") { src.setAttribute("data-hz-ushow", "1"); src.style.display = ""; } }
+    if (mov !== "off" && src.hasAttribute("data-hz-uhid")) { src.removeAttribute("data-hz-uhid"); if (src.style.display === "none") src.style.display = ""; }
+    if (!mov && src.hasAttribute("data-hz-ushow")) { src.removeAttribute("data-hz-ushow"); src.style.display = "none"; }
     var place = hzNodePlace(k), def = hzTileDefaultPlace(k), hidden = src.style.display === "none", want = hostOf(place);
     document.querySelectorAll('[data-hz-promo="' + k + '"]:not([data-hz-sub])').forEach(function(c) { if (!inPage(c) && (place === def || c.parentNode !== want)) c.parentNode.removeChild(c); });
     if (place === def) { src.classList.remove("hz-promo-src"); return; }
