@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.97"; window.M_BUILD = BUILD;
+  var BUILD = "9.98"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -18584,7 +18584,12 @@ function hzNodeInfo(node) {
 function hzToolsExtraHtml(esc) {
   return (window.HZ_TOOLS_EXTRA || []).map(function(k) {
     var n = hzNodeInfo(k); if (!n || n.hidden) return "";
-    return '<button class="hz-tl-item" onclick="hzToolsClose();hzTileFire(\'' + k + '\')"><span class="hz-tl-ic">' + esc(n.i || "•") + '</span><span><b>' + esc(n.l) + '</b><small>' + esc(n.s || "") + '</small></span><span class="hz-tl-chev">›</span></button>';
+    var inner = '<span class="hz-tl-ic">' + esc(n.i || "•") + '</span><span><b>' + esc(n.l) + '</b><small>' + esc(n.s || "") + '</small></span><span class="hz-tl-chev">›</span>';
+    // 9.98 / 12.586 (Sam: RMA Hotline in Tools "jumped back to the home screen"): a tile that is a phone number or web link
+    // works right here, like the tile itself — Tools stays open, nothing else happens
+    var src = /^(fld:|tool-)/.test(k) ? null : hzTileSrc(k), href = src && src.tagName === "A" ? String(src.getAttribute("href") || "") : "";
+    if (/^(tel:|sms:|mailto:|https?:)/i.test(href)) return '<a class="hz-tl-item" style="text-decoration:none;box-sizing:border-box" href="' + esc(href) + '"' + (/^https?:/i.test(href) ? ' target="_blank" rel="noopener"' : '') + '>' + inner + '</a>';
+    return '<button class="hz-tl-item" onclick="hzToolsClose();hzTileFire(\'' + k + '\')">' + inner + '</button>';
   }).join("");
 }
 window.hzToolsExtraHtml = hzToolsExtraHtml;
