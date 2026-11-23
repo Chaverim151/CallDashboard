@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.576">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.577">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2779,7 +2779,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.576</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.577</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -21414,7 +21414,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.576";
+var DESKTOP_VERSION = "12.577";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -34259,10 +34259,50 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     }
     return null;
   }
+  // ── 12.577 (Sam: "can it just read my settings from the backend?"): settings come straight from the database —
+  // no screens are opened, so the Admin panel stays fully usable while the assistant works. ──
+  var DB_DOCS = { dispatchSettings: "protocols", smsTemplates: "notifsettings", org: "org", shifts: "shifts", availability: "availability", fleetAlerts: "fleet",
+    protocolAI: "protoai", imageTrend: "imagetrend", deviceLimit: "security", whatsapp: "org", roles: "users", flags: "org", codesApi: "codes" };
+  var DB_SKIP = /key|secret|token|passw|apikey|session|webhook|signature/i;
+  function flatten(obj, pre, out, depth) {
+    Object.keys(obj || {}).forEach(function(k) {
+      var v = obj[k], path = pre ? pre + "." + k : k;
+      if (DB_SKIP.test(k) || /^(updatedAt|updatedBy|createdAt|seededAt)$/.test(k)) return;
+      if (v === null || v === undefined) return;
+      if (typeof v === "boolean" || typeof v === "number") out.push({ path: path, kind: typeof v === "boolean" ? "bool" : "number", value: v });
+      else if (typeof v === "string") { if (v.length <= 600) out.push({ path: path, kind: /^\d{1,2}:\d{2}$/.test(v) ? "time" : "text", value: v }); }
+      else if (Array.isArray(v)) { if (v.length <= 25 && v.every(function(x) { return typeof x === "string" || typeof x === "number"; })) out.push({ path: path, kind: "list", value: v.slice() }); }
+      else if (typeof v === "object" && depth < 4 && !(v.toDate)) flatten(v, path, out, depth + 1);
+    });
+  }
+  function dbLabel(doc, path) {
+    var m = path.match(/^_send\.([^.]+)\.(push|sms|email|admin)$/);
+    if (doc === "smsTemplates" && m) return "Notification: " + ((typeof TPL_LABELS !== "undefined" && TPL_LABELS[m[1]]) || m[1]) + " — " + { push: "Push", sms: "Text / WhatsApp", email: "Email", admin: "Notification group" }[m[2]];
+    if (doc === "smsTemplates" && typeof TPL_LABELS !== "undefined" && TPL_LABELS[path]) return "Message wording: " + TPL_LABELS[path];
+    var tabBtn = document.querySelector('#admin-tabbar .admin-tab[data-tab="' + (DB_DOCS[doc] || "") + '"]');
+    return (tabBtn ? tabBtn.textContent.replace(/^[^A-Za-z]+/, "").trim() : doc) + " ▸ " + path.replace(/\./g, " ▸ ").replace(/([a-z])([A-Z])/g, "$1 $2");
+  }
+  function readDb() {
+    return Promise.all(Object.keys(DB_DOCS).map(function(d) { return getDoc(d).then(function(x) { return [d, x]; }); })).then(function(list) {
+      var items = [];
+      var dup = /^(dispatchSettings:(callIdleMinutes|ticketReminders\..*)|shifts:(nightStart|nightEnd|reminderOn|reminderBefore)|deviceLimit:max)$/;   // these have named settings
+      list.forEach(function(pair) { var rows = []; flatten(pair[1], "", rows, 0); rows.filter(function(r) { return !dup.test(pair[0] + ":" + r.path); }).slice(0, 220).forEach(function(r) { items.push({ id: "db:" + pair[0] + ":" + r.path, doc: pair[0], path: r.path, kind: r.kind, current: r.value, name: dbLabel(pair[0], r.path), tab: DB_DOCS[pair[0]] }); }); });
+      SA.ui = items; SA.uiAt = Date.now(); return items;
+    });
+  }
+  function nested(path, v) { var o = {}, cur = o, ks = path.split("."); ks.forEach(function(k, i) { if (i === ks.length - 1) cur[k] = v; else cur = cur[k] = {}; }); return o; }
+  function patchMem(obj, path, v) { if (!obj || typeof obj !== "object") return; var ks = path.split("."), cur = obj; for (var i = 0; i < ks.length - 1; i++) { if (!cur[ks[i]] || typeof cur[ks[i]] !== "object") cur[ks[i]] = {}; cur = cur[ks[i]]; } cur[ks[ks.length - 1]] = v; }
+  function memFor(doc) {   // the copies the app keeps in memory, so a later Save on that screen keeps the change
+    var o = [];
+    if (doc === "dispatchSettings") { if (typeof DISPATCH_SETTINGS !== "undefined" && DISPATCH_SETTINGS) o.push(DISPATCH_SETTINGS); if (typeof DS_EDIT !== "undefined" && DS_EDIT) o.push(DS_EDIT); }
+    if (doc === "smsTemplates" && typeof M_SMS_TEMPLATES !== "undefined" && M_SMS_TEMPLATES) o.push(M_SMS_TEMPLATES);
+    if (doc === "fleetAlerts" && typeof fleetAlertCfg !== "undefined" && fleetAlertCfg) o.push(fleetAlertCfg);
+    return o;
+  }
   function loadUnits(force) {
     if (SA.units && !force) return Promise.resolve(SA.units);
     return db.collection("users").get().then(function(q) { var m = {}, em = {}; q.forEach(function(d) { var u = d.data() || {}; if (u.unit) m[String(u.unit).toUpperCase()] = d.id; if (u.email) em[String(u.email).toLowerCase()] = String(u.unit || d.id);
-      (SA.membersTmp = SA.membersTmp || []).push({ uid: d.id, unit: u.unit || "", name: ((u.firstName || "") + " " + (u.lastName || "")).trim(), roles: (u.roles || []).map(function(r) { return String(r).toLowerCase(); }), admin: u.role === "admin",
+      (SA.membersTmp = SA.membersTmp || []).push({ uid: d.id, unit: u.unit || "", name: ((u.firstName || "") + " " + (u.lastName || "")).trim(), phone: u.phone || "", email: u.email || "", whatsapp: u.whatsapp || "", emsLicense: u.emsLicense || "", firstName: u.firstName || "", lastName: u.lastName || "", roles: (u.roles || []).map(function(r) { return String(r).toLowerCase(); }), admin: u.role === "admin",
         emsLevel: u.emsLevel || "", ervDriver: !!u.ervDriver, rigDriver: !!u.rigDriver, daytimeResponder: !!u.daytimeResponder, ticketSupervisor: !!u.ticketSupervisor, cjCadAccess: !!u.cjCadAccess, maxDevices: typeof u.maxDevices === "number" ? u.maxDevices : "" }); });
       SA.members = SA.membersTmp || []; SA.membersTmp = null; SA.units = m; SA.emails = em; return m; }).catch(function() { SA.units = {}; SA.emails = {}; return {}; });
   }
@@ -34304,8 +34344,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       D = { shifts: r[0], ds: r[1], dev: r[2], acc: r[3], ta: r[4], units: r[5] };
       var items = {}, list = [];
       FIXED.forEach(function(f) { var c = f.cur(D); items[f.id] = { kind: "fixed", f: f }; list.push({ id: f.id, name: f.l, type: f.type, min: f.min, max: f.max, current: c }); });
-      (SA.ui || []).forEach(function(u) { items[u.id] = { kind: "ui", u: u }; var e = { id: u.id, name: u.name, type: u.kind, current: u.current }; if (u.options) e.options = u.options; if (u.min != null) e.min = u.min; if (u.max != null) e.max = u.max; list.push(e); });
-      notifyRows().forEach(function(n) { items[n.id] = { kind: "notify", n: n }; list.push({ id: n.id, name: "Notification: " + n.grp + " ▸ " + n.name + " — " + n.cl, type: "bool", current: n.on }); });
+      (SA.ui || []).forEach(function(u) { items[u.id] = { kind: "db", u: u }; list.push({ id: u.id, name: u.name, type: u.kind, current: u.current }); });
       var pr = (D.acc.permsRoles || {});
       (typeof HZ_PERMS !== "undefined" ? HZ_PERMS : []).forEach(function(p) { var id = "perm:" + p.k; items[id] = { kind: "perm", p: p }; list.push({ id: id, name: "Who can: " + p.l, type: "roles", current: Array.isArray(pr[p.k]) ? pr[p.k] : p.def }); });
       var tiles = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(t) { return !(typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[t.k]); }).map(function(t) { return { k: t.k, name: tileName(t.k), normally: typeof hzTileDefaultPlace === "function" ? hzTileDefaultPlace(t.k) : "home" }; })
@@ -34318,7 +34357,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
           tiles: tiles, places: places, placeNames: places.map(function(p) { return p + " = " + placeName(p); }), perms: (typeof HZ_PERMS !== "undefined" ? HZ_PERMS : []).map(function(p) { return p.k + " = " + p.l; }),
           units: Object.keys(D.units).sort(),
           access: accessView(D),
-          members: (SA.members || []).map(function(x) { var o = { unit: x.unit, name: x.name, roles: x.roles }; if (x.admin) o.systemAdmin = true; ["ervDriver", "rigDriver", "daytimeResponder", "ticketSupervisor", "cjCadAccess"].forEach(function(k) { if (x[k]) o[k] = true; }); if (x.emsLevel) o.emsLevel = x.emsLevel; return o; }), currentTilePlaces: D.acc.place || {}, currentExceptions: Object.keys(D.acc.userPerms || {}).length + " member(s) have exceptions" },
+          members: (SA.members || []).map(function(x) { var o = { unit: x.unit, name: x.name, roles: x.roles, phone: x.phone, email: x.email }; if (x.whatsapp) o.whatsapp = x.whatsapp; if (x.admin) o.systemAdmin = true; ["ervDriver", "rigDriver", "daytimeResponder", "ticketSupervisor", "cjCadAccess"].forEach(function(k) { if (x[k]) o[k] = true; }); if (x.emsLevel) o.emsLevel = x.emsLevel; return o; }), currentTilePlaces: D.acc.place || {}, currentExceptions: Object.keys(D.acc.userPerms || {}).length + " member(s) have exceptions" },
         actions: [{ id: "member.update", what: "Change an existing member (Admin ▸ Users ▸ Edit) — find them in vocab.members by unit or name", value: { unit: "required — which member", roles: "optional — their FULL new list of roles / titles", admin: "optional true/false — System Admin", firstName: "optional", lastName: "optional", phone: "optional", email: "optional", emsLevel: "optional", ervDriver: "optional true/false — approved to drive the vehicle (ERV)", rigDriver: "optional true/false — approved to drive rigs", daytimeResponder: "optional true/false", ticketSupervisor: "optional true/false — Logistics Supervisor", cjCadAccess: "optional true/false", maxDevices: "optional 0–20" } }, { id: "member.create", what: "Add a new member (Admin ▸ Users ▸ Add User)", value: { firstName: "required", lastName: "required", email: "required — their sign-in email", unit: "unit number, e.g. 45 or MC-45 (ask for it)", phone: "10-digit US mobile (ask for it)", roles: "required — at least one from vocab.roles (titles like captain go here too)", admin: "true only if they should be a System Admin", maxDevices: "optional number 0–20" }, notes: "No password is set here — they get an email link to set their own. Units already used: see vocab.units." }],
         places: (typeof ADM_SEARCH !== "undefined" ? ADM_SEARCH : []).map(function(e, i) { return { i: i, label: e.label, where: e.where }; }),
         now: new Date().toString(), items: items
@@ -34394,6 +34433,17 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
         if (err) { skipped.push(err); return; }
         var cur2 = f.cur(SA.D); if (String(cur2) === String(v2)) return;
         rows.push({ kind: "fixed", label: f.l, from: show(cur2, f.type), to: show(v2, f.type), f: f, v: v2, go: f.go });
+      } else if (it.kind === "db") {
+        var du = it.u, dv = c.value, de = "";
+        if (du.kind === "bool") dv = dv === true || dv === "true" || dv === "on" || dv === 1;
+        else if (du.kind === "number") { dv = Number(dv); if (!isFinite(dv)) de = du.name + ": that isn't a number"; }
+        else if (du.kind === "time") { dv = hhmm(dv); if (!dv) de = du.name + ": that isn't a time"; }
+        else if (du.kind === "list") dv = (Array.isArray(dv) ? dv : String(dv).split(",")).map(function(x) { return typeof du.current[0] === "number" ? Number(x) : String(x).trim(); }).filter(function(x) { return x !== ""; });
+        else dv = String(dv);
+        if (de) { skipped.push(de); return; }
+        if (JSON.stringify(du.current) === JSON.stringify(dv)) return;
+        var sh = function(v) { return du.kind === "bool" ? (v ? "On" : "Off") : Array.isArray(v) ? (v.join(", ") || "(none)") : (String(v) === "" ? "(empty)" : String(v)); };
+        rows.push({ kind: "db", label: du.name, from: sh(du.current), to: sh(dv), u: du, v: dv, go: { tab: du.tab } });
       } else if (it.kind === "ui") {
         var u = it.u, nv = c.value, er = "";
         if (u.kind === "bool") nv = nv === true || nv === "true" || nv === "on" || nv === 1;
@@ -34428,17 +34478,35 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   }
   // ── save the approved changes ──
   function applyAll(rows) {
-    var needsScreens = rows.some(function(r) { return r.kind === "ui" || r.kind === "notify" || r.kind === "member" || r.kind === "memberEdit"; });
-    var KV = keepView(); SA.keep = KV;
-    if (needsScreens) cover(true, "Saving your changes…");
-    return applyAllNow(rows).then(function(res) { return restoreView(KV, true).then(function() { return res; }); }, function(e) { return restoreView(KV, true).then(function() { throw e; }); });
+    SA.touched = {};
+    return applyAllNow(rows).then(function(res) { refreshAfter(); return res; });
+  }
+  // after saving: other screens load fresh when you open them; the one you're on is redrawn only if you're not in the middle of typing there
+  function refreshAfter() {
+    try { if (typeof mLoadDispatchSettings === "function") mLoadDispatchSettings(); } catch (e) {}
+    try { if (typeof hzLoadTileAccess === "function") hzLoadTileAccess(currentRole === "admin", currentUserRoles); } catch (e) {}
+    var a = document.querySelector("#admin-tabbar .admin-tab.active"), cur = a ? a.getAttribute("data-tab") : "", pg = document.getElementById("pg-admin");
+    var typing = document.activeElement && pg && pg.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    var busy = (typeof hzPendCount === "function" && hzPendCount()) || typing;
+    if (SA.touched.access && typeof HZ_ACC !== "undefined" && HZ_ACC && !(typeof hzAccDirty === "function" && hzAccDirty())) { HZ_ACC = null; if (cur === "security" && typeof hzAccLoad === "function") hzAccLoad(); }
+    if (cur && SA.touched[cur] && !busy && pg && pg.classList.contains("active")) {
+      var tops = scrollers().map(function(el) { return { el: el, top: el.scrollTop }; });
+      try { setAdminTab(cur); if (cur === "users" && typeof loadUsers === "function") loadUsers(); } catch (e) {}
+      tops.forEach(function(x) { x.el.scrollTop = x.top; });
+    }
   }
   function applyAllNow(rows) {
     var D = SA.D, results = [], accTouched = false, taPatch = {}, acc = JSON.parse(JSON.stringify(D.acc || {})), what = [];
     acc.perms = acc.perms || {}; acc.permsRoles = acc.permsRoles || {}; acc.place = acc.place || {}; acc.userPerms = acc.userPerms || {};
     var chain = Promise.resolve();
     rows.forEach(function(r) {
-      if (r.kind === "member") chain = chain.then(function() { return addMember(r).then(function(x) { results.push(x); }); });
+      if (r.kind === "db") chain = chain.then(function() {
+        return db.collection("appdata").doc(r.u.doc).set(nested(r.u.path, r.v), { merge: true }).then(function() {
+          memFor(r.u.doc).forEach(function(o) { patchMem(o, r.u.path, r.v); }); r.u.current = r.v; SA.touched = SA.touched || {}; SA.touched[r.u.tab] = 1;
+          results.push({ r: r, ok: true });
+        }, function(e) { results.push({ r: r, ok: false, err: e.message }); });
+      });
+      else if (r.kind === "member") chain = chain.then(function() { return addMember(r).then(function(x) { results.push(x); }); });
       else if (r.kind === "memberEdit") chain = chain.then(function() { return editMember(r).then(function(x) { results.push(x); }); });
       else if (r.kind === "fixed") chain = chain.then(function() { return Promise.resolve(r.f.set(r.v, D)).then(function() { results.push({ r: r, ok: true }); }, function(e) { results.push({ r: r, ok: false, err: e.message }); }); });
       else if (r.kind === "ui") chain = chain.then(function() {
@@ -34485,6 +34553,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       results.forEach(function(x) { if (x.ok && x.r.kind === "ui") x.r.u.current = x.r.v; });   // keep the list of boxes up to date without re-reading every screen
       if (typeof hzPendCount === "function" && hzPendCount() && typeof hzPendSave === "function") jobs.push(hzPendSave().then(function(ok) { if (!ok) results.forEach(function(x) { if (x.pend) { x.ok = false; x.err = "not saved"; } }); }));
       if (accTouched) {
+        SA.touched.access = 1; SA.touched.security = SA.touched.security || 0;
         var who = currentUserUnit || "", entry = { at: new Date().toISOString(), by: who, what: "🤖 Settings assistant: " + what.join("; ") };
         acc.history = [entry].concat(Array.isArray(acc.history) ? acc.history : []).slice(0, 40); acc.updatedAt = entry.at; acc.updatedBy = who;
         jobs.push(db.collection("appdata").doc("access").set(acc).catch(function(e) { results.forEach(function(x) { if (x.acc) { x.ok = false; x.err = e.message; } }); }));
@@ -34496,56 +34565,42 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     }).then(function() { if (typeof HZ_ACC !== "undefined" && accTouched) { HZ_ACC = null; } return results; });
   }
   // ➕ a new member through Admin ▸ Users ▸ Add User — the form's own checks, account creation and set-password email
-  // ✏️ an existing member through Admin ▸ Users ▸ Edit — its own checks and save (saveEdit)
+  // ✏️ an existing member — saved the same way Users ▸ Edit saves (no screen opened)
   function editMember(r) {
-    var w = r.who, ch = r.ch;
-    return openScreen("users", "setUsrTab('list')").then(function() {
-      if (typeof loadUsers === "function" && !(typeof allUsersCache !== "undefined" && allUsersCache.some(function(x) { return x.uid === w.uid; }))) loadUsers();
-      return waitFor(function() { return typeof allUsersCache !== "undefined" && allUsersCache.some(function(x) { return x.uid === w.uid; }); }, 8000);
-    }).then(function(ok) {
-      if (!ok || typeof openEdit !== "function" || typeof saveEdit !== "function") return { r: r, ok: false, err: "couldn't open that member" };
-      openEdit(w.uid);
-      return sleep(300).then(function() {
-        var f = function(id) { return document.getElementById(id); };
-        if (ch.firstName) f("edit-fname").value = ch.firstName; if (ch.lastName) f("edit-lname").value = ch.lastName;
-        if (ch.email) f("edit-email").value = ch.email; if (ch.phone) f("edit-phone").value = ch.phone; if (ch.emsLevel && f("edit-emslevel")) f("edit-emslevel").value = ch.emsLevel;
-        if (ch.maxDevices != null && f("edit-maxdev")) f("edit-maxdev").value = ch.maxDevices;
-        if (ch.roles) { var have = {}; document.querySelectorAll("#edit-roles input, #edit-titles input").forEach(function(c) { c.checked = ch.roles.indexOf(String(c.value).toLowerCase()) !== -1; if (c.checked) have[String(c.value).toLowerCase()] = 1; });
-          var miss = ch.roles.filter(function(x) { return !have[x]; }); if (miss.length) { closeEdit(); return { r: r, ok: false, err: "no tick box for " + miss.join(", ") }; } }
-        var boxes = { admin: "edit-admin", ervDriver: "edit-ervdriver", rigDriver: "edit-rigdriver", daytimeResponder: "edit-daytime", ticketSupervisor: "edit-logsup", cjCadAccess: "edit-cjcad" };
-        Object.keys(boxes).forEach(function(k) { if (ch[k] != null && f(boxes[k])) f(boxes[k]).checked = ch[k]; });
-        var mm = f("edit-msg"); mm.className = "form-msg"; mm.textContent = "";
-        saveEdit();
-        return waitFor(function() { var m2 = f("edit-msg"); return m2 && /success|error/.test(m2.className) && m2.textContent ? m2 : null; }, 15000).then(function(m2) {
-          loadUnits(true);
-          if (!m2) return { r: r, ok: false, err: "no answer yet — check Admin ▸ Users" };
-          try { closeEdit(); } catch (e) {}
-          if (/success/.test(m2.className)) return { r: r, ok: true };
-          return { r: r, ok: false, err: m2.textContent };
-        });
-      });
-    });
+    var w = r.who, ch = r.ch, up = { updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" };
+    ["firstName", "lastName", "phone", "emsLevel", "ervDriver", "rigDriver", "daytimeResponder", "ticketSupervisor", "cjCadAccess", "maxDevices"].forEach(function(k) { if (ch[k] != null) up[k] = ch[k]; });
+    if (ch.roles) up.roles = ch.roles;
+    if (ch.admin != null) up.role = ch.admin ? "admin" : "responder";
+    var first = ch.email ? hzRelay("adminSyncLogin", { uid: w.uid, email: ch.email, unit: w.unit, oldUnit: w.unit }).then(function() { up.email = ch.email; }) : Promise.resolve();
+    return first.then(function() { return db.collection("users").doc(w.uid).set(up, { merge: true }); }).then(function() {
+      try { var cu = (allUsersCache || []).find(function(x) { return x.uid === w.uid; }); if (cu) Object.assign(cu, up); } catch (e) {}
+      SA.touched = SA.touched || {}; SA.touched.users = 1; loadUnits(true);
+      return { r: r, ok: true };
+    }).catch(function(e) { return { r: r, ok: false, err: e.message }; });
   }
+  // ➕ a new member — created the same way Users ▸ Add User does (sign-in account, profile, unit lookup, set-password email)
   function addMember(r) {
-    var m = r.m;
-    return openScreen("users", "setUsrTab('manage')").then(function() {
-      var f = function(id) { return document.getElementById(id); };
-      if (!f("au-fname") || typeof addUser !== "function") return { r: r, ok: false, err: "the Add User form isn't available" };
-      f("au-fname").value = m.fn; f("au-lname").value = m.ln; f("au-email").value = m.email; f("au-phone").value = m.phone;
-      f("au-unit").value = m.unit ? String(m.unit).replace(/^[A-Za-z]+-?/, "") : ""; f("au-pass").value = ""; if (f("au-maxdev")) f("au-maxdev").value = m.maxDevices === "" ? "" : m.maxDevices;
-      var have = {};
-      document.querySelectorAll("#au-roles input, #au-titles input").forEach(function(c) { c.checked = m.roles.indexOf(String(c.value).toLowerCase()) !== -1; if (c.checked) have[String(c.value).toLowerCase()] = 1; });
-      var missingBoxes = m.roles.filter(function(x) { return !have[x]; });
-      if (missingBoxes.length) return { r: r, ok: false, err: "no tick box for " + missingBoxes.join(", ") + " on the Add User form" };
-      f("au-admin").checked = !!m.admin;
-      var msg = f("au-msg"); if (msg) { msg.className = "form-msg"; msg.textContent = ""; }
-      addUser();
-      return waitFor(function() { var mm = f("au-msg"); return mm && /success|error/.test(mm.className) && mm.textContent ? mm : null; }, 20000).then(function(mm) {
-        loadUnits(true);
-        if (!mm) return { r: r, ok: false, err: "no answer from the server yet — check Admin ▸ Users" };
-        if (/success/.test(mm.className)) return { r: r, ok: true, note2: mm.textContent.replace(/^✓\s*/, "") };
-        return { r: r, ok: false, err: mm.textContent };
-      });
+    var m = r.m, unit = m.unit || "", app2 = null, uid = null;
+    var rnd = new Uint8Array(18); crypto.getRandomValues(rnd);
+    var pass = Array.from(rnd, function(b2) { return ("0" + b2.toString(16)).slice(-2); }).join("") + "aA1!";
+    try { app2 = firebase.initializeApp(firebase.app().options, "hz-sa-" + Date.now()); } catch (e) { return Promise.resolve({ r: r, ok: false, err: e.message }); }
+    return firebase.auth(app2).createUserWithEmailAndPassword(m.email, pass).then(function(cred) {
+      uid = cred.user.uid;
+      return firebase.auth(app2).signOut();
+    }).then(function() {
+      return db.collection("users").doc(uid).set({ firstName: m.fn, lastName: m.ln, unit: unit, phone: m.phone, email: m.email, roles: m.roles, role: m.admin ? "admin" : "responder", maxDevices: m.maxDevices === "" ? "" : m.maxDevices, mustChangePassword: true, createdAt: new Date().toISOString() });
+    }).then(function() {
+      return unit ? db.collection("unitLookup").doc(unit).set({ unit: unit, email: m.email, updatedAt: new Date().toISOString() }) : null;
+    }).then(function() {
+      return hzRelay("sendPasswordLink", { uid: uid }).then(function(x) { return x && x.link ? "Couldn't email them — give them this set-password link yourself: " + x.link : "They were emailed a link to set their password."; })
+        .catch(function(e) { return "The set-password link couldn't be sent (" + e.message + ") — use Security ▸ Member Passwords."; });
+    }).then(function(note) {
+      try { app2.delete(); } catch (e) {}
+      SA.touched = SA.touched || {}; SA.touched.users = 1; loadUnits(true);
+      return { r: r, ok: true, note2: m.fn + " " + m.ln + " added. " + note };
+    }).catch(function(e) {
+      try { app2.delete(); } catch (x) {}
+      return { r: r, ok: false, err: e.code === "auth/email-already-in-use" ? "That email is already registered." : e.message };
     });
   }
   // ── 🔗 links: open the admin panel on that setting and flash it ──
@@ -34654,7 +34709,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     t.value = ""; SA.prop = null; SA.msgs.forEach(function(m) { if (m.card && /hz-sa-prop/.test(m.card)) m.card = m.card.replace(/<div class="sa-btns">[\s\S]*?<\/div><\/div>$/, '<div class="sa-tips">(not saved)</div></div>'); });
     SA.msgs.push({ role: "user", text: text }); SA.busy = true; draw();
     var fresh = !(SA.ui && Date.now() - SA.uiAt < 10 * 60000);
-    SA.status = ""; deepScan().catch(function() {}).then(function() { coverText(fresh ? "Thinking…" : ""); return buildCatalog(); }).then(function(cat) {
+    coverText(""); readDb().catch(function() {}).then(function() { return buildCatalog(); }).then(function(cat) {
       SA.cat = cat;
       var send = { settings: cat.settings, vocab: cat.vocab, actions: cat.actions, places: cat.places, now: cat.now };
       return relaySa({ messages: SA.msgs.filter(function(m) { return m.text; }).map(function(m) { return { role: m.role, text: m.text }; }), catalog: send });
