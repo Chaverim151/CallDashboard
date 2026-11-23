@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.98"; window.M_BUILD = BUILD;
+  var BUILD = "9.99"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -6367,6 +6367,7 @@ function rigLoadHistory(docId, elId) {
           return '<div class="m-rig-hist-row"><span class="m-rig-hist-dot ' + (out ? "out" : "in") + '"></span><div>' +
             '<b>' + (out ? "Out of service" : "Back in service") + '</b> · ' + rigEsc(rigWhen(r.at)) + ' · ' + who +
             (out ? '<div class="m-rig-hist-why">Reason: ' + (r.reason ? rigEsc(r.reason) : "<i>none given</i>") + (r.until ? " · expected back " + rigEsc(rigWhen(r.until)) : "") + '</div>' : '') +
+            (r.notes ? '<div class="m-rig-hist-why" style="white-space:pre-wrap">Notes: ' + rigEsc(r.notes) + '</div>' : '') +
           '</div></div>';
         }).join("") + (rows.length > 25 ? '<div class="m-rig-hist-empty">Showing the latest 25 of ' + rows.length + '.</div>' : '');
     rigHistHtml[elId] = html;
@@ -6389,10 +6390,10 @@ function mRenderRigStatus() {
   var el = document.getElementById("m-rig-status-list"); if (!el) return;
   if (!mRigStatusDocs.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.8rem;padding:10px 0">No rigs found. An admin adds them in Admin ▸ Fleet.</div>'; return; }
   // Keep what's being typed in an open form — calls and vehicles update live and re-draw this list
-  var keep = null;
+  var keep = null, keepIn = mRigInForm && document.getElementById("m-rig-innotes") ? { notes: document.getElementById("m-rig-innotes").value, focus: document.activeElement && document.activeElement.id } : null;
   if (mRigOpenForm && document.getElementById("m-rig-form")) {
     var on0 = document.querySelector(".m-rig-dur.on");
-    keep = { other: !!rigWhoOther["m-rig"], who: (document.getElementById("m-rig-who") || {}).value || "", reason: (document.getElementById("m-rig-reason") || {}).value || "", until: (document.getElementById("m-rig-until") || {}).value || "",
+    keep = { other: !!rigWhoOther["m-rig"], who: (document.getElementById("m-rig-who") || {}).value || "", reason: (document.getElementById("m-rig-reason") || {}).value || "", notes: (document.getElementById("m-rig-notes") || {}).value || "", until: (document.getElementById("m-rig-until") || {}).value || "",
              dur: on0 ? on0.getAttribute("data-dur") : "", focus: document.activeElement && document.activeElement.id };
   }
   var now = Date.now();
@@ -6411,6 +6412,7 @@ function mRenderRigStatus() {
         '<div><span class="k">Taken out by</span> <b>' + (v.oosBy ? rigEsc(v.oosBy) : "unknown") + '</b>' + (v.oosAt ? ' · ' + rigEsc(rigWhen(v.oosAt)) : '') +
           (v.oosRecordedBy && v.oosRecordedBy !== v.oosBy ? ' <span style="color:var(--gray)">(entered by ' + rigEsc(v.oosRecordedBy) + ')</span>' : '') + '</div>' +
         '<div><span class="k">Back</span> ' + (v.outUntil ? rigEsc(rigWhen(v.outUntil)) : "Until further notice") + '</div>' +
+        (v.outNotes ? '<div><span class="k">Notes</span> <span style="white-space:pre-wrap">' + rigEsc(v.outNotes) + '</span></div>' : '') +
       '</div>';
     } else if (st.s === "busy") {
       var where = mPoiName(st.call.address) || (mCleanAddress(st.call.address) || "").split(",")[0];
@@ -6421,6 +6423,7 @@ function mRenderRigStatus() {
       form = '<div class="m-rig-form" id="m-rig-form">' +
         '<label class="k">Who took it out of service? (required)</label>' + rigWhoTilesHtml("m-rig") +
         '<label class="k" for="m-rig-reason">Why is it going out of service? (required)</label><input type="text" id="m-rig-reason" maxlength="120" placeholder="e.g. Maintenance, inspection, out for repair">' +
+        '<label class="k" for="m-rig-notes">Notes (optional)</label><textarea id="m-rig-notes" maxlength="1000" rows="3" placeholder="Anything else — what\'s wrong, where it is, who has the keys…" style="width:100%;box-sizing:border-box;min-height:64px;resize:vertical;font-family:inherit;font-size:0.85rem;padding:8px 10px;border-radius:8px;background:#000;color:#d4a017;border:2px solid #d4a017"></textarea>' +
         '<label class="k">Back in service</label><div class="m-rig-durs">' +
           ['', '1', '4', '8', '24', 'at'].map(function(d) { var lbl = d === '' ? 'Not sure' : d === 'at' ? 'At a time…' : 'In ' + d + ' h';
             return '<button type="button" class="m-rig-dur' + (d === '' ? ' on' : '') + '" data-dur="' + d + '" onclick="mRigPickDur(this)">' + lbl + '</button>'; }).join('') +
@@ -6431,7 +6434,11 @@ function mRenderRigStatus() {
     }
     return '<div class="m-rig-card" data-rig="' + mEscHtml(String(id)) + '" data-kind="' + (v.kind === "erv" ? "erv" : "rig") + '"><div class="m-rig-top"><div class="m-rig-id">' + (v.kind === "erv" ? "🚑 " : "🚑 ") + id + '</div>' + pill + '</div>' +
       (sub ? '<div class="m-rig-sub">' + sub + '</div>' : '') +
-      (typeof hzCan === "function" && !hzCan("vehicles.oos") ? '' : st.s === "out" ? '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
+      (typeof hzCan === "function" && !hzCan("vehicles.oos") ? '' : st.s === "out" ? (mRigInForm === v.docId
+          ? '<div class="m-rig-form"><label class="k" for="m-rig-innotes">Notes (optional)</label><textarea id="m-rig-innotes" maxlength="1000" rows="3" placeholder="e.g. Repaired, new tire, checked and restocked" style="width:100%;box-sizing:border-box;min-height:64px;resize:vertical;font-family:inherit;font-size:0.85rem;padding:8px 10px;border-radius:8px;background:#000;color:#d4a017;border:2px solid #d4a017"></textarea>' +
+            '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Put ' + id + ' back in service</button>' +
+            '<button class="m-rig-btn" style="background:none;border:1px solid var(--card-border);color:var(--gray)" onclick="mRigInForm=null;mRenderRigStatus()">Cancel</button></div>'
+          : '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigInForm=\'' + key + '\';mRigOpenForm=null;mRenderRigStatus();var t=document.getElementById(\'m-rig-innotes\');if(t)t.focus()">✓ Back in service</button>')
                       : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take OOS</button>')) +
       rigHistBlock(v.docId, "m-rig-hist-" + v.docId) +
     '</div>';
@@ -6440,11 +6447,14 @@ function mRenderRigStatus() {
     var r = document.getElementById("m-rig-reason"), u = document.getElementById("m-rig-until"), w = document.getElementById("m-rig-who");
     if (w) { w.value = keep.who; rigWhoOther["m-rig"] = keep.other; rigWhoFilter("m-rig"); }
     if (r) r.value = keep.reason;
+    var nt = document.getElementById("m-rig-notes"); if (nt) nt.value = keep.notes || "";
     if (u) u.value = keep.until;
     var b = document.querySelector('.m-rig-dur[data-dur="' + keep.dur + '"]'); if (b) mRigPickDur(b);
     if (keep.focus) { var f = document.getElementById(keep.focus); if (f) f.focus(); }
   }
+  if (keepIn) { var it = document.getElementById("m-rig-innotes"); if (it) { it.value = keepIn.notes; if (keepIn.focus === "m-rig-innotes") it.focus(); } }
 }
+var mRigInForm = null;   // 12.587: the rig whose "back in service" notes box is open
 function mRigPickDur(btn) {
   document.querySelectorAll(".m-rig-dur").forEach(function(b) { b.classList.toggle("on", b === btn); });
   var u = document.getElementById("m-rig-until"); if (u) u.style.display = btn.getAttribute("data-dur") === "at" ? "" : "none";
@@ -6463,14 +6473,17 @@ function mRigSetOut(docId) {
     if (!dt || isNaN(dt.getTime()) || dt.getTime() <= Date.now()) { mToast("Pick a return time in the future", true); return; }
     until = dt.toISOString();
   } else if (dur) until = new Date(Date.now() + (+dur) * 3600000).toISOString();
-  db.collection("vehicles").doc(docId).set({ serviceStatus: "out", outUntil: until, outReason: reason,
+  var outNotes = ((document.getElementById("m-rig-notes") || {}).value || "").trim().slice(0, 1000);   // 12.587 (Sam): notes
+  db.collection("vehicles").doc(docId).set({ serviceStatus: "out", outUntil: until, outReason: reason, outNotes: outNotes, inNotes: "",
     oosAt: new Date().toISOString(), oosBy: who, oosRecordedBy: mCurrentUserUnit || "", oosByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true })
     .then(function() { mRigOpenForm = null; mToast("Rig marked out of service"); if (typeof mPrefetchRigs === "function") mPrefetchRigs(); })
     .catch(function(e) { mToast(/permission/i.test(e.message) ? "You don't have permission to change rig status" : "Error: " + e.message, true); });
 }
 function mRigSetIn(docId) {
   if (typeof hzCan === "function" && !hzCan("vehicles.oos")) { mToast("You don't have permission to put vehicles back in service", true); return; }   // 9.90 / 12.566
-  db.collection("vehicles").doc(docId).set({ serviceStatus: "in", outUntil: null, outReason: "", statusBy: mCurrentUserUnit || "", statusByUid: mCurrentUser ? mCurrentUser.uid : "", statusAt: new Date().toISOString() }, { merge: true })
+  var inNotes = ((document.getElementById("m-rig-innotes") || {}).value || "").trim().slice(0, 1000);   // 12.587 (Sam): notes
+  mRigInForm = null;
+  db.collection("vehicles").doc(docId).set({ serviceStatus: "in", outUntil: null, outReason: "", outNotes: "", inNotes: inNotes, statusBy: mCurrentUserUnit || "", statusByUid: mCurrentUser ? mCurrentUser.uid : "", statusAt: new Date().toISOString() }, { merge: true })
     .then(function() { mToast("✓ Rig back in service"); if (typeof mPrefetchRigs === "function") mPrefetchRigs(); })
     .catch(function(e) { mToast(/permission/i.test(e.message) ? "You don't have permission to change rig status" : "Error: " + e.message, true); });
 }

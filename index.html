@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.586">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.587">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2779,7 +2779,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.586</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.587</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -13423,6 +13423,7 @@ function loadVehicleStatusPanel() {
             (v.description ? '<span style="font-size:0.68rem;color:var(--gray);margin-left:6px">' + escapeHtml(v.description) + '</span>' : '') +
             (outUntilStr ? '<div style="font-size:0.65rem;color:#ff9090;margin-top:1px">' + outUntilStr + '</div>' : '') +
             (isOut ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:2px">Reason: <span style="color:var(--white)">' + (outReason ? escapeHtml(outReason) : '<i>none given</i>') + '</span></div>' : '') +
+            (isOut && v.outNotes ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:2px">Notes: <span style="color:var(--white);white-space:pre-wrap">' + escapeHtml(v.outNotes) + '</span></div>' : '') +
             (isOut ? '<div style="font-size:0.65rem;color:var(--gray);margin-top:1px">Taken out by <b style="color:var(--white)">' + escapeHtml(v.oosBy || "unknown") + '</b>' + (v.oosAt ? ' · ' + rigWhen(v.oosAt) : '') + (v.oosRecordedBy && v.oosRecordedBy !== v.oosBy ? ' (entered by ' + escapeHtml(v.oosRecordedBy) + ')' : '') + '</div>' : '') +
             '<button type="button" class="m-rig-histbtn" style="margin-top:6px;padding:4px 10px;font-size:0.66rem" onclick="rigToggleHistory(\'' + v.docId + '\',\'veh-hist-' + v.docId + '\')">🕘 History</button>' +
           '</div>' +
@@ -13447,8 +13448,21 @@ function loadVehicleStatusPanel() {
   });
 }
 
+// 12.587 (Sam): "Restore" first opens a notes box (optional), then puts the vehicle back
 window.setVehIn = function(docId) {
-  db.collection("vehicles").doc(docId).set({ serviceStatus:"in", outUntil:null, outReason:"", statusBy: currentUserUnit||"", statusByUid: currentUser ? currentUser.uid : "", statusAt: new Date().toISOString() }, { merge:true })
+  var old = document.getElementById("veh-in-form"); if (old) { var same = old.getAttribute("data-doc") === docId; old.remove(); if (same) return; }
+  var hist = document.getElementById("veh-hist-" + docId); if (!hist) return window.confirmVehIn(docId);
+  hist.insertAdjacentHTML("beforebegin", '<div id="veh-in-form" data-doc="' + escapeHtml(docId) + '" style="margin-top:8px">' +
+    '<label for="veh-in-notes" style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);display:block;margin-bottom:4px">Notes (optional)</label>' +
+    '<textarea id="veh-in-notes" maxlength="1000" rows="3" placeholder="e.g. Repaired, new tire, checked and restocked" style="width:100%;box-sizing:border-box;min-height:56px;resize:vertical;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;font-family:inherit;outline:none"></textarea>' +
+    '<div style="display:flex;gap:6px;margin-top:6px"><button onclick="window.confirmVehIn(\'' + docId + '\')" style="flex:1;background:#34c759;border:2px solid #34c759;border-radius:6px;color:#000;font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;padding:7px;cursor:pointer">✓ Back in service</button>' +
+    '<button onclick="document.getElementById(\'veh-in-form\').remove()" style="background:rgba(255,255,255,0.05);border:1px solid var(--card-border);border-radius:6px;color:var(--gray);font-family:\'Oswald\',sans-serif;font-size:0.68rem;font-weight:700;padding:7px 12px;cursor:pointer">Cancel</button></div></div>');
+  var t = document.getElementById("veh-in-notes"); if (t) t.focus();
+};
+window.confirmVehIn = function(docId) {
+  var inNotes = ((document.getElementById("veh-in-notes") || {}).value || "").trim().slice(0, 1000);
+  var f = document.getElementById("veh-in-form"); if (f) f.remove();
+  db.collection("vehicles").doc(docId).set({ serviceStatus:"in", outUntil:null, outReason:"", outNotes:"", inNotes: inNotes, statusBy: currentUserUnit||"", statusByUid: currentUser ? currentUser.uid : "", statusAt: new Date().toISOString() }, { merge:true })
     .then(function(){ loadVehicleStatusPanel(); showToast(fleetAlertCfg.backSms === false ? "✓ Vehicle restored to service" : "✓ Vehicle restored to service — members are being texted"); })
     .catch(function(e){ showToast("Error: "+e.message,true); });
 };
@@ -13469,6 +13483,10 @@ window.openVehOOS = function(docId, label) {
     '<div style="margin-bottom:8px">' +
       '<label style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);display:block;margin-bottom:4px">Reason (required)</label>' +
       '<input type="text" id="veh-oos-reason" maxlength="120" placeholder="e.g. Maintenance, Inspection..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;outline:none;box-sizing:border-box">' +
+    '</div>' +
+    '<div style="margin-bottom:8px">' +
+      '<label for="veh-oos-notes" style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);display:block;margin-bottom:4px">Notes (optional)</label>' +
+      '<textarea id="veh-oos-notes" maxlength="1000" rows="3" placeholder="Anything else — what\'s wrong, where it is, who has the keys…" style="width:100%;box-sizing:border-box;min-height:56px;resize:vertical;background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--white);font-size:0.8rem;font-family:inherit;outline:none"></textarea>' +
     '</div>' +
     '<div style="margin-bottom:10px">' +
       '<label style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);display:block;margin-bottom:6px">Duration</label>' +
@@ -13548,6 +13566,7 @@ window.confirmVehOOS = function() {
     serviceStatus: "out",
     outUntil: outUntil,
     outReason: reason,
+    outNotes: ((document.getElementById("veh-oos-notes") || {}).value || "").trim().slice(0, 1000), inNotes: "",   // 12.587 (Sam): notes
     oosAt: new Date().toISOString(),
     oosBy: who,
     oosRecordedBy: currentUserUnit||"",
@@ -21443,7 +21462,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.586";
+var DESKTOP_VERSION = "12.587";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -23371,6 +23390,7 @@ function rigLoadHistory(docId, elId) {
           return '<div class="m-rig-hist-row"><span class="m-rig-hist-dot ' + (out ? "out" : "in") + '"></span><div>' +
             '<b>' + (out ? "Out of service" : "Back in service") + '</b> · ' + rigEsc(rigWhen(r.at)) + ' · ' + who +
             (out ? '<div class="m-rig-hist-why">Reason: ' + (r.reason ? rigEsc(r.reason) : "<i>none given</i>") + (r.until ? " · expected back " + rigEsc(rigWhen(r.until)) : "") + '</div>' : '') +
+            (r.notes ? '<div class="m-rig-hist-why" style="white-space:pre-wrap">Notes: ' + rigEsc(r.notes) + '</div>' : '') +
           '</div></div>';
         }).join("") + (rows.length > 25 ? '<div class="m-rig-hist-empty">Showing the latest 25 of ' + rows.length + '.</div>' : '');
     rigHistHtml[elId] = html;
@@ -23393,10 +23413,10 @@ function mRenderRigStatus() {
   var el = document.getElementById("m-rig-status-list"); if (!el) return;
   if (!mRigStatusDocs.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.8rem;padding:10px 0">No rigs found. An admin adds them in Admin ▸ Fleet.</div>'; return; }
   // Keep what's being typed in an open form — calls and vehicles update live and re-draw this list
-  var keep = null;
+  var keep = null, keepIn = mRigInForm && document.getElementById("m-rig-innotes") ? { notes: document.getElementById("m-rig-innotes").value, focus: document.activeElement && document.activeElement.id } : null;
   if (mRigOpenForm && document.getElementById("m-rig-form")) {
     var on0 = document.querySelector(".m-rig-dur.on");
-    keep = { other: !!rigWhoOther["m-rig"], who: (document.getElementById("m-rig-who") || {}).value || "", reason: (document.getElementById("m-rig-reason") || {}).value || "", until: (document.getElementById("m-rig-until") || {}).value || "",
+    keep = { other: !!rigWhoOther["m-rig"], who: (document.getElementById("m-rig-who") || {}).value || "", reason: (document.getElementById("m-rig-reason") || {}).value || "", notes: (document.getElementById("m-rig-notes") || {}).value || "", until: (document.getElementById("m-rig-until") || {}).value || "",
              dur: on0 ? on0.getAttribute("data-dur") : "", focus: document.activeElement && document.activeElement.id };
   }
   var now = Date.now();
@@ -23415,6 +23435,7 @@ function mRenderRigStatus() {
         '<div><span class="k">Taken out by</span> <b>' + (v.oosBy ? rigEsc(v.oosBy) : "unknown") + '</b>' + (v.oosAt ? ' · ' + rigEsc(rigWhen(v.oosAt)) : '') +
           (v.oosRecordedBy && v.oosRecordedBy !== v.oosBy ? ' <span style="color:var(--gray)">(entered by ' + rigEsc(v.oosRecordedBy) + ')</span>' : '') + '</div>' +
         '<div><span class="k">Back</span> ' + (v.outUntil ? rigEsc(rigWhen(v.outUntil)) : "Until further notice") + '</div>' +
+        (v.outNotes ? '<div><span class="k">Notes</span> <span style="white-space:pre-wrap">' + rigEsc(v.outNotes) + '</span></div>' : '') +
       '</div>';
     } else if (st.s === "busy") {
       var where = mPoiName(st.call.address) || (mCleanAddress(st.call.address) || "").split(",")[0];
@@ -23425,6 +23446,7 @@ function mRenderRigStatus() {
       form = '<div class="m-rig-form" id="m-rig-form">' +
         '<label class="k">Who took it out of service? (required)</label>' + rigWhoTilesHtml("m-rig") +
         '<label class="k" for="m-rig-reason">Why is it going out of service? (required)</label><input type="text" id="m-rig-reason" maxlength="120" placeholder="e.g. Maintenance, inspection, out for repair">' +
+        '<label class="k" for="m-rig-notes">Notes (optional)</label><textarea id="m-rig-notes" maxlength="1000" rows="3" placeholder="Anything else — what\'s wrong, where it is, who has the keys…" style="width:100%;box-sizing:border-box;min-height:64px;resize:vertical;font-family:inherit;font-size:0.85rem;padding:8px 10px;border-radius:8px;background:#000;color:#d4a017;border:2px solid #d4a017"></textarea>' +
         '<label class="k">Back in service</label><div class="m-rig-durs">' +
           ['', '1', '4', '8', '24', 'at'].map(function(d) { var lbl = d === '' ? 'Not sure' : d === 'at' ? 'At a time…' : 'In ' + d + ' h';
             return '<button type="button" class="m-rig-dur' + (d === '' ? ' on' : '') + '" data-dur="' + d + '" onclick="mRigPickDur(this)">' + lbl + '</button>'; }).join('') +
@@ -23435,7 +23457,11 @@ function mRenderRigStatus() {
     }
     return '<div class="m-rig-card" data-rig="' + mEscHtml(String(id)) + '" data-kind="' + (v.kind === "erv" ? "erv" : "rig") + '"><div class="m-rig-top"><div class="m-rig-id">' + (v.kind === "erv" ? "🚑 " : "🚑 ") + id + '</div>' + pill + '</div>' +
       (sub ? '<div class="m-rig-sub">' + sub + '</div>' : '') +
-      (typeof hzCan === "function" && !hzCan("vehicles.oos") ? '' : st.s === "out" ? '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Back in service</button>'
+      (typeof hzCan === "function" && !hzCan("vehicles.oos") ? '' : st.s === "out" ? (mRigInForm === v.docId
+          ? '<div class="m-rig-form"><label class="k" for="m-rig-innotes">Notes (optional)</label><textarea id="m-rig-innotes" maxlength="1000" rows="3" placeholder="e.g. Repaired, new tire, checked and restocked" style="width:100%;box-sizing:border-box;min-height:64px;resize:vertical;font-family:inherit;font-size:0.85rem;padding:8px 10px;border-radius:8px;background:#000;color:#d4a017;border:2px solid #d4a017"></textarea>' +
+            '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigSetIn(\'' + key + '\')">✓ Put ' + id + ' back in service</button>' +
+            '<button class="m-rig-btn" style="background:none;border:1px solid var(--card-border);color:var(--gray)" onclick="mRigInForm=null;mRenderRigStatus()">Cancel</button></div>'
+          : '<button class="m-rig-btn in"' + (hzRigTest(id) ? ' style="' + hzRigInStyle(id) + '"' : '') + ' onclick="mRigInForm=\'' + key + '\';mRigOpenForm=null;mRenderRigStatus();var t=document.getElementById(\'m-rig-innotes\');if(t)t.focus()">✓ Back in service</button>')
                       : (mRigOpenForm === v.docId ? form : '<button class="m-rig-btn out" style="' + hzRigBtnStyle(id) + '" onclick="mRigOpenForm=\'' + key + '\';mRenderRigStatus();rigEnsureRoster(function(){if(mRigOpenForm)mRenderRigStatus();})">Take OOS</button>')) +
       rigHistBlock(v.docId, "m-rig-hist-" + v.docId) +
     '</div>';
@@ -23444,11 +23470,14 @@ function mRenderRigStatus() {
     var r = document.getElementById("m-rig-reason"), u = document.getElementById("m-rig-until"), w = document.getElementById("m-rig-who");
     if (w) { w.value = keep.who; rigWhoOther["m-rig"] = keep.other; rigWhoFilter("m-rig"); }
     if (r) r.value = keep.reason;
+    var nt = document.getElementById("m-rig-notes"); if (nt) nt.value = keep.notes || "";
     if (u) u.value = keep.until;
     var b = document.querySelector('.m-rig-dur[data-dur="' + keep.dur + '"]'); if (b) mRigPickDur(b);
     if (keep.focus) { var f = document.getElementById(keep.focus); if (f) f.focus(); }
   }
+  if (keepIn) { var it = document.getElementById("m-rig-innotes"); if (it) { it.value = keepIn.notes; if (keepIn.focus === "m-rig-innotes") it.focus(); } }
 }
+var mRigInForm = null;   // 12.587: the rig whose "back in service" notes box is open
 function mRigPickDur(btn) {
   document.querySelectorAll(".m-rig-dur").forEach(function(b) { b.classList.toggle("on", b === btn); });
   var u = document.getElementById("m-rig-until"); if (u) u.style.display = btn.getAttribute("data-dur") === "at" ? "" : "none";
@@ -23467,14 +23496,17 @@ function mRigSetOut(docId) {
     if (!dt || isNaN(dt.getTime()) || dt.getTime() <= Date.now()) { mToast("Pick a return time in the future", true); return; }
     until = dt.toISOString();
   } else if (dur) until = new Date(Date.now() + (+dur) * 3600000).toISOString();
-  db.collection("vehicles").doc(docId).set({ serviceStatus: "out", outUntil: until, outReason: reason,
+  var outNotes = ((document.getElementById("m-rig-notes") || {}).value || "").trim().slice(0, 1000);   // 12.587 (Sam): notes
+  db.collection("vehicles").doc(docId).set({ serviceStatus: "out", outUntil: until, outReason: reason, outNotes: outNotes, inNotes: "",
     oosAt: new Date().toISOString(), oosBy: who, oosRecordedBy: mCurrentUserUnit || "", oosByUid: mCurrentUser ? mCurrentUser.uid : "" }, { merge: true })
     .then(function() { mRigOpenForm = null; mToast("Rig marked out of service"); if (typeof mPrefetchRigs === "function") mPrefetchRigs(); })
     .catch(function(e) { mToast(/permission/i.test(e.message) ? "You don't have permission to change rig status" : "Error: " + e.message, true); });
 }
 function mRigSetIn(docId) {
   if (typeof hzCan === "function" && !hzCan("vehicles.oos")) { mToast("You don't have permission to put vehicles back in service", true); return; }   // 9.90 / 12.566
-  db.collection("vehicles").doc(docId).set({ serviceStatus: "in", outUntil: null, outReason: "", statusBy: mCurrentUserUnit || "", statusByUid: mCurrentUser ? mCurrentUser.uid : "", statusAt: new Date().toISOString() }, { merge: true })
+  var inNotes = ((document.getElementById("m-rig-innotes") || {}).value || "").trim().slice(0, 1000);   // 12.587 (Sam): notes
+  mRigInForm = null;
+  db.collection("vehicles").doc(docId).set({ serviceStatus: "in", outUntil: null, outReason: "", outNotes: "", inNotes: inNotes, statusBy: mCurrentUserUnit || "", statusByUid: mCurrentUser ? mCurrentUser.uid : "", statusAt: new Date().toISOString() }, { merge: true })
     .then(function() { mToast("✓ Rig back in service"); if (typeof mPrefetchRigs === "function") mPrefetchRigs(); })
     .catch(function(e) { mToast(/permission/i.test(e.message) ? "You don't have permission to change rig status" : "Error: " + e.message, true); });
 }
