@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.570">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.573">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2779,7 +2779,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.570</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.573</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -5552,11 +5552,25 @@ function hzAccPlace(k, role) {   // 12.569: "home" | "g:<group>" | "f:<folder>"
 }
 function hzAccTileFmt(k, role) { return hzAccPlace(k, role) === "home" ? "tile" : "group"; }
 function hzAccPlaceName(v) { if (v === "home") return "🏠 Own home tile"; if (/^p:/.test(v)) return "↩ Inside " + hzAccTileName(v.slice(2)); if (/^g:/.test(v)) return "📁 In " + hzAccTileName(v.slice(2)); var f = HZ_ACC.folders[v.slice(2)]; return (f && f.icon || "📁") + " In " + (f ? f.name : "folder"); }
-function hzAccPlaceOpts(k) {
-  var d = k ? hzAccDefPlace(k) : "", o = /^p:/.test(d) ? [[d, "↩ Inside " + hzAccTileName(d.slice(2)) + " (normal)"], ["home", "🏠 Own home tile"]] : [["home", "🏠 Own home tile"]];
+function hzAccPlaceOpts(k, noOff) {   // 12.572: every place for every tile (not inside itself)
+  var d = k ? hzAccDefPlace(k) : "", o = /^p:/.test(d) ? [[d, "↩ In " + hzAccTileName(d.slice(2))], ["home", "🏠 Own home tile"]] : [["home", "🏠 Own home tile"]];
   (typeof hzPlaceGroups === "function" ? hzPlaceGroups() : (typeof HZ_TILE_GROUPS !== "undefined" ? Object.keys(HZ_TILE_GROUPS) : [])).forEach(function(g) { if (g !== k) o.push(["g:" + g, "📁 In " + hzAccTileName(g)]); });
-  Object.keys(HZ_ACC.folders).forEach(function(f) { o.push(["f:" + f, (HZ_ACC.folders[f].icon || "📁") + " In " + HZ_ACC.folders[f].name]); });
-  o.push(["off", "🚫 Hidden"]); return o;
+  if (d !== "p:tools" && k !== "tools") o.push(["p:tools", "🧰 In " + hzAccTileName("tools")]);
+  Object.keys(HZ_ACC.folders).forEach(function(f) { if ("fld:" + f !== k) o.push(["f:" + f, (HZ_ACC.folders[f].icon || "📁") + " In " + HZ_ACC.folders[f].name]); });
+  if (!noOff) o.push(["off", "🚫 Hidden"]); return o;
+}
+function hzAccIsOwnRule(k) { return typeof HZ_TILE_OWN_RULE !== "undefined" && !!HZ_TILE_OWN_RULE[k] && !hzAccGroupOf(k); }
+function hzAccPlaceNode(pl) { if (/^g:/.test(pl)) return pl.slice(2); if (/^f:/.test(pl)) return "fld:" + pl.slice(2); if (pl === "p:tools") return "tools"; return ""; }
+function hzAccNodePlace(node, col) {   // where a tile / screen / folder ends up for this column (loops fall back to normal)
+  var raw = /^fld:/.test(node) ? ((HZ_ACC.folders[node.slice(4)] || {}).parent || "home") : hzAccPlace(node, col);
+  var def = /^fld:/.test(node) ? "home" : hzAccDefPlace(node);
+  if (/^f:/.test(raw) && !HZ_ACC.folders[raw.slice(2)]) return def;
+  var seen = {}, cur = hzAccPlaceNode(raw), n = 0;
+  while (cur && n++ < 12) {
+    if (cur === node || seen[cur]) return def; seen[cur] = 1;
+    cur = hzAccPlaceNode(/^fld:/.test(cur) ? ((HZ_ACC.folders[cur.slice(4)] || {}).parent || "home") : hzAccPlace(cur, col));
+  }
+  return raw;
 }
 function hzAccLevel(k, role) {   // "change" | "view" | "mixed" | "" (nothing to change on this tile)
   var ps = (typeof HZ_TILE_LEVEL !== "undefined" && HZ_TILE_LEVEL[k]) || []; if (!ps.length) return "";
@@ -5599,7 +5613,7 @@ window.hzAccView = hzAccView;
 function hzAccRender() {
   var box = document.getElementById("hz-acc"); if (!box || !HZ_ACC) return;
   var n = hzAccDirty();
-  var tabs = [["perms", "🔐 What they can do"], ["tiles", "🧩 Where they see it"], ["groups", "👥 Role groups"], ["members", "👤 Member exceptions"], ["role", "👁 Look at one role"], ["audit", "🕵️ Action log"], ["log", "⚙️ Settings log"]];
+  var tabs = [["perms", "🔐 What they can do"], ["tiles", "🧩 Where they see it"], ["groups", "👥 Role groups"], ["members", "👤 Member exceptions"], ["role", "👁 Look at one role"]];
   var h = '<div class="hz-acc-top">' +
     '<p class="hz-acc-p">Everything here starts as the app works <b>today</b>. Nothing changes for anyone until you edit something and press <b>💾 Save</b>. Admins can always do everything.</p>' +
     '<div class="hz-acc-tabs">' + tabs.map(function(t) { return '<button type="button" class="ticket-tab' + (HZ_ACC.view === t[0] ? ' active' : '') + '" onclick="hzAccView(\'' + t[0] + '\')">' + t[1] + '</button>'; }).join("") + '</div></div>';
@@ -5608,8 +5622,7 @@ function hzAccRender() {
   else if (HZ_ACC.view === "groups") h += hzAccGroupsHtml();
   else if (HZ_ACC.view === "role") h += hzAccRoleHtml();
   else if (HZ_ACC.view === "members") h += hzAccMembersHtml();
-  else if (HZ_ACC.view === "audit") h += hzAudHtml();
-  else h += hzAccLogHtml();
+  else h += hzAccPermsHtml();
   h += '<div class="hz-acc-save' + (n ? ' on' : '') + '"><span>' + (n ? n + ' unsaved change' + (n === 1 ? '' : 's') : 'No unsaved changes') +
     (HZ_ACC.updatedAt ? ' · last saved ' + hzAccEsc(new Date(HZ_ACC.updatedAt).toLocaleString([], { hourCycle: "h23", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })) + (HZ_ACC.updatedBy ? ' by ' + hzAccEsc(HZ_ACC.updatedBy) : '') : '') + '</span>' +
     '<button type="button" class="hz-acc-btn go"' + (n ? '' : ' disabled') + ' onclick="hzAccSave()">💾 Save</button>' +
@@ -5653,19 +5666,21 @@ window.hzAccTick = hzAccTick;
 // ── 🧩 where they see it — every tile, any place, View only / Change (12.569) ──
 function hzAccTilesHtml() {
   var roles = (typeof hzTileGridRoles === "function") ? hzTileGridRoles() : hzAccRoles().concat(["admin"]);
-  var tiles = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(t) { return !(typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[t.k]); });
+  var tiles = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []);   // 12.572: group tiles and rule-based tiles can move too
   if (!HZ_ACC.prevRole || roles.indexOf(HZ_ACC.prevRole) === -1) HZ_ACC.prevRole = roles.indexOf("dispatcher") !== -1 ? "dispatcher" : roles[0];
   var head = '<tr><th class="hz-acc-l">Tile</th>' + roles.map(function(r) { return '<th>' + hzAccEsc(hzAccLabel(r)) + '</th>'; }).join("") + '</tr>';
   HZ_ACC.openSubs = HZ_ACC.openSubs || {};
   var rowHtml = function(k, sub) {
     var own = !sub && typeof HZ_TILE_OWN_RULE !== "undefined" && HZ_TILE_OWN_RULE[k], grp = sub ? "" : hzAccGroupOf(k), lv = !sub && typeof HZ_TILE_LEVEL !== "undefined" && HZ_TILE_LEVEL[k];
-    var subs = sub ? [] : hzAccSubs(k), opts = hzAccPlaceOpts(k);
+    var isGrp = !sub && typeof HZ_TILE_GROUPS !== "undefined" && !!HZ_TILE_GROUPS[k];
+    var subs = sub ? [] : hzAccSubs(k), opts = hzAccPlaceOpts(k, !!own && !grp);
     var lab = (sub ? '<span class="hz-acc-subk">↳ ' + hzAccEsc(sub.i || "") + ' ' + hzAccEsc(sub.l) + '</span><div class="hz-acc-note">a screen inside ' + hzAccEsc(hzAccTileName(sub.parent)) + '</div>' : hzAccEsc(hzAccTileName(k)) + (grp ? '<div class="hz-acc-note">normally inside ' + hzAccEsc(hzAccTileName(grp)) + '</div>' : '')) +
       (sub ? '' : lv ? '<div class="hz-acc-note">✏️ Change = ' + hzAccEsc(lv.map(function(p) { var d = hzPermDef(p); return d ? d.l : p; }).join(" + ")) + '</div>' : '<div class="hz-acc-note">nothing to change — always view only</div>') +
       (subs.length ? '<button type="button" class="hz-acc-btn sm hz-acc-subt" onclick="HZ_ACC.openSubs[\'' + k + '\']=!HZ_ACC.openSubs[\'' + k + '\'];hzAccRender()">' + (HZ_ACC.openSubs[k] ? '▾ Hide' : '▸ Show') + ' the ' + subs.length + ' screens inside' + (subs.some(function(x) { return roles.some(function(r) { return !hzAccTileVis(x.k, r) || hzAccPlace(x.k, r) !== hzAccDefPlace(x.k); }); }) ? ' · some changed' : '') + '</button>' : '');
-    if (own && !grp) return '<tr><td class="hz-acc-l">' + hzAccEsc(hzAccTileName(k)) + '</td><td colspan="' + roles.length + '" class="hz-acc-note" style="font-style:italic">' + hzAccEsc(own) + '</td></tr>';
+    if (own && !grp) lab = hzAccEsc(hzAccTileName(k)) + '<div class="hz-acc-note">who sees it: ' + hzAccEsc(own) + ' — you choose where it sits</div>';
+    if (isGrp) lab = hzAccEsc(hzAccTileName(k)) + '<div class="hz-acc-note">a group tile — shows only when something inside is open to them</div>';
     var out = '<tr' + (sub ? ' class="hz-acc-subrow"' : '') + '><td class="hz-acc-l">' + lab + '</td>' + roles.map(function(r) {
-      var vis = hzAccTileVis(k, r), v = !vis ? "off" : hzAccPlace(k, r), ch = HZ_ACC.dirty.fmt[r + "|" + k] || HZ_ACC.dirty.vis[k];
+      var vis = (own && !grp) || isGrp ? true : hzAccTileVis(k, r), v = !vis ? "off" : hzAccPlace(k, r), ch = HZ_ACC.dirty.fmt[r + "|" + k] || HZ_ACC.dirty.vis[k];
       var cls = v === "off" ? "off" : (v === "home" ? "tile" : "group");
       var cell = '<select class="hz-acc-sel v-' + cls + (ch ? ' chg' : '') + '" onchange="hzAccTile(\'' + k + '\',\'' + r + '\',this.value)" aria-label="' + hzAccEsc(hzAccNameOf(k) + " — " + hzAccLabel(r) + " — place") + '">' +
         opts.map(function(o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + hzAccEsc(o[1]) + '</option>'; }).join("") + '</select>';
@@ -5681,7 +5696,7 @@ function hzAccTilesHtml() {
     return out;
   };
   var rows = tiles.map(function(t) { return rowHtml(t.k, null); }).join("");
-  return '<div class="hz-acc-two" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start"><div>' + hzAccFoldersHtml() +
+  return '<div class="hz-acc-two hz-acc-tilesgrid"><div>' + hzAccFoldersHtml() +
     '<div class="hz-acc-scroll"><table class="hz-acc-t">' + head + rows + '</table></div>' +
     '<p class="hz-acc-note" style="margin-top:8px"><b>Place</b>: 🏠 its own home tile · 📁 inside a group or folder tile · 🚫 hidden. <b>Access</b>: 👁 View only — they open it and see everything (status, lists) but every change button is hidden and the database refuses changes · ✏️ Change — full use. Access is the same permission as in 🔐 What they can do. A title (Captain, Chief…) follows the Responder column here.</p></div>' +
     '<div class="hz-acc-prevcol"><div class="hz-acc-sub">📱 Tile preview</div><select class="hz-acc-sel" style="max-width:none;width:100%;margin-bottom:6px" onchange="HZ_ACC.prevRole=this.value;hzAccRender()">' + roles.map(function(r) { return '<option value="' + r + '"' + (r === HZ_ACC.prevRole ? ' selected' : '') + '>' + hzAccEsc(hzAccLabel(r)) + '</option>'; }).join("") + '</select>' + hzAccPhoneHtml(HZ_ACC.prevRole, HZ_ACC.prevRole, true) + '</div></div>';
@@ -5724,6 +5739,7 @@ function hzAccFoldersHtml() {
       return '<div class="hz-acc-fld"><input type="text" class="hz-acc-in" style="min-width:0;width:60px;text-align:center" maxlength="4" value="' + hzAccEsc(F.icon || "📁") + '" onchange="hzAccFolderSet(\'' + f + '\',\'icon\',this.value)" aria-label="Folder icon">' +
         '<input type="text" class="hz-acc-in" maxlength="28" value="' + hzAccEsc(F.name) + '" onchange="hzAccFolderSet(\'' + f + '\',\'name\',this.value)" aria-label="Folder name">' +
         '<input type="text" class="hz-acc-in" maxlength="40" placeholder="Small line under the name (optional)" value="' + hzAccEsc(F.sub || "") + '" onchange="hzAccFolderSet(\'' + f + '\',\'sub\',this.value)" aria-label="Folder subtitle">' +
+        '<select class="hz-acc-sel" style="max-width:200px" onchange="hzAccFolderSet(\'' + f + '\',\'parent\',this.value)" aria-label="Where the folder sits">' + hzAccPlaceOpts("fld:" + f, true).map(function(o) { return '<option value="' + o[0] + '"' + (o[0] === (F.parent || "home") ? ' selected' : '') + '>' + hzAccEsc(o[1].replace(/^🏠 Own home tile$/, "🏠 On the home screen")) + '</option>'; }).join("") + '</select>' +
         '<button type="button" class="hz-acc-btn no sm" onclick="hzAccFolderDel(\'' + f + '\')">Delete</button></div>'; }).join("") +
     '<div class="hz-acc-fld"><input type="text" id="hz-acc-newfld" class="hz-acc-in" maxlength="28" placeholder="New folder name"><button type="button" class="hz-acc-btn go sm" onclick="hzAccFolderAdd()">+ Add folder</button></div></div>';
 }
@@ -5732,11 +5748,12 @@ function hzAccFolderAdd() {
   var id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "folder", base = id, n = 2; while (HZ_ACC.folders[id]) id = base + "-" + (n++);
   HZ_ACC.folders[id] = { name: name, icon: "📁", sub: "" }; HZ_ACC.dirty.folders = true; hzAccRender();
 }
-function hzAccFolderSet(f, key, v) { v = String(v || "").trim(); if (key === "name" && !v) return; HZ_ACC.folders[f][key] = v; HZ_ACC.dirty.folders = true; hzAccRender(); }
+function hzAccFolderSet(f, key, v) { v = String(v || "").trim(); if (key === "name" && !v) return; if (key === "parent" && v === "home") { delete HZ_ACC.folders[f].parent; HZ_ACC.dirty.folders = true; hzAccRender(); return; } HZ_ACC.folders[f][key] = v; HZ_ACC.dirty.folders = true; hzAccRender(); }
 function hzAccFolderDel(f) {
   hzDialog({ kind: "confirm", msg: "Delete the folder \"" + HZ_ACC.folders[f].name + "\"? Tiles in it go back to where they normally are.", okText: "Delete", noText: "Cancel" }).then(function(y) {
     if (!y) return;
     Object.keys(HZ_ACC.place).forEach(function(r) { Object.keys(HZ_ACC.place[r] || {}).forEach(function(k) { if (HZ_ACC.place[r][k] === "f:" + f) { delete HZ_ACC.place[r][k]; HZ_ACC.dirty.fmt[r + "|" + k] = 1; } }); });
+    Object.keys(HZ_ACC.folders).forEach(function(o) { if (HZ_ACC.folders[o].parent === "f:" + f) delete HZ_ACC.folders[o].parent; });
     delete HZ_ACC.folders[f]; HZ_ACC.dirty.folders = true; hzAccRender();
   });
 }
@@ -5790,41 +5807,52 @@ function hzAccRoleHtml() {
 }
 // 📱 what that role's phone home screen looks like (unsaved changes included) — folders open on tap
 function hzAccPreviewHtml(r, col) {
-  return '<div class="hz-acc-sub" style="margin-top:16px">📱 Tile preview — ' + hzAccEsc(hzAccLabel(r)) + '</div>' + hzAccPhoneHtml(r, col, false);
+  return '<div class="hz-acc-sub" style="margin-top:16px">📱 Tile preview — ' + hzAccEsc(hzAccLabel(r)) + '</div><div class="hz-acc-prevone">' + hzAccPhoneHtml(r, col, false) + '</div>';
 }
-function hzAccPhoneHtml(r, col, small) {
-  var all = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []), groups = (typeof HZ_TILE_GROUPS !== "undefined" ? HZ_TILE_GROUPS : {});
-  var vcol = r === "admin" ? "admin" : col, home = [], boxes = {};
+function hzAccIcon(k) {   // the tile's own emoji, as members see it
+  var sd = typeof hzSubDef === "function" && /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) return sd.i || "";
+  var e = document.querySelector('.big-btn[data-sec="' + k + '"]:not([data-hz-promo]) .btn-icon, .m-tile[data-sec="' + k + '"]:not([data-hz-promo]) .m-tile-icon');
+  return e ? e.textContent.trim() : "";
+}
+function hzAccPhoneHtml(r, col, small) {   // 12.572: any tile / screen / folder in any place
+  var groups = (typeof HZ_TILE_GROUPS !== "undefined" ? HZ_TILE_GROUPS : {}), vcol = r === "admin" ? "admin" : col, boxes = {}, meta = {};
   var badge = function(k) { var L = hzAccLevel(k, vcol); return L === "change" ? "✏️" : L === "view" ? "👁" : L === "mixed" ? "◐" : ""; };
-  all.forEach(function(t) {
-    var k = t.k; if (groups[k]) return;
-    var own = typeof HZ_TILE_OWN_RULE !== "undefined" && HZ_TILE_OWN_RULE[k];
-    if (own && !hzAccGroupOf(k)) { home.push({ n: hzAccTileName(k), sub: own, rule: 1 }); return; }
-    if (!hzAccTileVis(k, vcol)) return;
-    var pl = hzAccPlace(k, vcol);
-    if (pl === "home") home.push({ k: k, n: hzAccTileName(k), b: badge(k), p: !!hzAccGroupOf(k) });
-    else (boxes[pl] = boxes[pl] || []).push({ n: hzAccTileName(k), b: badge(k) });
+  var boxOf = function(node) { if (groups[node] || node === "codes") return "g:" + node; if (node === "tools") return "p:tools"; if (/^fld:/.test(node)) return "f:" + node.slice(4); return ""; };
+  var put = function(node, m) { var pl = hzAccNodePlace(node, vcol); meta[node] = m; (boxes[pl] = boxes[pl] || []).push(node); };
+  (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).forEach(function(t) {
+    var k = t.k, own = hzAccIsOwnRule(k), isG = !!groups[k];
+    if (!own && !isG && !hzAccTileVis(k, vcol)) return;
+    put(k, { i: hzAccIcon(k), n: hzAccTileName(k), b: badge(k), rule: own, sub: own ? HZ_TILE_OWN_RULE[k] : "", p: !own && !isG && hzAccNodePlace(k, vcol) !== hzAccDefPlace(k), grp: isG });
   });
-  hzAccSubs().forEach(function(x) {
-    if (!hzAccTileVis(x.k, vcol)) return; var pl = hzAccPlace(x.k, vcol);
-    if (pl === hzAccDefPlace(x.k)) { (boxes[pl] = boxes[pl] || []).push({ n: (x.i ? x.i + " " : "") + x.l }); return; }   // still inside its tile
-    var c = { n: (x.i ? x.i + " " : "") + x.l, sub: "from " + hzAccTileName(x.parent), p: 1 };
-    if (pl === "home") home.push(c); else (boxes[pl] = boxes[pl] || []).push(c);
-  });
-  var folderCells = [];
-  (typeof hzPlaceGroups === "function" ? hzPlaceGroups() : Object.keys(groups)).forEach(function(g) {
-    if (!boxes["g:" + g]) return;
-    if (!groups[g]) { var own = home.filter(function(c) { return c.k === g; })[0]; if (own) { own.id = "g:" + g; own.items = boxes["g:" + g]; own.g = 1; } return; }   // Access Codes: its own tile opens to its lists
-    folderCells.push({ id: "g:" + g, n: hzAccTileName(g), items: boxes["g:" + g], g: 1 });
-  });
-  Object.keys(boxes).forEach(function(b) { if (!/^p:/.test(b)) return; var own = home.filter(function(c) { return c.k === b.slice(2); })[0]; if (own) { own.id = b; own.items = boxes[b]; } });   // Tools: tap to see the screens still inside
-  Object.keys(HZ_ACC.folders).forEach(function(f) { if (boxes["f:" + f]) folderCells.push({ id: "f:" + f, n: (HZ_ACC.folders[f].icon || "📁") + " " + HZ_ACC.folders[f].name, items: boxes["f:" + f], g: 1, f: 1 }); });
-  var cells = folderCells.concat(home);
-  var open = HZ_ACC.prevOpen && boxes[HZ_ACC.prevOpen] ? HZ_ACC.prevOpen : "";
-  var tileH = function(c) { return '<div class="hz-acc-pt' + (c.g ? ' g' : '') + (c.p ? ' p' : '') + (c.rule ? ' r' : '') + '"' + (c.id ? ' style="cursor:pointer" onclick="HZ_ACC.prevOpen=\'' + c.id + '\';hzAccRender()"' : '') + '>' + (c.b ? '<i class="hz-acc-pb">' + c.b + '</i>' : '') + '<b>' + hzAccEsc(c.n) + '</b>' + (c.items ? '<span>' + c.items.length + ' inside — tap</span>' : c.sub ? '<span>' + hzAccEsc(c.sub) + '</span>' : '') + '</div>'; };
-  var body = open ? '<div class="hz-acc-pfh"><button type="button" class="hz-acc-btn sm" onclick="HZ_ACC.prevOpen=\'\';hzAccRender()">← Back</button> ' + hzAccEsc(hzAccPlaceName(open).replace(/^\S+\s+In\s/, "")) + '</div>' + boxes[open].map(tileH).join("")
-    : (cells.length ? cells.map(tileH).join("") : '<div class="hz-acc-note">No tiles.</div>');
-  return '<div class="hz-acc-phone' + (small ? ' sm' : '') + '">' + body + '</div>' +
+  hzAccSubs().forEach(function(x) { if (!hzAccTileVis(x.k, vcol)) return; var moved = hzAccNodePlace(x.k, vcol) !== hzAccDefPlace(x.k); put(x.k, { i: x.i, n: x.l, sub: moved ? "from " + hzAccTileName(x.parent) : "", p: moved }); });
+  Object.keys(HZ_ACC.folders).forEach(function(f) { var F = HZ_ACC.folders[f]; put("fld:" + f, { i: F.icon || "📁", n: F.name, sub: F.sub || "", grp: true }); });
+  var memo = {};
+  var shows = function(node, depth) {   // group tiles and folders show only when something inside does
+    if (memo[node] != null) return memo[node];
+    var m = meta[node]; if (!m) return false;
+    if (!m.grp) return (memo[node] = true);
+    if ((depth || 0) > 10) return false;
+    return (memo[node] = (boxes[boxOf(node)] || []).some(function(c) { return shows(c, (depth || 0) + 1); }));
+  };
+  var cellOf = function(node) {
+    var m = meta[node], bx = boxOf(node), inside = bx ? (boxes[bx] || []).filter(function(c) { return shows(c); }) : [];
+    return { id: inside.length ? bx : "", i: m.i, n: m.n, b: m.b, rule: m.rule, p: m.p, g: m.grp || inside.length, items: inside.length ? inside : null, sub: m.sub };
+  };
+  var open = HZ_ACC.prevOpen && (boxes[HZ_ACC.prevOpen] || []).some(function(c) { return shows(c); }) ? HZ_ACC.prevOpen : "";
+  var cells = (boxes[open || "home"] || []).filter(function(c) { return shows(c); }).map(cellOf);
+  cells.sort(function(a, b) { return (b.g ? 1 : 0) - (a.g ? 1 : 0); });
+  boxes[open] = open ? cells : boxes[open];
+  var tileH = function(c) {
+    return '<div class="hz-acc-pt' + (c.g ? ' g' : '') + (c.p ? ' p' : '') + (c.rule ? ' r' : '') + '"' + (c.id ? ' role="button" tabindex="0" onclick="HZ_ACC.prevOpen=\'' + c.id + '\';hzAccRender()"' : '') + '>' +
+      (c.b ? '<i class="hz-acc-pb">' + c.b + '</i>' : '') + (c.i ? '<em class="hz-acc-pi">' + hzAccEsc(c.i) + '</em>' : '') + '<b>' + hzAccEsc(c.n) + '</b>' +
+      (c.items ? '<span>' + c.items.length + ' inside</span>' : c.sub ? '<span>' + hzAccEsc(c.sub) + '</span>' : '') + '</div>';
+  };
+  var now = new Date(), clock = ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
+  var head = open ? '<div class="hz-acc-pfh"><button type="button" class="hz-acc-pbk" onclick="HZ_ACC.prevOpen=\'\';hzAccRender()">← Back</button><b>' + hzAccEsc(hzAccPlaceName(open).replace(/^\S+\s+(In|Inside)\s/, "")) + '</b></div>'
+    : '<div class="hz-acc-pfh home"><b>' + hzAccEsc(hzAccLabel(r)) + '</b><span>home screen</span></div>';
+  var body = cells.length ? cells.map(tileH).join("") : '<div class="hz-acc-note">No tiles.</div>';
+  return '<div class="hz-acc-dev"><div class="hz-acc-scr"><div class="hz-acc-stat"><span>' + clock + '</span><i></i><span>📶 🔋</span></div>' + head +
+    '<div class="hz-acc-phone">' + body + '</div><div class="hz-acc-homebar"></div></div></div>' +
     '<p class="hz-acc-note">Gold = folder / group (tap to look inside). Green = moved out of its group. Dashed = follows its own rule. ✏️ can change · 👁 view only. Members can still reorder / hide tiles for themselves.</p>';
 }
 // 📋 copy one role's settings to another
@@ -5927,118 +5955,6 @@ function hzAccExcClear(uid) {
 }
 window.hzAccExc = hzAccExc; window.hzAccExcClear = hzAccExcClear; window.hzAccMemberListOnly = hzAccMemberListOnly;
 
-// ── 🕵️ who did what — one searchable list of sensitive actions (12.567) ──
-var HZ_AUD = { rows: null, q: "", type: "", from: "", to: "", loading: false };
-var HZ_AUD_TYPES = { calls: "📁 Call records", rigs: "🚑 Rigs in / out of service", codes: "🔑 Private door codes", actas: "🎭 Act as", reports: "📊 Reports & exports" };
-function hzAudWhat(a) {
-  var m = { call_logs_list: "Opened Call Logs", call_logs_export: "Exported Call Logs", call_record_view: "Viewed a call record", call_record_edit: "Edited a call record", call_record_delete: "Deleted a call record", reports_csv: "Downloaded the Reports CSV", act_as_start: "Started Act as", audit_csv: "Downloaded the Action log", settings_csv: "Downloaded the Settings log" };
-  if (m[a]) return m[a]; if (/^call_records_mass_delete/.test(a)) return "Deleted several call records"; return String(a || "").replace(/_/g, " ");
-}
-function hzAudLoad(force) {
-  if (HZ_AUD.loading || (HZ_AUD.rows && !force)) return;
-  HZ_AUD.loading = true;
-  var safe = function(p) { return p.then(function(q) { var o = []; q.forEach(function(d) { o.push(d.data() || {}); }); return o; }).catch(function() { return []; }); };
-  Promise.all([
-    safe(db.collection("callLogAudit").orderBy("timestamp", "desc").limit(400).get()),
-    safe(db.collection("vehicleLog").orderBy("at", "desc").limit(200).get()),
-    safe(db.collection("privateCodeLog").orderBy("at", "desc").limit(150).get())
-  ]).then(function(r) {
-    var rows = [];
-    r[0].forEach(function(e) { var a = String(e.action || ""); rows.push({ at: e.timestamp || "", who: e.unit || "", type: a === "act_as_start" ? "actas" : /csv$/.test(a) ? "reports" : "calls", what: hzAudWhat(a) + (e.target ? " — " + e.target : "") + (e.callId ? " · call " + e.callId : "") + (e.fields && e.fields.length ? " (" + e.fields.join(", ") + ")" : "") }); });
-    r[1].forEach(function(e) { rows.push({ at: e.at || "", who: e.by === "auto" ? "automatic" : (e.by || ""), type: "rigs", what: (e.action === "out" ? "Took " : "Put back ") + (e.vehicleName || e.vehicleId || "a rig") + (e.action === "out" ? " out of service" : " in service") + (e.reason ? " — " + e.reason : "") + (e.recordedBy && e.recordedBy !== e.by ? " (entered by " + e.recordedBy + ")" : "") }); });
-    r[2].forEach(function(e) { rows.push({ at: typeof e.at === "string" ? e.at : (e.at && e.at.toDate ? e.at.toDate().toISOString() : ""), who: e.unit || "", type: "codes", what: "Looked up a private door code — " + (e.address || "") + (e.found ? " (code given)" : " (no match)") }); });
-    rows.sort(function(a, b) { return String(b.at).localeCompare(String(a.at)); });
-    HZ_AUD.rows = rows; HZ_AUD.loading = false; if (HZ_ACC && HZ_ACC.view === "audit") hzAccRender();
-  });
-}
-function hzAudFiltered() {
-  var q = String(HZ_AUD.q || "").toLowerCase().trim();
-  return (HZ_AUD.rows || []).filter(function(r) {
-    if (HZ_AUD.type && r.type !== HZ_AUD.type) return false;
-    var d = String(r.at).slice(0, 10);
-    if (HZ_AUD.from && d < HZ_AUD.from) return false; if (HZ_AUD.to && d > HZ_AUD.to) return false;
-    return !q || (r.who + " " + r.what).toLowerCase().indexOf(q) !== -1;
-  });
-}
-function hzAudWhen(at) { var d = new Date(at); return isNaN(d) ? String(at || "") : d.toLocaleString([], { hourCycle: "h23", month: "short", day: "numeric", year: "2-digit", hour: "2-digit", minute: "2-digit" }); }
-function hzAudHtml() {
-  hzAudLoad();
-  var rows = hzAudFiltered();
-  var h = '<p class="hz-acc-p"><b>Actions</b> — call records opened, edited or deleted, rigs taken out of service, private door codes looked up, Act as sessions and downloads. Newest first. Setting changes are in ⚙️ Settings log.</p>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
-    '<input type="search" class="hz-acc-in" id="hz-aud-q" placeholder="🔍 Member or text" value="' + hzAccEsc(HZ_AUD.q) + '" oninput="HZ_AUD.q=this.value;hzAudList()">' +
-    '<select class="hz-acc-sel" style="max-width:240px" onchange="HZ_AUD.type=this.value;hzAudList()"><option value="">All kinds</option>' + Object.keys(HZ_AUD_TYPES).map(function(k) { return '<option value="' + k + '"' + (HZ_AUD.type === k ? ' selected' : '') + '>' + HZ_AUD_TYPES[k] + '</option>'; }).join("") + '</select>' +
-    '<label class="hz-acc-note">From <input type="date" class="hz-acc-in" style="min-width:0" value="' + hzAccEsc(HZ_AUD.from) + '" onchange="HZ_AUD.from=this.value;hzAudList()"></label>' +
-    '<label class="hz-acc-note">To <input type="date" class="hz-acc-in" style="min-width:0" value="' + hzAccEsc(HZ_AUD.to) + '" onchange="HZ_AUD.to=this.value;hzAudList()"></label>' +
-    '<button type="button" class="hz-acc-btn sm" onclick="HZ_AUD.rows=null;hzAudLoad(true);hzAccRender()">↻ Refresh</button>' +
-    '<button type="button" class="hz-acc-btn sm" onclick="hzAudCsv()">⬇ Download CSV</button></div>';
-  return h + '<div id="hz-aud-list">' + hzAudListHtml(rows) + '</div>';
-}
-function hzAudListHtml(rows) {
-  if (!HZ_AUD.rows) return '<div class="hz-acc-note">Loading…</div>';
-  if (!rows.length) return '<div class="hz-acc-note">Nothing matches.</div>';
-  return '<div class="hz-acc-note" style="margin-bottom:4px">' + rows.length + ' entr' + (rows.length === 1 ? 'y' : 'ies') + (rows.length > 300 ? ' — showing the newest 300' : '') + '</div>' +
-    '<div class="hz-acc-scroll"><table class="hz-acc-t"><tr><th class="hz-acc-l" style="min-width:120px">When</th><th class="hz-acc-l" style="min-width:90px">Who</th><th class="hz-acc-l">What</th></tr>' +
-    rows.slice(0, 300).map(function(r) { return '<tr><td style="white-space:nowrap">' + hzAccEsc(hzAudWhen(r.at)) + '</td><td style="font-weight:700">' + hzAccEsc(r.who || "—") + '</td><td>' + hzAccEsc((HZ_AUD_TYPES[r.type] || "").split(" ")[0] + " " + r.what) + '</td></tr>'; }).join("") + '</table></div>';
-}
-function hzAudList() { var el = document.getElementById("hz-aud-list"); if (el) el.innerHTML = hzAudListHtml(hzAudFiltered()); }
-function hzAudCsv() {
-  var rows = hzAudFiltered(); if (!rows.length) { showToast("Nothing to download"); return; }
-  var c = function(v) { return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"'; };
-  var csv = "When,Who,Kind,What\n" + rows.map(function(r) { return [hzAudWhen(r.at), r.who, (HZ_AUD_TYPES[r.type] || "").replace(/^\S+\s/, ""), r.what].map(c).join(","); }).join("\n");
-  var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "action-log-" + new Date().toISOString().slice(0, 10) + ".csv"; document.body.appendChild(a); a.click(); setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-  try { db.collection("callLogAudit").add({ action: "audit_csv", uid: (firebase.auth().currentUser || {}).uid || "", unit: (typeof currentUserUnit !== "undefined" && currentUserUnit) || "", timestamp: new Date().toISOString() }).catch(function() {}); } catch (e) {}
-}
-window.hzAudList = hzAudList; window.hzAudCsv = hzAudCsv; window.hzAudLoad = hzAudLoad;
-
-// ── ⚙️ settings log — every saved setting (Admin panel 💾 Save) + Control & Access saves (12.567) ──
-var HZ_SET = { rows: null, q: "", from: "", to: "", loading: false };
-function hzSetLoad(force) {
-  if (HZ_SET.loading || (HZ_SET.rows && !force)) return;
-  HZ_SET.loading = true;
-  db.collection("settingsAudit").orderBy("at", "desc").limit(400).get().then(function(q) { var o = []; q.forEach(function(d) { o.push(d.data() || {}); }); return o; }).catch(function() { return []; }).then(function(list) {
-    var rows = list.map(function(e) { return { at: e.at || "", who: (e.unit || "") + (e.actAsBy ? " (Act as by " + e.actAsBy + ")" : ""), where: e.where || "", what: (e.changes || []).join(" · ") }; });
-    (HZ_ACC && HZ_ACC.history || []).forEach(function(e) { rows.push({ at: e.at || "", who: e.by || "", where: "🛡️ Control & Access", what: e.what || "" }); });
-    rows.sort(function(a, b) { return String(b.at).localeCompare(String(a.at)); });
-    HZ_SET.rows = rows; HZ_SET.loading = false; if (HZ_ACC && HZ_ACC.view === "log") hzAccRender();
-  });
-}
-function hzSetFiltered() {
-  var q = String(HZ_SET.q || "").toLowerCase().trim();
-  return (HZ_SET.rows || []).filter(function(r) {
-    var d = String(r.at).slice(0, 10);
-    if (HZ_SET.from && d < HZ_SET.from) return false; if (HZ_SET.to && d > HZ_SET.to) return false;
-    return !q || (r.who + " " + r.where + " " + r.what).toLowerCase().indexOf(q) !== -1;
-  });
-}
-function hzSetListHtml(rows) {
-  if (!HZ_SET.rows) return '<div class="hz-acc-note">Loading…</div>';
-  if (!rows.length) return '<div class="hz-acc-note">Nothing matches. (Setting saves are recorded from this version on.)</div>';
-  return '<div class="hz-acc-note" style="margin-bottom:4px">' + rows.length + ' save' + (rows.length === 1 ? '' : 's') + (rows.length > 300 ? ' — showing the newest 300' : '') + '</div>' +
-    '<div class="hz-acc-scroll"><table class="hz-acc-t"><tr><th class="hz-acc-l" style="min-width:120px">When</th><th class="hz-acc-l" style="min-width:90px">Who</th><th class="hz-acc-l" style="min-width:150px">Screen</th><th class="hz-acc-l">What changed</th></tr>' +
-    rows.slice(0, 300).map(function(r) { return '<tr><td style="white-space:nowrap">' + hzAccEsc(hzAudWhen(r.at)) + '</td><td style="font-weight:700">' + hzAccEsc(r.who || "—") + '</td><td>' + hzAccEsc(r.where || "") + '</td><td>' + hzAccEsc(r.what) + '</td></tr>'; }).join("") + '</table></div>';
-}
-function hzSetList() { var el = document.getElementById("hz-set-list"); if (el) el.innerHTML = hzSetListHtml(hzSetFiltered()); }
-function hzAccLogHtml() {
-  hzSetLoad();
-  return '<p class="hz-acc-p"><b>Settings</b> — every time someone pressed 💾 Save in the Admin panel (and every Control &amp; Access save): who, when, which screen, and what changed. Actions people took are in 🕵️ Action log.</p>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
-    '<input type="search" class="hz-acc-in" placeholder="🔍 Member, screen or setting" value="' + hzAccEsc(HZ_SET.q) + '" oninput="HZ_SET.q=this.value;hzSetList()">' +
-    '<label class="hz-acc-note">From <input type="date" class="hz-acc-in" style="min-width:0" value="' + hzAccEsc(HZ_SET.from) + '" onchange="HZ_SET.from=this.value;hzSetList()"></label>' +
-    '<label class="hz-acc-note">To <input type="date" class="hz-acc-in" style="min-width:0" value="' + hzAccEsc(HZ_SET.to) + '" onchange="HZ_SET.to=this.value;hzSetList()"></label>' +
-    '<button type="button" class="hz-acc-btn sm" onclick="HZ_SET.rows=null;hzSetLoad(true);hzAccRender()">↻ Refresh</button>' +
-    '<button type="button" class="hz-acc-btn sm" onclick="hzSetCsv()">⬇ Download CSV</button></div>' +
-    '<div id="hz-set-list">' + hzSetListHtml(hzSetFiltered()) + '</div>';
-}
-function hzSetCsv() {
-  var rows = hzSetFiltered(); if (!rows.length) { showToast("Nothing to download"); return; }
-  var c = function(v) { return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"'; };
-  var csv = "When,Who,Screen,What changed\n" + rows.map(function(r) { return [hzAudWhen(r.at), r.who, r.where, r.what].map(c).join(","); }).join("\n");
-  var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "settings-log-" + new Date().toISOString().slice(0, 10) + ".csv"; document.body.appendChild(a); a.click(); setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-  try { db.collection("callLogAudit").add({ action: "settings_csv", uid: (firebase.auth().currentUser || {}).uid || "", unit: (typeof currentUserUnit !== "undefined" && currentUserUnit) || "", timestamp: new Date().toISOString() }).catch(function() {}); } catch (e) {}
-}
-window.hzSetList = hzSetList; window.hzSetCsv = hzSetCsv; window.hzSetLoad = hzSetLoad;
-
 // ── save / discard / reset ──
 function hzAccSave() {
   var n = hzAccDirty(); if (!n || !HZ_ACC) return;
@@ -6065,7 +5981,7 @@ function hzAccSave() {
   }
   var m = document.getElementById("hz-acc-msg"); if (m) { m.className = "form-msg"; m.textContent = "Saving…"; }
   Promise.all(jobs).then(function() {
-    showToast("✓ Control & Access saved"); HZ_SET.rows = null;
+    showToast("✓ Control & Access saved");
     try { if (typeof hzLoadTileAccess === "function") hzLoadTileAccess(currentRole === "admin", currentUserRoles); } catch (e) {}
     hzAccLoad();
   }).catch(function(e) { if (m) { m.className = "form-msg error"; m.textContent = "Not saved: " + e.message; } });
@@ -6565,7 +6481,7 @@ var HZ_TILE_OWN_RULE = {
 function hzTilesDiscover() {
   var have = {}; HZ_TILES.forEach(function(t) { have[t.k] = 1; });
   document.querySelectorAll('.big-btn[data-sec], .m-tile[data-sec]').forEach(function(el) {
-    var k = el.getAttribute("data-sec"); if (!k || have[k]) return;
+    var k = el.getAttribute("data-sec"); if (!k || have[k] || el.hasAttribute("data-hz-promo") || el.hasAttribute("data-hz-fld") || el.hasAttribute("data-hz-sub")) return;   // 12.572: not copies / folders / pulled-out screens
     var lab = el.querySelector(".btn-label, .m-tile-label, .m-tile-name, .m-tile-title");
     var l = String(lab ? (lab.getAttribute("data-hz-orig") || lab.textContent) : el.textContent).replace(/\s+/g, " ").trim() || k;
     HZ_TILES.push({ k: k, l: l, found: true }); have[k] = 1;
@@ -8921,16 +8837,6 @@ function saveEdit() {
     })
     .then(function() {
       var cu = allUsersCache.find(function(x) { return x.uid === uid; });
-      try {   // 12.567: ⚙️ Settings log — role / admin / access changes on a member
-        var was = cu ? [cu.role === "admin" ? "admin" : ""].concat(cu.roles || []).filter(Boolean).join(", ") : "";
-        var now = [isAdminCheck ? "admin" : ""].concat(opRoles || []).filter(Boolean).join(", ");
-        var ch = ["Edited member " + unit + " " + fname + " " + lname];
-        if (cu && was !== now) ch.push("roles: " + (was || "none") + " → " + (now || "none"));
-        if (cu && !!cu.ticketSupervisor !== !!ticketSupervisor) ch.push("Logistics Supervisor: " + (ticketSupervisor ? "on" : "off"));
-        if (cu && !!cu.cjCadAccess !== !!cjCadAccess) ch.push("CJ CAD access: " + (cjCadAccess ? "on" : "off"));
-        if (cu && String(cu.maxDevices || "") !== String(md.value || "")) ch.push("device limit: " + (cu.maxDevices || "default") + " → " + (md.value || "default"));
-        if (typeof hzSettingsLog === "function") hzSettingsLog(ch, "👥 Users");
-      } catch (e) {}
       if (cu) Object.assign(cu, { firstName: fname, lastName: lname, unit: unit, phone: phone, email: email, emsLevel: emsLevel, emsLicense: emsLicense, roles: opRoles, role: isAdminCheck ? "admin" : "responder", maxDevices: md.value, ervDriver: ervDriver, daytimeResponder: daytimeResponder, rigDriver: rigDriver, ticketSupervisor: ticketSupervisor, cjCadAccess: cjCadAccess });
       msg.className = "form-msg success"; msg.textContent = "✓ Saved!" + (made ? " They had no sign-in account — one was made. Click Reset Password to email them a link." : "");
       setTimeout(function() { closeEdit(); loadUsers(); }, made ? 2600 : 800); })
@@ -15543,27 +15449,14 @@ function hzPendBar() {
   var t = document.getElementById("hz-pend-txt");
   if (t) { t.textContent = n + " unsaved change" + (n === 1 ? "" : "s"); t.title = Object.keys(HZ_PEND).map(function(k) { return HZ_PEND[k].label; }).join("\n"); }
 }
-// 12.567 (Sam): every saved Admin setting is written to settingsAudit — who, when, which screen, what changed.
-// Shown in Admin ▸ Security ▸ 🛡️ Control & Access ▸ ⚙️ Settings log (kept apart from the 🕵️ Action log).
-function hzSettingsLog(changes, where) {
-  try {
-    var u = (typeof currentUser !== "undefined" && currentUser && currentUser.uid) ? currentUser : firebase.auth().currentUser; if (!u || !changes || !changes.length) return;
-    var imp = typeof window.hzImpGet === "function" ? window.hzImpGet() : null;
-    db.collection("settingsAudit").add({ at: new Date().toISOString(), uid: u.uid, unit: (typeof currentUserUnit !== "undefined" && currentUserUnit) || "",
-      where: String(where || "").trim().slice(0, 60), changes: changes.slice(0, 50).map(function(c) { return String(c).slice(0, 300); }),
-      actAsBy: imp && imp.byUnit ? String(imp.byUnit) : "" }).catch(function() {});
-  } catch (e) {}
-}
 function hzPendSave() {
   var keys = Object.keys(HZ_PEND); if (!keys.length) return Promise.resolve(true);
   var t = document.getElementById("hz-pend-txt"); if (t) t.textContent = "Saving…";
   var failed = [];
-  var done = [];   // 12.567: ⚙️ Settings log
   return keys.reduce(function(chain, k) {
-    return chain.then(function() { return Promise.resolve().then(HZ_PEND[k].save).then(function() { done.push(String(HZ_PEND[k].label || k)); delete HZ_PEND[k]; }).catch(function(e) { failed.push(HZ_PEND[k].label + ": " + e.message); }); });
+    return chain.then(function() { return Promise.resolve().then(HZ_PEND[k].save).then(function() { delete HZ_PEND[k]; }).catch(function(e) { failed.push(HZ_PEND[k].label + ": " + e.message); }); });
   }, Promise.resolve()).then(function() {
     if (!hzPendCount()) { HZ_PEND_SNAP = null; HZ_PEND_VAL = {}; }
-    if (done.length) hzSettingsLog(done, (document.querySelector("#admin-tabbar .admin-tab.active") || {}).textContent || "");
     hzPendBar(); hzPendRerender();
     if (failed.length) { showToast("Some changes weren't saved — " + failed[0], true); return false; }
     showToast("✓ Saved"); return true;
@@ -21521,7 +21414,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.570";
+var DESKTOP_VERSION = "12.573";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -32089,7 +31982,7 @@ var HZ_TL_HIDE = { trans: true };   // 12.340 (Sam): Live Translator hidden for 
 function hzTlMenu() {
   return HZ_TL_LIST.filter(function(t) { return !HZ_TL_HIDE[t[0]] && (typeof hzSubInParent !== "function" || hzSubInParent("tool-" + t[0])); }).map(function(t) {   // 9.94 / 12.570: screens moved out or hidden in Control & Access
     return '<button class="hz-tl-item" onclick="hzTlGo(\'' + t[0] + '\')"><span class="hz-tl-ic">' + t[1] + '</span><span><b>' + hzTlEsc(t[2]) + '</b><small>' + hzTlEsc(t[3]) + '</small></span><span class="hz-tl-chev">›</span></button>';
-  }).join("") + '<div class="hz-tl-note hz-tl-disc">These are quick aids only. Follow NJ EMS protocols and medical control.</div>';
+  }).join("") + (typeof hzToolsExtraHtml === "function" ? hzToolsExtraHtml(hzTlEsc) : "") + '<div class="hz-tl-note hz-tl-disc">These are quick aids only. Follow NJ EMS protocols and medical control.</div>';
 }
 // one row of choices: [value, label]
 function hzTlRow(group, key, title, opts, sel) {
@@ -34071,7 +33964,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-tagmir .hz-taglink{color:#000 !important;-webkit-text-fill-color:#000 !important;background:#d4a017 !important;box-shadow:inset 0 0 0 1px #d4a017 !important}";   // 9.78 / 12.550 (Sam): @tags while typing — solid gold pills, black text, every theme
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:-webkit-autofill,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:-webkit-autofill:hover,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:-webkit-autofill:focus,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:-webkit-autofill:active,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall textarea:-webkit-autofill,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall select:-webkit-autofill,html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-input:-webkit-autofill,html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-input:-webkit-autofill:hover,html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-input:-webkit-autofill:focus,html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-input:-webkit-autofill:active{-webkit-box-shadow:0 0 0 1000px #000 inset !important;box-shadow:0 0 0 1000px #000 inset !important;-webkit-text-fill-color:#d4a017 !important;color:#d4a017 !important;caret-color:#d4a017 !important;background-color:#000 !important;transition:background-color 99999s ease-out 0s !important}html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:autofill{-webkit-box-shadow:0 0 0 1000px #000 inset !important;box-shadow:0 0 0 1000px #000 inset !important;-webkit-text-fill-color:#d4a017 !important;color:#d4a017 !important;background-color:#000 !important}";   // 9.80 / 12.552 (Sam): browser autofill (light blue) → black / gold on New Call and form boxes
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .users-table .ur-actions{flex-wrap:wrap !important;white-space:normal !important;row-gap:5px !important;max-width:340px;margin-left:auto}html body:not(#hzA):not(#hzB):not(#hzC) .users-table td:last-child{min-width:320px}html body:not(#hzA):not(#hzB):not(#hzC) .users-table .ur-actions > *{flex:0 0 auto}";   // 12.564 (Sam: Users list buttons ran off the right edge after 🎭 Act as was added) — they wrap onto two lines
-  st.textContent += "#hz-acc .hz-acc-p{color:var(--gray);font-size:0.84rem;line-height:1.6;margin:0 0 10px}#hz-acc .hz-acc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}#hz-acc .hz-acc-scroll{overflow-x:auto}#hz-acc .hz-acc-t{border-collapse:collapse;width:100%;font-size:0.82rem}#hz-acc .hz-acc-t th{background:var(--card-bg,#fff);padding:8px 6px;border-bottom:2px solid var(--card-border);font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}#hz-acc .hz-acc-t td{padding:7px 6px;border-bottom:1px solid var(--card-border);vertical-align:middle}#hz-acc .hz-acc-l{text-align:left;min-width:240px;font-weight:600}#hz-acc .hz-acc-c{text-align:center}#hz-acc .hz-acc-g{background:rgba(212,160,23,0.10)}#hz-acc .hz-acc-area td{background:rgba(0,0,0,0.04);font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.04em;font-size:0.85rem}#hz-acc .hz-acc-always{color:var(--gray);font-style:italic;font-size:0.75rem}#hz-acc .hz-acc-note{color:var(--gray);font-size:0.74rem;font-weight:400;line-height:1.5}#hz-acc .hz-acc-chg{background:#d4a017;color:#000;border-radius:6px;padding:1px 6px;font-size:0.66rem;font-weight:700;margin-left:4px}#hz-acc .hz-acc-def{color:var(--gray);font-size:0.66rem;font-weight:400;margin-left:4px}#hz-acc .hz-acc-sel{font-size:0.78rem;padding:4px 6px;border-radius:7px;border:1px solid var(--card-border);max-width:170px}#hz-acc .hz-acc-sel.v-off{opacity:.6}#hz-acc .hz-acc-sel.chg{border:2px solid #d4a017}#hz-acc .hz-acc-save{position:sticky;bottom:0;z-index:6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:10px 12px;background:#000;border:2px solid #d4a017;border-radius:12px;color:#d4a017;font-weight:700}#hz-acc .hz-acc-save span{flex:1;min-width:200px}#hz-acc .hz-acc-btn{border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;background:#000;color:#d4a017;border:2px solid #d4a017;font-size:0.85rem}#hz-acc .hz-acc-btn.go{background:#34c759;color:#000;border-color:#34c759}#hz-acc .hz-acc-btn.no{background:#c62828;color:#fff;border-color:#c62828}#hz-acc .hz-acc-btn:disabled{opacity:.4;cursor:default}#hz-acc .hz-acc-btn.sm{padding:5px 10px;font-size:0.78rem}#hz-acc .hz-acc-grp{border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:10px}#hz-acc .hz-acc-grp-h{display:flex;gap:8px;align-items:center;margin-bottom:8px}#hz-acc .hz-acc-in{padding:7px 10px;border-radius:8px;border:1px solid var(--card-border);font-size:0.88rem;min-width:200px}#hz-acc .hz-acc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}#hz-acc .hz-acc-chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--card-border);border-radius:16px;padding:4px 10px;font-size:0.8rem;cursor:pointer}#hz-acc .hz-acc-chip.on{background:#d4a017;color:#000;border-color:#d4a017;font-weight:700}#hz-acc .hz-acc-chip input{margin:0}#hz-acc .hz-acc-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:800px){#hz-acc .hz-acc-two{grid-template-columns:1fr}}#hz-acc .hz-acc-sub{font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.04em;margin-bottom:6px}#hz-acc .hz-acc-li{padding:5px 0;border-bottom:1px solid var(--card-border);font-size:0.84rem}#hz-acc .hz-acc-li.no{color:var(--gray)}#hz-acc .hz-acc-phone{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;max-width:640px;padding:12px;border:2px solid #d4a017;border-radius:18px;background:#000;margin:6px 0}#hz-acc .hz-acc-pt{background:#000;border:2px solid #555;border-radius:12px;padding:10px 8px;color:#d4a017;font-size:0.8rem;text-align:center;display:flex;flex-direction:column;gap:3px;min-height:52px;justify-content:center}#hz-acc .hz-acc-pt span{font-size:0.66rem;color:#bbb;font-weight:400}#hz-acc .hz-acc-pt.g{border-color:#d4a017}#hz-acc .hz-acc-pt.p{border-color:#34c759}#hz-acc .hz-acc-pt.r{border-style:dashed}#hz-acc .hz-acc-c .hz-acc-sel{display:block;margin:2px auto}#hz-acc .hz-acc-sel.lv{font-size:0.72rem}#hz-acc .hz-acc-sel.lv-change{border:2px solid #34c759}#hz-acc .hz-acc-sel.lv-view{border:2px solid #888}#hz-acc .hz-acc-sel.lv-mixed{border:2px dashed #d4a017}#hz-acc .hz-acc-pt{position:relative}#hz-acc .hz-acc-pb{position:absolute;top:3px;right:5px;font-style:normal;font-size:0.7rem}#hz-acc .hz-acc-pfh{grid-column:1/-1;display:flex;gap:8px;align-items:center;color:#d4a017;font-weight:700}#hz-acc .hz-acc-phone.sm{grid-template-columns:repeat(2,1fr);max-width:300px;max-height:70vh;overflow-y:auto}#hz-acc .hz-acc-prevcol{position:sticky;top:70px}#hz-acc .hz-acc-subrow td{background:rgba(212,160,23,0.05)}#hz-acc .hz-acc-subk{padding-left:14px;display:inline-block}#hz-acc .hz-acc-subt{margin-top:5px}#hz-acc .hz-acc-fld{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}#hz-acc .hz-acc-fld input{width:auto !important;flex:1 1 160px;margin:0 !important}#hz-acc .hz-acc-fld input[maxlength='4']{flex:0 0 56px;text-align:center}#hz-acc .hz-acc-c .hz-acc-sel{min-width:118px}@media(max-width:1000px){#hz-acc .hz-acc-two{grid-template-columns:1fr !important}#hz-acc .hz-acc-prevcol{position:static}}";   // 12.566: Control & Access dashboard
+  st.textContent += "#hz-acc .hz-acc-p{color:var(--gray);font-size:0.84rem;line-height:1.6;margin:0 0 10px}#hz-acc .hz-acc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}#hz-acc .hz-acc-scroll{overflow-x:auto}#hz-acc .hz-acc-t{border-collapse:collapse;width:100%;font-size:0.82rem}#hz-acc .hz-acc-t th{background:var(--card-bg,#fff);padding:8px 6px;border-bottom:2px solid var(--card-border);font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}#hz-acc .hz-acc-t td{padding:7px 6px;border-bottom:1px solid var(--card-border);vertical-align:middle}#hz-acc .hz-acc-l{text-align:left;min-width:240px;font-weight:600}#hz-acc .hz-acc-c{text-align:center}#hz-acc .hz-acc-g{background:rgba(212,160,23,0.10)}#hz-acc .hz-acc-area td{background:rgba(0,0,0,0.04);font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.04em;font-size:0.85rem}#hz-acc .hz-acc-always{color:var(--gray);font-style:italic;font-size:0.75rem}#hz-acc .hz-acc-note{color:var(--gray);font-size:0.74rem;font-weight:400;line-height:1.5}#hz-acc .hz-acc-chg{background:#d4a017;color:#000;border-radius:6px;padding:1px 6px;font-size:0.66rem;font-weight:700;margin-left:4px}#hz-acc .hz-acc-def{color:var(--gray);font-size:0.66rem;font-weight:400;margin-left:4px}#hz-acc .hz-acc-sel{font-size:0.78rem;padding:4px 6px;border-radius:7px;border:1px solid var(--card-border);max-width:170px}#hz-acc .hz-acc-sel.v-off{opacity:.6}#hz-acc .hz-acc-sel.chg{border:2px solid #d4a017}#hz-acc .hz-acc-save{position:sticky;bottom:0;z-index:6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:10px 12px;background:#000;border:2px solid #d4a017;border-radius:12px;color:#d4a017;font-weight:700}#hz-acc .hz-acc-save span{flex:1;min-width:200px}#hz-acc .hz-acc-btn{border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;background:#000;color:#d4a017;border:2px solid #d4a017;font-size:0.85rem}#hz-acc .hz-acc-btn.go{background:#34c759;color:#000;border-color:#34c759}#hz-acc .hz-acc-btn.no{background:#c62828;color:#fff;border-color:#c62828}#hz-acc .hz-acc-btn:disabled{opacity:.4;cursor:default}#hz-acc .hz-acc-btn.sm{padding:5px 10px;font-size:0.78rem}#hz-acc .hz-acc-grp{border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:10px}#hz-acc .hz-acc-grp-h{display:flex;gap:8px;align-items:center;margin-bottom:8px}#hz-acc .hz-acc-in{padding:7px 10px;border-radius:8px;border:1px solid var(--card-border);font-size:0.88rem;min-width:200px}#hz-acc .hz-acc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}#hz-acc .hz-acc-chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--card-border);border-radius:16px;padding:4px 10px;font-size:0.8rem;cursor:pointer}#hz-acc .hz-acc-chip.on{background:#d4a017;color:#000;border-color:#d4a017;font-weight:700}#hz-acc .hz-acc-chip input{margin:0}#hz-acc .hz-acc-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:800px){#hz-acc .hz-acc-two{grid-template-columns:1fr}}#hz-acc .hz-acc-sub{font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.04em;margin-bottom:6px}#hz-acc .hz-acc-li{padding:5px 0;border-bottom:1px solid var(--card-border);font-size:0.84rem}#hz-acc .hz-acc-li.no{color:var(--gray)}#hz-acc .hz-acc-phone{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;max-width:640px;padding:12px;border:2px solid #d4a017;border-radius:18px;background:#000;margin:6px 0}#hz-acc .hz-acc-pt{background:#000;border:2px solid #555;border-radius:12px;padding:10px 8px;color:#d4a017;font-size:0.8rem;text-align:center;display:flex;flex-direction:column;gap:3px;min-height:52px;justify-content:center}#hz-acc .hz-acc-pt span{font-size:0.66rem;color:#bbb;font-weight:400}#hz-acc .hz-acc-pt.g{border-color:#d4a017}#hz-acc .hz-acc-pt.p{border-color:#34c759}#hz-acc .hz-acc-pt.r{border-style:dashed}#hz-acc .hz-acc-c .hz-acc-sel{display:block;margin:2px auto}#hz-acc .hz-acc-sel.lv{font-size:0.72rem}#hz-acc .hz-acc-sel.lv-change{border:2px solid #34c759}#hz-acc .hz-acc-sel.lv-view{border:2px solid #888}#hz-acc .hz-acc-sel.lv-mixed{border:2px dashed #d4a017}#hz-acc .hz-acc-pt{position:relative}#hz-acc .hz-acc-pb{position:absolute;top:3px;right:5px;font-style:normal;font-size:0.7rem}#hz-acc .hz-acc-pfh{grid-column:1/-1;display:flex;gap:8px;align-items:center;color:#d4a017;font-weight:700}#hz-acc .hz-acc-phone.sm{grid-template-columns:repeat(2,1fr);max-width:300px;max-height:70vh;overflow-y:auto}#hz-acc .hz-acc-prevcol{position:sticky;top:70px}#hz-acc .hz-acc-subrow td{background:rgba(212,160,23,0.05)}#hz-acc .hz-acc-subk{padding-left:14px;display:inline-block}#hz-acc .hz-acc-subt{margin-top:5px}#hz-acc .hz-acc-fld{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}#hz-acc .hz-acc-fld input{width:auto !important;flex:1 1 160px;margin:0 !important}#hz-acc .hz-acc-fld input[maxlength='4']{flex:0 0 56px;text-align:center}#hz-acc .hz-acc-c .hz-acc-sel{min-width:118px}html body #hz-acc{padding-bottom:12px}html body #hz-acc .hz-acc-tilesgrid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start}html body #hz-acc .hz-acc-scroll{overflow-x:auto;border:1px solid var(--card-border);border-radius:10px}html body #hz-acc .hz-acc-t th.hz-acc-l,html body #hz-acc .hz-acc-t td.hz-acc-l{position:sticky;left:0;z-index:2;background:#0d1626;min-width:230px;max-width:280px;box-shadow:2px 0 0 rgba(212,160,23,0.25)}html body #hz-acc .hz-acc-subrow td.hz-acc-l{background:#141c2b}html body #hz-acc .hz-acc-t td.hz-acc-c{min-width:140px;padding:6px 5px}html body #hz-acc .hz-acc-c .hz-acc-sel{display:block;width:100%;max-width:none;min-width:128px;margin:3px 0;box-sizing:border-box}html body #hz-acc .hz-acc-t td{vertical-align:top}html body #hz-acc .hz-acc-tabs{gap:6px}html body #hz-acc .hz-acc-save{margin-top:16px;bottom:10px}html body #hz-acc .hz-acc-prevcol{position:sticky;top:76px;width:330px}html body #hz-acc .hz-acc-prevone{display:flex;justify-content:flex-start}html body #hz-acc .hz-acc-dev{width:300px;border:10px solid #1b1b1d;border-radius:42px;background:#000;box-shadow:0 0 0 2px #3a3a3e,0 14px 40px rgba(0,0,0,.55);margin:4px 0 8px;box-sizing:content-box}html body #hz-acc .hz-acc-scr{border-radius:32px;overflow:hidden;background:#05070c;height:600px;display:flex;flex-direction:column}html body #hz-acc .hz-acc-stat{display:flex;align-items:center;justify-content:space-between;padding:9px 20px 4px;font-size:11px;font-weight:700;color:#fff}html body #hz-acc .hz-acc-stat i{width:78px;height:20px;background:#1b1b1d;border-radius:12px}html body #hz-acc .hz-acc-pfh{display:flex;align-items:baseline;gap:8px;padding:6px 14px 8px;color:#d4a017;font-family:Oswald,sans-serif;letter-spacing:.04em;font-size:13px;border-bottom:1px solid rgba(212,160,23,.25)}html body #hz-acc .hz-acc-pfh span{color:#888;font-size:10px;font-family:inherit;text-transform:uppercase}html body #hz-acc .hz-acc-pbk{background:#000;color:#d4a017;border:1px solid #d4a017;border-radius:7px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer}html body #hz-acc .hz-acc-scr .hz-acc-phone{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;margin:0;border:none;border-radius:0;max-width:none;max-height:none;background:transparent;overflow-y:auto;flex:1;align-content:start}html body #hz-acc .hz-acc-scr .hz-acc-pt{min-height:84px;padding:8px 6px;border-radius:14px;gap:2px;background:#0b0f18;border:2px solid #2a2f3a}html body #hz-acc .hz-acc-scr .hz-acc-pt b{font-family:Oswald,sans-serif;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;line-height:1.25}html body #hz-acc .hz-acc-scr .hz-acc-pt span{font-size:9px;line-height:1.3}html body #hz-acc .hz-acc-scr .hz-acc-pt.g{border-color:#d4a017;cursor:pointer}html body #hz-acc .hz-acc-scr .hz-acc-pt.p{border-color:#34c759}html body #hz-acc .hz-acc-scr .hz-acc-pt.r{border-style:dashed}html body #hz-acc .hz-acc-pi{font-style:normal;font-size:22px;line-height:1.1}html body #hz-acc .hz-acc-homebar{height:4px;width:110px;background:#6b6b70;border-radius:3px;margin:6px auto 8px;flex:none}html body #hz-acc .hz-acc-two:not(.hz-acc-tilesgrid){grid-template-columns:1fr 1fr}html body #hz-acc .hz-acc-t td.hz-acc-c{min-width:0;white-space:nowrap}html body #hz-acc .hz-acc-c .hz-acc-sel{width:auto;min-width:0;max-width:none;white-space:nowrap}html body #hz-acc .hz-acc-tabs .ticket-tab{white-space:nowrap}html body #hz-acc .hz-acc-scr .hz-acc-pt b,html body #hz-acc .hz-acc-scr .hz-acc-pt span{overflow-wrap:anywhere}html body #hz-acc .hz-acc-fld .hz-acc-sel{max-width:none !important;width:auto}html body #hz-acc .hz-acc-sel{text-overflow:clip}@media(max-width:1100px){html body #hz-acc .hz-acc-tilesgrid{grid-template-columns:1fr}html body #hz-acc .hz-acc-prevcol{position:static}}@media(max-width:1000px){#hz-acc .hz-acc-two{grid-template-columns:1fr !important}#hz-acc .hz-acc-prevcol{position:static}}";   // 12.566: Control & Access dashboard
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
@@ -34109,7 +34002,548 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook); else hook();
 })();
 </script>
-<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
+<script id="hz-sa-js">/* 12.571 (Sam): 🤖 SETTINGS ASSISTANT — Admin panel, admins only.
+   Talk in plain words ("night shift from 22:00 to 06:00"). The page sends the chat + the settings it can change (with their
+   current values) to the settingsAssistant server function (Gemini). It proposes changes; nothing is saved until the admin
+   presses ✅ Approve. Then each change is saved through the app's own code and a 🔗 link opens that setting to check it.
+   Links look like  index.html#hzgo=…  so they also work from another tab. */
+(function() {
+  var SA = { msgs: [], busy: false, prop: null, open: false, cat: null, units: null };
+  function esc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function isAdm() { return typeof currentRole !== "undefined" && currentRole === "admin"; }
+  function hhmm(v) { var m = String(v == null ? "" : v).trim().match(/^(\d{1,2}):?(\d{2})$/); if (!m) return ""; var h = +m[1], mi = +m[2]; if (h > 23 || mi > 59) return ""; return ("0" + h).slice(-2) + ":" + ("0" + mi).slice(-2); }
+  function getDoc(n) { return db.collection("appdata").doc(n).get().then(function(s) { return s.exists ? (s.data() || {}) : {}; }).catch(function() { return {}; }); }
+  function roleLabel(r) { return typeof hzRoleLabel === "function" ? hzRoleLabel(r) : r; }
+  function tileName(k) { var sd = typeof hzSubDef === "function" && /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) return sd.l; return typeof hzAccTileName === "function" ? hzAccTileName(k) : k; }
+  function placeName(v) {
+    if (v === "off") return "🚫 Hidden"; if (v === "home") return "🏠 Own home tile";
+    if (/^p:/.test(v)) return "↩ In " + tileName(v.slice(2));
+    if (/^g:/.test(v)) return "📁 In " + tileName(v.slice(2));
+    var f = (((typeof HZ_ACCESS !== "undefined" && HZ_ACCESS) || {}).folders || {})[v.slice(2)]; return "📁 In " + (f ? f.name : "folder");
+  }
+  var TKP = [["urgent", "Urgent"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]];
+  function setShift(patch) {
+    return db.collection("appdata").doc("shifts").set(patch, { merge: true }).then(function() { return getDoc("shifts"); }).then(function(d) {
+      window.HZ_NIGHT_SAVE = Object.assign({}, window.HZ_NIGHT_SAVE || {}, patch);
+      if (typeof hzNightApply === "function") hzNightApply(d);
+      if ("reminderOn" in patch || "reminderBefore" in patch) window.HZ_NIGHT_REM = { on: d.reminderOn !== false && !!d.reminderOn, before: d.reminderBefore || 120 };
+      ["sh-night-start", "sh-night-end"].forEach(function(id, i) { var e = document.getElementById(id); if (e) e.value = i ? (d.nightEnd || e.value) : (d.nightStart || e.value); });
+    });
+  }
+  // ── the settings it can change ──
+  var FIXED = [
+    { id: "night.start", l: "Night shift starts", type: "time", go: { tab: "shifts", el: "adm-shifts", find: "sh-night-start" }, cur: function(D) { return D.shifts.nightStart || "23:00"; },
+      check: function(v) { return hzNightHM(v, -1) >= 12 * 60 ? "" : "The night shift has to start in the evening (12:00 or later)."; }, set: function(v) { return setShift({ nightStart: v }); } },
+    { id: "night.end", l: "Night shift ends (next morning)", type: "time", go: { tab: "shifts", el: "adm-shifts", find: "sh-night-end" }, cur: function(D) { return D.shifts.nightEnd || "06:00"; },
+      check: function(v) { var m = hzNightHM(v, -1); return m >= 0 && m < 12 * 60 ? "" : "The night shift has to end in the morning (before 12:00)."; }, set: function(v) { return setShift({ nightEnd: v }); } },
+    { id: "night.reminderOn", l: "Reminder before the night shift", type: "bool", go: { tab: "shifts", el: "adm-shifts", find: "sh-rem-on" }, cur: function(D) { return !!D.shifts.reminderOn; }, set: function(v) { return setShift({ reminderOn: !!v }); } },
+    { id: "night.reminderMinutes", l: "Night shift reminder — minutes before the shift", type: "int", min: 5, max: 1380, go: { tab: "shifts", el: "adm-shifts", find: "sh-rem-n" }, cur: function(D) { return D.shifts.reminderBefore || 120; }, set: function(v) { return setShift({ reminderBefore: v }); } },
+    { id: "calls.idleMinutes", l: "No activity on a call — alert the dispatcher after (minutes)", type: "int", min: 5, max: 240, go: { tab: "notifsettings", ns: "callalerts", el: "adm-notif-callalerts", find: "ca-idle-min" },
+      cur: function(D) { return Number(D.ds.callIdleMinutes) || 15; }, set: function(v) { return setCallIdleMinutesNow(v); } },
+    { id: "devices.max", l: "Most devices one member can be signed in on (0 = no limit)", type: "int", min: 0, max: 20, go: { tab: "security", sec: "devices", el: "adm-device-limit", find: "dev-limit-max" },
+      cur: function(D) { var m = Number(D.dev.max); return isFinite(m) && D.dev.max != null ? m : (typeof HZ_DEV_MAX_DEFAULT !== "undefined" ? HZ_DEV_MAX_DEFAULT : 0); },
+      set: function(v) { return db.collection("appdata").doc("deviceLimit").set({ max: v, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" }).then(function() { var i = document.getElementById("dev-limit-max"); if (i) i.value = v; }); } }
+  ].concat(TKP.map(function(p) {
+    return { id: "tickets.remind." + p[0], l: "Service request reminder — " + p[1] + " priority — hours with no activity (0 = none)", type: "int", min: 0, max: 720,
+      go: { tab: "notifsettings", ns: "tkrem", el: "adm-notif-tkrem", find: "tkrem-" + p[0] },
+      cur: function(D) { var t = D.ds.ticketReminders || {}; return t[p[0]] != null ? Number(t[p[0]]) : (typeof HZ_TKREM_DEFAULT !== "undefined" ? HZ_TKREM_DEFAULT[p[0]] : 0); },
+      set: function(v, D) {
+        var all = {}; TKP.forEach(function(q) { var t = D.ds.ticketReminders || {}; all[q[0]] = t[q[0]] != null ? Number(t[q[0]]) : HZ_TKREM_DEFAULT[q[0]]; });
+        D.ds.ticketReminders = all; all[p[0]] = v;
+        return db.collection("appdata").doc("dispatchSettings").set({ ticketReminders: all }, { merge: true }).then(function() {
+          if (typeof DISPATCH_SETTINGS !== "undefined") { if (!DISPATCH_SETTINGS) DISPATCH_SETTINGS = {}; DISPATCH_SETTINGS.ticketReminders = all; }
+          if (typeof DS_EDIT !== "undefined" && DS_EDIT) DS_EDIT.ticketReminders = all;
+          var i = document.getElementById("tkrem-" + p[0]); if (i) i.value = v;
+        });
+      } };
+  }));
+  // Notification Settings ▸ How It's Sent — read from the table itself, saved by ticking its own boxes
+  var NCOLS = [["push", "Push"], ["sms", "Text / WhatsApp"], ["email", "Email"], ["admin", "Notification group"]];
+  function notifyRows() {
+    try { if (typeof renderTemplateSend === "function") renderTemplateSend(); } catch (e) {}
+    var out = [], grp = "";
+    document.querySelectorAll("#tpl-send tr").forEach(function(tr) {
+      if (tr.classList.contains("tpl-st-grp")) { grp = tr.textContent.trim(); return; }
+      var tds = tr.querySelectorAll("td"); if (tds.length < 2) return;
+      var name = tds[0].textContent.replace(/\s+/g, " ").trim();
+      NCOLS.forEach(function(c, i) { var cb = tds[i + 1] && tds[i + 1].querySelector('input[type="checkbox"]'); if (cb) out.push({ id: "notify:" + (grp + "|" + name).toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60) + ":" + c[0], grp: grp, name: name, col: i, cl: c[1], on: cb.checked }); });
+    });
+    return out;
+  }
+  function notifyBox(n) {
+    try { if (typeof renderTemplateSend === "function") renderTemplateSend(); } catch (e) {}
+    var grp = "", hit = null;
+    document.querySelectorAll("#tpl-send tr").forEach(function(tr) {
+      if (hit) return; if (tr.classList.contains("tpl-st-grp")) { grp = tr.textContent.trim(); return; }
+      var tds = tr.querySelectorAll("td"); if (tds.length < 2 || grp !== n.grp || tds[0].textContent.replace(/\s+/g, " ").trim() !== n.name) return;
+      hit = tds[n.col + 1] && tds[n.col + 1].querySelector('input[type="checkbox"]');
+    });
+    return hit;
+  }
+  // ── 12.572 (Sam: "my AI settings should have access to all settings"): read EVERY Admin screen's own boxes ──
+  // Every tab (and its sub-tabs) is opened for a moment and each setting box on it is listed: its words, kind, choices and
+  // value. Changing one = filling that same box and pressing that screen's own 💾 Save (or the shared Save bar).
+  var SUBFN = /(setSecTab|setNsTab|setDsTab|setFleetTab|setUsrTab)\('([\w-]+)'\)/;
+  var SKIP_TABS = { users: 1, codes: 1 };   // member records and the code lists are data, not settings
+  var STRUCT_IDS = /^(sh-night-start|sh-night-end|sh-rem-on|sh-rem-n|ca-idle-min|dev-limit-max|tkrem-\w+|adm-search)$/;
+  function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+  function txt(e) { return e ? String(e.textContent || "").replace(/\s+/g, " ").trim() : ""; }
+  function cssPath(el, root) {
+    var parts = [];
+    while (el && el !== root && el.nodeType === 1) {
+      if (el.id) { parts.unshift("#" + CSS.escape(el.id)); break; }
+      var i = 1, sib = el; while ((sib = sib.previousElementSibling)) if (sib.tagName === el.tagName) i++;
+      parts.unshift(el.tagName.toLowerCase() + ":nth-of-type(" + i + ")"); el = el.parentElement;
+    }
+    return parts.join(" > ");
+  }
+  function labelOf(el) {
+    var l = "";
+    if (el.id) { var lf = document.querySelector('label[for="' + CSS.escape(el.id) + '"]'); if (lf) l = txt(lf); }
+    if (!l) { var wl = el.closest("label"); if (wl) l = txt(wl); }
+    if (!l) { var p = el.previousElementSibling; while (p && !l) { if (!/^(INPUT|SELECT|TEXTAREA|BUTTON|BR)$/.test(p.tagName)) l = txt(p); p = p.previousElementSibling; } }
+    if (!l && el.parentElement) { var pp = el.parentElement.previousElementSibling; if (pp) l = txt(pp); }
+    if (!l) l = el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("title") || el.name || el.id || "";
+    return String(l).slice(0, 140);
+  }
+  function headOf(el, root) {
+    var e = el.parentElement;
+    while (e && e !== root) { var h = e.querySelector(":scope > h2, :scope > h3, :scope > h4, :scope > .admin-section-title, :scope > .hz-card-title, :scope > b:first-child"); if (h && txt(h)) return txt(h).slice(0, 80); e = e.parentElement; }
+    return "";
+  }
+  function visible(el) { return !!(el.offsetParent || el.getClientRects().length); }
+  function inList(el, root) {   // a row of a long list (natures, phone numbers…) — that's data, not a setting
+    var a = el.parentElement, n = 0;
+    while (a && a !== root && n++ < 5) {
+      var same = 0, p = a.parentElement; if (p) for (var c = p.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === a.tagName && c.className === a.className) same++;
+      if (Array.prototype.some.call(a.querySelectorAll(":scope > button"), function(b) { return /^(✕|×|🗑|remove)/i.test((b.textContent || "").trim()); })) return true;
+      a = a.parentElement;
+    }
+    return false;
+  }
+  function scanScreen(tab, sub, subLabel) {
+    var root = document.querySelector('.admin-section[data-admin-tab="' + tab + '"]'); if (!root) return [];
+    var out = [], tabName = (document.querySelector('#admin-tabbar .admin-tab[data-tab="' + tab + '"]') || {}).textContent || tab;
+    root.querySelectorAll("input, select, textarea").forEach(function(el) {
+      if (out.length >= 90 || !visible(el) || el.disabled || el.readOnly) return;
+      if (el.closest("#hz-acc, #tpl-send, #hz-sa, .hz-dlg")) return;
+      var ty = (el.type || "").toLowerCase();
+      if (/^(hidden|file|password|button|submit|reset|search|image)$/.test(ty)) return;
+      if (/key|secret|token|passw/i.test(el.id + " " + (el.name || "") + " " + (el.getAttribute("autocomplete") || ""))) return;
+      if (el.id && STRUCT_IDS.test(el.id)) return;
+      var tbl = el.closest("table"); if (tbl && tbl.rows && tbl.rows.length > 14) return;   // long data lists
+      if (inList(el, root)) return;
+      var kind = el.tagName === "SELECT" ? "choice" : el.tagName === "TEXTAREA" ? "text" : ty === "checkbox" || ty === "radio" ? "bool" : ty === "number" || ty === "range" ? "number" : ty === "time" ? "time" : ty === "date" ? "date" : ty === "color" ? "color" : "text";
+      var cur = kind === "bool" ? el.checked : String(el.value || "");
+      var item = { el: el, tab: tab, sub: sub, sel: el.id ? "#" + CSS.escape(el.id) : cssPath(el, root), kind: kind, radio: ty === "radio" };
+      item.id = "ui:" + tab + ":" + (sub || "-") + ":" + item.sel;
+      item.name = [String(tabName).replace(/^[^A-Za-z]+/, "").trim(), subLabel, headOf(el, root), labelOf(el) + (ty === "radio" ? " (" + (el.value || "") + ")" : "")].filter(Boolean).join(" ▸ ");
+      item.current = kind === "text" ? String(cur).slice(0, 160) : cur;
+      if (kind === "choice") item.options = Array.prototype.slice.call(el.options, 0, 40).map(function(o) { return o.value + " = " + txt(o); });
+      if (kind === "number") { if (el.min !== "") item.min = +el.min; if (el.max !== "") item.max = +el.max; }
+      out.push(item);
+    });
+    return out;
+  }
+  function openScreen(tab, sub) {
+    var tb = document.querySelector('#admin-tabbar .admin-tab[data-tab="' + tab + '"]'); if (!tb) return Promise.resolve(false);
+    try { setAdminTab(tab); } catch (e) {}
+    return sleep(350).then(function() {
+      if (!sub) return true;
+      var m = sub.match(SUBFN); if (!m || typeof window[m[1]] !== "function") return false;
+      try { window[m[1]](m[2]); } catch (e) { return false; }
+      return sleep(350).then(function() { return true; });
+    });
+  }
+  function deepScan(onStep) {
+    if (SA.ui && Date.now() - SA.uiAt < 10 * 60000) return Promise.resolve(SA.ui);
+    if (SA.scanning) { SA.scanStep = onStep; return SA.scanning; }
+    SA.scanStep = onStep;
+    SA.scanning = deepScanNow(function(i, n, t) { if (SA.scanStep) SA.scanStep(i, n, t); }).then(function(r) { SA.scanning = null; return r; }, function(e) { SA.scanning = null; throw e; });
+    return SA.scanning;
+  }
+  function deepScanNow(onStep) {
+    var pg = document.getElementById("pg-admin"), keepTab = (document.querySelector("#admin-tabbar .admin-tab.active") || {}).getAttribute && document.querySelector("#admin-tabbar .admin-tab.active").getAttribute("data-tab");
+    if (!pg || !pg.classList.contains("active")) { try { goTo("admin"); } catch (e) {} }
+    var tabs = Array.prototype.map.call(document.querySelectorAll("#admin-tabbar .admin-tab"), function(b) { return b.getAttribute("data-tab"); }).filter(function(t) { return t && !SKIP_TABS[t]; });
+    var all = [], seen = {}, n = 0, chain = Promise.resolve();
+    tabs.forEach(function(tab) {
+      chain = chain.then(function() { if (onStep) onStep(++n, tabs.length, tab); return openScreen(tab); }).then(function() {
+        scanScreen(tab, "", "").forEach(function(i) { if (!seen[i.id]) { seen[i.id] = 1; all.push(i); } });
+        var root = document.querySelector('.admin-section[data-admin-tab="' + tab + '"]'), subs = [];
+        if (root) root.querySelectorAll("[onclick]").forEach(function(b) { if (b.closest("#hz-acc")) return; var m = (b.getAttribute("onclick") || "").match(SUBFN); if (m && !subs.some(function(x) { return x.c === m[0]; })) subs.push({ c: m[0], l: txt(b).slice(0, 40) }); });
+        var c2 = Promise.resolve();
+        subs.forEach(function(sb) { c2 = c2.then(function() { return openScreen(tab, sb.c); }).then(function() { scanScreen(tab, sb.c, sb.l).forEach(function(i) { if (!seen[i.id]) { seen[i.id] = 1; all.push(i); } }); }); });
+        return c2;
+      });
+    });
+    return chain.then(function() {
+      if (keepTab) try { setAdminTab(keepTab); } catch (e) {}
+      all.forEach(function(i) { delete i.el; });
+      SA.ui = all.slice(0, 600); SA.uiAt = Date.now(); return SA.ui;
+    });
+  }
+  function findUi(it) {
+    var root = document.querySelector('.admin-section[data-admin-tab="' + it.tab + '"]'); if (!root) return null;
+    var el = null; try { el = it.sel.charAt(0) === "#" ? document.querySelector(it.sel) : root.querySelector(":scope > " + it.sel); } catch (e) {}
+    return el;
+  }
+  function saveBtnNear(el) {
+    var e = el.parentElement, n = 0;
+    while (e && n++ < 9) {
+      var b = Array.prototype.filter.call(e.querySelectorAll("button"), function(x) { return /💾|\bsave\b/i.test(x.textContent || "") && visible(x) && !x.disabled && !x.closest("#hz-pend-bar, .hz-pend-bar"); })[0];
+      if (b) return b; if (e.classList && e.classList.contains("admin-section")) break; e = e.parentElement;
+    }
+    return null;
+  }
+  function loadUnits(force) {
+    if (SA.units && !force) return Promise.resolve(SA.units);
+    return db.collection("users").get().then(function(q) { var m = {}, em = {}; q.forEach(function(d) { var u = d.data() || {}; if (u.unit) m[String(u.unit).toUpperCase()] = d.id; if (u.email) em[String(u.email).toLowerCase()] = String(u.unit || d.id); }); SA.units = m; SA.emails = em; return m; }).catch(function() { SA.units = {}; SA.emails = {}; return {}; });
+  }
+  function buildCatalog() {
+    var D = {};
+    var jobs = [getDoc("shifts"), getDoc("dispatchSettings"), getDoc("deviceLimit"), getDoc("access"), getDoc("tileAccess"), loadUnits(),
+      typeof mLoadSmsTemplates === "function" ? Promise.resolve(mLoadSmsTemplates()).catch(function() {}) : 0,
+      typeof loadFleetAlerts === "function" ? Promise.resolve(loadFleetAlerts()).catch(function() {}) : 0,
+      (typeof HZ_ROLES !== "undefined" && !HZ_ROLES && typeof hzRolesLoad === "function") ? Promise.resolve(hzRolesLoad()).catch(function() {}) : 0];
+    return Promise.all(jobs).then(function(r) {
+      D = { shifts: r[0], ds: r[1], dev: r[2], acc: r[3], ta: r[4], units: r[5] };
+      var items = {}, list = [];
+      FIXED.forEach(function(f) { var c = f.cur(D); items[f.id] = { kind: "fixed", f: f }; list.push({ id: f.id, name: f.l, type: f.type, min: f.min, max: f.max, current: c }); });
+      (SA.ui || []).forEach(function(u) { items[u.id] = { kind: "ui", u: u }; var e = { id: u.id, name: u.name, type: u.kind, current: u.current }; if (u.options) e.options = u.options; if (u.min != null) e.min = u.min; if (u.max != null) e.max = u.max; list.push(e); });
+      notifyRows().forEach(function(n) { items[n.id] = { kind: "notify", n: n }; list.push({ id: n.id, name: "Notification: " + n.grp + " ▸ " + n.name + " — " + n.cl, type: "bool", current: n.on }); });
+      var pr = (D.acc.permsRoles || {});
+      (typeof HZ_PERMS !== "undefined" ? HZ_PERMS : []).forEach(function(p) { var id = "perm:" + p.k; items[id] = { kind: "perm", p: p }; list.push({ id: id, name: "Who can: " + p.l, type: "roles", current: Array.isArray(pr[p.k]) ? pr[p.k] : p.def }); });
+      var tiles = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(t) { return !(typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[t.k]); }).map(function(t) { return { k: t.k, name: tileName(t.k), normally: typeof hzTileDefaultPlace === "function" ? hzTileDefaultPlace(t.k) : "home" }; })
+        .concat(typeof hzSubList === "function" ? hzSubList().map(function(x) { return { k: x.k, name: x.l + " (screen inside " + tileName(x.parent) + ")", normally: "p:" + x.parent }; }) : []);
+      var places = ["home"].concat((typeof hzPlaceGroups === "function" ? hzPlaceGroups() : []).map(function(g) { return "g:" + g; })).concat(Object.keys(D.acc.folders || {}).map(function(f) { return "f:" + f; })).concat(["p:tools", "off"]);
+      SA.D = D;
+      return {
+        settings: list,
+        vocab: { roles: typeof hzAccRoles === "function" ? hzAccRoles() : [], gridRoles: typeof hzTileGridRoles === "function" ? hzTileGridRoles() : [], titlesFollowResponder: true,
+          tiles: tiles, places: places, placeNames: places.map(function(p) { return p + " = " + placeName(p); }), perms: (typeof HZ_PERMS !== "undefined" ? HZ_PERMS : []).map(function(p) { return p.k + " = " + p.l; }),
+          units: Object.keys(D.units).sort(), currentTilePlaces: D.acc.place || {}, currentExceptions: Object.keys(D.acc.userPerms || {}).length + " member(s) have exceptions" },
+        actions: [{ id: "member.create", what: "Add a new member (Admin ▸ Users ▸ Add User)", value: { firstName: "required", lastName: "required", email: "required — their sign-in email", unit: "unit number, e.g. 45 or MC-45 (ask for it)", phone: "10-digit US mobile (ask for it)", roles: "required — at least one from vocab.roles (titles like captain go here too)", admin: "true only if they should be a System Admin", maxDevices: "optional number 0–20" }, notes: "No password is set here — they get an email link to set their own. Units already used: see vocab.units." }],
+        places: (typeof ADM_SEARCH !== "undefined" ? ADM_SEARCH : []).map(function(e, i) { return { i: i, label: e.label, where: e.where }; }),
+        now: new Date().toString(), items: items
+      };
+    });
+  }
+  // ── turn the assistant's proposal into checked rows ──
+  function show(v, type) { if (type === "bool") return v ? "On" : "Off"; if (type === "roles") return (v || []).map(roleLabel).join(", ") || "admins only"; return String(v); }
+  function proposal(changes, cat) {
+    var rows = [], skipped = [];
+    (changes || []).forEach(function(c) {
+      if (c.id === "tile") {
+        var t = (cat.vocab.tiles || []).filter(function(x) { return x.k === c.tile; })[0], role = String(c.role || "").toLowerCase(), v = String(c.value || "");
+        if (v === "normal" && t) v = t.normally;
+        if (!t || cat.vocab.gridRoles.indexOf(role) === -1 || cat.vocab.places.indexOf(v) === -1) { skipped.push("a tile change I couldn't match"); return; }
+        var cur = curPlace(t.k, role);
+        if (cur === v) return;
+        rows.push({ kind: "tile", label: tileName(t.k) + " — " + roleLabel(role), from: placeName(cur), to: placeName(v), c: { tile: t.k, role: role, value: v }, go: { tab: "security", sec: "access", acc: "tiles", text: tileName(t.k) } });
+        return;
+      }
+      if (c.id === "member.create") {
+        var m = c.value && typeof c.value === "object" && !Array.isArray(c.value) ? c.value : {}, miss = [], bad = [];
+        var fn = String(m.firstName || "").trim(), ln = String(m.lastName || "").trim(), em = String(m.email || "").trim().toLowerCase();
+        var un = String(m.unit || "").trim(), ph = String(m.phone || "").trim(), adm = m.admin === true || m.admin === "true";
+        var allowed = cat.vocab.roles, rl = (Array.isArray(m.roles) ? m.roles : String(m.roles || "").split(",")).map(function(x) { return String(x).trim().toLowerCase(); }).filter(Boolean);
+        var unknown = rl.filter(function(x) { return allowed.indexOf(x) === -1; }); rl = rl.filter(function(x, i) { return allowed.indexOf(x) !== -1 && rl.indexOf(x) === i; });
+        if (!fn) miss.push("first name"); if (!ln) miss.push("last name"); if (!em) miss.push("email"); if (!rl.length) miss.push("a role");
+        if (em && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) bad.push("that email doesn't look right");
+        if (em && SA.emails && SA.emails[em]) bad.push("that email already belongs to " + SA.emails[em]);
+        var unit = un ? (typeof orgUnit === "function" ? orgUnit(un.replace(/^[A-Za-z]+-?/, "")) : un) : "";
+        if (unit && SA.D.units[String(unit).toUpperCase()]) bad.push(unit + " is already taken");
+        if (ph) { var np = typeof normalizePhoneInput === "function" ? normalizePhoneInput(ph) : { ok: true, value: ph }; if (!np.ok) bad.push("the phone must be a 10-digit US number"); else ph = np.value; }
+        var md = m.maxDevices === "" || m.maxDevices == null ? "" : Math.round(Number(m.maxDevices)); if (md !== "" && !(md >= 0 && md <= 20)) bad.push("max devices must be 0–20");
+        if (unknown.length) bad.push("unknown role" + (unknown.length > 1 ? "s" : "") + ": " + unknown.join(", "));
+        if (miss.length || bad.length) { skipped.push("New member — " + (miss.length ? "still need: " + miss.join(", ") : "") + (miss.length && bad.length ? "; " : "") + bad.join("; ")); return; }
+        rows.push({ kind: "member", label: "➕ New member", from: "—", to: [unit || "(no unit)", fn + " " + ln, rl.map(roleLabel).join(", ") + (adm ? ", System Admin" : ""), em, ph || "(no phone)"].join(" · "),
+          m: { fn: fn, ln: ln, email: em, unit: unit, phone: ph, roles: rl, admin: adm, maxDevices: md }, go: { tab: "users", user: unit || em } });
+        return;
+      }
+      if (c.id === "exception") {
+        var uid = SA.D.units[String(c.unit || "").toUpperCase()], p = typeof hzPermDef === "function" ? hzPermDef(c.perm) : null, ev = String(c.value || "");
+        if (!uid || !p || ["allow", "deny", "clear"].indexOf(ev) === -1) { skipped.push("a member exception I couldn't match"); return; }
+        var ce = ((SA.D.acc.userPerms || {})[uid] || {})[p.k] || "clear";
+        if (ce === ev) return;
+        var nm = { allow: "✅ Always allow", deny: "⛔ Never allow", clear: "Follow their roles" };
+        rows.push({ kind: "exception", label: String(c.unit).toUpperCase() + " — " + p.l, from: nm[ce], to: nm[ev], c: { uid: uid, perm: p.k, value: ev }, go: { tab: "security", sec: "access", acc: "members", member: uid } });
+        return;
+      }
+      var it = cat.items[c.id]; if (!it) { skipped.push("\"" + c.id + "\""); return; }
+      if (it.kind === "fixed") {
+        var f = it.f, v2 = c.value, err = "";
+        if (f.type === "time") { v2 = hhmm(v2); if (!v2) err = f.l + ": that isn't a time"; }
+        else if (f.type === "int") { v2 = Math.round(Number(v2)); if (!isFinite(v2) || v2 < f.min || v2 > f.max) err = f.l + ": must be " + f.min + "–" + f.max; }
+        else if (f.type === "bool") v2 = v2 === true || v2 === "true" || v2 === "on";
+        if (!err && f.check) err = f.check(v2);
+        if (err) { skipped.push(err); return; }
+        var cur2 = f.cur(SA.D); if (String(cur2) === String(v2)) return;
+        rows.push({ kind: "fixed", label: f.l, from: show(cur2, f.type), to: show(v2, f.type), f: f, v: v2, go: f.go });
+      } else if (it.kind === "ui") {
+        var u = it.u, nv = c.value, er = "";
+        if (u.kind === "bool") nv = nv === true || nv === "true" || nv === "on" || nv === 1;
+        else if (u.kind === "time") { nv = hhmm(nv); if (!nv) er = u.name + ": that isn't a time"; }
+        else if (u.kind === "number") { nv = Number(nv); if (!isFinite(nv) || (u.min != null && nv < u.min) || (u.max != null && nv > u.max)) er = u.name + ": out of range"; }
+        else if (u.kind === "choice") { nv = String(nv); var okv = (u.options || []).map(function(o) { return o.split(" = ")[0]; }); if (okv.indexOf(nv) === -1) { var byLabel = (u.options || []).filter(function(o) { return o.split(" = ").slice(1).join(" = ").toLowerCase() === nv.toLowerCase(); })[0]; if (byLabel) nv = byLabel.split(" = ")[0]; else er = u.name + ": not one of the choices"; } }
+        else nv = String(nv);
+        if (er) { skipped.push(er); return; }
+        if (String(u.current) === String(nv)) return;
+        var shw = function(v) { if (u.kind === "bool") return v ? "On" : "Off"; if (u.kind === "choice") { var o = (u.options || []).filter(function(x) { return x.split(" = ")[0] === String(v); })[0]; return o ? o.split(" = ").slice(1).join(" = ") || String(v) : String(v); } return String(v) === "" ? "(empty)" : String(v); };
+        rows.push({ kind: "ui", label: u.name, from: shw(u.current), to: shw(nv), u: u, v: nv, go: { tab: u.tab, sub: u.sub, sel: u.sel } });
+      } else if (it.kind === "notify") {
+        var on = c.value === true || c.value === "true" || c.value === "on"; if (on === it.n.on) return;
+        rows.push({ kind: "notify", label: it.n.grp + " ▸ " + it.n.name + " — " + it.n.cl, from: show(it.n.on, "bool"), to: show(on, "bool"), n: it.n, v: on, go: { tab: "notifsettings", ns: "send", el: "adm-notif-settings", row: it.n.name } });
+      } else if (it.kind === "perm") {
+        var allowed = cat.vocab.roles, rs = (Array.isArray(c.value) ? c.value : String(c.value || "").split(",")).map(function(x) { return String(x).trim().toLowerCase(); }).filter(function(x) { return allowed.indexOf(x) !== -1; });
+        rs = rs.filter(function(x, i) { return rs.indexOf(x) === i; });
+        var curR = (SA.D.acc.permsRoles || {})[it.p.k] || it.p.def;
+        if (curR.slice().sort().join() === rs.slice().sort().join()) return;
+        rows.push({ kind: "perm", label: "Who can: " + it.p.l, from: show(curR, "roles"), to: show(rs, "roles"), p: it.p, v: rs, go: { tab: "security", sec: "access", acc: "perms", text: it.p.l } });
+      }
+    });
+    return { rows: rows, skipped: skipped };
+  }
+  function curPlace(k, role) {
+    var ta = (SA.D.ta.tiles || {})[k];
+    var vis = Array.isArray(ta) ? ta.map(function(r) { return String(r).toLowerCase(); }).indexOf(role) !== -1 : (typeof hzTileDefault === "function" && !/^tool-/.test(k) ? hzTileDefault(k, role) : true);
+    if (!vis) return "off";
+    var pl = SA.D.acc.place || {}, tf = SA.D.acc.tileFormat || {};
+    var v = pl[role] && pl[role][k]; if (!v && tf[role] && tf[role][k] === "tile") v = "home";
+    return v || (typeof hzTileDefaultPlace === "function" ? hzTileDefaultPlace(k) : "home");
+  }
+  // ── save the approved changes ──
+  function applyAll(rows) {
+    var D = SA.D, results = [], accTouched = false, taPatch = {}, acc = JSON.parse(JSON.stringify(D.acc || {})), what = [];
+    acc.perms = acc.perms || {}; acc.permsRoles = acc.permsRoles || {}; acc.place = acc.place || {}; acc.userPerms = acc.userPerms || {};
+    var chain = Promise.resolve();
+    rows.forEach(function(r) {
+      if (r.kind === "member") chain = chain.then(function() { return addMember(r).then(function(x) { results.push(x); }); });
+      else if (r.kind === "fixed") chain = chain.then(function() { return Promise.resolve(r.f.set(r.v, D)).then(function() { results.push({ r: r, ok: true }); }, function(e) { results.push({ r: r, ok: false, err: e.message }); }); });
+      else if (r.kind === "ui") chain = chain.then(function() {
+        return openScreen(r.u.tab, r.u.sub).then(function() {
+          var e = findUi(r.u); if (!e) { results.push({ r: r, ok: false, err: "couldn't find that box on the screen" }); return; }
+          if (r.u.kind === "bool") { if (e.checked !== !!r.v) { if (r.u.radio) e.click(); else { e.checked = !!r.v; } } }
+          else e.value = r.v;
+          e.dispatchEvent(new Event("input", { bubbles: true })); e.dispatchEvent(new Event("change", { bubbles: true }));
+          return sleep(150).then(function() {
+            if (typeof hzPendCount === "function" && hzPendCount()) { results.push({ r: r, ok: true, pend: true }); return; }
+            var b = saveBtnNear(e);
+            if (b) { b.click(); return sleep(900).then(function() { results.push({ r: r, ok: true }); }); }
+            results.push({ r: r, ok: true, note: "changed on screen" });
+          });
+        });
+      });
+      else if (r.kind === "notify") chain = chain.then(function() {
+        var cb = notifyBox(r.n); if (!cb) { results.push({ r: r, ok: false, err: "couldn't find that switch" }); return; }
+        if (cb.checked !== r.v) { cb.checked = r.v; cb.dispatchEvent(new Event("change", { bubbles: true })); }
+        results.push({ r: r, ok: true, pend: true });
+      });
+      else {
+        accTouched = true; what.push(r.label + " → " + r.to);
+        if (r.kind === "perm") { acc.perms[r.p.k] = r.v.slice(); acc.permsRoles[r.p.k] = r.v.slice(); }
+        if (r.kind === "exception") { var e = acc.userPerms[r.c.uid] = acc.userPerms[r.c.uid] || {}; if (r.c.value === "clear") delete e[r.c.perm]; else e[r.c.perm] = r.c.value; if (!Object.keys(e).length) delete acc.userPerms[r.c.uid]; }
+        if (r.kind === "tile") {
+          var k = r.c.tile, role = r.c.role, cur = (D.ta.tiles || {})[k];
+          var list = taPatch[k] || (Array.isArray(cur) ? cur.map(function(x) { return String(x).toLowerCase(); }) : (typeof hzTileGridRoles === "function" ? hzTileGridRoles() : []).filter(function(x) { return typeof hzTileDefault === "function" && !/^tool-/.test(k) ? hzTileDefault(k, x) : true; }));
+          var i = list.indexOf(role);
+          if (r.c.value === "off") { if (i !== -1) list.splice(i, 1); taPatch[k] = list; }
+          else {
+            if (i === -1) { list.push(role); taPatch[k] = list; }
+            acc.place[role] = acc.place[role] || {};
+            var def = typeof hzTileDefaultPlace === "function" ? hzTileDefaultPlace(k) : "home";
+            if (r.c.value === def) delete acc.place[role][k]; else acc.place[role][k] = r.c.value;
+            if (acc.tileFormat && acc.tileFormat[role] && r.c.value !== "home") delete acc.tileFormat[role][k];
+          }
+        }
+        results.push({ r: r, ok: true, acc: true });
+      }
+    });
+    return chain.then(function() {
+      var jobs = [];
+      results.forEach(function(x) { if (x.ok && x.r.kind === "ui") x.r.u.current = x.r.v; });   // keep the list of boxes up to date without re-reading every screen
+      if (typeof hzPendCount === "function" && hzPendCount() && typeof hzPendSave === "function") jobs.push(hzPendSave().then(function(ok) { if (!ok) results.forEach(function(x) { if (x.pend) { x.ok = false; x.err = "not saved"; } }); }));
+      if (accTouched) {
+        var who = currentUserUnit || "", entry = { at: new Date().toISOString(), by: who, what: "🤖 Settings assistant: " + what.join("; ") };
+        acc.history = [entry].concat(Array.isArray(acc.history) ? acc.history : []).slice(0, 40); acc.updatedAt = entry.at; acc.updatedBy = who;
+        jobs.push(db.collection("appdata").doc("access").set(acc).catch(function(e) { results.forEach(function(x) { if (x.acc) { x.ok = false; x.err = e.message; } }); }));
+      }
+      if (Object.keys(taPatch).length) jobs.push(db.collection("appdata").doc("tileAccess").set({ tiles: taPatch, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" }, { merge: true }).then(function() {
+        try { if (typeof hzLoadTileAccess === "function") hzLoadTileAccess(currentRole === "admin", currentUserRoles); } catch (e) {}
+      }).catch(function(e) { results.forEach(function(x) { if (x.r.kind === "tile") { x.ok = false; x.err = e.message; } }); }));
+      return Promise.all(jobs);
+    }).then(function() { if (typeof HZ_ACC !== "undefined" && accTouched) { HZ_ACC = null; } return results; });
+  }
+  // ➕ a new member through Admin ▸ Users ▸ Add User — the form's own checks, account creation and set-password email
+  function addMember(r) {
+    var m = r.m;
+    return openScreen("users", "setUsrTab('manage')").then(function() {
+      var f = function(id) { return document.getElementById(id); };
+      if (!f("au-fname") || typeof addUser !== "function") return { r: r, ok: false, err: "the Add User form isn't available" };
+      f("au-fname").value = m.fn; f("au-lname").value = m.ln; f("au-email").value = m.email; f("au-phone").value = m.phone;
+      f("au-unit").value = m.unit ? String(m.unit).replace(/^[A-Za-z]+-?/, "") : ""; f("au-pass").value = ""; if (f("au-maxdev")) f("au-maxdev").value = m.maxDevices === "" ? "" : m.maxDevices;
+      var have = {};
+      document.querySelectorAll("#au-roles input, #au-titles input").forEach(function(c) { c.checked = m.roles.indexOf(String(c.value).toLowerCase()) !== -1; if (c.checked) have[String(c.value).toLowerCase()] = 1; });
+      var missingBoxes = m.roles.filter(function(x) { return !have[x]; });
+      if (missingBoxes.length) return { r: r, ok: false, err: "no tick box for " + missingBoxes.join(", ") + " on the Add User form" };
+      f("au-admin").checked = !!m.admin;
+      var msg = f("au-msg"); if (msg) { msg.className = "form-msg"; msg.textContent = ""; }
+      addUser();
+      return waitFor(function() { var mm = f("au-msg"); return mm && /success|error/.test(mm.className) && mm.textContent ? mm : null; }, 20000).then(function(mm) {
+        loadUnits(true);
+        if (!mm) return { r: r, ok: false, err: "no answer from the server yet — check Admin ▸ Users" };
+        if (/success/.test(mm.className)) return { r: r, ok: true, note2: mm.textContent.replace(/^✓\s*/, "") };
+        return { r: r, ok: false, err: mm.textContent };
+      });
+    });
+  }
+  // ── 🔗 links: open the admin panel on that setting and flash it ──
+  function linkFor(go) { return location.pathname + location.search + "#hzgo=" + encodeURIComponent(JSON.stringify(go)); }
+  function flash(el) { if (!el) return false; el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("hz-sa-flash"); setTimeout(function() { el.classList.remove("hz-sa-flash"); }, 4500); return true; }
+  function waitFor(fn, ms) { return new Promise(function(res) { var t0 = Date.now(); (function loop() { var v = fn(); if (v || Date.now() - t0 > (ms || 5000)) return res(v); setTimeout(loop, 150); })(); }); }
+  function go(spec) {
+    if (!spec || !isAdm()) return;
+    if (spec.adm != null && typeof ADM_SEARCH !== "undefined") spec = ADM_SEARCH[spec.adm];
+    if (!spec) return;
+    var pg = document.getElementById("pg-admin"); if (!pg || !pg.classList.contains("active")) { try { goTo("admin"); } catch (e) {} }
+    setTimeout(function() {
+      try { if (typeof admJump === "function") admJump({ tab: spec.tab, ns: spec.ns, sec: spec.sec, el: spec.el }); else setAdminTab(spec.tab); } catch (e) {}
+      if (spec.user) {
+        openScreen("users", "setUsrTab('list')").then(function() {
+          waitFor(function() { return Array.prototype.filter.call(document.querySelectorAll("#users-table tr, #users-cards > *"), function(tr) { return tr.offsetParent && tr.textContent.toLowerCase().indexOf(String(spec.user).toLowerCase()) !== -1; })[0]; }, 8000).then(flash);
+        });
+        return;
+      }
+      if (spec.sel) {
+        openScreen(spec.tab, spec.sub).then(function() { flash((function() { var e = findUi(spec); return e && (e.closest("label, .form-row, tr, div") || e); })()); var e2 = findUi(spec); if (e2 && e2.focus) try { e2.focus({ preventScroll: true }); } catch (x) {} });
+        return;
+      }
+      if (spec.acc) {
+        waitFor(function() { return typeof HZ_ACC !== "undefined" && HZ_ACC; }).then(function(ok) {
+          if (!ok) return; HZ_ACC.view = spec.acc; if (spec.member) HZ_ACC.memberSel = spec.member; hzAccRender();
+          setTimeout(function() {
+            var hit = spec.member ? document.querySelector("#hz-acc .hz-acc-grp") : Array.prototype.filter.call(document.querySelectorAll("#hz-acc td.hz-acc-l"), function(td) { return td.textContent.indexOf(spec.text) !== -1; })[0];
+            flash(hit && (hit.closest("tr") || hit));
+          }, 250);
+        });
+        return;
+      }
+      waitFor(function() {
+        if (spec.find) return document.getElementById(spec.find);
+        if (spec.row) return Array.prototype.filter.call(document.querySelectorAll("#tpl-send tr"), function(tr) { var td = tr.querySelector("td"); return td && td.textContent.replace(/\s+/g, " ").trim() === spec.row; })[0];
+        return document.getElementById(spec.el);
+      }, 4000).then(function(el) { flash(el && (el.closest(".form-row, tr, .admin-section-sub, label, div") || el)); if (el && el.focus && spec.find) try { el.focus({ preventScroll: true }); } catch (e) {} });
+    }, 120);
+  }
+  window.hzSaGo = go;
+  function fromHash() {
+    var m = location.hash.match(/^#hzgo=(.+)$/); if (!m) return;
+    var spec = null; try { spec = JSON.parse(decodeURIComponent(m[1])); } catch (e) { return; }
+    waitFor(function() { return isAdm(); }, 20000).then(function(ok) { if (ok) go(spec); try { history.replaceState(history.state, "", location.pathname + location.search); } catch (e) {} });
+  }
+  window.addEventListener("hashchange", fromHash);
+  setTimeout(fromHash, 1500);
+  // ── the chat ──
+  function css() {
+    if (document.getElementById("hz-sa-css")) return;
+    var st = document.createElement("style"); st.id = "hz-sa-css";
+    st.textContent = "#hz-sa-fab{position:fixed;right:22px;top:16px;z-index:9000;background:#000;color:#d4a017;border:2px solid #d4a017;border-radius:24px;padding:8px 16px;font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.05em;font-size:.95rem;cursor:pointer;box-shadow:0 6px 22px rgba(0,0,0,.5);display:none}" +
+      "#hz-sa{position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);z-index:9001;background:#05070c;border-left:2px solid #d4a017;display:none;flex-direction:column;color:#e9edf5;box-shadow:-10px 0 40px rgba(0,0,0,.55)}" +
+      "#hz-sa.on{display:flex}#hz-sa .sa-h{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(212,160,23,.35)}#hz-sa .sa-h b{flex:1;color:#d4a017;font-family:Oswald,sans-serif;letter-spacing:.05em;font-size:1.05rem}" +
+      "#hz-sa .sa-x{background:#000;color:#d4a017;border:2px solid #d4a017;border-radius:8px;padding:4px 10px;font-weight:700;cursor:pointer}" +
+      "#hz-sa .sa-log{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}" +
+      "#hz-sa .sa-m{max-width:88%;padding:9px 12px;border-radius:12px;font-size:.88rem;line-height:1.5;white-space:pre-wrap}#hz-sa .sa-m.u{align-self:flex-end;background:#000;border:2px solid #d4a017;color:#d4a017}#hz-sa .sa-m.a{align-self:flex-start;background:#111827;border:1px solid #2a3344}" +
+      "#hz-sa .sa-card{border:2px solid #d4a017;border-radius:12px;padding:10px 12px;background:#000}#hz-sa .sa-card h4{margin:0 0 8px;color:#d4a017;font-family:Oswald,sans-serif;letter-spacing:.04em;font-size:.9rem}" +
+      "#hz-sa .sa-row{display:grid;grid-template-columns:1fr;gap:2px;padding:7px 0;border-top:1px solid #222;font-size:.82rem}#hz-sa .sa-row:first-of-type{border-top:none}#hz-sa .sa-row i{font-style:normal;color:#9aa4b5}#hz-sa .sa-row s{color:#9aa4b5}#hz-sa .sa-row em{font-style:normal;color:#34c759;font-weight:700}" +
+      "#hz-sa .sa-btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}#hz-sa .sa-ok{background:#34c759;color:#000;border:2px solid #34c759;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}#hz-sa .sa-no{background:#c62828;color:#fff;border:2px solid #c62828;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}" +
+      "#hz-sa .sa-lnk{display:inline-block;margin:4px 6px 0 0;color:#d4a017;font-weight:700;text-decoration:underline}#hz-sa .sa-bad{color:#ff8a80}" +
+      "#hz-sa .sa-in{display:flex;gap:8px;padding:12px 14px;border-top:1px solid rgba(212,160,23,.35)}#hz-sa textarea{flex:1;resize:none;height:54px;background:#000;color:#d4a017;border:2px solid #d4a017;border-radius:10px;padding:8px 10px;font-size:.9rem;font-family:inherit}#hz-sa textarea::placeholder{color:rgba(212,160,23,.55)}" +
+      "#hz-sa .sa-send{background:#000;color:#d4a017;border:2px solid #d4a017;border-radius:10px;padding:0 14px;font-weight:700;cursor:pointer}#hz-sa .sa-send:disabled{opacity:.5}" +
+      "#hz-sa .sa-tips{font-size:.78rem;color:#9aa4b5;line-height:1.6}#hz-sa .sa-tip{display:inline-block;margin:4px 4px 0 0;padding:4px 9px;border:1px solid #d4a017;border-radius:14px;color:#d4a017;cursor:pointer}" +
+      ".hz-sa-flash{outline:3px solid #d4a017 !important;outline-offset:3px;border-radius:6px;animation:hzSaPulse 1.1s ease-in-out 3}@keyframes hzSaPulse{50%{outline-color:rgba(212,160,23,.15)}}";
+    document.head.appendChild(st);
+  }
+  function el() {
+    css();
+    var d = document.getElementById("hz-sa"); if (d) return d;
+    var fab = document.createElement("button"); fab.id = "hz-sa-fab"; fab.type = "button"; fab.textContent = "🤖 Settings assistant"; fab.onclick = function() { openSa(true); }; document.body.appendChild(fab);
+    d = document.createElement("div"); d.id = "hz-sa"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "Settings assistant");
+    d.innerHTML = '<div class="sa-h"><b>🤖 SETTINGS ASSISTANT</b><button type="button" class="sa-x" onclick="hzSaOpen(false)">✕</button></div><div class="sa-log" id="hz-sa-log"></div>' +
+      '<div class="sa-in"><textarea id="hz-sa-in" placeholder="e.g. set the night shift from 22:00 to 06:00" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();hzSaSend();}"></textarea><button type="button" class="sa-send" id="hz-sa-send" onclick="hzSaSend()">Send</button></div>';
+    document.body.appendChild(d);
+    return d;
+  }
+  function openSa(on) { var d = el(); SA.open = !!on; d.classList.toggle("on", SA.open); if (SA.open) { deepScan().catch(function() {}); draw(); setTimeout(function() { var t = document.getElementById("hz-sa-in"); if (t) t.focus(); }, 50); } }
+  window.hzSaOpen = openSa;
+  function draw() {
+    var log = document.getElementById("hz-sa-log"); if (!log) return;
+    var h = SA.msgs.length ? "" : '<div class="sa-m a">Hi! Tell me what to change and I\'ll set it up — I always show you the change first and nothing is saved until you approve it. Afterwards you get a link to check each setting.</div>' +
+      '<div class="sa-tips">Try: ' + ["Set the night shift from 22:00 to 06:00", "Alert the dispatcher after 20 minutes with no activity on a call", "Let captains manage service tickets", "Put the APGAR tool on responders' home screen", "What do you recommend for service request reminders?", "Add a new member"].map(function(t) { return '<span class="sa-tip" onclick="document.getElementById(\'hz-sa-in\').value=this.textContent;hzSaSend()">' + esc(t) + '</span>'; }).join("") + '</div>';
+    SA.msgs.forEach(function(m, i) {
+      if (m.text) h += '<div class="sa-m ' + (m.role === "user" ? "u" : "a") + '">' + esc(m.text) + '</div>';
+      if (m.card) h += m.card;
+    });
+    if (SA.busy) h += '<div class="sa-m a">…</div>';
+    log.innerHTML = h; log.scrollTop = log.scrollHeight;
+    var b = document.getElementById("hz-sa-send"); if (b) b.disabled = SA.busy;
+  }
+  function propCard(p) {
+    if (!p.rows.length) return p.skipped.length ? '<div class="sa-card"><div class="sa-bad">Couldn\'t use: ' + esc(p.skipped.join(" · ")) + '</div></div>' : "";
+    return '<div class="sa-card" id="hz-sa-prop"><h4>Approve these changes?</h4>' + p.rows.map(function(r) { return '<div class="sa-row"><b>' + esc(r.label) + '</b><span><s>' + esc(r.from) + '</s> → <em>' + esc(r.to) + '</em></span></div>'; }).join("") +
+      (p.skipped.length ? '<div class="sa-bad" style="font-size:.78rem;margin-top:6px">Left out: ' + esc(p.skipped.join(" · ")) + '</div>' : '') +
+      '<div class="sa-btns"><button type="button" class="sa-ok" onclick="hzSaApprove()">✅ Approve &amp; save</button><button type="button" class="sa-no" onclick="hzSaCancel()">✕ Cancel</button></div></div>';
+  }
+  function send() {
+    var t = document.getElementById("hz-sa-in"), text = String((t && t.value) || "").trim(); if (!text || SA.busy) return;
+    t.value = ""; SA.prop = null; SA.msgs.forEach(function(m) { if (m.card && /hz-sa-prop/.test(m.card)) m.card = m.card.replace(/<div class="sa-btns">[\s\S]*?<\/div><\/div>$/, '<div class="sa-tips">(not saved)</div></div>'); });
+    SA.msgs.push({ role: "user", text: text }); SA.busy = true; draw();
+    var fresh = !(SA.ui && Date.now() - SA.uiAt < 10 * 60000);
+    deepScan(function(i, n, tab) { var l = document.getElementById("hz-sa-log"); if (l && l.lastElementChild) l.lastElementChild.textContent = "Reading every setting… screen " + i + " of " + n; }).catch(function() {}).then(function() { if (fresh) draw(); return buildCatalog(); }).then(function(cat) {
+      SA.cat = cat;
+      var send = { settings: cat.settings, vocab: cat.vocab, actions: cat.actions, places: cat.places, now: cat.now };
+      return relaySa({ messages: SA.msgs.filter(function(m) { return m.text; }).map(function(m) { return { role: m.role, text: m.text }; }), catalog: send });
+    }).then(function(r) {
+      SA.busy = false;
+      var p = proposal(r.changes || [], SA.cat); SA.prop = p;
+      var links = (r.links || []).map(function(i) { var e = typeof ADM_SEARCH !== "undefined" && ADM_SEARCH[i]; return e ? '<a class="sa-lnk" href="' + esc(linkFor({ adm: i })) + '">🔗 ' + esc(e.where || e.label) + '</a>' : ""; }).join("");
+      SA.msgs.push({ role: "assistant", text: [r.reply, r.question].filter(Boolean).join("\n\n") || (p.rows.length ? "Here's what I'd change:" : p.skipped.length ? "I need a bit more before I can do that:" : "I didn't find anything to change."), card: propCard(p) + (links ? '<div>' + links + '</div>' : '') });
+      draw();
+    }).catch(function(e) { SA.busy = false; SA.msgs.push({ role: "assistant", text: "Sorry — " + (e && e.message || "something went wrong") + (/404|not found|Failed to fetch/i.test(String(e && e.message)) ? "\n(The server part may not be deployed yet — run deploy-functions.sh.)" : "") }); draw(); });
+  }
+  function relaySa(d) { return (typeof hzRelay === "function" ? hzRelay : mRelay)("settingsAssistant", d); }
+  window.hzSaSend = send;
+  window.hzSaCancel = function() {
+    SA.prop = null; SA.msgs.forEach(function(m) { if (m.card && /hz-sa-prop/.test(m.card)) m.card = m.card.replace(/<div class="sa-btns">[\s\S]*?<\/div><\/div>$/, '<div class="sa-tips">Cancelled — nothing was changed.</div></div>').replace('id="hz-sa-prop"', ""); });
+    draw();
+  };
+  window.hzSaApprove = function() {
+    var p = SA.prop; if (!p || !p.rows.length || SA.busy) return;
+    SA.busy = true; SA.prop = null;
+    SA.msgs.forEach(function(m) { if (m.card && /hz-sa-prop/.test(m.card)) m.card = m.card.replace(/<div class="sa-btns">[\s\S]*?<\/div><\/div>$/, '<div class="sa-tips">Approved — saving…</div></div>').replace('id="hz-sa-prop"', ""); });
+    draw();
+    applyAll(p.rows).then(function(res) {
+      SA.busy = false;
+      var ok = res.filter(function(x) { return x.ok; }), bad = res.filter(function(x) { return !x.ok; });
+      var card = '<div class="sa-card"><h4>' + (bad.length ? "Done " + ok.length + " of " + res.length : "✓ Done — " + ok.length + " change" + (ok.length === 1 ? "" : "s")) + '</h4>' +
+        res.map(function(x) { return '<div class="sa-row"><b>' + (x.ok ? "✓ " : "✕ ") + esc(x.r.label) + '</b><span>' + (x.ok ? '<em>' + esc(x.r.to) + '</em>' + (x.note ? ' <span class="sa-bad">(' + esc(x.note) + ' — press that screen\'s Save)</span>' : '') + (x.note2 ? '<br><small>' + esc(x.note2) + '</small>' : '') + ' <a class="sa-lnk" href="' + esc(linkFor(x.r.go)) + '">🔗 Check it</a>' : '<span class="sa-bad">' + esc(x.err || "not saved") + '</span>') + '</span></div>'; }).join("") + '</div>';
+      SA.msgs.push({ role: "assistant", text: "", card: card });
+      draw();
+      try { if (typeof showToast === "function") showToast(bad.length ? "Some changes weren't saved" : "✓ Saved by the settings assistant", !!bad.length); } catch (e) {}
+    }).catch(function(e) { SA.busy = false; SA.msgs.push({ role: "assistant", text: "Couldn't save: " + e.message }); draw(); });
+  };
+  // the 🤖 button shows only for admins, on the Admin panel
+  setInterval(function() {
+    var pg = document.getElementById("pg-admin"), on = isAdm() && pg && pg.classList.contains("active");
+    var fab = document.getElementById("hz-sa-fab");
+    if (on && !fab) { el(); fab = document.getElementById("hz-sa-fab"); }
+    if (fab) fab.style.display = on && !SA.open ? "block" : "none";
+    if (!isAdm() && SA.open) openSa(false);
+  }, 800);
+  window.hzSaTest = { deepScan: deepScan, findUi: findUi, proposal: proposal, buildCatalog: buildCatalog, applyAll: applyAll, curPlace: curPlace, state: SA, go: go };
+})();
+</script>
+<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570, 9.95 / 12.572: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
    set in Admin ▸ Security ▸ 🛡️ Control & Access. Saved in appdata/access:
      groups      { id: { name, roles: [...] } }               named role groups ("Field" = responder + captain + …)
      perms       { permKey: ["dispatcher", "group:field", …] } only permissions an admin actually changed
@@ -34270,58 +34704,107 @@ function hzTileSrc(k) {   // the real tile (not a copy)
 }
 function hzTileCopy(src, k) { var c = src.cloneNode(true); c.setAttribute("data-hz-promo", k); c.classList.remove("hz-promo-src"); c.removeAttribute("id"); c.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); }); return c; }
 var HZ_FLD_OPEN = "";
+// 9.95 / 12.572 (Sam): ANY tile in ANY place — home, inside Vehicles / Contacts / Access Codes / Tools, or any folder;
+// group tiles, rule-based tiles (New Call, CJ CAD, Reports) and folders themselves can move too. A loop (A inside B inside A)
+// falls back to the normal place.
+function hzNodeParent(node) {   // node: tile key, sub key, or "fld:<id>" → its place for me
+  if (/^fld:/.test(node)) { var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[node.slice(4)] || {}; return f.parent || "home"; }
+  return hzTilePlaceFor(node);
+}
+function hzPlaceNode(place) { if (/^g:/.test(place)) return place.slice(2); if (/^f:/.test(place)) return "fld:" + place.slice(2); if (place === "p:tools") return "tools"; return ""; }
+function hzPlaceSafe(node, place) {   // no loops
+  var seen = {}, cur = hzPlaceNode(place), n = 0;
+  while (cur && n++ < 12) { if (cur === node || seen[cur]) return false; seen[cur] = 1; cur = hzPlaceNode(hzNodeParent(cur)); }
+  return true;
+}
+function hzNodePlace(node) {
+  var def = /^fld:/.test(node) ? "home" : hzTileDefaultPlace(node), pl = hzNodeParent(node);
+  if (/^f:/.test(pl) && !(((HZ_ACCESS && HZ_ACCESS.folders) || {})[pl.slice(2)])) pl = def;
+  if (pl !== def && !hzPlaceSafe(node, pl)) pl = def;
+  return pl;
+}
+function hzTileFire(k) {   // open a tile / screen / folder from a list (Tools menu, folder page)
+  if (/^fld:/.test(k)) return hzFolderOpen(k.slice(4));
+  if (/^tool-/.test(k)) return hzSubOpen(k);
+  var src = hzTileSrc(k); if (src) src.click();
+}
+window.hzTileFire = hzTileFire;
+function hzFolderTile(fid, host) {
+  var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[fid] || {};
+  var tpl = hzHomeGrid().querySelector('.m-tile[data-sec]:not([data-hz-fld]), .big-btn[data-sec]:not([data-hz-fld])'); if (!tpl) return null;
+  var tile = tpl.cloneNode(true); tile.removeAttribute("id"); tile.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); });
+  tile.classList.remove("hz-promo-src", "hz-more-x"); tile.removeAttribute("data-hz-promo"); tile.removeAttribute("data-hz-grp-hid"); tile.removeAttribute("data-hz-sub"); tile.style.display = "";
+  tile.setAttribute("data-hz-fld", fid); tile.setAttribute("data-sec", "fld-" + fid); tile.setAttribute("onclick", "hzFolderOpen('" + fid + "')");
+  var ic = tile.querySelector(".m-tile-icon, .btn-icon"), lb = tile.querySelector(".m-tile-label, .btn-label"), sb = tile.querySelector(".m-tile-sub, .btn-sub");
+  if (ic) ic.textContent = f.icon || "📁"; if (lb) lb.textContent = f.name || "Folder"; if (sb) sb.textContent = f.sub || (((window.HZ_FLD_ITEMS || {})[fid] || []).length + " inside");
+  return tile;
+}
 function hzTileFormatApply() {
   var grid = hzHomeGrid(); if (!grid || typeof HZ_TILES === "undefined") return;
-  var folders = (HZ_ACCESS && HZ_ACCESS.folders) || {}, inFolder = {};
-  HZ_TILES.forEach(function(t) {
-    var k = t.k; if (typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[k]) return;   // group tiles themselves stay put
-    var src = hzTileSrc(k); if (!src) return;
-    var place = hzTilePlaceFor(k), def = hzTileDefaultPlace(k);
-    var hidden = src.style.display === "none";
-    document.querySelectorAll('[data-hz-promo="' + k + '"]').forEach(function(c) {
-      if (c.closest("#m-pg-hzfld, #pg-hzfld")) return;   // folder page copies are rebuilt when it opens
-      var want = place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null);
-      if (place === def || c.parentNode !== want) c.parentNode.removeChild(c);
-    });
+  try {   // tiles added later (Reports, CJ CAD…) can move too
+    if (typeof hzTilesDiscover === "function") hzTilesDiscover();
+    else { var have = {}; window.HZ_TILES_MORE = window.HZ_TILES_MORE || []; HZ_TILES.concat(window.HZ_TILES_MORE).forEach(function(t) { have[t.k] = 1; }); grid.querySelectorAll('.m-tile[data-sec], .big-btn[data-sec]').forEach(function(e) { var k = e.getAttribute("data-sec"); if (!k || have[k] || e.hasAttribute("data-hz-promo") || e.hasAttribute("data-hz-fld") || e.hasAttribute("data-hz-sub")) return; var lb = e.querySelector(".m-tile-label, .btn-label"); window.HZ_TILES_MORE.push({ k: k, l: lb ? lb.textContent.trim() : k, found: true }); have[k] = 1; }); }   // kept apart so My Settings lists stay as they are
+  } catch (e) {}
+  var folders = (HZ_ACCESS && HZ_ACCESS.folders) || {}, lists = {}, vis = {};   // lists["f:<id>"] / lists["p:tools"] = node keys
+  var hostOf = function(place) { return place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null); };
+  var inPage = function(c) { return !!c.closest("#m-pg-hzfld, #pg-hzfld"); };
+  var add = function(place, node, visible) { (lists[place] = lists[place] || []).push(node); if (visible) lists[place].vis = true; };
+  // 1) real tiles (incl. group tiles and rule-based tiles)
+  HZ_TILES.concat(window.HZ_TILES_MORE || []).forEach(function(t) {
+    var k = t.k, src = hzTileSrc(k); if (!src) return;
+    var place = hzNodePlace(k), def = hzTileDefaultPlace(k), hidden = src.style.display === "none", want = hostOf(place);
+    document.querySelectorAll('[data-hz-promo="' + k + '"]:not([data-hz-sub])').forEach(function(c) { if (!inPage(c) && (place === def || c.parentNode !== want)) c.parentNode.removeChild(c); });
     if (place === def) { src.classList.remove("hz-promo-src"); return; }
+    if (!want && !/^(f:|p:)/.test(place)) { src.classList.remove("hz-promo-src"); return; }   // place not on this screen
     src.classList.add("hz-promo-src");
-    if (/^f:/.test(place)) { var fid = place.slice(2); (inFolder[fid] = inFolder[fid] || []).push(k); if (!hidden) inFolder[fid].vis = true; return; }
-    var host = place === "home" ? grid : hzGroupGrid(place.slice(2)); if (!host) { src.classList.remove("hz-promo-src"); return; }
-    var copy = host.querySelector('[data-hz-promo="' + k + '"]');
-    if (!copy) { copy = hzTileCopy(src, k); host.appendChild(copy); }
+    if (!want) { add(place, k, !hidden); return; }
+    var copy = want.querySelector('[data-hz-promo="' + k + '"]:not([data-hz-sub])');
+    if (!copy) { copy = hzTileCopy(src, k); want.appendChild(copy); }
     copy.style.display = hidden ? "none" : "";
   });
-  // screens pulled out of their tile (Tools ▸ APGAR…)
+  // 2) screens inside a tile (Tools ▸ APGAR…)
   hzSubList().forEach(function(sd) {
-    var k = sd.k, place = hzTilePlaceFor(k), def = hzTileDefaultPlace(k), vis = hzSubVisible(k);
-    document.querySelectorAll('[data-hz-sub="' + k + '"]').forEach(function(c) {
-      if (c.closest("#m-pg-hzfld, #pg-hzfld")) return;
-      var want = place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null);
-      if (place === def || !vis || c.parentNode !== want) c.parentNode.removeChild(c);
-    });
-    if (place === def || !vis) return;
-    if (/^f:/.test(place)) { var fid = place.slice(2); (inFolder[fid] = inFolder[fid] || []).push(k); inFolder[fid].vis = true; return; }
-    var host = place === "home" ? grid : hzGroupGrid(place.slice(2)); if (!host || host.querySelector('[data-hz-sub="' + k + '"]')) return;
-    var t = hzSubTile(sd, host); if (t) host.appendChild(t);
+    var k = sd.k, place = hzNodePlace(k), def = hzTileDefaultPlace(k), v = hzSubVisible(k), want = hostOf(place);
+    document.querySelectorAll('[data-hz-sub="' + k + '"]').forEach(function(c) { if (!inPage(c) && (place === def || !v || c.parentNode !== want)) c.parentNode.removeChild(c); });
+    if (place === def || !v) return;
+    if (!want) { if (place !== "p:tools") add(place, k, true); return; }
+    if (!want.querySelector('[data-hz-sub="' + k + '"]')) { var tl = hzSubTile(sd, want); if (tl) want.appendChild(tl); }
   });
-  // folder tiles on the home screen (only if something inside is open to this member)
-  Object.keys(folders).forEach(function(fid) {
-    var f = folders[fid] || {}, tile = grid.querySelector('[data-hz-fld="' + fid + '"]'), show = !!(inFolder[fid] && inFolder[fid].vis);
-    if (!tile) {
-      var tpl = grid.querySelector('.m-tile[data-sec], .big-btn[data-sec]'); if (!tpl) return;
-      tile = tpl.cloneNode(true); tile.removeAttribute("id"); tile.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); });
-      tile.classList.remove("hz-promo-src", "hz-more-x"); tile.removeAttribute("data-hz-promo"); tile.removeAttribute("data-hz-grp-hid");
-      tile.setAttribute("data-hz-fld", fid); tile.setAttribute("data-sec", "fld-" + fid); tile.setAttribute("onclick", "hzFolderOpen('" + fid + "')");
-      grid.appendChild(tile);
-    }
-    var ic = tile.querySelector(".m-tile-icon, .btn-icon"), lb = tile.querySelector(".m-tile-label, .btn-label"), sb = tile.querySelector(".m-tile-sub, .btn-sub");
-    if (ic) ic.textContent = f.icon || "📁"; if (lb) lb.textContent = f.name || "Folder"; if (sb) sb.textContent = f.sub || ((inFolder[fid] || []).length + " inside");
+  // 3) folders: visible when something inside is open to me (folders inside folders count)
+  var fids = Object.keys(folders), fplace = {};
+  fids.forEach(function(fid) { fplace[fid] = hzNodePlace("fld:" + fid); });
+  for (var pass = 0; pass < 6; pass++) fids.forEach(function(fid) { var l = lists["f:" + fid]; if (l && l.vis && /^f:/.test(fplace[fid])) { var up = lists[fplace[fid]] = lists[fplace[fid]] || []; up.vis = true; } });
+  fids.forEach(function(fid) {
+    var l = lists["f:" + fid], show = !!(l && l.vis), place = fplace[fid], want = hostOf(place);
+    document.querySelectorAll('[data-hz-fld="' + fid + '"]').forEach(function(c) { if (!inPage(c) && c.parentNode !== want) c.parentNode.removeChild(c); });
+    if (!want) { if (show) add(place, "fld:" + fid, true); return; }
+    var tile = want.querySelector('[data-hz-fld="' + fid + '"]');
+    if (!tile) { tile = hzFolderTile(fid, want); if (!tile) return; want.appendChild(tile); }
+    var f = folders[fid] || {}, ic = tile.querySelector(".m-tile-icon, .btn-icon"), lb = tile.querySelector(".m-tile-label, .btn-label"), sb = tile.querySelector(".m-tile-sub, .btn-sub");
+    if (ic) ic.textContent = f.icon || "📁"; if (lb) lb.textContent = f.name || "Folder"; if (sb) sb.textContent = f.sub || ((l || []).length + " inside");
     tile.style.display = show ? "" : "none";
   });
-  grid.querySelectorAll("[data-hz-fld]").forEach(function(t) { if (!folders[t.getAttribute("data-hz-fld")]) t.parentNode.removeChild(t); });
-  window.HZ_FLD_ITEMS = inFolder;
+  document.querySelectorAll("[data-hz-fld]").forEach(function(t) { if (!folders[t.getAttribute("data-hz-fld")] && !inPage(t)) t.parentNode.removeChild(t); });
+  var items = {}; Object.keys(lists).forEach(function(pl) { if (/^f:/.test(pl)) items[pl.slice(2)] = lists[pl]; });
+  window.HZ_FLD_ITEMS = items; window.HZ_TOOLS_EXTRA = lists["p:tools"] || [];
   if (HZ_FLD_OPEN) hzFolderFill(HZ_FLD_OPEN);
 }
+// a list entry (folder page / Tools menu) for a tile, a screen or a folder
+function hzNodeInfo(node) {
+  if (/^fld:/.test(node)) { var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[node.slice(4)] || {}; return { i: f.icon || "📁", l: f.name || "Folder", s: f.sub || "" }; }
+  var sd = /^tool-/.test(node) ? hzSubDef(node) : null; if (sd) return { i: sd.i, l: sd.l, s: sd.s };
+  var src = hzTileSrc(node); if (!src) return null;
+  var q = function(sel) { var e = src.querySelector(sel); return e ? e.textContent.trim() : ""; };
+  return { i: q(".m-tile-icon, .btn-icon"), l: q(".m-tile-label, .btn-label") || node, s: q(".m-tile-sub, .btn-sub"), hidden: src.style.display === "none" };
+}
+// Tools menu: tiles put "In Tools" (hzTlMenu adds these after the tools)
+function hzToolsExtraHtml(esc) {
+  return (window.HZ_TOOLS_EXTRA || []).map(function(k) {
+    var n = hzNodeInfo(k); if (!n || n.hidden) return "";
+    return '<button class="hz-tl-item" onclick="hzToolsClose();hzTileFire(\'' + k + '\')"><span class="hz-tl-ic">' + esc(n.i || "•") + '</span><span><b>' + esc(n.l) + '</b><small>' + esc(n.s || "") + '</small></span><span class="hz-tl-chev">›</span></button>';
+  }).join("");
+}
+window.hzToolsExtraHtml = hzToolsExtraHtml;
 function hzFolderPage() {   // one shared page for every folder, made from the Vehicles group page
   var ph = hzIsPhone(), id = ph ? "m-pg-hzfld" : "pg-hzfld", pg = document.getElementById(id);
   if (pg) return pg;
@@ -34337,6 +34820,7 @@ function hzFolderFill(fid) {
   var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[fid] || {}, t = pg.querySelector(".m-page-title, .page-title"); if (t) t.textContent = (f.icon ? f.icon + " " : "") + (f.name || "Folder");
   var g = pg.querySelector(".m-grid, .btn-grid"); if (!g) return; g.innerHTML = "";
   ((window.HZ_FLD_ITEMS || {})[fid] || []).forEach(function(k) {
+    if (/^fld:/.test(k)) { var ft = hzFolderTile(k.slice(4), g); if (ft) g.appendChild(ft); return; }
     var sd = /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) { var st = hzSubTile(sd, g); if (st) g.appendChild(st); return; }
     var src = hzTileSrc(k); if (!src || src.style.display === "none") return; g.appendChild(hzTileCopy(src, k));
   });
@@ -34406,7 +34890,6 @@ window.hzFolderOpen = hzFolderOpen;
       if (!y) return;
       say("Switching…");
       var me = firebase.auth().currentUser, myUid = me ? me.uid : "";
-      try { db.collection("callLogAudit").add({ action: "act_as_start", targetUid: uid, target: label, uid: myUid, unit: (typeof currentUserUnit !== "undefined" && currentUserUnit) || "", role: (typeof currentRole !== "undefined" && currentRole) || "", timestamp: new Date().toISOString() }).catch(function() {}); } catch (e) {}   // 12.567: 🕵️ Who did what
       relay("impersonateStart", { uid: uid }).then(function(r) {
         sessionStorage.setItem("hzImp", JSON.stringify({ byUid: myUid, byUnit: r.byUnit || "", unit: r.unit || "", name: r.name || "", at: Date.now() }));
         return keepForTab().then(function() { return firebase.auth().signInWithCustomToken(r.token); });

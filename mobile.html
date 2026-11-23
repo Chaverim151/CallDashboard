@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.94"; window.M_BUILD = BUILD;
+  var BUILD = "9.95"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -16260,7 +16260,7 @@ var HZ_TL_HIDE = { trans: true };   // 12.340 (Sam): Live Translator hidden for 
 function hzTlMenu() {
   return HZ_TL_LIST.filter(function(t) { return !HZ_TL_HIDE[t[0]] && (typeof hzSubInParent !== "function" || hzSubInParent("tool-" + t[0])); }).map(function(t) {   // 9.94 / 12.570: screens moved out or hidden in Control & Access
     return '<button class="hz-tl-item" onclick="hzTlGo(\'' + t[0] + '\')"><span class="hz-tl-ic">' + t[1] + '</span><span><b>' + hzTlEsc(t[2]) + '</b><small>' + hzTlEsc(t[3]) + '</small></span><span class="hz-tl-chev">›</span></button>';
-  }).join("") + '<div class="hz-tl-note hz-tl-disc">These are quick aids only. Follow NJ EMS protocols and medical control.</div>';
+  }).join("") + (typeof hzToolsExtraHtml === "function" ? hzToolsExtraHtml(hzTlEsc) : "") + '<div class="hz-tl-note hz-tl-disc">These are quick aids only. Follow NJ EMS protocols and medical control.</div>';
 }
 // one row of choices: [value, label]
 function hzTlRow(group, key, title, opts, sel) {
@@ -18303,7 +18303,7 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
   }, 5000);
 })();
 </script>
-<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
+<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570, 9.95 / 12.572: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
    set in Admin ▸ Security ▸ 🛡️ Control & Access. Saved in appdata/access:
      groups      { id: { name, roles: [...] } }               named role groups ("Field" = responder + captain + …)
      perms       { permKey: ["dispatcher", "group:field", …] } only permissions an admin actually changed
@@ -18464,58 +18464,107 @@ function hzTileSrc(k) {   // the real tile (not a copy)
 }
 function hzTileCopy(src, k) { var c = src.cloneNode(true); c.setAttribute("data-hz-promo", k); c.classList.remove("hz-promo-src"); c.removeAttribute("id"); c.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); }); return c; }
 var HZ_FLD_OPEN = "";
+// 9.95 / 12.572 (Sam): ANY tile in ANY place — home, inside Vehicles / Contacts / Access Codes / Tools, or any folder;
+// group tiles, rule-based tiles (New Call, CJ CAD, Reports) and folders themselves can move too. A loop (A inside B inside A)
+// falls back to the normal place.
+function hzNodeParent(node) {   // node: tile key, sub key, or "fld:<id>" → its place for me
+  if (/^fld:/.test(node)) { var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[node.slice(4)] || {}; return f.parent || "home"; }
+  return hzTilePlaceFor(node);
+}
+function hzPlaceNode(place) { if (/^g:/.test(place)) return place.slice(2); if (/^f:/.test(place)) return "fld:" + place.slice(2); if (place === "p:tools") return "tools"; return ""; }
+function hzPlaceSafe(node, place) {   // no loops
+  var seen = {}, cur = hzPlaceNode(place), n = 0;
+  while (cur && n++ < 12) { if (cur === node || seen[cur]) return false; seen[cur] = 1; cur = hzPlaceNode(hzNodeParent(cur)); }
+  return true;
+}
+function hzNodePlace(node) {
+  var def = /^fld:/.test(node) ? "home" : hzTileDefaultPlace(node), pl = hzNodeParent(node);
+  if (/^f:/.test(pl) && !(((HZ_ACCESS && HZ_ACCESS.folders) || {})[pl.slice(2)])) pl = def;
+  if (pl !== def && !hzPlaceSafe(node, pl)) pl = def;
+  return pl;
+}
+function hzTileFire(k) {   // open a tile / screen / folder from a list (Tools menu, folder page)
+  if (/^fld:/.test(k)) return hzFolderOpen(k.slice(4));
+  if (/^tool-/.test(k)) return hzSubOpen(k);
+  var src = hzTileSrc(k); if (src) src.click();
+}
+window.hzTileFire = hzTileFire;
+function hzFolderTile(fid, host) {
+  var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[fid] || {};
+  var tpl = hzHomeGrid().querySelector('.m-tile[data-sec]:not([data-hz-fld]), .big-btn[data-sec]:not([data-hz-fld])'); if (!tpl) return null;
+  var tile = tpl.cloneNode(true); tile.removeAttribute("id"); tile.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); });
+  tile.classList.remove("hz-promo-src", "hz-more-x"); tile.removeAttribute("data-hz-promo"); tile.removeAttribute("data-hz-grp-hid"); tile.removeAttribute("data-hz-sub"); tile.style.display = "";
+  tile.setAttribute("data-hz-fld", fid); tile.setAttribute("data-sec", "fld-" + fid); tile.setAttribute("onclick", "hzFolderOpen('" + fid + "')");
+  var ic = tile.querySelector(".m-tile-icon, .btn-icon"), lb = tile.querySelector(".m-tile-label, .btn-label"), sb = tile.querySelector(".m-tile-sub, .btn-sub");
+  if (ic) ic.textContent = f.icon || "📁"; if (lb) lb.textContent = f.name || "Folder"; if (sb) sb.textContent = f.sub || (((window.HZ_FLD_ITEMS || {})[fid] || []).length + " inside");
+  return tile;
+}
 function hzTileFormatApply() {
   var grid = hzHomeGrid(); if (!grid || typeof HZ_TILES === "undefined") return;
-  var folders = (HZ_ACCESS && HZ_ACCESS.folders) || {}, inFolder = {};
-  HZ_TILES.forEach(function(t) {
-    var k = t.k; if (typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[k]) return;   // group tiles themselves stay put
-    var src = hzTileSrc(k); if (!src) return;
-    var place = hzTilePlaceFor(k), def = hzTileDefaultPlace(k);
-    var hidden = src.style.display === "none";
-    document.querySelectorAll('[data-hz-promo="' + k + '"]').forEach(function(c) {
-      if (c.closest("#m-pg-hzfld, #pg-hzfld")) return;   // folder page copies are rebuilt when it opens
-      var want = place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null);
-      if (place === def || c.parentNode !== want) c.parentNode.removeChild(c);
-    });
+  try {   // tiles added later (Reports, CJ CAD…) can move too
+    if (typeof hzTilesDiscover === "function") hzTilesDiscover();
+    else { var have = {}; window.HZ_TILES_MORE = window.HZ_TILES_MORE || []; HZ_TILES.concat(window.HZ_TILES_MORE).forEach(function(t) { have[t.k] = 1; }); grid.querySelectorAll('.m-tile[data-sec], .big-btn[data-sec]').forEach(function(e) { var k = e.getAttribute("data-sec"); if (!k || have[k] || e.hasAttribute("data-hz-promo") || e.hasAttribute("data-hz-fld") || e.hasAttribute("data-hz-sub")) return; var lb = e.querySelector(".m-tile-label, .btn-label"); window.HZ_TILES_MORE.push({ k: k, l: lb ? lb.textContent.trim() : k, found: true }); have[k] = 1; }); }   // kept apart so My Settings lists stay as they are
+  } catch (e) {}
+  var folders = (HZ_ACCESS && HZ_ACCESS.folders) || {}, lists = {}, vis = {};   // lists["f:<id>"] / lists["p:tools"] = node keys
+  var hostOf = function(place) { return place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null); };
+  var inPage = function(c) { return !!c.closest("#m-pg-hzfld, #pg-hzfld"); };
+  var add = function(place, node, visible) { (lists[place] = lists[place] || []).push(node); if (visible) lists[place].vis = true; };
+  // 1) real tiles (incl. group tiles and rule-based tiles)
+  HZ_TILES.concat(window.HZ_TILES_MORE || []).forEach(function(t) {
+    var k = t.k, src = hzTileSrc(k); if (!src) return;
+    var place = hzNodePlace(k), def = hzTileDefaultPlace(k), hidden = src.style.display === "none", want = hostOf(place);
+    document.querySelectorAll('[data-hz-promo="' + k + '"]:not([data-hz-sub])').forEach(function(c) { if (!inPage(c) && (place === def || c.parentNode !== want)) c.parentNode.removeChild(c); });
     if (place === def) { src.classList.remove("hz-promo-src"); return; }
+    if (!want && !/^(f:|p:)/.test(place)) { src.classList.remove("hz-promo-src"); return; }   // place not on this screen
     src.classList.add("hz-promo-src");
-    if (/^f:/.test(place)) { var fid = place.slice(2); (inFolder[fid] = inFolder[fid] || []).push(k); if (!hidden) inFolder[fid].vis = true; return; }
-    var host = place === "home" ? grid : hzGroupGrid(place.slice(2)); if (!host) { src.classList.remove("hz-promo-src"); return; }
-    var copy = host.querySelector('[data-hz-promo="' + k + '"]');
-    if (!copy) { copy = hzTileCopy(src, k); host.appendChild(copy); }
+    if (!want) { add(place, k, !hidden); return; }
+    var copy = want.querySelector('[data-hz-promo="' + k + '"]:not([data-hz-sub])');
+    if (!copy) { copy = hzTileCopy(src, k); want.appendChild(copy); }
     copy.style.display = hidden ? "none" : "";
   });
-  // screens pulled out of their tile (Tools ▸ APGAR…)
+  // 2) screens inside a tile (Tools ▸ APGAR…)
   hzSubList().forEach(function(sd) {
-    var k = sd.k, place = hzTilePlaceFor(k), def = hzTileDefaultPlace(k), vis = hzSubVisible(k);
-    document.querySelectorAll('[data-hz-sub="' + k + '"]').forEach(function(c) {
-      if (c.closest("#m-pg-hzfld, #pg-hzfld")) return;
-      var want = place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null);
-      if (place === def || !vis || c.parentNode !== want) c.parentNode.removeChild(c);
-    });
-    if (place === def || !vis) return;
-    if (/^f:/.test(place)) { var fid = place.slice(2); (inFolder[fid] = inFolder[fid] || []).push(k); inFolder[fid].vis = true; return; }
-    var host = place === "home" ? grid : hzGroupGrid(place.slice(2)); if (!host || host.querySelector('[data-hz-sub="' + k + '"]')) return;
-    var t = hzSubTile(sd, host); if (t) host.appendChild(t);
+    var k = sd.k, place = hzNodePlace(k), def = hzTileDefaultPlace(k), v = hzSubVisible(k), want = hostOf(place);
+    document.querySelectorAll('[data-hz-sub="' + k + '"]').forEach(function(c) { if (!inPage(c) && (place === def || !v || c.parentNode !== want)) c.parentNode.removeChild(c); });
+    if (place === def || !v) return;
+    if (!want) { if (place !== "p:tools") add(place, k, true); return; }
+    if (!want.querySelector('[data-hz-sub="' + k + '"]')) { var tl = hzSubTile(sd, want); if (tl) want.appendChild(tl); }
   });
-  // folder tiles on the home screen (only if something inside is open to this member)
-  Object.keys(folders).forEach(function(fid) {
-    var f = folders[fid] || {}, tile = grid.querySelector('[data-hz-fld="' + fid + '"]'), show = !!(inFolder[fid] && inFolder[fid].vis);
-    if (!tile) {
-      var tpl = grid.querySelector('.m-tile[data-sec], .big-btn[data-sec]'); if (!tpl) return;
-      tile = tpl.cloneNode(true); tile.removeAttribute("id"); tile.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); });
-      tile.classList.remove("hz-promo-src", "hz-more-x"); tile.removeAttribute("data-hz-promo"); tile.removeAttribute("data-hz-grp-hid");
-      tile.setAttribute("data-hz-fld", fid); tile.setAttribute("data-sec", "fld-" + fid); tile.setAttribute("onclick", "hzFolderOpen('" + fid + "')");
-      grid.appendChild(tile);
-    }
-    var ic = tile.querySelector(".m-tile-icon, .btn-icon"), lb = tile.querySelector(".m-tile-label, .btn-label"), sb = tile.querySelector(".m-tile-sub, .btn-sub");
-    if (ic) ic.textContent = f.icon || "📁"; if (lb) lb.textContent = f.name || "Folder"; if (sb) sb.textContent = f.sub || ((inFolder[fid] || []).length + " inside");
+  // 3) folders: visible when something inside is open to me (folders inside folders count)
+  var fids = Object.keys(folders), fplace = {};
+  fids.forEach(function(fid) { fplace[fid] = hzNodePlace("fld:" + fid); });
+  for (var pass = 0; pass < 6; pass++) fids.forEach(function(fid) { var l = lists["f:" + fid]; if (l && l.vis && /^f:/.test(fplace[fid])) { var up = lists[fplace[fid]] = lists[fplace[fid]] || []; up.vis = true; } });
+  fids.forEach(function(fid) {
+    var l = lists["f:" + fid], show = !!(l && l.vis), place = fplace[fid], want = hostOf(place);
+    document.querySelectorAll('[data-hz-fld="' + fid + '"]').forEach(function(c) { if (!inPage(c) && c.parentNode !== want) c.parentNode.removeChild(c); });
+    if (!want) { if (show) add(place, "fld:" + fid, true); return; }
+    var tile = want.querySelector('[data-hz-fld="' + fid + '"]');
+    if (!tile) { tile = hzFolderTile(fid, want); if (!tile) return; want.appendChild(tile); }
+    var f = folders[fid] || {}, ic = tile.querySelector(".m-tile-icon, .btn-icon"), lb = tile.querySelector(".m-tile-label, .btn-label"), sb = tile.querySelector(".m-tile-sub, .btn-sub");
+    if (ic) ic.textContent = f.icon || "📁"; if (lb) lb.textContent = f.name || "Folder"; if (sb) sb.textContent = f.sub || ((l || []).length + " inside");
     tile.style.display = show ? "" : "none";
   });
-  grid.querySelectorAll("[data-hz-fld]").forEach(function(t) { if (!folders[t.getAttribute("data-hz-fld")]) t.parentNode.removeChild(t); });
-  window.HZ_FLD_ITEMS = inFolder;
+  document.querySelectorAll("[data-hz-fld]").forEach(function(t) { if (!folders[t.getAttribute("data-hz-fld")] && !inPage(t)) t.parentNode.removeChild(t); });
+  var items = {}; Object.keys(lists).forEach(function(pl) { if (/^f:/.test(pl)) items[pl.slice(2)] = lists[pl]; });
+  window.HZ_FLD_ITEMS = items; window.HZ_TOOLS_EXTRA = lists["p:tools"] || [];
   if (HZ_FLD_OPEN) hzFolderFill(HZ_FLD_OPEN);
 }
+// a list entry (folder page / Tools menu) for a tile, a screen or a folder
+function hzNodeInfo(node) {
+  if (/^fld:/.test(node)) { var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[node.slice(4)] || {}; return { i: f.icon || "📁", l: f.name || "Folder", s: f.sub || "" }; }
+  var sd = /^tool-/.test(node) ? hzSubDef(node) : null; if (sd) return { i: sd.i, l: sd.l, s: sd.s };
+  var src = hzTileSrc(node); if (!src) return null;
+  var q = function(sel) { var e = src.querySelector(sel); return e ? e.textContent.trim() : ""; };
+  return { i: q(".m-tile-icon, .btn-icon"), l: q(".m-tile-label, .btn-label") || node, s: q(".m-tile-sub, .btn-sub"), hidden: src.style.display === "none" };
+}
+// Tools menu: tiles put "In Tools" (hzTlMenu adds these after the tools)
+function hzToolsExtraHtml(esc) {
+  return (window.HZ_TOOLS_EXTRA || []).map(function(k) {
+    var n = hzNodeInfo(k); if (!n || n.hidden) return "";
+    return '<button class="hz-tl-item" onclick="hzToolsClose();hzTileFire(\'' + k + '\')"><span class="hz-tl-ic">' + esc(n.i || "•") + '</span><span><b>' + esc(n.l) + '</b><small>' + esc(n.s || "") + '</small></span><span class="hz-tl-chev">›</span></button>';
+  }).join("");
+}
+window.hzToolsExtraHtml = hzToolsExtraHtml;
 function hzFolderPage() {   // one shared page for every folder, made from the Vehicles group page
   var ph = hzIsPhone(), id = ph ? "m-pg-hzfld" : "pg-hzfld", pg = document.getElementById(id);
   if (pg) return pg;
@@ -18531,6 +18580,7 @@ function hzFolderFill(fid) {
   var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[fid] || {}, t = pg.querySelector(".m-page-title, .page-title"); if (t) t.textContent = (f.icon ? f.icon + " " : "") + (f.name || "Folder");
   var g = pg.querySelector(".m-grid, .btn-grid"); if (!g) return; g.innerHTML = "";
   ((window.HZ_FLD_ITEMS || {})[fid] || []).forEach(function(k) {
+    if (/^fld:/.test(k)) { var ft = hzFolderTile(k.slice(4), g); if (ft) g.appendChild(ft); return; }
     var sd = /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) { var st = hzSubTile(sd, g); if (st) g.appendChild(st); return; }
     var src = hzTileSrc(k); if (!src || src.style.display === "none") return; g.appendChild(hzTileCopy(src, k));
   });
