@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.579">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.583">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2779,7 +2779,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.579</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.583</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -5597,7 +5597,7 @@ function hzAccLoad() {
     var keep = HZ_ACC ? { view: HZ_ACC.view, role: HZ_ACC.role } : {};
     HZ_ACC = {
       groups: JSON.parse(JSON.stringify(a.groups || {})), perms: JSON.parse(JSON.stringify(a.perms || {})),
-      prevHide: HZ_ACC ? HZ_ACC.prevHide : undefined, tileFormat: JSON.parse(JSON.stringify(a.tileFormat || {})), place: JSON.parse(JSON.stringify(a.place || {})), folders: JSON.parse(JSON.stringify(a.folders || {})), prevRole: HZ_ACC && HZ_ACC.prevRole || "", userPerms: JSON.parse(JSON.stringify(a.userPerms || {})), members: HZ_ACC && HZ_ACC.members || null, memberQ: "", memberSel: HZ_ACC && HZ_ACC.memberSel || "", copyFrom: "", copyTo: "", tileVis: JSON.parse(JSON.stringify(t.tiles || {})),
+      prevHide: HZ_ACC ? HZ_ACC.prevHide : undefined, tileFormat: JSON.parse(JSON.stringify(a.tileFormat || {})), place: JSON.parse(JSON.stringify(a.place || {})), folders: JSON.parse(JSON.stringify(a.folders || {})), prevRole: HZ_ACC && HZ_ACC.prevRole || "", userPerms: JSON.parse(JSON.stringify(a.userPerms || {})), userTiles: JSON.parse(JSON.stringify(a.userTiles || {})), members: HZ_ACC && HZ_ACC.members || null, memberQ: "", memberSel: HZ_ACC && HZ_ACC.memberSel || "", copyFrom: "", copyTo: "", tileVis: JSON.parse(JSON.stringify(t.tiles || {})),
       adminColumn: !!t.adminColumn, history: Array.isArray(a.history) ? a.history : [], updatedAt: a.updatedAt || "", updatedBy: a.updatedBy || "",
       dirty: { perms: {}, vis: {}, fmt: {}, users: {}, groups: false, folders: false }, view: keep.view || "perms", role: keep.role || "dispatcher"
     };
@@ -5913,13 +5913,13 @@ function hzAccRoleAllows(m, k) {
 function hzAccMembersHtml() {
   hzAccMembersLoad();
   var list = HZ_ACC.members || [];
-  var withExc = Object.keys(HZ_ACC.userPerms).filter(function(u) { return HZ_ACC.userPerms[u] && Object.keys(HZ_ACC.userPerms[u]).length; });
+  var withExc = Object.keys(HZ_ACC.userPerms).concat(Object.keys(HZ_ACC.userTiles)).filter(function(u, i, a) { return a.indexOf(u) === i && (Object.keys(HZ_ACC.userPerms[u] || {}).length || Object.keys(HZ_ACC.userTiles[u] || {}).length); });
   var q = String(HZ_ACC.memberQ || "").toLowerCase();
   var shown = list.filter(function(m) { return !q || (m.unit + " " + m.name).toLowerCase().indexOf(q) !== -1; }).slice(0, 60);
   var h = '<p class="hz-acc-p">Give one member something their roles don\'t have, or take something away from just them. An exception beats the member\'s roles and groups (admins can still do everything).</p>';
   h += '<div class="hz-acc-sub">Members with exceptions</div>' + (withExc.length ? withExc.map(function(u) {
-    var e = HZ_ACC.userPerms[u];
-    return '<div class="hz-acc-li" style="cursor:pointer" onclick="HZ_ACC.memberSel=\'' + u + '\';hzAccRender()"><b>' + hzAccEsc(hzAccMemberLabel(u)) + '</b> — ' + Object.keys(e).map(function(k) { var d = hzPermDef(k); return (e[k] === "allow" ? "✅ " : "⛔ ") + hzAccEsc(d ? d.l : k); }).join(" · ") + (HZ_ACC.dirty.users[u] ? ' <span class="hz-acc-chg">changed</span>' : '') + '</div>';
+    var e = HZ_ACC.userPerms[u] || {}, et = HZ_ACC.userTiles[u] || {};
+    return '<div class="hz-acc-li" style="cursor:pointer" onclick="HZ_ACC.memberSel=\'' + u + '\';hzAccRender()"><b>' + hzAccEsc(hzAccMemberLabel(u)) + '</b> — ' + Object.keys(e).map(function(k) { var d = hzPermDef(k); return (e[k] === "allow" ? "✅ " : "⛔ ") + hzAccEsc(d ? d.l : k); }).concat(Object.keys(et).map(function(k) { return "🧩 " + hzAccEsc(hzAccNameOf(k)) + ": " + hzAccEsc(et[k] === "off" ? "hidden" : hzAccPlaceName(et[k])); })).join(" · ") + (HZ_ACC.dirty.users[u] ? ' <span class="hz-acc-chg">changed</span>' : '') + '</div>';
   }).join("") : '<div class="hz-acc-note" style="margin:6px 0">None yet.</div>');
   h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 8px"><input type="search" class="hz-acc-in" placeholder="🔍 Find a member (unit or name)" value="' + hzAccEsc(HZ_ACC.memberQ || "") + '" oninput="HZ_ACC.memberQ=this.value;hzAccMemberListOnly()" id="hz-acc-mq">' +
     '<select class="hz-acc-sel" id="hz-acc-mpick" style="max-width:280px" onchange="HZ_ACC.memberSel=this.value;hzAccRender()"><option value="">— pick a member —</option>' + shown.map(function(m) { return '<option value="' + m.uid + '"' + (m.uid === HZ_ACC.memberSel ? ' selected' : '') + '>' + hzAccEsc((m.unit ? m.unit + " · " : "") + m.name) + '</option>'; }).join("") + '</select>' +
@@ -5936,10 +5936,36 @@ function hzAccMembersHtml() {
         return out + '<tr><td class="hz-acc-l">' + hzAccEsc(p.l) + '</td><td class="hz-acc-c">' + (hzAccRoleAllows(m, p.k) ? '✅ yes' : '— no') + '</td><td class="hz-acc-c"><select class="hz-acc-sel' + (v ? ' chg' : '') + '"' + (isAdm ? ' disabled' : '') + ' onchange="hzAccExc(\'' + m.uid + '\',\'' + p.k + '\',this.value)">' +
           [["", "Follow their roles"], ["allow", "✅ Always allow"], ["deny", "⛔ Never allow"]].map(function(o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + o[1] + '</option>'; }).join("") + '</select></td></tr>';
       }).join("") + '</table>' +
-      (Object.keys(e).length ? '<button type="button" class="hz-acc-btn no sm" style="margin-top:8px" onclick="hzAccExcClear(\'' + m.uid + '\')">Remove all of this member\'s exceptions</button>' : '') + '</div>';
+      hzAccMemberTilesHtml(m, isAdm) +
+      ((Object.keys(e).length || Object.keys(HZ_ACC.userTiles[m.uid] || {}).length) ? '<button type="button" class="hz-acc-btn no sm" style="margin-top:8px" onclick="hzAccExcClear(\'' + m.uid + '\')">Remove all of this member\'s exceptions</button>' : '') + '</div>';
   }
   return h;
 }
+// 12.580: this member's own tiles (beat their roles)
+function hzAccMemberTilesHtml(m, isAdm) {
+  var ut = HZ_ACC.userTiles[m.uid] || {}, tl = typeof hzTitleList === "function" ? hzTitleList() : [];
+  var cols = isAdm ? ["admin"] : m.roles.map(function(r) { return tl.indexOf(r) !== -1 ? "responder" : r; });
+  var roleView = function(k) {   // what their roles give them today
+    var vis = cols.some(function(c) { return hzAccTileVis(k, c); }); if (!vis) return "🚫 Hidden";
+    var pls = cols.filter(function(c) { return hzAccTileVis(k, c); }).map(function(c) { return hzAccPlace(k, c); });
+    var pl = pls.indexOf("home") !== -1 ? "home" : pls[0]; return hzAccPlaceName(pl).replace(/^🏠 Own home tile$/, "🏠 Home");
+  };
+  var tiles = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(t) { return !hzAccIsOwnRule(t.k) && !(typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[t.k]); }).map(function(t) { return { k: t.k, n: hzAccTileName(t.k) }; })
+    .concat(hzAccSubs().map(function(x) { return { k: x.k, n: x.l + " (in " + hzAccTileName(x.parent) + ")" }; }));
+  return '<div class="hz-acc-sub" style="margin-top:14px">🧩 Tiles for this member</div><div class="hz-acc-note" style="margin-bottom:6px">Hide a tile from just this member, or put it somewhere else for them. Everyone else is unchanged.</div>' +
+    '<table class="hz-acc-t"><tr><th class="hz-acc-l">Tile</th><th>From their roles</th><th>Exception</th></tr>' + tiles.map(function(t) {
+      var v = ut[t.k] || "";
+      return '<tr><td class="hz-acc-l">' + hzAccEsc(t.n) + '</td><td class="hz-acc-c">' + hzAccEsc(roleView(t.k)) + '</td><td class="hz-acc-c"><select class="hz-acc-sel' + (v ? ' chg' : '') + '" onchange="hzAccTileExc(\'' + m.uid + '\',\'' + t.k + '\',this.value)">' +
+        [["", "Follow their roles"]].concat(hzAccPlaceOpts(t.k)).map(function(o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + hzAccEsc(o[1]) + '</option>'; }).join("") + '</select></td></tr>';
+    }).join("") + '</table>';
+}
+function hzAccTileExc(uid, k, v) {
+  var e = HZ_ACC.userTiles[uid] = HZ_ACC.userTiles[uid] || {};
+  if (v) e[k] = v; else delete e[k];
+  if (!Object.keys(e).length) delete HZ_ACC.userTiles[uid];
+  HZ_ACC.dirty.users[uid] = 1; hzAccRender();
+}
+window.hzAccTileExc = hzAccTileExc;
 function hzAccMemberListOnly() {   // typing in the search box keeps focus — only the list is redrawn
   var sel = document.getElementById("hz-acc-mpick"); if (!sel) return;
   var q = String(HZ_ACC.memberQ || "").toLowerCase();
@@ -5952,7 +5978,7 @@ function hzAccExc(uid, k, v) {
   HZ_ACC.dirty.users[uid] = 1; hzAccRender();
 }
 function hzAccExcClear(uid) {
-  hzDialog({ kind: "confirm", msg: "Remove every exception for " + hzAccMemberLabel(uid) + "? They go back to what their roles allow.", okText: "Remove", noText: "Cancel" }).then(function(y) { if (!y) return; delete HZ_ACC.userPerms[uid]; HZ_ACC.dirty.users[uid] = 1; hzAccRender(); });
+  hzDialog({ kind: "confirm", msg: "Remove every exception for " + hzAccMemberLabel(uid) + "? They go back to what their roles allow.", okText: "Remove", noText: "Cancel" }).then(function(y) { if (!y) return; delete HZ_ACC.userPerms[uid]; delete HZ_ACC.userTiles[uid]; HZ_ACC.dirty.users[uid] = 1; hzAccRender(); });
 }
 window.hzAccExc = hzAccExc; window.hzAccExcClear = hzAccExcClear; window.hzAccMemberListOnly = hzAccMemberListOnly;
 
@@ -5968,12 +5994,13 @@ function hzAccSave() {
   var what = [];
   var pk = Object.keys(HZ_ACC.dirty.perms); if (pk.length) what.push("permissions: " + pk.map(function(k) { return hzPermDef(k).l + " → " + (hzAccExpand(perms[k]).map(hzAccLabel).join(", ") || "admins only"); }).join("; "));
   var vk = Object.keys(HZ_ACC.dirty.vis), fk = Object.keys(HZ_ACC.dirty.fmt); if (vk.length || fk.length) what.push("home screen: " + (vk.length + fk.length) + " change" + (vk.length + fk.length === 1 ? "" : "s"));
-  var uk = Object.keys(HZ_ACC.dirty.users); if (uk.length) what.push("member exceptions: " + uk.map(function(u) { var e = HZ_ACC.userPerms[u] || {}; return hzAccMemberLabel(u) + " → " + (Object.keys(e).map(function(k) { return (e[k] === "allow" ? "+" : "−") + (hzPermDef(k) ? hzPermDef(k).l : k); }).join(", ") || "none"); }).join("; "));
+  var uk = Object.keys(HZ_ACC.dirty.users); if (uk.length) what.push("member exceptions: " + uk.map(function(u) { var e = HZ_ACC.userPerms[u] || {}, et = HZ_ACC.userTiles[u] || {}; return hzAccMemberLabel(u) + " → " + (Object.keys(e).map(function(k) { return (e[k] === "allow" ? "+" : "−") + (hzPermDef(k) ? hzPermDef(k).l : k); }).concat(Object.keys(et).map(function(k) { return hzAccNameOf(k) + ": " + (et[k] === "off" ? "hidden" : et[k]); })).join(", ") || "none"); }).join("; "));
   if (HZ_ACC.dirty.groups) what.push("role groups: " + (hzAccGroupIds().map(function(g) { return HZ_ACC.groups[g].name; }).join(", ") || "none"));
   var entry = { at: new Date().toISOString(), by: who, what: what.join(" · ") };
   var up = {}; Object.keys(HZ_ACC.userPerms).forEach(function(u) { var e = {}; Object.keys(HZ_ACC.userPerms[u] || {}).forEach(function(k) { var v = HZ_ACC.userPerms[u][k]; if (hzPermDef(k) && (v === "allow" || v === "deny")) e[k] = v; }); if (Object.keys(e).length) up[u] = e; });
   if (HZ_ACC.dirty.folders) what.push("folders: " + (Object.keys(HZ_ACC.folders).map(function(f) { return HZ_ACC.folders[f].name; }).join(", ") || "none"));
-  var doc = { groups: HZ_ACC.groups, perms: perms, permsRoles: permsRoles, tileFormat: tf, place: place, folders: HZ_ACC.folders, userPerms: up, updatedAt: entry.at, updatedBy: who, history: [entry].concat(HZ_ACC.history).slice(0, 40) };
+  var ut = {}; Object.keys(HZ_ACC.userTiles).forEach(function(u) { var e = {}; Object.keys(HZ_ACC.userTiles[u] || {}).forEach(function(k) { var v = HZ_ACC.userTiles[u][k]; if (v) e[k] = v; }); if (Object.keys(e).length) ut[u] = e; });
+  var doc = { groups: HZ_ACC.groups, perms: perms, permsRoles: permsRoles, tileFormat: tf, place: place, folders: HZ_ACC.folders, userPerms: up, userTiles: ut, updatedAt: entry.at, updatedBy: who, history: [entry].concat(HZ_ACC.history).slice(0, 40) };
   var jobs = [db.collection("appdata").doc("access").set(doc)];
   if (vk.length) {
     var tiles = {}; vk.forEach(function(k) { tiles[k] = HZ_ACC.tileVis[k]; });
@@ -21415,7 +21442,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.579";
+var DESKTOP_VERSION = "12.583";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -34262,8 +34289,10 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   }
   // ── 12.577 (Sam: "can it just read my settings from the backend?"): settings come straight from the database —
   // no screens are opened, so the Admin panel stays fully usable while the assistant works. ──
+  // 12.582 (Sam: "give the bot access to all settings"): every settings document in the database
   var DB_DOCS = { dispatchSettings: "protocols", smsTemplates: "notifsettings", org: "org", shifts: "shifts", availability: "availability", fleetAlerts: "fleet",
-    protocolAI: "protoai", imageTrend: "imagetrend", deviceLimit: "security", whatsapp: "org", roles: "users", flags: "org", codesApi: "codes" };
+    protocolAI: "protoai", imageTrend: "imagetrend", deviceLimit: "security", whatsapp: "org", roles: "users", flags: "org", codesApi: "codes",
+    divertPlaces: "traffic", divertStatus: "traffic", restockList: "fleet" };
   var DB_SKIP = /key|secret|token|passw|apikey|session|webhook|signature/i;
   function flatten(obj, pre, out, depth) {
     Object.keys(obj || {}).forEach(function(k) {
@@ -34271,8 +34300,11 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       if (DB_SKIP.test(k) || /^(updatedAt|updatedBy|createdAt|seededAt)$/.test(k)) return;
       if (v === null || v === undefined) return;
       if (typeof v === "boolean" || typeof v === "number") out.push({ path: path, kind: typeof v === "boolean" ? "bool" : "number", value: v });
-      else if (typeof v === "string") { if (v.length <= 600) out.push({ path: path, kind: /^\d{1,2}:\d{2}$/.test(v) ? "time" : "text", value: v }); }
-      else if (Array.isArray(v)) { if (v.length <= 25 && v.every(function(x) { return typeof x === "string" || typeof x === "number"; })) out.push({ path: path, kind: "list", value: v.slice() }); }
+      else if (typeof v === "string") { if (v.length <= 4000) out.push({ path: path, kind: /^\d{1,2}:\d{2}$/.test(v) ? "time" : "text", value: v }); }
+      else if (Array.isArray(v)) {
+        if (v.length <= 200 && v.every(function(x) { return typeof x === "string" || typeof x === "number"; })) out.push({ path: path, kind: "list", value: v.slice() });
+        else if (v.length <= 150 && v.every(function(x) { return x && typeof x === "object" && !Array.isArray(x); })) { var js = JSON.stringify(v); if (js.length <= 12000 && !(js.match(/"[A-Za-z_]+":/g) || []).some(function(k) { return DB_SKIP.test(k); })) out.push({ path: path, kind: "records", value: JSON.parse(js) }); }   // lists of entries (natures, hospitals, numbers…)
+      }
       else if (typeof v === "object" && depth < 4 && !(v.toDate)) flatten(v, path, out, depth + 1);
     });
   }
@@ -34283,11 +34315,19 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     var tabBtn = document.querySelector('#admin-tabbar .admin-tab[data-tab="' + (DB_DOCS[doc] || "") + '"]');
     return (tabBtn ? tabBtn.textContent.replace(/^[^A-Za-z]+/, "").trim() : doc) + " ▸ " + path.replace(/\./g, " ▸ ").replace(/([a-z])([A-Z])/g, "$1 $2");
   }
-  function readDb() {
-    return Promise.all(Object.keys(DB_DOCS).map(function(d) { return getDoc(d).then(function(x) { return [d, x]; }); })).then(function(list) {
-      var items = [];
+  function readDb() {   // reads appdata only
+    var trk = Promise.resolve([]);   // 12.583 (Sam): no access to the Compliance Tracker yet
+    var docs = Promise.all(Object.keys(DB_DOCS).map(function(d) { return getDoc(d).then(function(x) { return [d, x]; }); }));
+    return Promise.all([docs, trk]).then(function(r) {
+      var list = r[0].concat(r[1]), items = [];
       var dup = /^(dispatchSettings:(callIdleMinutes|ticketReminders\..*)|shifts:(nightStart|nightEnd|reminderOn|reminderBefore)|deviceLimit:max)$/;   // these have named settings
-      list.forEach(function(pair) { var rows = []; flatten(pair[1], "", rows, 0); rows.filter(function(r) { return !dup.test(pair[0] + ":" + r.path); }).slice(0, 220).forEach(function(r) { items.push({ id: "db:" + pair[0] + ":" + r.path, doc: pair[0], path: r.path, kind: r.kind, current: r.value, name: dbLabel(pair[0], r.path), tab: DB_DOCS[pair[0]] }); }); });
+      list.forEach(function(pair) {
+        var rows = [], trkDoc = /^trk:/.test(pair[0]); flatten(pair[1], "", rows, 0);
+        rows.filter(function(x) { return !dup.test(pair[0] + ":" + x.path); }).slice(0, 400).forEach(function(x) {
+          items.push({ id: "db:" + pair[0] + ":" + x.path, doc: pair[0], col: trkDoc ? "trk_settings" : "appdata", docId: trkDoc ? pair[0].slice(4) : pair[0], path: x.path, kind: x.kind, current: x.value,
+            name: trkDoc ? "Compliance Tracker ▸ " + pair[0].slice(4) + " ▸ " + x.path.replace(/\./g, " ▸ ") : dbLabel(pair[0], x.path), tab: DB_DOCS[pair[0]] || "" });
+        });
+      });
       SA.ui = items; SA.uiAt = Date.now(); return items;
     });
   }
@@ -34332,8 +34372,22 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     (typeof hzAccRoles === "function" ? hzAccRoles() : []).concat(["admin"]).forEach(function(role) { roleCan[role] = (typeof HZ_PERMS !== "undefined" ? HZ_PERMS : []).filter(function(pp) { return permOk(pp.k, role); }).map(function(pp) { return pp.k; }); });
     var byUid = {}; (SA.members || []).forEach(function(m) { byUid[m.uid] = m.unit; });
     var exc = {}; Object.keys(D.acc.userPerms || {}).forEach(function(uid) { if (byUid[uid]) exc[byUid[uid]] = D.acc.userPerms[uid]; });
+    var tileExc = {}; Object.keys(D.acc.userTiles || {}).forEach(function(uid) { if (byUid[uid]) tileExc[byUid[uid]] = D.acc.userTiles[uid]; });
     var folders = {}; Object.keys(D.acc.folders || {}).forEach(function(f) { folders["f:" + f] = { name: D.acc.folders[f].name, in: D.acc.folders[f].parent || "home" }; });
-    return { roleTiles: roleTiles, roleCan: roleCan, exceptions: exc, folders: folders, titlesUseResponderColumn: typeof hzTitleList === "function" ? hzTitleList() : [] };
+    return { roleTiles: roleTiles, roleCan: roleCan, exceptions: exc, tileExceptions: tileExc, folders: folders, titlesUseResponderColumn: typeof hzTitleList === "function" ? hzTitleList() : [] };
+  }
+  // 🌙 who is on which night: the weekly list + accepted covers / swaps for the next 3 weeks
+  function nightWatch(D) {
+    var pad = function(n) { return ("0" + n).slice(-2); }, d0 = new Date(), today = d0.getFullYear() + "-" + pad(d0.getMonth() + 1) + "-" + pad(d0.getDate());
+    var weekly = (Array.isArray(D.shifts.shifts) ? D.shifts.shifts : []).map(function(x) { return { night: x.day || "", units: (x.units || []).map(String) }; });
+    return db.collection("shiftCovers").where("date", ">=", today).get().then(function(q) {
+      var covers = []; q.forEach(function(doc) { var c = doc.data() || {}; if (c.status !== "accepted") return; if (String(c.date) > (function() { var e = new Date(Date.now() + 21 * 864e5); return e.getFullYear() + "-" + pad(e.getMonth() + 1) + "-" + pad(e.getDate()); })()) return;
+        covers.push({ date: c.date, night: c.day || "", covering: c.toUnit || "", for: c.fromUnit || "", type: c.type || "cover", swapDate: c.swapDate || "" }); });
+      covers.sort(function(a, b) { return String(a.date).localeCompare(String(b.date)); });
+      return covers;
+    }).catch(function() { return []; }).then(function(covers) {
+      return { today: today, todayIs: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][d0.getDay()], nightStarts: D.shifts.nightStart || "23:00", nightEnds: D.shifts.nightEnd || "06:00", weekly: weekly, coversAndSwaps: covers };
+    });
   }
   function buildCatalog() {
     var D = {};
@@ -34343,9 +34397,14 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       (typeof HZ_ROLES !== "undefined" && !HZ_ROLES && typeof hzRolesLoad === "function") ? Promise.resolve(hzRolesLoad()).catch(function() {}) : 0];
     return Promise.all(jobs).then(function(r) {
       D = { shifts: r[0], ds: r[1], dev: r[2], acc: r[3], ta: r[4], units: r[5] };
+      return nightWatch(D).then(function(nw) { D.nw = nw; return r; });
+    }).then(function(r) {
       var items = {}, list = [];
       FIXED.forEach(function(f) { var c = f.cur(D); items[f.id] = { kind: "fixed", f: f }; list.push({ id: f.id, name: f.l, type: f.type, min: f.min, max: f.max, current: c }); });
-      (SA.ui || []).forEach(function(u) { items[u.id] = { kind: "db", u: u }; list.push({ id: u.id, name: u.name, type: u.kind, current: u.current }); });
+      var budget = 150000;   // keep the request under the server's limit — plain settings first, entry lists after
+      (SA.ui || []).slice().sort(function(a, b) { return (a.kind === "records") - (b.kind === "records"); }).forEach(function(u) {
+        var row = { id: u.id, name: u.name, type: u.kind, current: u.current }, n = JSON.stringify(row).length;
+        if (u.kind === "records" && n > budget) return; budget -= n; items[u.id] = { kind: "db", u: u }; list.push(row); });
       var pr = (D.acc.permsRoles || {});
       (typeof HZ_PERMS !== "undefined" ? HZ_PERMS : []).forEach(function(p) { var id = "perm:" + p.k; items[id] = { kind: "perm", p: p }; list.push({ id: id, name: "Who can: " + p.l, type: "roles", current: Array.isArray(pr[p.k]) ? pr[p.k] : p.def }); });
       var tiles = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(t) { return !(typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[t.k]); }).map(function(t) { return { k: t.k, name: tileName(t.k), normally: typeof hzTileDefaultPlace === "function" ? hzTileDefaultPlace(t.k) : "home" }; })
@@ -34358,8 +34417,11 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
           tiles: tiles, places: places, placeNames: places.map(function(p) { return p + " = " + placeName(p); }), perms: (typeof HZ_PERMS !== "undefined" ? HZ_PERMS : []).map(function(p) { return p.k + " = " + p.l; }),
           units: Object.keys(D.units).sort(),
           access: accessView(D),
+          nightWatch: D.nw,
           members: (SA.members || []).map(function(x) { var o = { unit: x.unit, name: x.name, roles: x.roles, phone: x.phone, email: x.email }; if (x.whatsapp) o.whatsapp = x.whatsapp; if (x.admin) o.systemAdmin = true; ["ervDriver", "rigDriver", "daytimeResponder", "ticketSupervisor", "cjCadAccess"].forEach(function(k) { if (x[k]) o[k] = true; }); if (x.emsLevel) o.emsLevel = x.emsLevel; return o; }), currentTilePlaces: D.acc.place || {}, currentExceptions: Object.keys(D.acc.userPerms || {}).length + " member(s) have exceptions" },
-        actions: [{ id: "member.update", what: "Change an existing member (Admin ▸ Users ▸ Edit) — find them in vocab.members by unit or name", value: { unit: "required — which member", roles: "optional — their FULL new list of roles / titles", admin: "optional true/false — System Admin", firstName: "optional", lastName: "optional", phone: "optional", email: "optional", emsLevel: "optional", ervDriver: "optional true/false — approved to drive the vehicle (ERV)", rigDriver: "optional true/false — approved to drive rigs", daytimeResponder: "optional true/false", ticketSupervisor: "optional true/false — Logistics Supervisor", cjCadAccess: "optional true/false", maxDevices: "optional 0–20" } }, { id: "member.create", what: "Add a new member (Admin ▸ Users ▸ Add User)", value: { firstName: "required", lastName: "required", email: "required — their sign-in email", unit: "unit number, e.g. 45 or MC-45 (ask for it)", phone: "10-digit US mobile (ask for it)", roles: "required — at least one from vocab.roles (titles like captain go here too)", admin: "true only if they should be a System Admin", maxDevices: "optional number 0–20" }, notes: "No password is set here — they get an email link to set their own. Units already used: see vocab.units." }],
+        actions: [{ id: "member.delete", what: "Remove members from the system (Users ▸ Remove) — PERMANENT", value: { units: "required — the list of unit numbers to remove, taken from vocab.members (e.g. everyone whose roles include observer)" } },
+          { id: "role.delete", what: "Delete a role or title (Users ▸ Add User & Roles) — it is taken off every member who has it; the members stay", value: { role: "required — a role / title id from vocab.roles (responder, dispatcher, captain and chief can't be deleted)" } },
+          { id: "member.update", what: "Change an existing member (Admin ▸ Users ▸ Edit) — find them in vocab.members by unit or name", value: { unit: "required — which member", roles: "optional — their FULL new list of roles / titles", admin: "optional true/false — System Admin", firstName: "optional", lastName: "optional", phone: "optional", email: "optional", emsLevel: "optional", ervDriver: "optional true/false — approved to drive the vehicle (ERV)", rigDriver: "optional true/false — approved to drive rigs", daytimeResponder: "optional true/false", ticketSupervisor: "optional true/false — Logistics Supervisor", cjCadAccess: "optional true/false", maxDevices: "optional 0–20" } }, { id: "member.create", what: "Add a new member (Admin ▸ Users ▸ Add User)", value: { firstName: "required", lastName: "required", email: "required — their sign-in email", unit: "unit number, e.g. 45 or MC-45 (ask for it)", phone: "10-digit US mobile (ask for it)", roles: "required — at least one from vocab.roles (titles like captain go here too)", admin: "true only if they should be a System Admin", maxDevices: "optional number 0–20" }, notes: "No password is set here — they get an email link to set their own. Units already used: see vocab.units." }],
         places: (typeof ADM_SEARCH !== "undefined" ? ADM_SEARCH : []).map(function(e, i) { return { i: i, label: e.label, where: e.where }; }),
         now: new Date().toString(), items: items
       };
@@ -34377,6 +34439,28 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
         var cur = curPlace(t.k, role);
         if (cur === v) return;
         rows.push({ kind: "tile", label: tileName(t.k) + " — " + roleLabel(role), from: placeName(cur), to: placeName(v), c: { tile: t.k, role: role, value: v }, go: { tab: "security", sec: "access", acc: "tiles", text: tileName(t.k) } });
+        return;
+      }
+      if (c.id === "member.delete") {
+        var md0 = c.value && typeof c.value === "object" && !Array.isArray(c.value) ? c.value : { units: c.value };
+        var us = (Array.isArray(md0.units) ? md0.units : String(md0.units || md0.unit || "").split(",")).map(function(x) { return String(x).trim().toUpperCase(); }).filter(Boolean);
+        if (!us.length) { skipped.push("which members to remove?"); return; }
+        us.forEach(function(u) {
+          var w0 = (SA.members || []).filter(function(x) { return String(x.unit).toUpperCase() === u || String(x.unit).toUpperCase().replace(/^[A-Z]+-?/, "") === u.replace(/^[A-Z]+-?/, ""); })[0];
+          if (!w0) { skipped.push("couldn't find member " + u); return; }
+          if (typeof SUPER_ADMIN !== "undefined" && String(w0.email).toLowerCase() === String(SUPER_ADMIN).toLowerCase()) { skipped.push(w0.unit + " is the owner account — it can't be removed"); return; }
+          if (typeof currentUser !== "undefined" && currentUser && w0.uid === currentUser.uid) { skipped.push(w0.unit + " is you — you can't remove yourself here"); return; }
+          if (rows.some(function(r0) { return r0.kind === "memberDelete" && r0.who.uid === w0.uid; })) return;
+          rows.push({ kind: "memberDelete", danger: true, label: "🗑 Remove " + w0.unit + " " + w0.name, from: w0.roles.map(roleLabel).join(", ") + (w0.admin ? ", System Admin" : ""), to: "removed for good", who: w0, go: { tab: "users", user: "" } });
+        });
+        return;
+      }
+      if (c.id === "role.delete") {
+        var rd = String((c.value && typeof c.value === "object" ? c.value.role : c.value) || c.role || "").trim().toLowerCase();
+        if (!rd || cat.vocab.roles.indexOf(rd) === -1) { skipped.push("\"" + rd + "\" isn't a role or title"); return; }
+        if ((typeof HZ_PROTECTED_ROLES !== "undefined" && HZ_PROTECTED_ROLES.indexOf(rd) !== -1) || (typeof HZ_PROTECTED_TITLES !== "undefined" && HZ_PROTECTED_TITLES.indexOf(rd) !== -1)) { skipped.push(roleLabel(rd) + " can't be deleted"); return; }
+        var holders = (SA.members || []).filter(function(x) { return x.roles.indexOf(rd) !== -1; });
+        rows.push({ kind: "roleDelete", danger: true, label: "🗑 Delete the " + roleLabel(rd) + " role / title", from: holders.length + " member" + (holders.length === 1 ? " has" : "s have") + " it" + (holders.length ? " (" + holders.slice(0, 10).map(function(x) { return x.unit; }).join(", ") + (holders.length > 10 ? "…" : "") + ")" : ""), to: "deleted and taken off them — the members stay", role: rd, holders: holders, go: { tab: "users", user: "" } });
         return;
       }
       if (c.id === "member.update") {
@@ -34415,9 +34499,22 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
           m: { fn: fn, ln: ln, email: em, unit: unit, phone: ph, roles: rl, admin: adm, maxDevices: md }, go: { tab: "users", user: unit || em } });
         return;
       }
+      if (c.id === "memberTile") {
+        var mt = String(c.unit || "").toUpperCase(), muid = SA.D.units[mt] || SA.D.units[(typeof orgUnit === "function" ? orgUnit(mt.replace(/^[A-Z]+-?/, "")) : mt).toUpperCase()];
+        var tt = (cat.vocab.tiles || []).filter(function(x) { return x.k === c.tile; })[0], tv = String(c.value || "");
+        if (!muid) { skipped.push("couldn't find member " + (c.unit || "")); return; }
+        if (!tt) { skipped.push("couldn't find that tile"); return; }
+        if (tv !== "clear" && cat.vocab.places.indexOf(tv) === -1) { skipped.push("not a place a tile can go"); return; }
+        var curT = ((SA.D.acc.userTiles || {})[muid] || {})[tt.k] || "clear"; if (curT === tv) return;
+        var mnm = (SA.members || []).filter(function(x) { return x.uid === muid; })[0];
+        rows.push({ kind: "memberTile", label: "🧩 " + mt + (mnm ? " " + mnm.name : "") + " — " + tileName(tt.k), from: curT === "clear" ? "follows their roles" : placeName(curT), to: tv === "clear" ? "follows their roles" : placeName(tv), c: { uid: muid, tile: tt.k, value: tv }, go: { tab: "security", sec: "access", acc: "members", member: muid } });
+        return;
+      }
       if (c.id === "exception") {
         var uid = SA.D.units[String(c.unit || "").toUpperCase()], p = typeof hzPermDef === "function" ? hzPermDef(c.perm) : null, ev = String(c.value || "");
-        if (!uid || !p || ["allow", "deny", "clear"].indexOf(ev) === -1) { skipped.push("a member exception I couldn't match"); return; }
+        if (!uid) { skipped.push("couldn't find member " + (c.unit || "")); return; }
+        if (!p) { skipped.push("\"" + (c.perm || "") + "\" isn't a permission (to hide or move a tile for one member, that's a tile exception)"); return; }
+        if (["allow", "deny", "clear"].indexOf(ev) === -1) { skipped.push("an exception must be allow, deny or clear"); return; }
         var ce = ((SA.D.acc.userPerms || {})[uid] || {})[p.k] || "clear";
         if (ce === ev) return;
         var nm = { allow: "✅ Always allow", deny: "⛔ Never allow", clear: "Follow their roles" };
@@ -34439,11 +34536,16 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
         if (du.kind === "bool") dv = dv === true || dv === "true" || dv === "on" || dv === 1;
         else if (du.kind === "number") { dv = Number(dv); if (!isFinite(dv)) de = du.name + ": that isn't a number"; }
         else if (du.kind === "time") { dv = hhmm(dv); if (!dv) de = du.name + ": that isn't a time"; }
+        else if (du.kind === "records") { if (!Array.isArray(dv) || !dv.every(function(x) { return x && typeof x === "object"; })) de = du.name + ": needs the full list of entries"; }
         else if (du.kind === "list") dv = (Array.isArray(dv) ? dv : String(dv).split(",")).map(function(x) { return typeof du.current[0] === "number" ? Number(x) : String(x).trim(); }).filter(function(x) { return x !== ""; });
         else dv = String(dv);
         if (de) { skipped.push(de); return; }
         if (JSON.stringify(du.current) === JSON.stringify(dv)) return;
-        var sh = function(v) { return du.kind === "bool" ? (v ? "On" : "Off") : Array.isArray(v) ? (v.join(", ") || "(none)") : (String(v) === "" ? "(empty)" : String(v)); };
+        var sh = function(v) {
+          if (du.kind === "records") { var nm = function(o) { return String(o.name || o.label || o.value || o.area || o.title || JSON.stringify(o).slice(0, 30)); }; var was = (du.current || []).map(nm), now = v.map(nm);
+            var add = now.filter(function(x) { return was.indexOf(x) === -1; }), gone = was.filter(function(x) { return now.indexOf(x) === -1; });
+            return v.length + " entries" + (v === dv ? (add.length ? " · adds " + add.slice(0, 5).join(", ") : "") + (gone.length ? " · removes " + gone.slice(0, 5).join(", ") : "") + (!add.length && !gone.length ? " · entries edited" : "") : ""); }
+          return du.kind === "bool" ? (v ? "On" : "Off") : Array.isArray(v) ? (v.join(", ") || "(none)") : (String(v) === "" ? "(empty)" : String(v).length > 140 ? String(v).slice(0, 140) + "…" : String(v)); };
         rows.push({ kind: "db", label: du.name, from: sh(du.current), to: sh(dv), u: du, v: dv, go: { tab: du.tab } });
       } else if (it.kind === "ui") {
         var u = it.u, nv = c.value, er = "";
@@ -34485,6 +34587,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   // after saving: other screens load fresh when you open them; the one you're on is redrawn only if you're not in the middle of typing there
   function refreshAfter() {
     try { if (typeof mLoadDispatchSettings === "function") mLoadDispatchSettings(); } catch (e) {}
+    try { if (SA.reloadDs && typeof loadDispatchSettings === "function" && !(typeof hzPendCount === "function" && hzPendCount())) loadDispatchSettings(); } catch (e) {}
+    SA.reloadDs = false;
     try { if (typeof hzLoadTileAccess === "function") hzLoadTileAccess(currentRole === "admin", currentUserRoles); } catch (e) {}
     var a = document.querySelector("#admin-tabbar .admin-tab.active"), cur = a ? a.getAttribute("data-tab") : "", pg = document.getElementById("pg-admin");
     var typing = document.activeElement && pg && pg.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
@@ -34497,13 +34601,31 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     }
   }
   function applyAllNow(rows) {
+    SA.touched = SA.touched || {};
     var D = SA.D, results = [], accTouched = false, taPatch = {}, acc = JSON.parse(JSON.stringify(D.acc || {})), what = [];
     acc.perms = acc.perms || {}; acc.permsRoles = acc.permsRoles || {}; acc.place = acc.place || {}; acc.userPerms = acc.userPerms || {};
     var chain = Promise.resolve();
     rows.forEach(function(r) {
-      if (r.kind === "db") chain = chain.then(function() {
-        return db.collection("appdata").doc(r.u.doc).set(nested(r.u.path, r.v), { merge: true }).then(function() {
-          memFor(r.u.doc).forEach(function(o) { patchMem(o, r.u.path, r.v); }); r.u.current = r.v; SA.touched = SA.touched || {}; SA.touched[r.u.tab] = 1;
+      if (r.kind === "memberDelete") chain = chain.then(function() {
+        return db.collection("users").doc(r.who.uid).delete().then(function() { SA.touched.users = 1; results.push({ r: r, ok: true }); }, function(e) { results.push({ r: r, ok: false, err: e.message }); });
+      });
+      else if (r.kind === "roleDelete") chain = chain.then(function() {
+        var batch = db.batch();
+        r.holders.forEach(function(h0) { batch.update(db.collection("users").doc(h0.uid), { roles: h0.roles.filter(function(x) { return x !== r.role; }) }); });
+        return batch.commit().then(function() { return getDoc("roles"); }).then(function(rr) {
+          var list = (rr.roles || (typeof HZ_ROLES !== "undefined" && HZ_ROLES) || []).filter(function(x) { return String(x).toLowerCase() !== r.role; });
+          var titles = (rr.titles || (typeof HZ_TITLES !== "undefined" && HZ_TITLES) || []).filter(function(x) { return String(x).toLowerCase() !== r.role; });
+          return db.collection("appdata").doc("roles").set({ roles: list, titles: titles, updatedAt: new Date().toISOString(), updatedBy: currentUserUnit || "" }).then(function() {
+            try { HZ_ROLES = list; HZ_TITLES = titles; if (typeof hzRolesRenderAll === "function") hzRolesRenderAll(); } catch (e) {}
+          });
+        }).then(function() { SA.touched.users = 1; results.push({ r: r, ok: true }); }, function(e) { results.push({ r: r, ok: false, err: e.message }); });
+      });
+      else if (r.kind === "db") chain = chain.then(function() {
+        var write = db.collection(r.u.col || "appdata").doc(r.u.docId || r.u.doc).set(nested(r.u.path, r.v), { merge: true });   // a list is always replaced as a whole
+        return write.then(function() {
+          if (r.u.kind !== "records") memFor(r.u.doc).forEach(function(o) { patchMem(o, r.u.path, r.v); });
+          else if (r.u.doc === "dispatchSettings") SA.reloadDs = true;
+          r.u.current = r.v; SA.touched = SA.touched || {}; SA.touched[r.u.tab] = 1;
           results.push({ r: r, ok: true });
         }, function(e) { results.push({ r: r, ok: false, err: e.message }); });
       });
@@ -34532,6 +34654,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       else {
         accTouched = true; what.push(r.label + " → " + r.to);
         if (r.kind === "perm") { acc.perms[r.p.k] = r.v.slice(); acc.permsRoles[r.p.k] = r.v.slice(); }
+        if (r.kind === "memberTile") { acc.userTiles = acc.userTiles || {}; var et = acc.userTiles[r.c.uid] = acc.userTiles[r.c.uid] || {}; if (r.c.value === "clear") delete et[r.c.tile]; else et[r.c.tile] = r.c.value; if (!Object.keys(et).length) delete acc.userTiles[r.c.uid]; }
         if (r.kind === "exception") { var e = acc.userPerms[r.c.uid] = acc.userPerms[r.c.uid] || {}; if (r.c.value === "clear") delete e[r.c.perm]; else e[r.c.perm] = r.c.value; if (!Object.keys(e).length) delete acc.userPerms[r.c.uid]; }
         if (r.kind === "tile") {
           var k = r.c.tile, role = r.c.role, cur = (D.ta.tiles || {})[k];
@@ -34670,6 +34793,8 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
       "body.hz-sa-stealth .admin-section[data-admin-tab].tab-visible:not(.hz-sa-keep){position:fixed !important;left:-40000px !important;top:0 !important;width:1180px !important;max-height:none !important;display:block !important;visibility:visible !important;pointer-events:none !important;opacity:0 !important;transform:translateX(-300vw) !important;clip-path:inset(0 0 100% 0) !important;z-index:-1 !important}" +
       "body.hz-sa-stealth .admin-section[data-admin-tab].hz-sa-keep{display:block !important}#admin-tabbar.hz-sa-hidebar{display:none !important}" +
       "body.hz-sa-stealth #edit-modal,body.hz-sa-stealth #hz-pend-bar,body.hz-sa-stealth .hz-dlg-back{opacity:0 !important;pointer-events:none !important}" +
+      "#hz-sa .sa-warn{margin-top:8px;padding:6px 8px;border:2px solid #c62828;border-radius:8px;color:#ff8a80;font-weight:700;font-size:.8rem}" +
+      "#hz-sa .sa-who{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.75;margin-bottom:2px;font-family:Oswald,sans-serif}" +
       "#hz-sa .sa-typing{display:flex;align-items:center;gap:5px}#hz-sa .sa-typing i{width:7px;height:7px;border-radius:50%;background:#d4a017;display:inline-block;animation:hzSaDot 1.2s infinite ease-in-out}#hz-sa .sa-typing i:nth-child(2){animation-delay:.15s}#hz-sa .sa-typing i:nth-child(3){animation-delay:.3s}#hz-sa .sa-typing span{margin-left:6px;font-size:.72rem;color:#9aa4b5}@keyframes hzSaDot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}" +
       ".hz-sa-flash{outline:3px solid #d4a017 !important;outline-offset:3px;border-radius:6px;animation:hzSaPulse 1.1s ease-in-out 3}@keyframes hzSaPulse{50%{outline-color:rgba(212,160,23,.15)}}";
     document.head.appendChild(st);
@@ -34692,7 +34817,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     var h = SA.msgs.length ? "" : '<div class="sa-m a">Hi! Tell me what to change and I\'ll set it up — I always show you the change first and nothing is saved until you approve it. Afterwards you get a link to check each setting.</div>' +
       '<div class="sa-tips">Try: ' + ["Set the night shift from 22:00 to 06:00", "Alert the dispatcher after 20 minutes with no activity on a call", "Let captains manage service tickets", "Put the APGAR tool on responders' home screen", "What do you recommend for service request reminders?", "Add a new member"].map(function(t) { return '<span class="sa-tip" onclick="document.getElementById(\'hz-sa-in\').value=this.textContent;hzSaSend()">' + esc(t) + '</span>'; }).join("") + '</div>';
     SA.msgs.forEach(function(m, i) {
-      if (m.text) h += '<div class="sa-m ' + (m.role === "user" ? "u" : "a") + '">' + esc(m.text) + '</div>';
+      if (m.text) h += '<div class="sa-m ' + (m.role === "user" ? "u" : "a") + '"><div class="sa-who">' + (m.role === "user" ? esc(m.who || (typeof currentUserUnit !== "undefined" && currentUserUnit) || "You") : "🤖 Bot") + ':</div>' + esc(m.text) + '</div>';
       if (m.card) h += m.card;
     });
     if (SA.busy) h += '<div class="sa-m a sa-typing"><i></i><i></i><i></i><span id="hz-sa-typing-t">' + esc(SA.status || "") + '</span></div>';
@@ -34703,12 +34828,13 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     if (!p.rows.length) return p.skipped.length ? '<div class="sa-card"><div class="sa-bad">Couldn\'t use: ' + esc(p.skipped.join(" · ")) + '</div></div>' : "";
     return '<div class="sa-card" id="hz-sa-prop"><h4>Approve these changes?</h4>' + p.rows.map(function(r) { return '<div class="sa-row"><b>' + esc(r.label) + '</b><span>' + (r.from && r.from !== "—" ? '<s>' + esc(r.from) + '</s> → ' : '') + '<em>' + esc(r.to) + '</em></span></div>'; }).join("") +
       (p.skipped.length ? '<div class="sa-bad" style="font-size:.78rem;margin-top:6px">Left out: ' + esc(p.skipped.join(" · ")) + '</div>' : '') +
-      '<div class="sa-btns"><button type="button" class="sa-ok" onclick="hzSaApprove()">✅ Approve &amp; save</button><button type="button" class="sa-no" onclick="hzSaCancel()">✕ Cancel</button></div></div>';
+      (p.rows.some(function(r) { return r.danger; }) ? '<div class="sa-warn">⚠️ Deleting is permanent — it can\'t be undone.</div>' : '') +
+      '<div class="sa-btns"><button type="button" class="' + (p.rows.some(function(r) { return r.danger; }) ? 'sa-no' : 'sa-ok') + '" onclick="hzSaApprove()">' + (p.rows.some(function(r) { return r.danger; }) ? '🗑 Approve &amp; delete' : '✅ Approve &amp; save') + '</button><button type="button" class="' + (p.rows.some(function(r) { return r.danger; }) ? 'sa-ok' : 'sa-no') + '" onclick="hzSaCancel()">✕ Cancel</button></div></div>';
   }
   function send() {
     var t = document.getElementById("hz-sa-in"), text = String((t && t.value) || "").trim(); if (!text || SA.busy) return;
     t.value = ""; SA.prop = null; SA.msgs.forEach(function(m) { if (m.card && /hz-sa-prop/.test(m.card)) m.card = m.card.replace(/<div class="sa-btns">[\s\S]*?<\/div><\/div>$/, '<div class="sa-tips">(not saved)</div></div>'); });
-    SA.msgs.push({ role: "user", text: text }); SA.busy = true; draw();
+    SA.msgs.push({ role: "user", text: text, who: (typeof currentUserUnit !== "undefined" && currentUserUnit) || "You" }); SA.busy = true; draw();
     var fresh = !(SA.ui && Date.now() - SA.uiAt < 10 * 60000);
     coverText(""); readDb().catch(function() {}).then(function() { return buildCatalog(); }).then(function(cat) {
       SA.cat = cat;
@@ -34769,13 +34895,14 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   window.hzSaTest = { deepScan: deepScan, findUi: findUi, proposal: proposal, buildCatalog: buildCatalog, applyAll: applyAll, curPlace: curPlace, state: SA, go: go };
 })();
 </script>
-<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570, 9.95 / 12.572: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
+<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570, 9.95 / 12.572, 9.97 / 12.580: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
    set in Admin ▸ Security ▸ 🛡️ Control & Access. Saved in appdata/access:
      groups      { id: { name, roles: [...] } }               named role groups ("Field" = responder + captain + …)
      perms       { permKey: ["dispatcher", "group:field", …] } only permissions an admin actually changed
      permsRoles  { permKey: ["dispatcher", "captain", …] }    the same, groups expanded (what the database rules read)
      tileFormat  { role: { tileKey: "tile" | "group" } }      only changed cells; "tile" = its own home tile
      userPerms   { uid: { permKey: "allow" | "deny" } }        12.567: per-member exceptions (beat the member's roles)
+     userTiles   { uid: { tileKey: "off" | place } }             12.580: per-member tile exceptions
    Nothing saved for a permission = it works exactly as before (the built-in rule below). Admins can always do everything. */
 var HZ_PERMS = [
   { k: "vehicles.oos",      area: "🚑 Vehicles",               l: "Take a vehicle out of service / put it back",               def: ["dispatcher", "captain", "chief"] },
@@ -34845,6 +34972,9 @@ function hzTilePermOk(sec) {
 }
 // Re-apply everything on the home screen that depends on permissions (after Control & Access changes)
 function hzAccessReapply() {
+  // undo last round's per-member tile exceptions first, so the role rules below start from scratch
+  document.querySelectorAll("[data-hz-uhid]").forEach(function(e) { e.removeAttribute("data-hz-uhid"); if (e.style.display === "none") e.style.display = ""; });
+  document.querySelectorAll("[data-hz-ushow]").forEach(function(e) { e.removeAttribute("data-hz-ushow"); e.style.display = "none"; });
   try { if (typeof mAccHomeApply === "function" && typeof mCurrentRole !== "undefined" && mCurrentRole) mAccHomeApply(); } catch (e) {}
   try { if (typeof hzAccDeskHomeApply === "function" && typeof currentRole !== "undefined" && currentRole) hzAccDeskHomeApply(); } catch (e) {}
   try {
@@ -34889,6 +35019,7 @@ function hzSubList() {
 function hzSubDef(k) { var l = hzSubList(); for (var i = 0; i < l.length; i++) if (l[i].k === k) return l[i]; return null; }
 function hzTileDefaultPlace(k) { var sd = /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) return "p:" + sd.parent; var g = hzTileGroupOf(k); return g ? "g:" + g : "home"; }
 function hzSubVisible(k) {   // the tile grid's Shown / Hidden for a screen (nothing saved = shown, as today)
+  var mov = hzMyTileOverride(k); if (mov) return mov !== "off";
   var ta = typeof HZ_TILE_ACCESS !== "undefined" ? HZ_TILE_ACCESS : null; if (!ta || !Array.isArray(ta[k])) return true;
   var cols = hzPlaceCols(); if (cols[0] === "admin" && typeof HZ_TILE_ACCESS_ADMIN !== "undefined" && !HZ_TILE_ACCESS_ADMIN) return true;
   var mine = hzMyRoles().indexOf("admin") !== -1 ? ["admin"] : hzMyRoles();
@@ -34909,7 +35040,16 @@ function hzSubOpen(k) {
   if (sd.parent === "tools" && typeof hzToolsOpen === "function") { hzToolsOpen(); HZ_TL.direct = true; hzTlGo(sd.id); }
 }
 window.hzSubOpen = hzSubOpen;
+// 9.97 / 12.580 (Sam: "hide RMA Hotline specifically for MC-16"): per-member tile exceptions —
+// appdata/access.userTiles = { uid: { tileKey: "off" | "home" | "g:…" | "p:tools" | "f:…" } } beat the member's roles.
+function hzMyTileOverride(k) {
+  var ut = HZ_ACCESS && HZ_ACCESS.userTiles, me = hzMyUid(), v = ut && me && ut[me] && ut[me][k];
+  if (!v) return "";
+  if (/^f:/.test(v) && !(((HZ_ACCESS && HZ_ACCESS.folders) || {})[v.slice(2)])) return "";
+  return String(v);
+}
 function hzTilePlaceFor(k) {
+  var mov = hzMyTileOverride(k); if (mov && mov !== "off") return mov;
   var a = HZ_ACCESS || {}, pl = a.place || {}, tf = a.tileFormat || {}, folders = a.folders || {}, cols = hzPlaceCols(), found = [];
   cols.forEach(function(c) {
     var v = pl[c] && pl[c][k];
@@ -34978,6 +35118,11 @@ function hzTileFormatApply() {
   // 1) real tiles (incl. group tiles and rule-based tiles)
   HZ_TILES.concat(window.HZ_TILES_MORE || []).forEach(function(t) {
     var k = t.k, src = hzTileSrc(k); if (!src) return;
+    var mov = hzMyTileOverride(k);   // this member's own exception (remembered so it can be undone exactly)
+    if (mov === "off") { if (src.style.display !== "none") { src.setAttribute("data-hz-uhid", "1"); src.style.display = "none"; } }
+    else if (mov) { if (src.style.display === "none") { src.setAttribute("data-hz-ushow", "1"); src.style.display = ""; } }
+    if (mov !== "off" && src.hasAttribute("data-hz-uhid")) { src.removeAttribute("data-hz-uhid"); if (src.style.display === "none") src.style.display = ""; }
+    if (!mov && src.hasAttribute("data-hz-ushow")) { src.removeAttribute("data-hz-ushow"); src.style.display = "none"; }
     var place = hzNodePlace(k), def = hzTileDefaultPlace(k), hidden = src.style.display === "none", want = hostOf(place);
     document.querySelectorAll('[data-hz-promo="' + k + '"]:not([data-hz-sub])').forEach(function(c) { if (!inPage(c) && (place === def || c.parentNode !== want)) c.parentNode.removeChild(c); });
     if (place === def) { src.classList.remove("hz-promo-src"); return; }
