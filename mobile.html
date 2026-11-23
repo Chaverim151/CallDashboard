@@ -27,7 +27,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.93"; window.M_BUILD = BUILD;
+  var BUILD = "9.94"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -16226,7 +16226,7 @@ function hzToolsOpen() {
   if (!o) { o = document.createElement("div"); o.id = "hz-tools-pop"; document.body.appendChild(o); }
   o.onclick = function(e) { if (e.target === o) hzToolsClose(); };
   if (!HZ_TL.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "tools" }), ""); HZ_TL.hist = true; } catch (e) {} }
-  HZ_TL.view = "menu"; hzTlDraw();
+  HZ_TL.view = "menu"; HZ_TL.direct = false; hzTlDraw();
 }
 function hzToolsClose(fromBack) {
   hzTlStop(); hzTlVtStop(); hzTrClose();
@@ -16237,7 +16237,7 @@ function hzToolsClose(fromBack) {
 // Phone Back key (called from mNavCloseOverlay): inside a tool → the list; on the list → close
 function hzToolsBack() {
   if (hzTrHide()) { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "tools" }), ""); HZ_TL.hist = true; } catch (e) {} return "added"; }   // 12.330: the big patient screen closes first
-  if (HZ_TL.view !== "menu") {
+  if (HZ_TL.view !== "menu" && !HZ_TL.direct) {   // 9.94 / 12.570: a tool opened from its own tile closes straight away
     hzTlGo("menu");
     try { history.pushState(Object.assign({}, mNavState(), { hzOv: "tools" }), ""); HZ_TL.hist = true; } catch (e) {}
     return "added";
@@ -16249,7 +16249,7 @@ function hzTlGo(v) { hzTlStop(); hzTlVtStop(); if (v !== "trans") hzTrClose(); e
 function hzTlDraw() {
   var o = document.getElementById("hz-tools-pop"); if (!o) return;
   var v = HZ_TL.view, item = HZ_TL_LIST.filter(function(x) { return x[0] === v; })[0];
-  var back = v === "menu" ? '<button class="hz-pop-back" onclick="hzToolsClose()">← Back</button>' : '<button class="hz-pop-back" onclick="hzTlGo(\'menu\')">← ' + hzTlEsc(hzTlTitle()) + '</button>';
+  var back = (v === "menu" || HZ_TL.direct) ? '<button class="hz-pop-back" onclick="hzToolsClose()">← Back</button>' : '<button class="hz-pop-back" onclick="hzTlGo(\'menu\')">← ' + hzTlEsc(hzTlTitle()) + '</button>';
   var ttl = v === "menu" ? "🧰 " + hzTlTitle() : item[1] + " " + item[2];
   var body = v === "menu" ? hzTlMenu() : v === "apgar" ? hzTlApgar() : v === "gcs" ? hzTlGcs() : v === "cpr" ? hzTlCpr() : v === "vent" ? hzTlVent() : v === "vitals" ? hzTlVitals() : v === "vtimer" ? hzTlVt() : v === "labor" ? hzTlLabor() : v === "med" ? hzTlMed() : v === "tri" ? hzTlTri() : v === "trans" ? hzTlTrans() : hzTlBurn();
   var ob = o.querySelector(".hz-tl-body"), keep = ob && o.getAttribute("data-v") === v ? ob.scrollTop : 0;   // a redraw of the same tool keeps its scroll place
@@ -16258,7 +16258,7 @@ function hzTlDraw() {
 }
 var HZ_TL_HIDE = { trans: true };   // 12.340 (Sam): Live Translator hidden for now — remove "trans" here to show it again (all its code is still in place)
 function hzTlMenu() {
-  return HZ_TL_LIST.filter(function(t) { return !HZ_TL_HIDE[t[0]]; }).map(function(t) {
+  return HZ_TL_LIST.filter(function(t) { return !HZ_TL_HIDE[t[0]] && (typeof hzSubInParent !== "function" || hzSubInParent("tool-" + t[0])); }).map(function(t) {   // 9.94 / 12.570: screens moved out or hidden in Control & Access
     return '<button class="hz-tl-item" onclick="hzTlGo(\'' + t[0] + '\')"><span class="hz-tl-ic">' + t[1] + '</span><span><b>' + hzTlEsc(t[2]) + '</b><small>' + hzTlEsc(t[3]) + '</small></span><span class="hz-tl-chev">›</span></button>';
   }).join("") + '<div class="hz-tl-note hz-tl-disc">These are quick aids only. Follow NJ EMS protocols and medical control.</div>';
 }
@@ -18303,7 +18303,7 @@ window.mCallsLastSnap = window.mCallsLastSnap || 0;
   }, 5000);
 })();
 </script>
-<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
+<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
    set in Admin ▸ Security ▸ 🛡️ Control & Access. Saved in appdata/access:
      groups      { id: { name, roles: [...] } }               named role groups ("Field" = responder + captain + …)
      perms       { permKey: ["dispatcher", "group:field", …] } only permissions an admin actually changed
@@ -18406,8 +18406,43 @@ function hzPlaceCols() {   // the tile-grid columns this member follows (titles 
   var tl = typeof hzTitleList === "function" ? hzTitleList() : [];
   return mine.map(function(r) { return tl.indexOf(r) !== -1 ? "responder" : r; });
 }
-function hzTileGroupOf(k) { if (typeof HZ_TILE_GROUPS === "undefined") return ""; for (var g in HZ_TILE_GROUPS) if (HZ_TILE_GROUPS[g].indexOf(k) !== -1) return g; return ""; }
-function hzTileDefaultPlace(k) { var g = hzTileGroupOf(k); return g ? "g:" + g : "home"; }
+// 9.94 / 12.570: the Access Codes lists live on the Access Codes page — that's their normal place (any tile can go in there too)
+var HZ_PLACE_PARENTS = { hospital: "codes", buildings: "codes", shuls: "codes", storage: "codes" };
+function hzPlaceGroups() { return (typeof HZ_TILE_GROUPS !== "undefined" ? Object.keys(HZ_TILE_GROUPS) : []).concat(["codes"]); }
+function hzTileGroupOf(k) {
+  if (typeof HZ_TILE_GROUPS !== "undefined") for (var g in HZ_TILE_GROUPS) if (HZ_TILE_GROUPS[g].indexOf(k) !== -1) return g;
+  return HZ_PLACE_PARENTS[k] || "";
+}
+// ── 9.94 / 12.570 (Sam): SCREENS INSIDE A TILE — each can be pulled out as its own tile (normal place: inside its tile) ──
+// Built from the screens' own lists, so new ones show up by themselves. key = "<parent>-<screen>".
+function hzSubList() {
+  var out = [];
+  if (typeof HZ_TL_LIST !== "undefined") HZ_TL_LIST.forEach(function(t) { if (typeof HZ_TL_HIDE !== "undefined" && HZ_TL_HIDE[t[0]]) return; out.push({ k: "tool-" + t[0], parent: "tools", id: t[0], i: t[1], l: t[2], s: t[3] }); });
+  return out;
+}
+function hzSubDef(k) { var l = hzSubList(); for (var i = 0; i < l.length; i++) if (l[i].k === k) return l[i]; return null; }
+function hzTileDefaultPlace(k) { var sd = /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) return "p:" + sd.parent; var g = hzTileGroupOf(k); return g ? "g:" + g : "home"; }
+function hzSubVisible(k) {   // the tile grid's Shown / Hidden for a screen (nothing saved = shown, as today)
+  var ta = typeof HZ_TILE_ACCESS !== "undefined" ? HZ_TILE_ACCESS : null; if (!ta || !Array.isArray(ta[k])) return true;
+  var cols = hzPlaceCols(); if (cols[0] === "admin" && typeof HZ_TILE_ACCESS_ADMIN !== "undefined" && !HZ_TILE_ACCESS_ADMIN) return true;
+  var mine = hzMyRoles().indexOf("admin") !== -1 ? ["admin"] : hzMyRoles();
+  return ta[k].some(function(r) { return mine.indexOf(String(r).toLowerCase()) !== -1; });
+}
+function hzSubInParent(k) { return hzSubVisible(k) && hzTilePlaceFor(k) === hzTileDefaultPlace(k); }   // still listed inside its tile for me?
+function hzSubTile(sd, grid) {   // a tile for a pulled-out screen, made like the others on this screen
+  var tpl = (grid || hzHomeGrid()).querySelector('.m-tile[data-sec], .big-btn[data-sec]') || hzHomeGrid().querySelector('.m-tile[data-sec], .big-btn[data-sec]'); if (!tpl) return null;
+  var t = tpl.cloneNode(true); t.removeAttribute("id"); t.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); });
+  t.classList.remove("hz-promo-src", "hz-more-x"); t.removeAttribute("data-hz-grp-hid"); t.removeAttribute("data-hz-fld"); t.style.display = "";
+  t.setAttribute("data-hz-promo", sd.k); t.setAttribute("data-hz-sub", sd.k); t.setAttribute("data-sec", sd.k); t.setAttribute("onclick", "hzSubOpen('" + sd.k + "')");
+  var ic = t.querySelector(".m-tile-icon, .btn-icon"), lb = t.querySelector(".m-tile-label, .btn-label"), sb = t.querySelector(".m-tile-sub, .btn-sub");
+  if (ic) ic.textContent = sd.i || "•"; if (lb) lb.textContent = sd.l; if (sb) sb.textContent = sd.s || "";
+  return t;
+}
+function hzSubOpen(k) {
+  var sd = hzSubDef(k); if (!sd) return;
+  if (sd.parent === "tools" && typeof hzToolsOpen === "function") { hzToolsOpen(); HZ_TL.direct = true; hzTlGo(sd.id); }
+}
+window.hzSubOpen = hzSubOpen;
 function hzTilePlaceFor(k) {
   var a = HZ_ACCESS || {}, pl = a.place || {}, tf = a.tileFormat || {}, folders = a.folders || {}, cols = hzPlaceCols(), found = [];
   cols.forEach(function(c) {
@@ -18450,6 +18485,19 @@ function hzTileFormatApply() {
     if (!copy) { copy = hzTileCopy(src, k); host.appendChild(copy); }
     copy.style.display = hidden ? "none" : "";
   });
+  // screens pulled out of their tile (Tools ▸ APGAR…)
+  hzSubList().forEach(function(sd) {
+    var k = sd.k, place = hzTilePlaceFor(k), def = hzTileDefaultPlace(k), vis = hzSubVisible(k);
+    document.querySelectorAll('[data-hz-sub="' + k + '"]').forEach(function(c) {
+      if (c.closest("#m-pg-hzfld, #pg-hzfld")) return;
+      var want = place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null);
+      if (place === def || !vis || c.parentNode !== want) c.parentNode.removeChild(c);
+    });
+    if (place === def || !vis) return;
+    if (/^f:/.test(place)) { var fid = place.slice(2); (inFolder[fid] = inFolder[fid] || []).push(k); inFolder[fid].vis = true; return; }
+    var host = place === "home" ? grid : hzGroupGrid(place.slice(2)); if (!host || host.querySelector('[data-hz-sub="' + k + '"]')) return;
+    var t = hzSubTile(sd, host); if (t) host.appendChild(t);
+  });
   // folder tiles on the home screen (only if something inside is open to this member)
   Object.keys(folders).forEach(function(fid) {
     var f = folders[fid] || {}, tile = grid.querySelector('[data-hz-fld="' + fid + '"]'), show = !!(inFolder[fid] && inFolder[fid].vis);
@@ -18482,7 +18530,10 @@ function hzFolderFill(fid) {
   var pg = hzFolderPage(); if (!pg) return;
   var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[fid] || {}, t = pg.querySelector(".m-page-title, .page-title"); if (t) t.textContent = (f.icon ? f.icon + " " : "") + (f.name || "Folder");
   var g = pg.querySelector(".m-grid, .btn-grid"); if (!g) return; g.innerHTML = "";
-  ((window.HZ_FLD_ITEMS || {})[fid] || []).forEach(function(k) { var src = hzTileSrc(k); if (!src || src.style.display === "none") return; g.appendChild(hzTileCopy(src, k)); });
+  ((window.HZ_FLD_ITEMS || {})[fid] || []).forEach(function(k) {
+    var sd = /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) { var st = hzSubTile(sd, g); if (st) g.appendChild(st); return; }
+    var src = hzTileSrc(k); if (!src || src.style.display === "none") return; g.appendChild(hzTileCopy(src, k));
+  });
   if (!g.children.length) g.innerHTML = '<div style="color:var(--gray);font-size:0.85rem;padding:10px">Nothing here for you.</div>';
 }
 function hzFolderOpen(fid) {

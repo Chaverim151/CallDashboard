@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.569">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.570">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2779,7 +2779,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.569</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.570</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -5542,17 +5542,19 @@ function hzAccTileVis(k, role) {
   if (Array.isArray(HZ_ACC.tileVis[k])) return HZ_ACC.tileVis[k].map(function(r) { return String(r).toLowerCase(); }).indexOf(role) !== -1;
   return typeof hzTileDefault === "function" ? hzTileDefault(k, role) : true;
 }
-function hzAccDefPlace(k) { var g = hzAccGroupOf(k); return g ? "g:" + g : "home"; }
+function hzAccDefPlace(k) { if (typeof hzTileDefaultPlace === "function") return hzTileDefaultPlace(k); var g = hzAccGroupOf(k); return g ? "g:" + g : "home"; }
+function hzAccSubs(parent) { return typeof hzSubList === "function" ? hzSubList().filter(function(x) { return !parent || x.parent === parent; }) : []; }
+function hzAccNameOf(k) { var sd = typeof hzSubDef === "function" && /^tool-/.test(k) ? hzSubDef(k) : null; return sd ? sd.l : hzAccTileName(k); }
 function hzAccPlace(k, role) {   // 12.569: "home" | "g:<group>" | "f:<folder>"
   var v = HZ_ACC.place[role] && HZ_ACC.place[role][k];
   if (v && /^f:/.test(v) && !HZ_ACC.folders[v.slice(2)]) v = "";
   return v || hzAccDefPlace(k);
 }
 function hzAccTileFmt(k, role) { return hzAccPlace(k, role) === "home" ? "tile" : "group"; }
-function hzAccPlaceName(v) { if (v === "home") return "🏠 Own home tile"; if (/^g:/.test(v)) return "📁 In " + hzAccTileName(v.slice(2)); var f = HZ_ACC.folders[v.slice(2)]; return (f && f.icon || "📁") + " In " + (f ? f.name : "folder"); }
-function hzAccPlaceOpts() {
-  var o = [["home", "🏠 Own home tile"]];
-  if (typeof HZ_TILE_GROUPS !== "undefined") Object.keys(HZ_TILE_GROUPS).forEach(function(g) { o.push(["g:" + g, "📁 In " + hzAccTileName(g)]); });
+function hzAccPlaceName(v) { if (v === "home") return "🏠 Own home tile"; if (/^p:/.test(v)) return "↩ Inside " + hzAccTileName(v.slice(2)); if (/^g:/.test(v)) return "📁 In " + hzAccTileName(v.slice(2)); var f = HZ_ACC.folders[v.slice(2)]; return (f && f.icon || "📁") + " In " + (f ? f.name : "folder"); }
+function hzAccPlaceOpts(k) {
+  var d = k ? hzAccDefPlace(k) : "", o = /^p:/.test(d) ? [[d, "↩ Inside " + hzAccTileName(d.slice(2)) + " (normal)"], ["home", "🏠 Own home tile"]] : [["home", "🏠 Own home tile"]];
+  (typeof hzPlaceGroups === "function" ? hzPlaceGroups() : (typeof HZ_TILE_GROUPS !== "undefined" ? Object.keys(HZ_TILE_GROUPS) : [])).forEach(function(g) { if (g !== k) o.push(["g:" + g, "📁 In " + hzAccTileName(g)]); });
   Object.keys(HZ_ACC.folders).forEach(function(f) { o.push(["f:" + f, (HZ_ACC.folders[f].icon || "📁") + " In " + HZ_ACC.folders[f].name]); });
   o.push(["off", "🚫 Hidden"]); return o;
 }
@@ -5562,7 +5564,7 @@ function hzAccLevel(k, role) {   // "change" | "view" | "mixed" | "" (nothing to
   var n = ps.filter(function(p) { return hzAccExpand(hzAccTokens(p)).indexOf(role) !== -1; }).length;
   return n === ps.length ? "change" : n ? "mixed" : "view";
 }
-function hzAccGroupOf(k) { if (typeof HZ_TILE_GROUPS === "undefined") return ""; for (var g in HZ_TILE_GROUPS) if (HZ_TILE_GROUPS[g].indexOf(k) !== -1) return g; return ""; }
+function hzAccGroupOf(k) { if (typeof hzTileGroupOf === "function") return hzTileGroupOf(k); if (typeof HZ_TILE_GROUPS === "undefined") return ""; for (var g in HZ_TILE_GROUPS) if (HZ_TILE_GROUPS[g].indexOf(k) !== -1) return g; return ""; }
 function hzAccTileName(k) {
   var t = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(x) { return x.k === k; })[0];
   var n = (window.HZ_TILE_NAMES_LIVE && window.HZ_TILE_NAMES_LIVE[k]) || (t && t.l) || k; return n;
@@ -5652,27 +5654,33 @@ window.hzAccTick = hzAccTick;
 function hzAccTilesHtml() {
   var roles = (typeof hzTileGridRoles === "function") ? hzTileGridRoles() : hzAccRoles().concat(["admin"]);
   var tiles = (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).filter(function(t) { return !(typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[t.k]); });
-  var opts = hzAccPlaceOpts();
   if (!HZ_ACC.prevRole || roles.indexOf(HZ_ACC.prevRole) === -1) HZ_ACC.prevRole = roles.indexOf("dispatcher") !== -1 ? "dispatcher" : roles[0];
   var head = '<tr><th class="hz-acc-l">Tile</th>' + roles.map(function(r) { return '<th>' + hzAccEsc(hzAccLabel(r)) + '</th>'; }).join("") + '</tr>';
-  var rows = tiles.map(function(t) {
-    var own = typeof HZ_TILE_OWN_RULE !== "undefined" && HZ_TILE_OWN_RULE[t.k], grp = hzAccGroupOf(t.k), lv = typeof HZ_TILE_LEVEL !== "undefined" && HZ_TILE_LEVEL[t.k];
-    var lab = hzAccEsc(hzAccTileName(t.k)) + (grp ? '<div class="hz-acc-note">normally inside ' + hzAccEsc(hzAccTileName(grp)) + '</div>' : '') +
-      (lv ? '<div class="hz-acc-note">✏️ Change = ' + hzAccEsc(lv.map(function(p) { var d = hzPermDef(p); return d ? d.l : p; }).join(" + ")) + '</div>' : '<div class="hz-acc-note">nothing to change — always view only</div>');
-    if (own && !grp) return '<tr><td class="hz-acc-l">' + hzAccEsc(hzAccTileName(t.k)) + '</td><td colspan="' + roles.length + '" class="hz-acc-note" style="font-style:italic">' + hzAccEsc(own) + '</td></tr>';
-    return '<tr><td class="hz-acc-l">' + lab + '</td>' + roles.map(function(r) {
-      var vis = hzAccTileVis(t.k, r), v = !vis ? "off" : hzAccPlace(t.k, r), ch = HZ_ACC.dirty.fmt[r + "|" + t.k] || HZ_ACC.dirty.vis[t.k];
-      var cell = '<select class="hz-acc-sel v-' + (v === "off" ? "off" : v === "home" ? "tile" : "group") + (ch ? ' chg' : '') + '" onchange="hzAccTile(\'' + t.k + '\',\'' + r + '\',this.value)" aria-label="' + hzAccEsc(hzAccTileName(t.k) + " — " + hzAccLabel(r) + " — place") + '">' +
+  HZ_ACC.openSubs = HZ_ACC.openSubs || {};
+  var rowHtml = function(k, sub) {
+    var own = !sub && typeof HZ_TILE_OWN_RULE !== "undefined" && HZ_TILE_OWN_RULE[k], grp = sub ? "" : hzAccGroupOf(k), lv = !sub && typeof HZ_TILE_LEVEL !== "undefined" && HZ_TILE_LEVEL[k];
+    var subs = sub ? [] : hzAccSubs(k), opts = hzAccPlaceOpts(k);
+    var lab = (sub ? '<span class="hz-acc-subk">↳ ' + hzAccEsc(sub.i || "") + ' ' + hzAccEsc(sub.l) + '</span><div class="hz-acc-note">a screen inside ' + hzAccEsc(hzAccTileName(sub.parent)) + '</div>' : hzAccEsc(hzAccTileName(k)) + (grp ? '<div class="hz-acc-note">normally inside ' + hzAccEsc(hzAccTileName(grp)) + '</div>' : '')) +
+      (sub ? '' : lv ? '<div class="hz-acc-note">✏️ Change = ' + hzAccEsc(lv.map(function(p) { var d = hzPermDef(p); return d ? d.l : p; }).join(" + ")) + '</div>' : '<div class="hz-acc-note">nothing to change — always view only</div>') +
+      (subs.length ? '<button type="button" class="hz-acc-btn sm hz-acc-subt" onclick="HZ_ACC.openSubs[\'' + k + '\']=!HZ_ACC.openSubs[\'' + k + '\'];hzAccRender()">' + (HZ_ACC.openSubs[k] ? '▾ Hide' : '▸ Show') + ' the ' + subs.length + ' screens inside' + (subs.some(function(x) { return roles.some(function(r) { return !hzAccTileVis(x.k, r) || hzAccPlace(x.k, r) !== hzAccDefPlace(x.k); }); }) ? ' · some changed' : '') + '</button>' : '');
+    if (own && !grp) return '<tr><td class="hz-acc-l">' + hzAccEsc(hzAccTileName(k)) + '</td><td colspan="' + roles.length + '" class="hz-acc-note" style="font-style:italic">' + hzAccEsc(own) + '</td></tr>';
+    var out = '<tr' + (sub ? ' class="hz-acc-subrow"' : '') + '><td class="hz-acc-l">' + lab + '</td>' + roles.map(function(r) {
+      var vis = hzAccTileVis(k, r), v = !vis ? "off" : hzAccPlace(k, r), ch = HZ_ACC.dirty.fmt[r + "|" + k] || HZ_ACC.dirty.vis[k];
+      var cls = v === "off" ? "off" : (v === "home" ? "tile" : "group");
+      var cell = '<select class="hz-acc-sel v-' + cls + (ch ? ' chg' : '') + '" onchange="hzAccTile(\'' + k + '\',\'' + r + '\',this.value)" aria-label="' + hzAccEsc(hzAccNameOf(k) + " — " + hzAccLabel(r) + " — place") + '">' +
         opts.map(function(o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + hzAccEsc(o[1]) + '</option>'; }).join("") + '</select>';
       if (lv && v !== "off") {
-        var L = hzAccLevel(t.k, r), lch = lv.some(function(p) { return HZ_ACC.dirty.perms[p]; });
-        cell += '<select class="hz-acc-sel lv lv-' + L + (lch ? ' chg' : '') + '"' + (r === "admin" ? ' disabled' : '') + ' onchange="hzAccSetLevel(\'' + t.k + '\',\'' + r + '\',this.value)" aria-label="' + hzAccEsc(hzAccTileName(t.k) + " — " + hzAccLabel(r) + " — access") + '">' +
+        var L = hzAccLevel(k, r), lch = lv.some(function(p) { return HZ_ACC.dirty.perms[p]; });
+        cell += '<select class="hz-acc-sel lv lv-' + L + (lch ? ' chg' : '') + '"' + (r === "admin" ? ' disabled' : '') + ' onchange="hzAccSetLevel(\'' + k + '\',\'' + r + '\',this.value)" aria-label="' + hzAccEsc(hzAccTileName(k) + " — " + hzAccLabel(r) + " — access") + '">' +
           (L === "mixed" ? '<option value="mixed" selected>◐ Partly</option>' : '') +
           '<option value="view"' + (L === "view" ? ' selected' : '') + '>👁 View only</option><option value="change"' + (L === "change" ? ' selected' : '') + '>✏️ Change</option></select>';
       }
       return '<td class="hz-acc-c">' + cell + '</td>';
     }).join("") + '</tr>';
-  }).join("");
+    if (subs.length && HZ_ACC.openSubs[k]) out += subs.map(function(x) { return rowHtml(x.k, x); }).join("");
+    return out;
+  };
+  var rows = tiles.map(function(t) { return rowHtml(t.k, null); }).join("");
   return '<div class="hz-acc-two" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start"><div>' + hzAccFoldersHtml() +
     '<div class="hz-acc-scroll"><table class="hz-acc-t">' + head + rows + '</table></div>' +
     '<p class="hz-acc-note" style="margin-top:8px"><b>Place</b>: 🏠 its own home tile · 📁 inside a group or folder tile · 🚫 hidden. <b>Access</b>: 👁 View only — they open it and see everything (status, lists) but every change button is hidden and the database refuses changes · ✏️ Change — full use. Access is the same permission as in 🔐 What they can do. A title (Captain, Chief…) follows the Responder column here.</p></div>' +
@@ -5794,11 +5802,22 @@ function hzAccPhoneHtml(r, col, small) {
     if (own && !hzAccGroupOf(k)) { home.push({ n: hzAccTileName(k), sub: own, rule: 1 }); return; }
     if (!hzAccTileVis(k, vcol)) return;
     var pl = hzAccPlace(k, vcol);
-    if (pl === "home") home.push({ n: hzAccTileName(k), b: badge(k), p: !!hzAccGroupOf(k) });
+    if (pl === "home") home.push({ k: k, n: hzAccTileName(k), b: badge(k), p: !!hzAccGroupOf(k) });
     else (boxes[pl] = boxes[pl] || []).push({ n: hzAccTileName(k), b: badge(k) });
   });
+  hzAccSubs().forEach(function(x) {
+    if (!hzAccTileVis(x.k, vcol)) return; var pl = hzAccPlace(x.k, vcol);
+    if (pl === hzAccDefPlace(x.k)) { (boxes[pl] = boxes[pl] || []).push({ n: (x.i ? x.i + " " : "") + x.l }); return; }   // still inside its tile
+    var c = { n: (x.i ? x.i + " " : "") + x.l, sub: "from " + hzAccTileName(x.parent), p: 1 };
+    if (pl === "home") home.push(c); else (boxes[pl] = boxes[pl] || []).push(c);
+  });
   var folderCells = [];
-  Object.keys(groups).forEach(function(g) { if (boxes["g:" + g]) folderCells.push({ id: "g:" + g, n: hzAccTileName(g), items: boxes["g:" + g], g: 1 }); });
+  (typeof hzPlaceGroups === "function" ? hzPlaceGroups() : Object.keys(groups)).forEach(function(g) {
+    if (!boxes["g:" + g]) return;
+    if (!groups[g]) { var own = home.filter(function(c) { return c.k === g; })[0]; if (own) { own.id = "g:" + g; own.items = boxes["g:" + g]; own.g = 1; } return; }   // Access Codes: its own tile opens to its lists
+    folderCells.push({ id: "g:" + g, n: hzAccTileName(g), items: boxes["g:" + g], g: 1 });
+  });
+  Object.keys(boxes).forEach(function(b) { if (!/^p:/.test(b)) return; var own = home.filter(function(c) { return c.k === b.slice(2); })[0]; if (own) { own.id = b; own.items = boxes[b]; } });   // Tools: tap to see the screens still inside
   Object.keys(HZ_ACC.folders).forEach(function(f) { if (boxes["f:" + f]) folderCells.push({ id: "f:" + f, n: (HZ_ACC.folders[f].icon || "📁") + " " + HZ_ACC.folders[f].name, items: boxes["f:" + f], g: 1, f: 1 }); });
   var cells = folderCells.concat(home);
   var open = HZ_ACC.prevOpen && boxes[HZ_ACC.prevOpen] ? HZ_ACC.prevOpen : "";
@@ -5832,7 +5851,7 @@ function hzAccCopy() {
       HZ_ACC.perms[p.k] = ts; HZ_ACC.dirty.perms[p.k] = 1;
     });
     if (doT && fc !== tc) {
-      (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).forEach(function(x) {
+      (typeof HZ_TILES !== "undefined" ? HZ_TILES : []).concat(hzAccSubs()).forEach(function(x) {
         var k = x.k; if (typeof HZ_TILE_GROUPS !== "undefined" && HZ_TILE_GROUPS[k]) return;
         if (typeof HZ_TILE_OWN_RULE !== "undefined" && HZ_TILE_OWN_RULE[k] && !hzAccGroupOf(k)) return;
         var v = !hzAccTileVis(k, fc) ? "off" : hzAccPlace(k, fc);
@@ -21502,7 +21521,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.569";
+var DESKTOP_VERSION = "12.570";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -32036,7 +32055,7 @@ function hzToolsOpen() {
   if (!o) { o = document.createElement("div"); o.id = "hz-tools-pop"; document.body.appendChild(o); }
   o.onclick = function(e) { if (e.target === o) hzToolsClose(); };
   if (!HZ_TL.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "tools" }), ""); HZ_TL.hist = true; } catch (e) {} }
-  HZ_TL.view = "menu"; hzTlDraw();
+  HZ_TL.view = "menu"; HZ_TL.direct = false; hzTlDraw();
 }
 function hzToolsClose(fromBack) {
   hzTlStop(); hzTlVtStop(); hzTrClose();
@@ -32047,7 +32066,7 @@ function hzToolsClose(fromBack) {
 // Phone Back key (called from mNavCloseOverlay): inside a tool → the list; on the list → close
 function hzToolsBack() {
   if (hzTrHide()) { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "tools" }), ""); HZ_TL.hist = true; } catch (e) {} return "added"; }   // 12.330: the big patient screen closes first
-  if (HZ_TL.view !== "menu") {
+  if (HZ_TL.view !== "menu" && !HZ_TL.direct) {   // 9.94 / 12.570: a tool opened from its own tile closes straight away
     hzTlGo("menu");
     try { history.pushState(Object.assign({}, mNavState(), { hzOv: "tools" }), ""); HZ_TL.hist = true; } catch (e) {}
     return "added";
@@ -32059,7 +32078,7 @@ function hzTlGo(v) { hzTlStop(); hzTlVtStop(); if (v !== "trans") hzTrClose(); e
 function hzTlDraw() {
   var o = document.getElementById("hz-tools-pop"); if (!o) return;
   var v = HZ_TL.view, item = HZ_TL_LIST.filter(function(x) { return x[0] === v; })[0];
-  var back = v === "menu" ? '<button class="hz-pop-back" onclick="hzToolsClose()">← Back</button>' : '<button class="hz-pop-back" onclick="hzTlGo(\'menu\')">← ' + hzTlEsc(hzTlTitle()) + '</button>';
+  var back = (v === "menu" || HZ_TL.direct) ? '<button class="hz-pop-back" onclick="hzToolsClose()">← Back</button>' : '<button class="hz-pop-back" onclick="hzTlGo(\'menu\')">← ' + hzTlEsc(hzTlTitle()) + '</button>';
   var ttl = v === "menu" ? "🧰 " + hzTlTitle() : item[1] + " " + item[2];
   var body = v === "menu" ? hzTlMenu() : v === "apgar" ? hzTlApgar() : v === "gcs" ? hzTlGcs() : v === "cpr" ? hzTlCpr() : v === "vent" ? hzTlVent() : v === "vitals" ? hzTlVitals() : v === "vtimer" ? hzTlVt() : v === "labor" ? hzTlLabor() : v === "med" ? hzTlMed() : v === "tri" ? hzTlTri() : v === "trans" ? hzTlTrans() : hzTlBurn();
   var ob = o.querySelector(".hz-tl-body"), keep = ob && o.getAttribute("data-v") === v ? ob.scrollTop : 0;   // a redraw of the same tool keeps its scroll place
@@ -32068,7 +32087,7 @@ function hzTlDraw() {
 }
 var HZ_TL_HIDE = { trans: true };   // 12.340 (Sam): Live Translator hidden for now — remove "trans" here to show it again (all its code is still in place)
 function hzTlMenu() {
-  return HZ_TL_LIST.filter(function(t) { return !HZ_TL_HIDE[t[0]]; }).map(function(t) {
+  return HZ_TL_LIST.filter(function(t) { return !HZ_TL_HIDE[t[0]] && (typeof hzSubInParent !== "function" || hzSubInParent("tool-" + t[0])); }).map(function(t) {   // 9.94 / 12.570: screens moved out or hidden in Control & Access
     return '<button class="hz-tl-item" onclick="hzTlGo(\'' + t[0] + '\')"><span class="hz-tl-ic">' + t[1] + '</span><span><b>' + hzTlEsc(t[2]) + '</b><small>' + hzTlEsc(t[3]) + '</small></span><span class="hz-tl-chev">›</span></button>';
   }).join("") + '<div class="hz-tl-note hz-tl-disc">These are quick aids only. Follow NJ EMS protocols and medical control.</div>';
 }
@@ -34052,7 +34071,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   st.textContent += "html[data-theme][data-theme] body:not(#hzA):not(#hzB):not(#hzC) .hz-tagmir .hz-taglink{color:#000 !important;-webkit-text-fill-color:#000 !important;background:#d4a017 !important;box-shadow:inset 0 0 0 1px #d4a017 !important}";   // 9.78 / 12.550 (Sam): @tags while typing — solid gold pills, black text, every theme
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:-webkit-autofill,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:-webkit-autofill:hover,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:-webkit-autofill:focus,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:-webkit-autofill:active,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall textarea:-webkit-autofill,html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall select:-webkit-autofill,html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-input:-webkit-autofill,html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-input:-webkit-autofill:hover,html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-input:-webkit-autofill:focus,html body:not(#hzA):not(#hzB):not(#hzC) .m-disp-input:-webkit-autofill:active{-webkit-box-shadow:0 0 0 1000px #000 inset !important;box-shadow:0 0 0 1000px #000 inset !important;-webkit-text-fill-color:#d4a017 !important;color:#d4a017 !important;caret-color:#d4a017 !important;background-color:#000 !important;transition:background-color 99999s ease-out 0s !important}html body:not(#hzA):not(#hzB):not(#hzC) #m-pg-dispatch-newcall input:autofill{-webkit-box-shadow:0 0 0 1000px #000 inset !important;box-shadow:0 0 0 1000px #000 inset !important;-webkit-text-fill-color:#d4a017 !important;color:#d4a017 !important;background-color:#000 !important}";   // 9.80 / 12.552 (Sam): browser autofill (light blue) → black / gold on New Call and form boxes
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .users-table .ur-actions{flex-wrap:wrap !important;white-space:normal !important;row-gap:5px !important;max-width:340px;margin-left:auto}html body:not(#hzA):not(#hzB):not(#hzC) .users-table td:last-child{min-width:320px}html body:not(#hzA):not(#hzB):not(#hzC) .users-table .ur-actions > *{flex:0 0 auto}";   // 12.564 (Sam: Users list buttons ran off the right edge after 🎭 Act as was added) — they wrap onto two lines
-  st.textContent += "#hz-acc .hz-acc-p{color:var(--gray);font-size:0.84rem;line-height:1.6;margin:0 0 10px}#hz-acc .hz-acc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}#hz-acc .hz-acc-scroll{overflow-x:auto}#hz-acc .hz-acc-t{border-collapse:collapse;width:100%;font-size:0.82rem}#hz-acc .hz-acc-t th{background:var(--card-bg,#fff);padding:8px 6px;border-bottom:2px solid var(--card-border);font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}#hz-acc .hz-acc-t td{padding:7px 6px;border-bottom:1px solid var(--card-border);vertical-align:middle}#hz-acc .hz-acc-l{text-align:left;min-width:240px;font-weight:600}#hz-acc .hz-acc-c{text-align:center}#hz-acc .hz-acc-g{background:rgba(212,160,23,0.10)}#hz-acc .hz-acc-area td{background:rgba(0,0,0,0.04);font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.04em;font-size:0.85rem}#hz-acc .hz-acc-always{color:var(--gray);font-style:italic;font-size:0.75rem}#hz-acc .hz-acc-note{color:var(--gray);font-size:0.74rem;font-weight:400;line-height:1.5}#hz-acc .hz-acc-chg{background:#d4a017;color:#000;border-radius:6px;padding:1px 6px;font-size:0.66rem;font-weight:700;margin-left:4px}#hz-acc .hz-acc-def{color:var(--gray);font-size:0.66rem;font-weight:400;margin-left:4px}#hz-acc .hz-acc-sel{font-size:0.78rem;padding:4px 6px;border-radius:7px;border:1px solid var(--card-border);max-width:170px}#hz-acc .hz-acc-sel.v-off{opacity:.6}#hz-acc .hz-acc-sel.chg{border:2px solid #d4a017}#hz-acc .hz-acc-save{position:sticky;bottom:0;z-index:6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:10px 12px;background:#000;border:2px solid #d4a017;border-radius:12px;color:#d4a017;font-weight:700}#hz-acc .hz-acc-save span{flex:1;min-width:200px}#hz-acc .hz-acc-btn{border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;background:#000;color:#d4a017;border:2px solid #d4a017;font-size:0.85rem}#hz-acc .hz-acc-btn.go{background:#34c759;color:#000;border-color:#34c759}#hz-acc .hz-acc-btn.no{background:#c62828;color:#fff;border-color:#c62828}#hz-acc .hz-acc-btn:disabled{opacity:.4;cursor:default}#hz-acc .hz-acc-btn.sm{padding:5px 10px;font-size:0.78rem}#hz-acc .hz-acc-grp{border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:10px}#hz-acc .hz-acc-grp-h{display:flex;gap:8px;align-items:center;margin-bottom:8px}#hz-acc .hz-acc-in{padding:7px 10px;border-radius:8px;border:1px solid var(--card-border);font-size:0.88rem;min-width:200px}#hz-acc .hz-acc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}#hz-acc .hz-acc-chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--card-border);border-radius:16px;padding:4px 10px;font-size:0.8rem;cursor:pointer}#hz-acc .hz-acc-chip.on{background:#d4a017;color:#000;border-color:#d4a017;font-weight:700}#hz-acc .hz-acc-chip input{margin:0}#hz-acc .hz-acc-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:800px){#hz-acc .hz-acc-two{grid-template-columns:1fr}}#hz-acc .hz-acc-sub{font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.04em;margin-bottom:6px}#hz-acc .hz-acc-li{padding:5px 0;border-bottom:1px solid var(--card-border);font-size:0.84rem}#hz-acc .hz-acc-li.no{color:var(--gray)}#hz-acc .hz-acc-phone{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;max-width:640px;padding:12px;border:2px solid #d4a017;border-radius:18px;background:#000;margin:6px 0}#hz-acc .hz-acc-pt{background:#000;border:2px solid #555;border-radius:12px;padding:10px 8px;color:#d4a017;font-size:0.8rem;text-align:center;display:flex;flex-direction:column;gap:3px;min-height:52px;justify-content:center}#hz-acc .hz-acc-pt span{font-size:0.66rem;color:#bbb;font-weight:400}#hz-acc .hz-acc-pt.g{border-color:#d4a017}#hz-acc .hz-acc-pt.p{border-color:#34c759}#hz-acc .hz-acc-pt.r{border-style:dashed}#hz-acc .hz-acc-c .hz-acc-sel{display:block;margin:2px auto}#hz-acc .hz-acc-sel.lv{font-size:0.72rem}#hz-acc .hz-acc-sel.lv-change{border:2px solid #34c759}#hz-acc .hz-acc-sel.lv-view{border:2px solid #888}#hz-acc .hz-acc-sel.lv-mixed{border:2px dashed #d4a017}#hz-acc .hz-acc-pt{position:relative}#hz-acc .hz-acc-pb{position:absolute;top:3px;right:5px;font-style:normal;font-size:0.7rem}#hz-acc .hz-acc-pfh{grid-column:1/-1;display:flex;gap:8px;align-items:center;color:#d4a017;font-weight:700}#hz-acc .hz-acc-phone.sm{grid-template-columns:repeat(2,1fr);max-width:300px;max-height:70vh;overflow-y:auto}#hz-acc .hz-acc-prevcol{position:sticky;top:70px}#hz-acc .hz-acc-fld{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}#hz-acc .hz-acc-fld input{width:auto !important;flex:1 1 160px;margin:0 !important}#hz-acc .hz-acc-fld input[maxlength='4']{flex:0 0 56px;text-align:center}#hz-acc .hz-acc-c .hz-acc-sel{min-width:118px}@media(max-width:1000px){#hz-acc .hz-acc-two{grid-template-columns:1fr !important}#hz-acc .hz-acc-prevcol{position:static}}";   // 12.566: Control & Access dashboard
+  st.textContent += "#hz-acc .hz-acc-p{color:var(--gray);font-size:0.84rem;line-height:1.6;margin:0 0 10px}#hz-acc .hz-acc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}#hz-acc .hz-acc-scroll{overflow-x:auto}#hz-acc .hz-acc-t{border-collapse:collapse;width:100%;font-size:0.82rem}#hz-acc .hz-acc-t th{background:var(--card-bg,#fff);padding:8px 6px;border-bottom:2px solid var(--card-border);font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}#hz-acc .hz-acc-t td{padding:7px 6px;border-bottom:1px solid var(--card-border);vertical-align:middle}#hz-acc .hz-acc-l{text-align:left;min-width:240px;font-weight:600}#hz-acc .hz-acc-c{text-align:center}#hz-acc .hz-acc-g{background:rgba(212,160,23,0.10)}#hz-acc .hz-acc-area td{background:rgba(0,0,0,0.04);font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.04em;font-size:0.85rem}#hz-acc .hz-acc-always{color:var(--gray);font-style:italic;font-size:0.75rem}#hz-acc .hz-acc-note{color:var(--gray);font-size:0.74rem;font-weight:400;line-height:1.5}#hz-acc .hz-acc-chg{background:#d4a017;color:#000;border-radius:6px;padding:1px 6px;font-size:0.66rem;font-weight:700;margin-left:4px}#hz-acc .hz-acc-def{color:var(--gray);font-size:0.66rem;font-weight:400;margin-left:4px}#hz-acc .hz-acc-sel{font-size:0.78rem;padding:4px 6px;border-radius:7px;border:1px solid var(--card-border);max-width:170px}#hz-acc .hz-acc-sel.v-off{opacity:.6}#hz-acc .hz-acc-sel.chg{border:2px solid #d4a017}#hz-acc .hz-acc-save{position:sticky;bottom:0;z-index:6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:10px 12px;background:#000;border:2px solid #d4a017;border-radius:12px;color:#d4a017;font-weight:700}#hz-acc .hz-acc-save span{flex:1;min-width:200px}#hz-acc .hz-acc-btn{border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;background:#000;color:#d4a017;border:2px solid #d4a017;font-size:0.85rem}#hz-acc .hz-acc-btn.go{background:#34c759;color:#000;border-color:#34c759}#hz-acc .hz-acc-btn.no{background:#c62828;color:#fff;border-color:#c62828}#hz-acc .hz-acc-btn:disabled{opacity:.4;cursor:default}#hz-acc .hz-acc-btn.sm{padding:5px 10px;font-size:0.78rem}#hz-acc .hz-acc-grp{border:1px solid var(--card-border);border-radius:10px;padding:10px 12px;margin-bottom:10px}#hz-acc .hz-acc-grp-h{display:flex;gap:8px;align-items:center;margin-bottom:8px}#hz-acc .hz-acc-in{padding:7px 10px;border-radius:8px;border:1px solid var(--card-border);font-size:0.88rem;min-width:200px}#hz-acc .hz-acc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}#hz-acc .hz-acc-chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--card-border);border-radius:16px;padding:4px 10px;font-size:0.8rem;cursor:pointer}#hz-acc .hz-acc-chip.on{background:#d4a017;color:#000;border-color:#d4a017;font-weight:700}#hz-acc .hz-acc-chip input{margin:0}#hz-acc .hz-acc-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:800px){#hz-acc .hz-acc-two{grid-template-columns:1fr}}#hz-acc .hz-acc-sub{font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.04em;margin-bottom:6px}#hz-acc .hz-acc-li{padding:5px 0;border-bottom:1px solid var(--card-border);font-size:0.84rem}#hz-acc .hz-acc-li.no{color:var(--gray)}#hz-acc .hz-acc-phone{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;max-width:640px;padding:12px;border:2px solid #d4a017;border-radius:18px;background:#000;margin:6px 0}#hz-acc .hz-acc-pt{background:#000;border:2px solid #555;border-radius:12px;padding:10px 8px;color:#d4a017;font-size:0.8rem;text-align:center;display:flex;flex-direction:column;gap:3px;min-height:52px;justify-content:center}#hz-acc .hz-acc-pt span{font-size:0.66rem;color:#bbb;font-weight:400}#hz-acc .hz-acc-pt.g{border-color:#d4a017}#hz-acc .hz-acc-pt.p{border-color:#34c759}#hz-acc .hz-acc-pt.r{border-style:dashed}#hz-acc .hz-acc-c .hz-acc-sel{display:block;margin:2px auto}#hz-acc .hz-acc-sel.lv{font-size:0.72rem}#hz-acc .hz-acc-sel.lv-change{border:2px solid #34c759}#hz-acc .hz-acc-sel.lv-view{border:2px solid #888}#hz-acc .hz-acc-sel.lv-mixed{border:2px dashed #d4a017}#hz-acc .hz-acc-pt{position:relative}#hz-acc .hz-acc-pb{position:absolute;top:3px;right:5px;font-style:normal;font-size:0.7rem}#hz-acc .hz-acc-pfh{grid-column:1/-1;display:flex;gap:8px;align-items:center;color:#d4a017;font-weight:700}#hz-acc .hz-acc-phone.sm{grid-template-columns:repeat(2,1fr);max-width:300px;max-height:70vh;overflow-y:auto}#hz-acc .hz-acc-prevcol{position:sticky;top:70px}#hz-acc .hz-acc-subrow td{background:rgba(212,160,23,0.05)}#hz-acc .hz-acc-subk{padding-left:14px;display:inline-block}#hz-acc .hz-acc-subt{margin-top:5px}#hz-acc .hz-acc-fld{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}#hz-acc .hz-acc-fld input{width:auto !important;flex:1 1 160px;margin:0 !important}#hz-acc .hz-acc-fld input[maxlength='4']{flex:0 0 56px;text-align:center}#hz-acc .hz-acc-c .hz-acc-sel{min-width:118px}@media(max-width:1000px){#hz-acc .hz-acc-two{grid-template-columns:1fr !important}#hz-acc .hz-acc-prevcol{position:static}}";   // 12.566: Control & Access dashboard
   // 9.23 / 12.485: per-rig disposition rows
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp{margin-bottom:12px}" +
     "html body:not(#hzA):not(#hzB):not(#hzC) .hz-rigdisp-h{font-family:'Oswald',sans-serif;font-weight:700;font-size:1rem;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;margin-bottom:6px}" +
@@ -34090,7 +34109,7 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook); else hook();
 })();
 </script>
-<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
+<script id="hz-access">/* 9.90 / 12.566 (Sam), 9.91 / 12.567, 9.93 / 12.569, 9.94 / 12.570: 🛡️ CONTROL & ACCESS — what each role may DO (permissions) and WHERE they get to it (tile format),
    set in Admin ▸ Security ▸ 🛡️ Control & Access. Saved in appdata/access:
      groups      { id: { name, roles: [...] } }               named role groups ("Field" = responder + captain + …)
      perms       { permKey: ["dispatcher", "group:field", …] } only permissions an admin actually changed
@@ -34193,8 +34212,43 @@ function hzPlaceCols() {   // the tile-grid columns this member follows (titles 
   var tl = typeof hzTitleList === "function" ? hzTitleList() : [];
   return mine.map(function(r) { return tl.indexOf(r) !== -1 ? "responder" : r; });
 }
-function hzTileGroupOf(k) { if (typeof HZ_TILE_GROUPS === "undefined") return ""; for (var g in HZ_TILE_GROUPS) if (HZ_TILE_GROUPS[g].indexOf(k) !== -1) return g; return ""; }
-function hzTileDefaultPlace(k) { var g = hzTileGroupOf(k); return g ? "g:" + g : "home"; }
+// 9.94 / 12.570: the Access Codes lists live on the Access Codes page — that's their normal place (any tile can go in there too)
+var HZ_PLACE_PARENTS = { hospital: "codes", buildings: "codes", shuls: "codes", storage: "codes" };
+function hzPlaceGroups() { return (typeof HZ_TILE_GROUPS !== "undefined" ? Object.keys(HZ_TILE_GROUPS) : []).concat(["codes"]); }
+function hzTileGroupOf(k) {
+  if (typeof HZ_TILE_GROUPS !== "undefined") for (var g in HZ_TILE_GROUPS) if (HZ_TILE_GROUPS[g].indexOf(k) !== -1) return g;
+  return HZ_PLACE_PARENTS[k] || "";
+}
+// ── 9.94 / 12.570 (Sam): SCREENS INSIDE A TILE — each can be pulled out as its own tile (normal place: inside its tile) ──
+// Built from the screens' own lists, so new ones show up by themselves. key = "<parent>-<screen>".
+function hzSubList() {
+  var out = [];
+  if (typeof HZ_TL_LIST !== "undefined") HZ_TL_LIST.forEach(function(t) { if (typeof HZ_TL_HIDE !== "undefined" && HZ_TL_HIDE[t[0]]) return; out.push({ k: "tool-" + t[0], parent: "tools", id: t[0], i: t[1], l: t[2], s: t[3] }); });
+  return out;
+}
+function hzSubDef(k) { var l = hzSubList(); for (var i = 0; i < l.length; i++) if (l[i].k === k) return l[i]; return null; }
+function hzTileDefaultPlace(k) { var sd = /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) return "p:" + sd.parent; var g = hzTileGroupOf(k); return g ? "g:" + g : "home"; }
+function hzSubVisible(k) {   // the tile grid's Shown / Hidden for a screen (nothing saved = shown, as today)
+  var ta = typeof HZ_TILE_ACCESS !== "undefined" ? HZ_TILE_ACCESS : null; if (!ta || !Array.isArray(ta[k])) return true;
+  var cols = hzPlaceCols(); if (cols[0] === "admin" && typeof HZ_TILE_ACCESS_ADMIN !== "undefined" && !HZ_TILE_ACCESS_ADMIN) return true;
+  var mine = hzMyRoles().indexOf("admin") !== -1 ? ["admin"] : hzMyRoles();
+  return ta[k].some(function(r) { return mine.indexOf(String(r).toLowerCase()) !== -1; });
+}
+function hzSubInParent(k) { return hzSubVisible(k) && hzTilePlaceFor(k) === hzTileDefaultPlace(k); }   // still listed inside its tile for me?
+function hzSubTile(sd, grid) {   // a tile for a pulled-out screen, made like the others on this screen
+  var tpl = (grid || hzHomeGrid()).querySelector('.m-tile[data-sec], .big-btn[data-sec]') || hzHomeGrid().querySelector('.m-tile[data-sec], .big-btn[data-sec]'); if (!tpl) return null;
+  var t = tpl.cloneNode(true); t.removeAttribute("id"); t.querySelectorAll("[id]").forEach(function(e) { e.removeAttribute("id"); });
+  t.classList.remove("hz-promo-src", "hz-more-x"); t.removeAttribute("data-hz-grp-hid"); t.removeAttribute("data-hz-fld"); t.style.display = "";
+  t.setAttribute("data-hz-promo", sd.k); t.setAttribute("data-hz-sub", sd.k); t.setAttribute("data-sec", sd.k); t.setAttribute("onclick", "hzSubOpen('" + sd.k + "')");
+  var ic = t.querySelector(".m-tile-icon, .btn-icon"), lb = t.querySelector(".m-tile-label, .btn-label"), sb = t.querySelector(".m-tile-sub, .btn-sub");
+  if (ic) ic.textContent = sd.i || "•"; if (lb) lb.textContent = sd.l; if (sb) sb.textContent = sd.s || "";
+  return t;
+}
+function hzSubOpen(k) {
+  var sd = hzSubDef(k); if (!sd) return;
+  if (sd.parent === "tools" && typeof hzToolsOpen === "function") { hzToolsOpen(); HZ_TL.direct = true; hzTlGo(sd.id); }
+}
+window.hzSubOpen = hzSubOpen;
 function hzTilePlaceFor(k) {
   var a = HZ_ACCESS || {}, pl = a.place || {}, tf = a.tileFormat || {}, folders = a.folders || {}, cols = hzPlaceCols(), found = [];
   cols.forEach(function(c) {
@@ -34237,6 +34291,19 @@ function hzTileFormatApply() {
     if (!copy) { copy = hzTileCopy(src, k); host.appendChild(copy); }
     copy.style.display = hidden ? "none" : "";
   });
+  // screens pulled out of their tile (Tools ▸ APGAR…)
+  hzSubList().forEach(function(sd) {
+    var k = sd.k, place = hzTilePlaceFor(k), def = hzTileDefaultPlace(k), vis = hzSubVisible(k);
+    document.querySelectorAll('[data-hz-sub="' + k + '"]').forEach(function(c) {
+      if (c.closest("#m-pg-hzfld, #pg-hzfld")) return;
+      var want = place === "home" ? grid : (/^g:/.test(place) ? hzGroupGrid(place.slice(2)) : null);
+      if (place === def || !vis || c.parentNode !== want) c.parentNode.removeChild(c);
+    });
+    if (place === def || !vis) return;
+    if (/^f:/.test(place)) { var fid = place.slice(2); (inFolder[fid] = inFolder[fid] || []).push(k); inFolder[fid].vis = true; return; }
+    var host = place === "home" ? grid : hzGroupGrid(place.slice(2)); if (!host || host.querySelector('[data-hz-sub="' + k + '"]')) return;
+    var t = hzSubTile(sd, host); if (t) host.appendChild(t);
+  });
   // folder tiles on the home screen (only if something inside is open to this member)
   Object.keys(folders).forEach(function(fid) {
     var f = folders[fid] || {}, tile = grid.querySelector('[data-hz-fld="' + fid + '"]'), show = !!(inFolder[fid] && inFolder[fid].vis);
@@ -34269,7 +34336,10 @@ function hzFolderFill(fid) {
   var pg = hzFolderPage(); if (!pg) return;
   var f = ((HZ_ACCESS && HZ_ACCESS.folders) || {})[fid] || {}, t = pg.querySelector(".m-page-title, .page-title"); if (t) t.textContent = (f.icon ? f.icon + " " : "") + (f.name || "Folder");
   var g = pg.querySelector(".m-grid, .btn-grid"); if (!g) return; g.innerHTML = "";
-  ((window.HZ_FLD_ITEMS || {})[fid] || []).forEach(function(k) { var src = hzTileSrc(k); if (!src || src.style.display === "none") return; g.appendChild(hzTileCopy(src, k)); });
+  ((window.HZ_FLD_ITEMS || {})[fid] || []).forEach(function(k) {
+    var sd = /^tool-/.test(k) ? hzSubDef(k) : null; if (sd) { var st = hzSubTile(sd, g); if (st) g.appendChild(st); return; }
+    var src = hzTileSrc(k); if (!src || src.style.display === "none") return; g.appendChild(hzTileCopy(src, k));
+  });
   if (!g.children.length) g.innerHTML = '<div style="color:var(--gray);font-size:0.85rem;padding:10px">Nothing here for you.</div>';
 }
 function hzFolderOpen(fid) {
