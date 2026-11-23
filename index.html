@@ -34924,19 +34924,26 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
         return x.name && x.name.length > 4 && lc.indexOf(x.name.toLowerCase()) !== -1;
       }).filter(function(x) { return x.phone || x.email; }).slice(0, 4);
       var dig = function(ph) { var d = String(ph || "").split(/[\/|,]/)[0].replace(/\D/g, ""); if (d.length === 10) d = "1" + d; return d.length === 11 ? d : ""; };
-      var ctHtml = named.map(function(x) {
+      var askedContact = /\bwho(?:'s|s| is)\s+(?!on\b|working|scheduled|covering|tonight|in\b|the\b|doing|signed)/i.test(text) || /\b(contact|phone|number|call him|call her|text him|text her|e-?mail|reach|whatsapp|contact info)\b/i.test(text);
+      SA.ctFor = SA.ctFor || {}; named.forEach(function(x) { SA.ctFor[String(x.unit).toUpperCase()] = x; });
+      var ctCard = function(x) {
         var d = dig(x.phone), w = dig(x.whatsapp) || d, b = [];
         if (d) b.push('<a class="sa-cb call" href="tel:+' + d + '">📞 Call</a>', '<a class="sa-cb" href="sms:+' + d + '">💬 Text</a>');
         if (w && window.HZ_WA_ON !== false) b.push('<a class="sa-cb" href="https://wa.me/' + w + '" target="_blank" rel="noopener">🟢 WhatsApp</a>');
         if (x.email) b.push('<a class="sa-cb" href="mailto:' + esc(x.email) + '">✉️ Email</a>');
         return b.length ? '<div class="sa-ct"><b>' + esc(x.unit + (x.name ? " · " + x.name : "")) + '</b>' + b.join("") + '</div>' : "";
-      }).join("");
+      };
+      SA.ctCard = ctCard;
+      // 12.586 (Sam): contact buttons straight away only when asked about a person / how to reach them; otherwise a follow-up
+      var ctHtml = !named.length ? "" : askedContact ? named.map(ctCard).join("")
+        : '<div class="sa-ct"><b>Would you like to contact anyone?</b>' + named.map(function(x) { return '<button type="button" class="sa-cb" onclick="hzSaContact(\'' + esc(String(x.unit).toUpperCase()) + '\')">' + esc(x.unit) + (x.name ? " · " + esc(x.name.split(" ")[0]) : "") + '</button>'; }).join("") + '</div>';
       SA.msgs.push({ role: "assistant", model: r.model || "", text: [r.reply, r.question].filter(Boolean).join("\n\n") || (p.rows.length ? "Here's what I'd change:" : p.skipped.length ? "I need a bit more before I can do that:" : "I didn't find anything to change."), card: propCard(p) + (links ? '<div>' + links + '</div>' : '') + ctHtml });
       draw();
     }).catch(function(e) { SA.busy = false; SA.msgs.push({ role: "assistant", text: "Sorry — " + (e && e.message || "something went wrong") + (/404|not found|Failed to fetch/i.test(String(e && e.message)) ? "\n(The server part may not be deployed yet — run deploy-functions.sh.)" : "") }); draw(); });
   }
   function relaySa(d) { return (typeof hzRelay === "function" ? hzRelay : mRelay)("settingsAssistant", d); }
   window.hzSaSend = send;
+  window.hzSaContact = function(u) { var x = (SA.ctFor || {})[u]; if (!x || !SA.ctCard) return; SA.msgs.push({ role: "assistant", text: "", card: SA.ctCard(x) }); draw(); };
   window.hzSaCancel = function() {
     SA.prop = null; SA.msgs.forEach(function(m) { if (m.card && /hz-sa-prop/.test(m.card)) m.card = m.card.replace(/<div class="sa-btns">[\s\S]*?<\/div><\/div>$/, '<div class="sa-tips">Cancelled — nothing was changed.</div></div>').replace('id="hz-sa-prop"', ""); });
     draw();
