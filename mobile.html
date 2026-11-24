@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.108"; window.M_BUILD = BUILD;
+  var BUILD = "9.109"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -5627,16 +5627,28 @@ function mNowHHMM() {
 }
 
 // ── DEEP LINKS (from push taps): #ticket=<id> ──
+// 12.606 (Sam: email "Open in app" → had to sign in → landed on Home, not the request): the link is kept
+// through sign-in (saved for this tab), and the request is read straight from the database instead of
+// waiting for the whole list to load (that 350 ms wait was too short right after signing in).
+var mDeepTicket = (function(){ try { var m = (location.hash || "").match(/[#&]ticket=([A-Za-z0-9_-]+)/); if (m) { sessionStorage.setItem("hzDeepTicket", m[1]); return m[1]; } return sessionStorage.getItem("hzDeepTicket") || ""; } catch (e) { return ""; } })();
 function mHandleDeepLink() {
   try {
     var m = (location.hash || "").match(/[#&]ticket=([A-Za-z0-9_-]+)/);
-    if (m) { history.replaceState(null, "", location.pathname + location.search); mOpenTicketDeepLink(m[1]); }
+    var id = m ? m[1] : (mDeepTicket || sessionStorage.getItem("hzDeepTicket") || "");
+    mDeepTicket = ""; try { sessionStorage.removeItem("hzDeepTicket"); } catch (e) {}
+    if (m) history.replaceState(history.state, "", location.pathname + location.search);
+    if (id) mOpenTicketDeepLink(id);
   } catch (e) {}
 }
 function mOpenTicketDeepLink(id) {
   mGoTo("service");
   mLoadTickets();
-  setTimeout(function() { try { mOpenTicket(id); } catch (e) {} }, 350);
+  db.collection("tickets").doc(id).get().then(function(s) {
+    if (!s.exists) { mToast("That request is no longer there.", true); return; }
+    var t = hzTkFixStatus(Object.assign({ id: id }, s.data()));
+    if (!mAllTickets.some(function(x){ return x.id === id; })) mAllTickets.push(t);
+    mRenderTicketDetail(id, t);
+  }).catch(function(e) { mToast("Couldn't open that request: " + e.message, true); });
 }
 
 // ── PASSKEY / BIOMETRIC SIGN-IN (WebAuthn + PRF; sign-in encrypted on-device, unlocked only by biometric) ──
@@ -7676,6 +7688,7 @@ function mRenderTicketDetail(id, t) {
   if (t && t.category === "erv" && typeof hzErvTicketHtml === "function") {   // 5.37: ERV shift request
     document.getElementById("m-tk-detail-title").textContent = mTicketNo(t, id);
     document.getElementById("m-tk-detail-content").innerHTML = '<div data-erv-ticket="' + id + '" style="padding:12px 16px">' + hzErvTicketHtml(id, t) + '</div>';
+    var pgD = document.getElementById("m-pg-service-detail"); if (pgD && !pgD.classList.contains("active")) mGoTo("service-detail");   // 12.606: the page wasn't being shown
     return;
   }
   var isAdmin = mCurrentRole === "admin";
@@ -14304,6 +14317,7 @@ function hzErvApproveHtml() {
   var h = '<div class="hz-erv-sub">Waiting for a decision</div>' + (pend.length ? pend.map(function(t){
       var clash = hzErvOverlaps(hzErvBlocking(t.ervUnit, t.id), t.startMs, t.endMs);
       return hzErvCard(t, (clash.length ? '<span class="hz-erv-pill bad">Clashes with ' + clash.map(function(x){ return hzErvEsc(x.submittedBy || ""); }).join(", ") + '</span>' : '')
+        + '<textarea class="hz-erv-msg m-disp-input" data-erv-msg="' + t.id + '" rows="2" maxlength="300" placeholder="Message to ' + hzErvEsc((t.submittedBy || "the requester").split(" ").slice(-2).join(" ")) + ' (optional) — sent with Approve or Deny" style="flex:1 1 100%;width:100%;box-sizing:border-box;margin:0 0 6px;resize:vertical;font-size:0.85rem"></textarea>'
         + '<button class="hz-erv-go sm" onclick="hzErvDecide(\'' + t.id + '\',\'approved\')"' + (clash.length ? ' disabled' : '') + '>✓ Approve</button>'
         + '<button class="hz-erv-btn red" onclick="hzErvDecide(\'' + t.id + '\',\'denied\')">✕ Deny</button>');
     }).join("") : '<div class="hz-erv-muted hz-erv-empty">Nothing waiting.</div>');
@@ -14354,8 +14368,12 @@ function hzErvDecide(id, to) {
   if (!HZ_ERV.isAdmin) return;
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
   if (to === "approved" && hzErvOverlaps(hzErvBlocking(t.ervUnit, t.id), t.startMs, t.endMs).length) { hzErvToast("That time is already booked.", true); return; }
-  var reason = "";
-  if (to === "denied") { reason = hzAsk(arguments, this, "Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?\nReason (optional, they will see it):", ""); if (reason === null) return; }
+  // 12.606 (Sam): optional message box beside Approve / Deny — sent to the requester with the reply
+  var boxes = Array.prototype.filter.call(document.querySelectorAll('textarea[data-erv-msg="' + id + '"]'), function(x){ return x.value.trim(); });
+  var hasBox = !!document.querySelector('textarea[data-erv-msg="' + id + '"]');
+  var reason = boxes.length ? boxes[0].value.trim() : "";
+  if (to === "denied" && hasBox && !hzOk(arguments, this, "Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?" + (reason ? "\nYour message: “" + reason + "”" : ""))) return;
+  if (to === "denied" && !hasBox) { reason = hzAsk(arguments, this, "Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?\nReason (optional, they will see it):", ""); if (reason === null) return; }
   var me = HZ_ERV.me || {};
   db.collection("tickets").doc(id).update({ ervStatus: to, status: "resolved", ervReason: String(reason || "").trim().slice(0, 300), ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
     ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
@@ -14380,6 +14398,7 @@ function hzErvTicketHtml(id, t) {
   if (HZ_ERV.isAdmin && st === "pending") {
     var clash = hzErvOverlaps(hzErvBlocking(t.ervUnit, id), t.startMs, t.endMs);
     acts += (clash.length ? '<span class="hz-erv-pill bad">Clashes with ' + clash.map(function(x){ return hzErvEsc(x.submittedBy || ""); }).join(", ") + '</span>' : '')
+      + '<textarea class="hz-erv-msg m-disp-input" data-erv-msg="' + id + '" rows="2" maxlength="300" placeholder="Message to ' + hzErvEsc((t.submittedBy || "the requester").split(" ").slice(-2).join(" ")) + ' (optional) — sent with Approve or Deny" style="flex:1 1 100%;width:100%;box-sizing:border-box;margin:0 0 6px;resize:vertical;font-size:0.85rem"></textarea>'
       + '<button class="hz-erv-go sm" onclick="hzErvDecide(\'' + id + '\',\'approved\')"' + (clash.length ? ' disabled' : '') + '>✓ Approve</button><button class="hz-erv-btn red" onclick="hzErvDecide(\'' + id + '\',\'denied\')">✕ Deny</button>';
   }
   acts += hzErvCheckBtns(t2);
@@ -14409,6 +14428,7 @@ function hzErvRefreshTicket(id) {
     + ".hz-erv-row .hz-erv-in{width:auto}"
     + ".hz-erv-btn{background:rgba(255,255,255,.05);border:1px solid var(--card-border);color:var(--white);border-radius:7px;padding:7px 12px;font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.05em;cursor:pointer}"
     + ".hz-erv-btn.red{color:#ff9090;border-color:rgba(224,85,85,.45)}"
+    + ".hz-erv-msg{background:rgba(0,0,0,.35);color:var(--white,#f4f6fa);border:1px solid rgba(var(--gold-rgb,201,162,39),.45);border-radius:8px;padding:8px 10px;font-family:inherit}.hz-erv-msg:focus{outline:none;border-color:var(--gold)}"
     + ".hz-erv-go{background:var(--gold);color:var(--navy);border:none;border-radius:8px;padding:12px 18px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:.06em;cursor:pointer;width:100%;margin-top:12px}"
     + ".hz-erv-go.sm{width:auto;margin:0;padding:7px 14px;font-size:.74rem}.hz-erv-go:disabled{opacity:.45;cursor:not-allowed}"
     + ".hz-erv-muted{color:var(--gray);font-size:.78rem}.hz-erv-sub{font-family:'Oswald',sans-serif;color:var(--gold);font-size:.8rem;letter-spacing:.06em;margin:12px 0 6px;text-transform:uppercase}"

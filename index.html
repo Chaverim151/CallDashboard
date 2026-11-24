@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.605">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.606">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2798,7 +2798,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.605</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.606</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -21586,7 +21586,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.605";
+var DESKTOP_VERSION = "12.606";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -30254,6 +30254,7 @@ function hzErvApproveHtml() {
   var h = '<div class="hz-erv-sub">Waiting for a decision</div>' + (pend.length ? pend.map(function(t){
       var clash = hzErvOverlaps(hzErvBlocking(t.ervUnit, t.id), t.startMs, t.endMs);
       return hzErvCard(t, (clash.length ? '<span class="hz-erv-pill bad">Clashes with ' + clash.map(function(x){ return hzErvEsc(x.submittedBy || ""); }).join(", ") + '</span>' : '')
+        + '<textarea class="hz-erv-msg m-disp-input" data-erv-msg="' + t.id + '" rows="2" maxlength="300" placeholder="Message to ' + hzErvEsc((t.submittedBy || "the requester").split(" ").slice(-2).join(" ")) + ' (optional) — sent with Approve or Deny" style="flex:1 1 100%;width:100%;box-sizing:border-box;margin:0 0 6px;resize:vertical;font-size:0.85rem"></textarea>'
         + '<button class="hz-erv-go sm" onclick="hzErvDecide(\'' + t.id + '\',\'approved\')"' + (clash.length ? ' disabled' : '') + '>✓ Approve</button>'
         + '<button class="hz-erv-btn red" onclick="hzErvDecide(\'' + t.id + '\',\'denied\')">✕ Deny</button>');
     }).join("") : '<div class="hz-erv-muted hz-erv-empty">Nothing waiting.</div>');
@@ -30304,8 +30305,12 @@ function hzErvDecide(id, to) {
   if (!HZ_ERV.isAdmin) return;
   var t = HZ_ERV.tickets.filter(function(x){ return x.id === id; })[0]; if (!t) return;
   if (to === "approved" && hzErvOverlaps(hzErvBlocking(t.ervUnit, t.id), t.startMs, t.endMs).length) { hzErvToast("That time is already booked.", true); return; }
-  var reason = "";
-  if (to === "denied") { reason = hzAsk(arguments, this, "Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?\nReason (optional, they will see it):", ""); if (reason === null) return; }
+  // 12.606 (Sam): optional message box beside Approve / Deny — sent to the requester with the reply
+  var boxes = Array.prototype.filter.call(document.querySelectorAll('textarea[data-erv-msg="' + id + '"]'), function(x){ return x.value.trim(); });
+  var hasBox = !!document.querySelector('textarea[data-erv-msg="' + id + '"]');
+  var reason = boxes.length ? boxes[0].value.trim() : "";
+  if (to === "denied" && hasBox && !hzOk(arguments, this, "Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?" + (reason ? "\nYour message: “" + reason + "”" : ""))) return;
+  if (to === "denied" && !hasBox) { reason = hzAsk(arguments, this, "Deny " + (t.submittedBy || "this request") + " — " + hzErvRange(t.startMs, t.endMs) + "?\nReason (optional, they will see it):", ""); if (reason === null) return; }
   var me = HZ_ERV.me || {};
   db.collection("tickets").doc(id).update({ ervStatus: to, status: "resolved", ervReason: String(reason || "").trim().slice(0, 300), ervDecidedBy: ((me.unit || "") + " " + (me.firstName || "") + " " + (me.lastName || "")).trim(),
     ervDecidedAt: new Date().toISOString(), statusByUid: HZ_ERV.uid, lastActionByUid: HZ_ERV.uid })
@@ -30330,6 +30335,7 @@ function hzErvTicketHtml(id, t) {
   if (HZ_ERV.isAdmin && st === "pending") {
     var clash = hzErvOverlaps(hzErvBlocking(t.ervUnit, id), t.startMs, t.endMs);
     acts += (clash.length ? '<span class="hz-erv-pill bad">Clashes with ' + clash.map(function(x){ return hzErvEsc(x.submittedBy || ""); }).join(", ") + '</span>' : '')
+      + '<textarea class="hz-erv-msg m-disp-input" data-erv-msg="' + id + '" rows="2" maxlength="300" placeholder="Message to ' + hzErvEsc((t.submittedBy || "the requester").split(" ").slice(-2).join(" ")) + ' (optional) — sent with Approve or Deny" style="flex:1 1 100%;width:100%;box-sizing:border-box;margin:0 0 6px;resize:vertical;font-size:0.85rem"></textarea>'
       + '<button class="hz-erv-go sm" onclick="hzErvDecide(\'' + id + '\',\'approved\')"' + (clash.length ? ' disabled' : '') + '>✓ Approve</button><button class="hz-erv-btn red" onclick="hzErvDecide(\'' + id + '\',\'denied\')">✕ Deny</button>';
   }
   acts += hzErvCheckBtns(t2);
@@ -30359,6 +30365,7 @@ function hzErvRefreshTicket(id) {
     + ".hz-erv-row .hz-erv-in{width:auto}"
     + ".hz-erv-btn{background:rgba(255,255,255,.05);border:1px solid var(--card-border);color:var(--white);border-radius:7px;padding:7px 12px;font-family:'Oswald',sans-serif;font-size:.72rem;letter-spacing:.05em;cursor:pointer}"
     + ".hz-erv-btn.red{color:#ff9090;border-color:rgba(224,85,85,.45)}"
+    + ".hz-erv-msg{background:rgba(0,0,0,.35);color:var(--white,#f4f6fa);border:1px solid rgba(var(--gold-rgb,201,162,39),.45);border-radius:8px;padding:8px 10px;font-family:inherit}.hz-erv-msg:focus{outline:none;border-color:var(--gold)}"
     + ".hz-erv-go{background:var(--gold);color:var(--navy);border:none;border-radius:8px;padding:12px 18px;font-family:'Oswald',sans-serif;font-weight:700;letter-spacing:.06em;cursor:pointer;width:100%;margin-top:12px}"
     + ".hz-erv-go.sm{width:auto;margin:0;padding:7px 14px;font-size:.74rem}.hz-erv-go:disabled{opacity:.45;cursor:not-allowed}"
     + ".hz-erv-muted{color:var(--gray);font-size:.78rem}.hz-erv-sub{font-family:'Oswald',sans-serif;color:var(--gold);font-size:.8rem;letter-spacing:.06em;margin:12px 0 6px;text-transform:uppercase}"
