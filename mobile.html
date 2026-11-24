@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.106"; window.M_BUILD = BUILD;
+  var BUILD = "9.107"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -18474,6 +18474,51 @@ function hzTilePermOk(sec) {
   return ps.some(hzCan);
 }
 // Re-apply everything on the home screen that depends on permissions (after Control & Access changes)
+// 12.602 (Sam: "allow me to control the individual subpanels as well"): the sections inside an Admin screen.
+// appdata/access.subs = { "<screen>:<section>": [roles] } — nothing saved = everyone who has that screen sees every section.
+// A section marked "admin" is always admins only (Private Homes — the database keeps those codes admins only).
+var HZ_SUBPANELS = {
+  protocols: { fn: "setDsTab", list: [["natures", "🗒️ Call Natures & ALS"], ["zones", "🗺️ Coverage Areas"], ["hospitals", "🏥 Transport Hospitals"], ["outside", "📞 Outside-Coverage Contacts"], ["regional", "☎️ Regional Hatzolah Branches"], ["important", "📞 Important Numbers"], ["locations", "📍 Location Requests"]] },
+  codes: { fn: "setCodesTab", list: [["buildings", "🏢 Buildings"], ["private", "🏠 Private Homes", "admin"], ["shuls", "🕍 Shuls"], ["hospital", "🏥 Hospital"], ["storage", "🗄️ Storage"]] },
+  fleet: { fn: "setFleetTab", list: [["status", "🔧 Service Status"], ["vehicles", "🚑 Vehicles & Equipment"], ["restock", "📦 Restock List"]] },
+  notifsettings: { fn: "setNsTab", list: [["send", "📣 How It's Sent"], ["callalerts", "⏰ Call Alerts"], ["tkrem", "🎫 Ticket Reminders"], ["who", "👥 Who Receives What"], ["templates", "✉️ Message Templates"], ["avail", "📅 Availability"], ["log", "📜 Notification Log"], ["test", "🧪 Send a Test"], ["zello", "📻 Zello Tone"], ["nextrig", "🚑 Next Rig"]] }
+};
+function hzSubOk(tab, sub) {
+  if (typeof hzIsAdminNow === "function" && hzIsAdminNow()) return true;
+  var cfg = HZ_SUBPANELS[tab], e = cfg && cfg.list.filter(function(x) { return x[0] === sub; })[0];
+  if (e && e[2] === "admin") return false;
+  var saved = typeof HZ_ACCESS !== "undefined" && HZ_ACCESS && HZ_ACCESS.subs ? HZ_ACCESS.subs[tab + ":" + sub] : null;
+  if (!Array.isArray(saved)) return true;
+  var mine = hzMyRoles();
+  return saved.some(function(r) { return mine.indexOf(r) !== -1; });
+}
+function hzSubApply() {
+  document.querySelectorAll("[data-hz-subhid]").forEach(function(b) { b.removeAttribute("data-hz-subhid"); b.style.display = ""; });
+  Object.keys(HZ_SUBPANELS).forEach(function(tab) {
+    var cfg = HZ_SUBPANELS[tab], firstOk = null, activeHidden = false;
+    cfg.list.forEach(function(x) {
+      var ok = hzSubOk(tab, x[0]);
+      document.querySelectorAll('[onclick^="' + cfg.fn + '(\'' + x[0] + '\'"]').forEach(function(b) {
+        if (!ok) { b.style.display = "none"; b.setAttribute("data-hz-subhid", "1"); if (b.classList.contains("active")) activeHidden = true; }
+        else if (!firstOk) firstOk = b;
+      });
+    });
+    if (activeHidden && firstOk) try { firstOk.click(); } catch (e) {}
+  });
+}
+// a hidden section can't be opened another way (search, links)
+(function() {
+  Object.keys(HZ_SUBPANELS).forEach(function(tab) {
+    var fn = HZ_SUBPANELS[tab].fn, tries = 0;
+    (function wrap() {
+      var orig = window[fn];
+      if (typeof orig !== "function") { if (++tries < 40) setTimeout(wrap, 250); return; }
+      if (orig.__hzSub) return;
+      var w = function(k) { if (!hzSubOk(tab, k)) return; return orig.apply(this, arguments); };
+      w.__hzSub = true; window[fn] = w;
+    })();
+  });
+})();
 function hzAccessReapply() {
   // undo last round's per-member tile exceptions first, so the role rules below start from scratch
   document.querySelectorAll("[data-hz-uhid]").forEach(function(e) { e.removeAttribute("data-hz-uhid"); if (e.style.display === "none") e.style.display = ""; });
@@ -18487,6 +18532,7 @@ function hzAccessReapply() {
     }
   } catch (e) {}
   try { hzTileFormatApply(); } catch (e) {}
+  try { hzSubApply(); } catch (e) {}
   try { if (typeof hzAdminLimitedApply === "function") hzAdminLimitedApply(); } catch (e) {}
 }
 // ── 9.93 / 12.569 (Sam): 🧩 TILE PLACES — any tile can sit anywhere, per role ──
