@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.107"; window.M_BUILD = BUILD;
+  var BUILD = "9.108"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -18463,6 +18463,10 @@ function hzAdminTabsFor() {
   if (hzIsAdminNow()) return null;   // null = all
   var out = [];
   HZ_PERMS.forEach(function(p) { if (p.adminTab && hzAccessSaved(p.k) && hzCan(p.k) && out.indexOf(p.adminTab) === -1) out.push(p.adminTab); });
+  // 12.605 (Sam: "why are there no permissions for the sub sections"): a role can be given single sections of a screen
+  if (typeof HZ_SUBPANELS !== "undefined") Object.keys(HZ_SUBPANELS).forEach(function(tab) {
+    if (out.indexOf(tab) === -1 && HZ_SUBPANELS[tab].list.some(function(x) { return x[2] !== "admin" && hzSubGiven(tab, x[0]); })) out.push(tab);
+  });
   return out;
 }
 // 12.568 / 9.92: tiles that need a permission. Only once one of these permissions has been SAVED does it hide the
@@ -18488,7 +18492,17 @@ function hzSubOk(tab, sub) {
   var cfg = HZ_SUBPANELS[tab], e = cfg && cfg.list.filter(function(x) { return x[0] === sub; })[0];
   if (e && e[2] === "admin") return false;
   var saved = typeof HZ_ACCESS !== "undefined" && HZ_ACCESS && HZ_ACCESS.subs ? HZ_ACCESS.subs[tab + ":" + sub] : null;
-  if (!Array.isArray(saved)) return true;
+  if (Array.isArray(saved)) return hzSubGiven(tab, sub);
+  // nothing saved for this section → it comes with the whole screen (whoever has the screen permission)
+  var perm = HZ_PERMS.filter(function(p) { return p.adminTab === tab; })[0];
+  return !perm || (hzAccessSaved(perm.k) && hzCan(perm.k));   // (non-admins only reach a screen through a saved permission or a given section)
+}
+// 12.605: this section was given to one of my roles on its own (appdata/access.subs) — a member's own Allow / Deny on the screen still wins
+function hzSubGiven(tab, sub) {
+  var saved = typeof HZ_ACCESS !== "undefined" && HZ_ACCESS && HZ_ACCESS.subs ? HZ_ACCESS.subs[tab + ":" + sub] : null;
+  if (!Array.isArray(saved)) return false;
+  var perm = HZ_PERMS.filter(function(p) { return p.adminTab === tab; })[0];
+  if (perm && hzMyOverride(perm.k) === "deny") return false;
   var mine = hzMyRoles();
   return saved.some(function(r) { return mine.indexOf(r) !== -1; });
 }
