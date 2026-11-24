@@ -12,11 +12,18 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.587">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.589">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <script>
+// 12.588 (Sam: "sort users by alphanumeric not just numeric value"): units sort letters first, then numbers in order —
+// BR-2, BR-10, MC-2, MC-10, MC-16, MC-151 — and units with no number (HQ, ADMIN) in their alphabetical place; no unit goes last
+function hzUnitCmp(a, b) {
+  a = String(a || "").trim(); b = String(b || "").trim();
+  if (!a || !b) return (!a) - (!b);
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
 function hzTitleList(){var t=null;try{t=JSON.parse(localStorage.getItem("hzTitles")||"null");}catch(e){}if(typeof HZ_TITLES!=="undefined"&&HZ_TITLES)t=HZ_TITLES;return Array.isArray(t)&&t.length?t:["captain","chief","backup","observer"];}
 function hzWithTitles(roles){roles=(roles||[]).slice();var low=roles.map(function(r){return String(r).toLowerCase();}),t=hzTitleList();if(low.indexOf("responder")===-1&&low.some(function(r){return t.indexOf(r)!==-1;}))roles.push("responder");return roles;}  /* 11.65: a title (Captain, Chief…) has Responder access */
 function hzIsLeader(u){var r=((u&&u.roles)||[]).map(function(x){return String(x).toLowerCase();});return r.indexOf("captain")!==-1||r.indexOf("chief")!==-1;}  /* contacts: captains & chiefs shown in red */
@@ -2448,6 +2455,7 @@ html[data-theme="basic"] #hz-tka-sheet .hz-tka-none{color:#8a680f !important}
 html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
 <!--HZ-BASIC-END-->
 <style id="hz-admin-only">/* 8.57 / 12.421: admins-only tiles — hidden unless the body has hz-is-admin (set when the role is known) */ body:not(.hz-is-admin) .hz-admin-only{display:none !important}/* 9.72 / 12.542 (Sam: MC-22 saw Reports): stronger than the More / reorder rules that show extra tiles */html body:not(.hz-is-admin) #m-home-grid>.hz-admin-only.hz-admin-only.hz-admin-only.hz-admin-only.hz-admin-only.hz-admin-only,html body:not(.hz-is-admin) #home-btn-grid>.hz-admin-only.hz-admin-only.hz-admin-only.hz-admin-only.hz-admin-only.hz-admin-only{display:none !important}</style>
+<style id="hz-login-fields">/* 12.589 / 9.101 (Sam: "fix the white peeping through and make the placeholder format consistent"): the unit box is black behind the MC- prefix (no white edges or corners), the prefix and the white input fill it top to bottom; both placeholders use the same plain font, size and grey */html[data-theme] body:not(#hzA):not(#hzB) .login-box div[style*="overflow:hidden"],html[data-theme] body:not(#hzA):not(#hzB) .m-login-box .m-unit-wrap,html[data-theme] body:not(#hzA):not(#hzB) .login-box .m-unit-wrap,html[data-theme] body:not(#hzA):not(#hzB) .m-login-box div[style*="overflow:hidden"]{background:#000 !important;align-items:stretch !important;padding:0 !important}html[data-theme] body:not(#hzA):not(#hzB) .login-box div[style*="overflow:hidden"] > span,html[data-theme] body:not(#hzA):not(#hzB) .m-login-box .m-unit-wrap > span,html[data-theme] body:not(#hzA):not(#hzB) .login-box .m-unit-wrap > span,html[data-theme] body:not(#hzA):not(#hzB) .m-login-box div[style*="overflow:hidden"] > span{display:flex !important;align-items:center !important;align-self:stretch !important;margin:0 !important;border-radius:0 !important;background:#000 !important}html[data-theme] body:not(#hzA):not(#hzB) .login-box div[style*="overflow:hidden"] > input,html[data-theme] body:not(#hzA):not(#hzB) .m-login-box .m-unit-wrap > input,html[data-theme] body:not(#hzA):not(#hzB) .login-box .m-unit-wrap > input,html[data-theme] body:not(#hzA):not(#hzB) .m-login-box div[style*="overflow:hidden"] > input{background:#fff !important;align-self:stretch !important;margin:0 !important;border-radius:0 !important;min-height:0 !important;box-shadow:none !important}#li-unit::placeholder,#li-pass::placeholder,#m-unit-input::placeholder,#m-pw-input::placeholder{font-family:'Source Sans 3',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important;font-size:1rem !important;font-weight:400 !important;letter-spacing:0 !important;text-transform:none !important;color:#767676 !important;-webkit-text-fill-color:#767676 !important;opacity:1 !important}</style>
 </head>
 <body>
 
@@ -2779,7 +2787,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.587</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.589</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -8391,7 +8399,7 @@ function loadUsers() {
   db.collection("users").get().then(function(snap) {
     var rows = [];
     snap.forEach(function(d) { rows.push(Object.assign({ uid: d.id }, d.data())); });
-    rows.sort(function(a, b) { return (parseInt((a.unit || "").replace(/\D/g,"")) || 9999) - (parseInt((b.unit || "").replace(/\D/g,"")) || 9999); });
+    rows.sort(function(a, b) { return hzUnitCmp(a.unit, b.unit); });
     allUsersCache = rows;
     renderUsersTable(rows);
     hzRolesLoad();
@@ -9541,7 +9549,7 @@ function loadContacts() {
   db.collection("users").get().then(function(snap) {
     allContacts = [];
     snap.forEach(function(d) { var u = Object.assign({ uid: d.id }, d.data()); if (!hzIsTestUser(u)) allContacts.push(u); });
-    allContacts.sort(function(a, b) { return (parseInt((a.unit || "").replace(/\D/g,"")) || 999) - (parseInt((b.unit || "").replace(/\D/g,"")) || 999); });
+    allContacts.sort(function(a, b) { return hzUnitCmp(a.unit, b.unit); });
     activeRoleFilter = "all";
     document.querySelectorAll(".role-filter-btn").forEach(function(b) { b.classList.toggle("active", b.dataset.role === "all"); });
     renderContacts(allContacts);
@@ -11249,7 +11257,7 @@ function renderCMEHours(el) {
         if (!isFieldMember) return; // skip pure dispatchers/logistics
         members.push(Object.assign({uid:d.id}, m));
       });
-      members.sort(function(a,b){ return (a.unit||"").localeCompare(b.unit||""); });
+      members.sort(function(a,b){ return hzUnitCmp(a.unit, b.unit); });
       el.innerHTML = '<div style="font-family:\'Oswald\',sans-serif;font-size:0.75rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:12px">' + year + ' CME Hours — All Members <span style="font-size:0.6rem;color:rgba(255,255,255,0.2);text-transform:none;letter-spacing:0;font-family:\'Source Sans 3\',sans-serif">Click row to edit</span></div>' +
         '<table style="width:100%;border-collapse:collapse;font-size:0.82rem"><thead><tr style="border-bottom:2px solid var(--card-border)">' +
         ['Unit','Name','CE Hrs','Pending','Classes',''].map(function(h){ return '<th style="text-align:left;padding:8px 10px;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">' + h + '</th>'; }).join("") +
@@ -11373,7 +11381,7 @@ function renderEventDetail(ev, body) {
         div2.style.cssText="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:14px;margin-bottom:12px";
         var rows=[];
         asnap.forEach(function(d){rows.push(Object.assign({uid:d.id},d.data()));});
-        rows.sort(function(a,b){return(a.unit||"").localeCompare(b.unit||"");});
+        rows.sort(function(a,b){returnhzUnitCmp(a.unit, b.unit);});
 
         var pendingCount = rows.filter(function(r){ return !r.ceApproved && r.ceHours > 0; }).length;
 
@@ -18924,7 +18932,7 @@ function initDispatcherDashboard() {
       allRespondersCache = [];
       snap.forEach(function(d) { allRespondersCache.push(Object.assign({ uid: d.id }, d.data())); });
       allRespondersCache.sort(function(a, b) {
-        return (parseInt((a.unit || "").replace(/\D/g,"")) || 999) - (parseInt((b.unit || "").replace(/\D/g,"")) || 999);
+        return hzUnitCmp(a.unit, b.unit);
       });
       if (ddSelectedCallId) selectDDCall(ddSelectedCallId);
     });
@@ -21462,7 +21470,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.587";
+var DESKTOP_VERSION = "12.589";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -21919,7 +21927,7 @@ function mRenderCME(el) {
         if(!isField) return;
         members.push(Object.assign({uid:d.id},m));
       });
-      members.sort(function(a,b){ return (a.unit||"").localeCompare(b.unit||""); });
+      members.sort(function(a,b){ return hzUnitCmp(a.unit, b.unit); });
       el.innerHTML = '<div style="font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:10px">' + year + ' CME — All Members</div>' +
         members.map(function(m) {
           var name = ((m.firstName||"")+" "+(m.lastName||"")).trim();
@@ -22077,7 +22085,7 @@ function mEduRenderAdminSection(ev) {
   ]).then(function(res) {
     var counts = { yes: 0, maybe: 0, no: 0 }; res[0].forEach(function(d) { var s = d.data().status; if (counts[s] !== undefined) counts[s]++; });
     var rows = []; res[1].forEach(function(d) { rows.push(Object.assign({ uid: d.id }, d.data())); });
-    rows.sort(function(a, b) { return (a.unit||"").localeCompare(b.unit||"", undefined, { numeric: true }); });
+    rows.sort(function(a, b) { return hzUnitCmp(a.unit, b.unit); });
     var pending = rows.filter(function(r) { return !r.ceApproved && r.ceHours > 0 && r.ceDecision !== "denied"; }).length;
     var html = '<div style="background:rgba(255,255,255,0.04);border:1px solid var(--card-border);border-radius:10px;padding:12px;margin-bottom:10px">' +
       '<div style="font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px">RSVPs</div>' +
@@ -22194,7 +22202,7 @@ function mRenderCMEAdmin(el) {
       if (!isField) return; // pure dispatchers / logistics don't accrue CE
       members.push(Object.assign({ uid: d.id }, m));
     });
-    members.sort(function(a,b){ return (a.unit||"").localeCompare(b.unit||"", undefined, { numeric: true }); });
+    members.sort(function(a,b){ return hzUnitCmp(a.unit, b.unit); });
     var totalHrs = members.reduce(function(s,m){ return s + ((m.cmeHours||{})[year]||0); }, 0);
     el.innerHTML = '<div style="padding:12px 0 0">' +
       '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px"><div style="font-family:\'Oswald\',sans-serif;font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray)">' + year + ' CME — All Members</div><div style="font-size:0.7rem;color:var(--gray)">' + members.length + ' members · ' + totalHrs + ' hrs</div></div>' +
