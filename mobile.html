@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.111"; window.M_BUILD = BUILD;
+  var BUILD = "9.114"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -18955,7 +18955,15 @@ var HZ_KB_KIND = { video: ["🎬", "Video"], image: ["🖼️", "Photo"], pdf: [
 function hzKbIcon(n) { if (n.icon) return n.icon; if (n.type === "folder") return "📁"; return (HZ_KB_KIND[hzKbKindOf(n)] || HZ_KB_KIND.note)[0]; }
 function hzKbYouTube(u) { var m = String(u || "").match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/); return m ? m[1] : ""; }
 function hzKbDrive(u) { var m = String(u || "").match(/drive\.google\.com\/(?:file\/d\/|open\?(?:.*&)?id=)([A-Za-z0-9_-]{10,})/); return m ? m[1] : ""; }
-function hzKbKindOf(n) { if (n.kind === "link" && hzKbYouTube(n.url)) return "video"; return n.kind || (n.url ? "link" : "note"); }
+// 12.611 (Sam): Vimeo too — vimeo.com/123, vimeo.com/123/abcHASH (unlisted), player.vimeo.com/video/123?h=…, vimeo.com/channels/x/123
+function hzKbVimeo(u) {
+  u = String(u || ""); if (!/vimeo\.com\//i.test(u)) return null;
+  var m = u.match(/player\.vimeo\.com\/video\/(\d+)/i) || u.match(/vimeo\.com\/(?:.*\/)?(\d{5,})(?:\/([A-Za-z0-9]+))?/i); if (!m) return null;
+  var h = (u.match(/[?&]h=([A-Za-z0-9]+)/) || [])[1] || (m[2] && !/^\d+$/.test(m[2]) ? m[2] : "");
+  return { id: m[1], h: h };
+}
+function hzKbVidLink(u) { return !!(hzKbYouTube(u) || hzKbVimeo(u)); }
+function hzKbKindOf(n) { if (n.kind === "link" && hzKbVidLink(n.url)) return "video"; return n.kind || (n.url ? "link" : "note"); }
 
 function hzKbLoad(cb) {
   if (typeof db === "undefined") { HZ_KB.err = "Not connected"; if (cb) cb(); return; }
@@ -19062,9 +19070,12 @@ function hzKbGridHtml(pid) {
 }
 function hzKbItemHtml(n) {
   var k = hzKbKindOf(n), u = n.url || "", h = "";
-  var yt = hzKbYouTube(u), dr = hzKbDrive(u);
-  if (yt) h += '<div class="hz-kb-frame"><iframe src="https://www.youtube.com/embed/' + hzKbEsc(yt) + '?rel=0&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>';
-  else if (k === "video" && u) h += '<video class="hz-kb-media" controls playsinline preload="metadata" src="' + hzKbEsc(u) + '"></video>';
+  var yt = hzKbYouTube(u), dr = hzKbDrive(u), vm = yt ? null : hzKbVimeo(u);
+  if (yt) h += '<div class="hz-kb-frame"><iframe src="https://www.youtube-nocookie.com/embed/' + hzKbEsc(yt) + '?rel=0&playsinline=1&modestbranding=1" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>'
+    + '<a class="hz-kb-yt" href="https://www.youtube.com/watch?v=' + hzKbEsc(yt) + '" target="_blank" rel="noopener">Not playing? Watch it on YouTube ↗</a>';   // 12.610: some videos don't allow playing on other sites
+  else if (vm) h += '<div class="hz-kb-frame"><iframe src="https://player.vimeo.com/video/' + hzKbEsc(vm.id) + '?' + (vm.h ? 'h=' + hzKbEsc(vm.h) + '&' : '') + 'playsinline=1&title=0&byline=0&portrait=0&dnt=1" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>'
+    + '<a class="hz-kb-yt" href="https://vimeo.com/' + hzKbEsc(vm.id) + (vm.h ? '/' + hzKbEsc(vm.h) : '') + '" target="_blank" rel="noopener">Not playing? Watch it on Vimeo ↗</a>';
+  else if (k === "video" && u) h += '<video class="hz-kb-media" controls playsinline preload="metadata" src="' + hzKbEsc(u) + '#t=0.1" onerror="hzKbVidErr(this)"></video>';
   else if (k === "image" && u) h += '<a href="' + hzKbEsc(u) + '" target="_blank" rel="noopener"><img class="hz-kb-media" src="' + hzKbEsc(u) + '" alt="' + hzKbEsc(n.title || "") + '"></a>';
   else if (dr) h += '<div class="hz-kb-frame"><iframe src="https://drive.google.com/file/d/' + hzKbEsc(dr) + '/preview" allow="autoplay; fullscreen" allowfullscreen></iframe></div>';
   if (n.text) h += '<div class="hz-kb-text">' + hzKbEsc(n.text).replace(/\n/g, "<br>") + '</div>';
@@ -19114,7 +19125,7 @@ function hzKbRowHtml(n, depth, first, last) {
 function hzKbForm(type, id, parent) {
   var n = id ? hzKbById(id) : null;
   HZ_KB.form = { type: type, id: id || "", parent: n ? (n.parent || "") : (parent || (HZ_KB.mode === "organize" && HZ_KB.path.length ? HZ_KB.path[HZ_KB.path.length - 1] : "")),
-    src: n ? (n.kind === "note" ? "note" : n.path ? "upload" : n.url ? "link" : "note") : "upload" };
+    src: n ? (n.kind === "note" ? "note" : n.path ? "upload" : hzKbVidLink(n.url) ? "youtube" : n.url ? "link" : "note") : "youtube" };
   hzKbAdminRender();
   setTimeout(function() { var f = document.getElementById("hz-kb-form"); if (f && f.scrollIntoView) f.scrollIntoView({ block: "start", behavior: "smooth" }); var t = document.getElementById("hz-kb-f-title"); if (t) t.focus(); }, 60);
 }
@@ -19131,14 +19142,17 @@ function hzKbFormHtml() {
   var above = hzKbLimitAbove(f.parent);
   var h = '<div class="hz-kb-form"><div class="hz-kb-fh">' + (f.id ? "Edit " : "New ") + (isF ? "folder" : "material") + '</div>'
     + '<label class="hz-kb-l">Name<input id="hz-kb-f-title" maxlength="80" value="' + hzKbEsc(n.title || "") + '" placeholder="' + (isF ? 'e.g. Lucas, Stair Chair, MC-903' : 'e.g. How to close the stair chair') + '"></label>'
-    + '<div class="hz-kb-2"><label class="hz-kb-l">Icon (emoji, optional)<input id="hz-kb-f-icon" maxlength="4" value="' + hzKbEsc(n.icon || "") + '" placeholder="' + (isF ? "📁" : "auto") + '"></label>'
-    + '<label class="hz-kb-l">Line under the name (optional)<input id="hz-kb-f-sub" maxlength="60" value="' + hzKbEsc(n.sub || "") + '" placeholder="' + (isF ? "shows the number inside" : "shows the type") + '"></label></div>'
+    + hzKbIconPickerHtml(n.icon || "", isF)   // 12.609 (Sam: "fix this"): tap an icon instead of typing an emoji
+    + '<label class="hz-kb-l">Line under the name (optional)<input id="hz-kb-f-sub" maxlength="60" value="' + hzKbEsc(n.sub || "") + '" placeholder="' + (isF ? "Leave empty to show how many things are inside" : "Leave empty to show the type (Video, PDF…)") + '"></label>'
     + '<label class="hz-kb-l">Inside<select id="hz-kb-f-parent" onchange="HZ_KB.form.parent=this.value;hzKbFormKeep()">' + hzKbFolderOptions(f.parent, f.id) + '</select></label>';
   if (!isF) {
     h += '<div class="hz-kb-l">What is it</div><div class="hz-kb-seg">'
-      + [["upload", "⬆️ Upload a file"], ["link", "🔗 Link"], ["note", "📝 Note only"]].map(function(o) { return '<button type="button" class="' + (f.src === o[0] ? 'on' : '') + '" onclick="HZ_KB.form.src=\'' + o[0] + '\';hzKbFormKeep()">' + o[1] + '</button>'; }).join("") + '</div>';
-    if (f.src === "upload") h += '<label class="hz-kb-l">Video, photo or PDF' + (n.path ? ' — now: <i>' + hzKbEsc(n.fileName || "a file") + '</i> (choose a new one to replace it)' : '') + '<input id="hz-kb-f-file" type="file" accept="video/*,image/*,application/pdf"></label>';
-    if (f.src === "link") h += '<label class="hz-kb-l">Link (YouTube and Google Drive videos play right inside)<input id="hz-kb-f-url" type="url" value="' + hzKbEsc(n.path ? "" : (n.url || "")) + '" placeholder="https://…"></label>';
+      + [["youtube", "▶️ YouTube / Vimeo video"], ["upload", "⬆️ Upload a video / photo / PDF"], ["link", "🔗 Other link"], ["note", "📝 Note only"]].map(function(o) { return '<button type="button" class="' + (f.src === o[0] ? 'on' : '') + '" onclick="HZ_KB.form.src=\'' + o[0] + '\';hzKbFormKeep()">' + o[1] + '</button>'; }).join("") + '</div>';
+    if (f.src === "upload") h += '<label class="hz-kb-l">Video, photo or PDF from this phone / computer' + (n.path ? ' — now: <i>' + hzKbEsc(n.fileName || "a file") + '</i> (choose a new one to replace it)' : '') + '<input id="hz-kb-f-file" type="file" accept="video/*,image/*,application/pdf" onchange="hzKbFilePreview(this)"></label>'
+      + '<div class="hz-kb-note">Plays right inside the Knowledge Base tile on phones and computers. Best format: MP4 (iPhone videos work too). Up to 500 MB — for longer videos use a YouTube link.</div><div id="hz-kb-f-prev"></div>';
+    if (f.src === "youtube") h += '<label class="hz-kb-l">YouTube or Vimeo link<input id="hz-kb-f-url" type="url" value="' + hzKbEsc(n.path ? "" : (n.url || "")) + '" placeholder="https://youtu.be/…  or  https://vimeo.com/…  or  https://player.vimeo.com/video/…" oninput="hzKbYtPreview(this.value)"></label>'
+      + '<div class="hz-kb-note">Plays right inside the Knowledge Base tile on phones and computers. Unlisted videos work (only people with the link can find them).</div><div id="hz-kb-f-prev">' + hzKbYtPrevHtml(n.path ? "" : (n.url || "")) + '</div>';
+    if (f.src === "link") h += '<label class="hz-kb-l">Link (a Google Drive video plays inside; other links open in a new tab)<input id="hz-kb-f-url" type="url" value="' + hzKbEsc(n.path ? "" : (n.url || "")) + '" placeholder="https://…"></label>';
     h += '<label class="hz-kb-l">' + (f.src === "note" ? "Note" : "Description (optional)") + '<textarea id="hz-kb-f-text" rows="' + (f.src === "note" ? 6 : 3) + '" maxlength="5000">' + hzKbEsc(n.text || "") + '</textarea></label>';
   }
   h += '<div class="hz-kb-l">👥 Who sees it</div>'
@@ -19149,6 +19163,40 @@ function hzKbFormHtml() {
     + '<div class="hz-kb-bar"><button class="hz-kb-btn go" id="hz-kb-f-save" onclick="hzKbSave()">' + (f.id ? "Save" : "Add") + '</button><button class="hz-kb-btn" onclick="hzKbFormCancel()">Cancel</button></div></div>';
   return h;
 }
+var HZ_KB_ICONS = ["📁", "🎬", "🎓", "🚑", "🫀", "🛏️", "🦽", "🩺", "💊", "🧰", "🔧", "📦", "📍", "📋", "📄", "🖼️", "📝", "⚠️", "🔥", "📻", "🚨", "🔗"];
+function hzKbIconPickerHtml(cur, isF) {
+  var auto = isF ? "📁" : "";
+  return '<div class="hz-kb-l">Icon</div><input type="hidden" id="hz-kb-f-icon" value="' + hzKbEsc(cur) + '">'
+    + '<div class="hz-kb-icons"><button type="button" class="hz-kb-ic' + (!cur ? ' on' : '') + '" data-ic="" onclick="hzKbIconPick(this)" title="Automatic">' + (isF ? "📁" : "Auto") + '<small>' + (isF ? "Default" : "by type") + '</small></button>'
+    + HZ_KB_ICONS.filter(function(x) { return x !== auto; }).map(function(x) { return '<button type="button" class="hz-kb-ic' + (cur === x ? ' on' : '') + '" data-ic="' + x + '" onclick="hzKbIconPick(this)">' + x + '</button>'; }).join("")
+    + (cur && HZ_KB_ICONS.indexOf(cur) === -1 ? '<button type="button" class="hz-kb-ic on" data-ic="' + hzKbEsc(cur) + '" onclick="hzKbIconPick(this)">' + hzKbEsc(cur) + '</button>' : '')
+    + '</div>';
+}
+function hzKbIconPick(btn) {
+  var v = btn.getAttribute("data-ic") || "", h = document.getElementById("hz-kb-f-icon"); if (h) h.value = v;
+  document.querySelectorAll(".hz-kb-icons .hz-kb-ic").forEach(function(b) { b.classList.toggle("on", b === btn); });
+}
+function hzKbYtPrevHtml(u) {
+  var id = hzKbYouTube(u); if (!u) return "";
+  var vm = id ? null : hzKbVimeo(u);
+  if (vm) return '<div class="hz-kb-prev"><span>✓ Vimeo video found (#' + hzKbEsc(vm.id) + (vm.h ? ', unlisted' : '') + ')</span></div>';
+  if (!id) return '<div class="hz-kb-note" style="color:#c62828">Not a YouTube or Vimeo video link yet.</div>';
+  return '<div class="hz-kb-prev"><img src="https://i.ytimg.com/vi/' + hzKbEsc(id) + '/hqdefault.jpg" alt=""><span>✓ YouTube video found</span></div>';
+}
+function hzKbYtPreview(u) { var p = document.getElementById("hz-kb-f-prev"); if (p) p.innerHTML = hzKbYtPrevHtml(String(u || "").trim()); }
+function hzKbFilePreview(inp) {
+  var p = document.getElementById("hz-kb-f-prev"), f = inp && inp.files && inp.files[0]; if (!p) return;
+  if (!f) { p.innerHTML = ""; return; }
+  var mb = (f.size / 1048576).toFixed(f.size > 10485760 ? 0 : 1) + " MB", url = URL.createObjectURL(f);
+  if (/^video\//.test(f.type)) p.innerHTML = '<video class="hz-kb-prevvid" controls playsinline muted preload="metadata" src="' + url + '#t=0.1"></video><div class="hz-kb-note">' + hzKbEsc(f.name) + ' · ' + mb + (f.size > 524288000 ? ' — <b style="color:#c62828">over 500 MB, use a YouTube link</b>' : '') + '</div>';
+  else if (/^image\//.test(f.type)) p.innerHTML = '<div class="hz-kb-prev"><img src="' + url + '" alt=""><span>' + hzKbEsc(f.name) + ' · ' + mb + '</span></div>';
+  else p.innerHTML = '<div class="hz-kb-note">📄 ' + hzKbEsc(f.name) + ' · ' + mb + '</div>';
+}
+function hzKbVidErr(v) {   // e.g. an iPhone HEVC video on a computer browser that can't play it
+  if (!v || v.getAttribute("data-err")) return; v.setAttribute("data-err", "1");
+  var a = document.createElement("a"); a.className = "hz-kb-open"; a.href = v.src.replace(/#t=.*$/, ""); a.target = "_blank"; a.rel = "noopener";
+  a.textContent = "This browser can't play this video here — tap to open it"; v.parentNode.insertBefore(a, v.nextSibling);
+}
 function hzKbFormRead() {   // what is typed now, so a redraw (switching Upload / Link / Note) keeps it
   var g = function(id) { var e = document.getElementById(id); return e ? e.value : null; };
   return { title: g("hz-kb-f-title"), icon: g("hz-kb-f-icon"), sub: g("hz-kb-f-sub"), url: g("hz-kb-f-url"), text: g("hz-kb-f-text"),
@@ -19158,7 +19206,8 @@ function hzKbFormKeep() {
   var v = hzKbFormRead(), box = document.getElementById("hz-kb-form"); if (!box) return;
   box.innerHTML = hzKbFormHtml();
   var s = function(id, val) { var e = document.getElementById(id); if (e && val != null) e.value = val; };
-  s("hz-kb-f-title", v.title); s("hz-kb-f-icon", v.icon); s("hz-kb-f-sub", v.sub); s("hz-kb-f-url", v.url); s("hz-kb-f-text", v.text);
+  s("hz-kb-f-title", v.title); s("hz-kb-f-icon", v.icon);
+  document.querySelectorAll(".hz-kb-icons .hz-kb-ic").forEach(function(b) { b.classList.toggle("on", (b.getAttribute("data-ic") || "") === (v.icon || "")); }); s("hz-kb-f-sub", v.sub); s("hz-kb-f-url", v.url); s("hz-kb-f-text", v.text);
   document.querySelectorAll(".hz-kb-f-role").forEach(function(x) { x.checked = v.roles.indexOf(x.value) !== -1; });
 }
 function hzKbMsg(t, bad) { var m = document.getElementById("hz-kb-f-msg"); if (m) { m.textContent = t; m.style.color = bad ? "#c62828" : ""; } }
@@ -19185,7 +19234,11 @@ function hzKbSave() {
   var oldPath = n && n.path ? n.path : "";
   if (!isF) {
     data.text = String(v.text || "").slice(0, 5000);
-    if (f.src === "link") {
+    if (f.src === "youtube") {
+      var yurl = String(v.url || "").trim();
+      if (!hzKbVidLink(yurl)) { hzKbMsg("That doesn't look like a YouTube or Vimeo video link — copy it from the video's Share button.", true); return; }
+      data.kind = "link"; data.url = yurl; data.path = ""; data.fileName = "";
+    } else if (f.src === "link") {
       var url = String(v.url || "").trim();
       if (!/^https?:\/\/\S+$/i.test(url)) { hzKbMsg("Paste a full link starting with https://", true); return; }
       data.kind = "link"; data.url = url; data.path = ""; data.fileName = "";
@@ -19292,7 +19345,15 @@ function hzKbCss() {
     + P + ".hz-kb-l{display:block;font-size:.74rem;letter-spacing:.05em;text-transform:uppercase;opacity:.85;margin:8px 0 4px}"
     + P + ".hz-kb-l input,"  + P + ".hz-kb-l select," + P + ".hz-kb-l textarea{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:9px 10px;border:1px solid rgba(128,128,128,.55);border-radius:8px;background:transparent;color:inherit;-webkit-text-fill-color:currentColor;font:inherit;font-size:.92rem;text-transform:none;letter-spacing:normal}"
     + P + ".hz-kb-l select option{color:#111;background:#fff}"
-    + P + ".hz-kb-2{display:grid;grid-template-columns:120px 1fr;gap:10px}"
+    + P + "#hz-kb-form{scroll-margin-top:190px}"
+    + P + ".hz-kb-yt{display:block;text-align:right;font-size:.78rem;margin:-6px 0 12px;color:#8a680f;-webkit-text-fill-color:#8a680f}"
+    + P + ".hz-kb-prev{display:flex;align-items:center;gap:10px;margin:4px 0 8px;font-size:.85rem}"
+    + P + ".hz-kb-prev img{width:160px;max-height:100px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.5)}"
+    + P + ".hz-kb-prevvid{display:block;width:100%;max-width:360px;max-height:220px;border-radius:8px;background:#000;margin:4px 0}"   // 12.609: the form opened under the sticky Admin tabs
+    + P + ".hz-kb-icons{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px}"
+    + P + ".hz-kb-ic{min-width:46px;height:46px;padding:0 8px;border:1px solid rgba(128,128,128,.5);border-radius:10px;background:transparent;color:inherit;-webkit-text-fill-color:currentColor;font-size:1.35rem;line-height:1;cursor:pointer;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;font-family:inherit}"
+    + P + ".hz-kb-ic small{font-size:.58rem;letter-spacing:.03em;opacity:.75;margin-top:2px}"
+    + P + ".hz-kb-ic.on{border:2px solid #d4a017;background:rgba(212,160,23,.18);box-shadow:0 0 0 1px #d4a017 inset}"
     + P + ".hz-kb-seg{display:flex;gap:6px;flex-wrap:wrap}"
     + P + ".hz-kb-seg button{background:transparent;color:inherit;-webkit-text-fill-color:currentColor;border:1px solid #d4a017;border-radius:8px;padding:8px 12px;cursor:pointer;font-family:inherit;font-size:.86rem}"
     + P + ".hz-kb-seg button.on{background:#d4a017;color:#000;-webkit-text-fill-color:#000;font-weight:700}"
