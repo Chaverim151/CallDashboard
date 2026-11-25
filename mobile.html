@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.118"; window.M_BUILD = BUILD;
+  var BUILD = "9.120"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19239,7 +19239,8 @@ function hzKbFormHtml() {
     if (f.src === "upload") h += '<label class="hz-kb-l">Video, photo or PDF from this phone / computer' + (n.path ? ' — now: <i>' + hzKbEsc(n.fileName || "a file") + '</i> (choose a new one to replace it)' : '') + '<input id="hz-kb-f-file" type="file" accept="video/*,image/*,application/pdf" onchange="hzKbFilePreview(this)"></label>'
       + '<div class="hz-kb-note">Plays right inside the Knowledge Base tile on phones and computers. Best format: MP4 (iPhone videos work too). Up to 500 MB — for longer videos use a YouTube link.</div><div id="hz-kb-f-prev"></div>';
     if (f.src === "youtube") h += '<label class="hz-kb-l">YouTube or Vimeo link<input id="hz-kb-f-url" type="url" value="' + hzKbEsc(n.path ? "" : (n.url || "")) + '" placeholder="https://youtu.be/…  or  https://vimeo.com/…  or  https://player.vimeo.com/video/…" oninput="hzKbYtPreview(this.value)"></label>'
-      + '<div class="hz-kb-note">Plays right inside the Knowledge Base tile on phones and computers. Unlisted videos work (only people with the link can find them).</div><div id="hz-kb-f-prev">' + hzKbYtPrevHtml(n.path ? "" : (n.url || "")) + '</div>';
+      + '<div class="hz-kb-note">Plays right inside the Knowledge Base tile on phones and computers. Unlisted videos work (only people with the link can find them). The Name is filled in from the video title — change it if you like.</div><div id="hz-kb-f-prev">' + hzKbYtPrevHtml(n.path ? "" : (n.url || "")) + '</div>'
+      + '<div class="hz-kb-ytsearch"><div class="hz-kb-l">🔎 Or search YouTube</div><div class="hz-kb-srow"><input id="hz-kb-yt-q" maxlength="120" placeholder="e.g. Lucas CPR device training" onkeydown="hzKbYtKey(event)"><button type="button" class="hz-kb-btn" onclick="hzKbYtSearch()">Search</button></div><div id="hz-kb-yt-res"></div></div>';   // 12.617
     if (f.src === "link") h += '<label class="hz-kb-l">Link (a Google Drive video plays inside; other links open in a new tab)<input id="hz-kb-f-url" type="url" value="' + hzKbEsc(n.path ? "" : (n.url || "")) + '" placeholder="https://…"></label>';
     h += '<label class="hz-kb-l">' + (f.src === "note" ? "Note" : "Description (optional)") + '<textarea id="hz-kb-f-text" rows="' + (f.src === "note" ? 6 : 3) + '" maxlength="5000">' + hzKbEsc(n.text || "") + '</textarea></label>';
   }
@@ -19271,7 +19272,68 @@ function hzKbYtPrevHtml(u) {
   if (!id) return '<div class="hz-kb-note" style="color:#c62828">Not a YouTube or Vimeo video link yet.</div>';
   return '<div class="hz-kb-prev"><img src="https://i.ytimg.com/vi/' + hzKbEsc(id) + '/hqdefault.jpg" alt=""><span>✓ YouTube video found</span></div>';
 }
-function hzKbYtPreview(u) { var p = document.getElementById("hz-kb-f-prev"); if (p) p.innerHTML = hzKbYtPrevHtml(String(u || "").trim()); }
+function hzKbYtPreview(u) {
+  u = String(u || "").trim();
+  var p = document.getElementById("hz-kb-f-prev"); if (p) p.innerHTML = hzKbYtPrevHtml(u);
+  // 12.616 (Sam: "can you pull the video title from the YouTube link"): fill in the Name from YouTube / Vimeo (only if Name is empty or was filled in by us)
+  if (!hzKbVidLink(u)) return;
+  var key = u; HZ_KB.titleFor = key;
+  hzKbVideoTitle(u).then(function(t) {
+    if (!t || HZ_KB.titleFor !== key) return;
+    var nm = document.getElementById("hz-kb-f-title"); if (!nm) return;
+    if (!nm.value.trim() || nm.getAttribute("data-auto") === "1") { nm.value = t.slice(0, 80); nm.setAttribute("data-auto", "1"); nm.oninput = function() { nm.removeAttribute("data-auto"); }; }
+    var pv = document.getElementById("hz-kb-f-prev"), sp = pv && pv.querySelector(".hz-kb-prev span"); if (sp) sp.textContent = sp.textContent.replace(/ — “.*$/, "") + " — “" + t + "”";
+  });
+}
+HZ_KB.titles = {};
+// 12.617 (Sam: "build a search YouTube function and add that way"): search through the server (kbYoutubeSearch — the key stays there), tap ＋ Use this
+HZ_KB.ytRes = [];
+function hzKbYtKey(e) { if (e.key === "Enter") { e.preventDefault(); hzKbYtSearch(); } }
+function hzKbYtSearch(page) {
+  var qi = document.getElementById("hz-kb-yt-q"), box = document.getElementById("hz-kb-yt-res"); if (!qi || !box) return;
+  var q = qi.value.trim(); if (!q) { box.innerHTML = '<div class="hz-kb-note" style="color:#c62828">Type what to search for.</div>'; return; }
+  if (!page) { HZ_KB.ytRes = []; box.innerHTML = '<div class="hz-kb-note">Searching YouTube…</div>'; }
+  else { var mb = box.querySelector(".hz-kb-ytmore"); if (mb) { mb.disabled = true; mb.textContent = "Loading…"; } }
+  var call = typeof hzRelayAny === "function" ? hzRelayAny : function(fn, d) { return (typeof hzRelay === "function" ? hzRelay : mRelay)(fn, d); };
+  call("kbYoutubeSearch", { q: q, page: page || "" }).then(function(r) {
+    var items = (r && r.items) || [], start = HZ_KB.ytRes.length;
+    HZ_KB.ytRes = HZ_KB.ytRes.concat(items);
+    if (!HZ_KB.ytRes.length) { box.innerHTML = '<div class="hz-kb-note">No videos found for “' + hzKbEsc(q) + '”.</div>'; return; }
+    var grid = box.querySelector(".hz-kb-ytgrid");
+    if (!grid) { box.innerHTML = '<div class="hz-kb-ytgrid"></div>'; grid = box.querySelector(".hz-kb-ytgrid"); }
+    grid.insertAdjacentHTML("beforeend", items.map(function(it, k) {
+      var i = start + k;
+      return '<div class="hz-kb-ytc" data-i="' + i + '"><div class="im"><img src="' + hzKbEsc(it.thumb) + '" alt="" loading="lazy">' + (it.dur ? '<span class="dur">' + hzKbEsc(it.dur) + '</span>' : '') + '</div>'
+        + '<div class="t">' + hzKbEsc(it.title) + '</div><div class="c">' + hzKbEsc(it.channel) + (it.date ? ' · ' + hzKbEsc(it.date.slice(0, 4)) : '') + '</div>'
+        + '<div class="b"><a href="https://www.youtube.com/watch?v=' + hzKbEsc(it.id) + '" target="_blank" rel="noopener">Preview ↗</a><button type="button" class="hz-kb-btn go" onclick="hzKbYtUse(' + i + ')">＋ Use this</button></div></div>';
+    }).join(""));
+    var old = box.querySelector(".hz-kb-ytmore"); if (old) old.remove();
+    if (r.next) box.insertAdjacentHTML("beforeend", '<button type="button" class="hz-kb-btn hz-kb-ytmore" onclick="hzKbYtSearch(\'' + hzKbEsc(r.next) + '\')">More results</button>');
+  }).catch(function(e) {
+    var m = (e && e.message) || String(e);
+    box.innerHTML = '<div class="hz-kb-note" style="color:#c62828">Search didn\'t work: ' + hzKbEsc(m) + (/not found|404|NOT_FOUND/i.test(m) ? ' — the server part needs deploying.' : '') + '</div>';
+  });
+}
+function hzKbYtUse(i) {
+  var it = HZ_KB.ytRes[i]; if (!it) return;
+  var url = "https://www.youtube.com/watch?v=" + it.id;
+  HZ_KB.titles[url] = it.title;
+  var u = document.getElementById("hz-kb-f-url"); if (u) u.value = url;
+  var nm = document.getElementById("hz-kb-f-title");
+  if (nm && (!nm.value.trim() || nm.getAttribute("data-auto") === "1")) { nm.value = it.title.slice(0, 80); nm.setAttribute("data-auto", "1"); nm.oninput = function() { nm.removeAttribute("data-auto"); }; }
+  hzKbYtPreview(url);
+  document.querySelectorAll(".hz-kb-ytc").forEach(function(c) { c.classList.toggle("on", c.getAttribute("data-i") === String(i)); });
+  var f = document.getElementById("hz-kb-f-prev"); if (f && f.scrollIntoView) f.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+function hzKbVideoTitle(u) {
+  if (HZ_KB.titles[u]) return Promise.resolve(HZ_KB.titles[u]);
+  var yt = hzKbYouTube(u), vm = yt ? null : hzKbVimeo(u);
+  var get = function(url) { return fetch(url).then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); }).then(function(j) { if (!j || !j.title) throw new Error("no title"); return String(j.title); }); };
+  var canon = yt ? "https://www.youtube.com/watch?v=" + yt : vm ? "https://vimeo.com/" + vm.id + (vm.h ? "/" + vm.h : "") : u;
+  var first = yt ? get("https://www.youtube.com/oembed?format=json&url=" + encodeURIComponent(canon)) : get("https://vimeo.com/api/oembed.json?url=" + encodeURIComponent(canon));
+  return first.catch(function() { return get("https://noembed.com/embed?url=" + encodeURIComponent(canon)); })
+    .then(function(t) { HZ_KB.titles[u] = t; return t; }).catch(function() { return ""; });
+}
 function hzKbFilePreview(inp) {
   var p = document.getElementById("hz-kb-f-prev"), f = inp && inp.files && inp.files[0]; if (!p) return;
   if (!f) { p.innerHTML = ""; return; }
@@ -19435,6 +19497,20 @@ function hzKbCss() {
     + P + ".hz-kb-after{display:block;font-size:.8rem;line-height:1.45;padding:0 2px}"
     + P + ".hz-kb-after .hz-kb-yt{text-align:left;margin:4px 0 0}"
     + P + ".hz-kb-desc{display:block;color:#ddd;-webkit-text-fill-color:#ddd;font-weight:400;text-transform:none;letter-spacing:normal}"
+    + P + ".hz-kb-ytsearch{margin-top:10px;padding-top:10px;border-top:1px dashed rgba(128,128,128,.5)}"
+    + P + ".hz-kb-srow{display:flex;gap:8px}"
+    + P + ".hz-kb-srow input{flex:1;min-width:0;padding:9px 10px;border:1px solid rgba(128,128,128,.55);border-radius:8px;background:transparent;color:inherit;-webkit-text-fill-color:currentColor;font:inherit;font-size:.92rem}"
+    + P + ".hz-kb-ytgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin:10px 0}"
+    + P + ".hz-kb-ytc{display:flex;flex-direction:column;border:1px solid rgba(128,128,128,.45);border-radius:10px;overflow:hidden}"
+    + P + ".hz-kb-ytc.on{border:2px solid #d4a017;box-shadow:0 0 0 2px rgba(212,160,23,.25)}"
+    + P + ".hz-kb-ytc .im{position:relative;aspect-ratio:16/9;background:#111}"
+    + P + ".hz-kb-ytc .im img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}"
+    + P + ".hz-kb-ytc .dur{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.8);color:#fff;-webkit-text-fill-color:#fff;font-size:.7rem;font-weight:700;border-radius:4px;padding:1px 5px}"
+    + P + ".hz-kb-ytc .t{font-weight:700;font-size:.84rem;line-height:1.3;padding:6px 8px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}"
+    + P + ".hz-kb-ytc .c{font-size:.72rem;opacity:.75;padding:2px 8px 6px}"
+    + P + ".hz-kb-ytc .b{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 8px 8px}"
+    + P + ".hz-kb-ytc .b a{font-size:.75rem;color:#8a680f;-webkit-text-fill-color:#8a680f}"
+    + P + ".hz-kb-ytc .b .hz-kb-btn{padding:6px 10px;font-size:.8rem}"
     + P + ".hz-kb-thic{display:flex !important;align-items:center;justify-content:center;background:#000 !important}"
     + P + ".hz-kb-thic .ic{font-size:2.8rem;line-height:1}"
     + P + "#hz-kb-pop .hz-kb-tile.media small{opacity:.8;font-size:.76rem;padding:0 2px;margin-top:-4px}"
