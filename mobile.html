@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.131"; window.M_BUILD = BUILD;
+  var BUILD = "9.132"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -20143,18 +20143,40 @@ function hzDsRemHtml() {
   var c = HZ_DS.cfg || {}; HZ_DS.remEdit = (Array.isArray(c.reminders) ? c.reminders : []).slice().sort(function(a, b) { return b - a; });
   var h = '<div class="hz-ds-note">Each dispatcher gets a reminder before each of their shifts — the same idea as the Night Watch reminder for responders. <b>These are the defaults:</b> each dispatcher can pick their own times (and add more) in <b>My Settings ▸ 🗓️ Dispatch shift reminders</b>; what they pick there wins. <b>How</b> they are sent (Push / Text) is set only here, for everyone. Reminders can\'t be turned off — at least one always goes out (1 hour before if nothing is set).</div>'
     + '<div class="hz-kb-l">Default reminder times (at least one — every dispatcher always gets a reminder)</div><div id="ds-m-list"></div>'
-    + '<div class="hz-ds-2" style="grid-template-columns:90px 1fr auto;align-items:end"><label class="hz-kb-l">Amount<input id="ds-m-n" type="number" min="1" max="72" value="30"></label><label class="hz-kb-l">&nbsp;<select id="ds-m-u"><option value="1">minutes before</option><option value="60">hours before</option></select></label><button class="hz-kb-btn" style="margin-bottom:2px" onclick="hzDsRemAdd()">＋ Add</button></div>'
+    + '<button type="button" class="hz-kb-btn" style="margin:4px 0 6px" onclick="hzDsRemAdd()">＋ Add another reminder</button>'
     + '<div class="hz-kb-l">How</div><div class="hz-kb-roles"><label><input type="checkbox" id="ds-m-push"' + (c.push !== false ? ' checked' : '') + '> Push</label><label><input type="checkbox" id="ds-m-text"' + (c.text ? ' checked' : '') + '> Text (SMS)</label></div>'
     + '<div class="hz-kb-note">Where it takes effect: the times — dispatchers who haven\'t picked their own in My Settings; Push / Text — every dispatcher. Changing it affects the next reminders sent (checked every 5 minutes); shifts already reminded aren\'t sent again.</div>'
     + '<div class="hz-kb-bar" style="margin:12px 0 0"><button class="hz-kb-btn go" onclick="hzDsRemSave()">✓ Save</button></div>';
   return h;
 }
 function hzDsRemTxt(m) { return m % 60 === 0 ? (m / 60) + (m === 60 ? " hour" : " hours") : m + " minutes"; }
-function hzDsRemList() { var el = document.getElementById("ds-m-list"); if (!el) return; var one = HZ_DS.remEdit.length === 1;   // 12.626: the last one can't be removed (one reminder is mandatory)
-  el.innerHTML = HZ_DS.remEdit.length ? HZ_DS.remEdit.map(function(m, i) { return '<span class="hz-ds-chip">' + hzDsRemTxt(m) + ' before ' + (one ? '' : '<button onclick="HZ_DS.remEdit.splice(' + i + ',1);hzDsRemList()" aria-label="Remove">✕</button>') + '</span>'; }).join("") + (one ? '<div class="hz-kb-note">One reminder is required — add another time below to have two, or add a new one before removing this.</div>' : '') : '<div class="hz-kb-note">Add at least one reminder time below.</div>'; }
-function hzDsRemAdd() { var n = +hzDsV("ds-m-n"), u = +hzDsV("ds-m-u") || 1, m = Math.round(n * u); if (!(m >= 5 && m <= 4320)) { hzDsMsg("Between 5 minutes and 72 hours.", true); return; } if (HZ_DS.remEdit.indexOf(m) === -1) HZ_DS.remEdit.push(m); HZ_DS.remEdit.sort(function(a, b) { return b - a; }); hzDsMsg(""); hzDsRemList(); }
+// 12.630 (Sam): the reminders are an editable list — change how far ahead any of them is (including the required one), add more, remove extras
+function hzDsRemList() {
+  var el = document.getElementById("ds-m-list"); if (!el) return;
+  if (!HZ_DS.remEdit.length) HZ_DS.remEdit = [60];
+  var one = HZ_DS.remEdit.length === 1;
+  el.innerHTML = HZ_DS.remEdit.map(function(m, i) {
+    var hrs = m % 60 === 0, n = hrs ? m / 60 : m;
+    return '<div class="hz-ds-remrow"><span class="num">' + (i + 1) + '</span><input type="number" class="ds-r-n" min="1" max="' + (hrs ? 72 : 4320) + '" value="' + n + '" onchange="hzDsRemRead()" aria-label="How many">'
+      + '<select class="ds-r-u" onchange="hzDsRemRead()" aria-label="Minutes or hours"><option value="1"' + (hrs ? '' : ' selected') + '>minutes before</option><option value="60"' + (hrs ? ' selected' : '') + '>hours before</option></select>'
+      + (one ? '<span class="req" title="At least one reminder is required">Required</span>' : '<button type="button" class="hz-kb-sm red" onclick="hzDsRemRead();HZ_DS.remEdit.splice(' + i + ',1);hzDsRemList()" aria-label="Remove">✕</button>') + '</div>';
+  }).join("") + (one ? '<div class="hz-kb-note">One reminder is required — you can change how far ahead it is.</div>' : '');
+}
+function hzDsRemRead() {   // the list as typed → minutes (5 min – 72 h), no repeats
+  var ns = document.querySelectorAll("#ds-m-list .ds-r-n"), us = document.querySelectorAll("#ds-m-list .ds-r-u"), out = [], bad = false;
+  for (var i = 0; i < ns.length; i++) { var m = Math.round((+ns[i].value || 0) * (+us[i].value || 1)); if (!(m >= 5 && m <= 4320)) { bad = true; ns[i].style.borderColor = "#c62828"; continue; } ns[i].style.borderColor = ""; if (out.indexOf(m) === -1) out.push(m); }
+  if (ns.length) HZ_DS.remEdit = out.length ? out : HZ_DS.remEdit;
+  hzDsMsg(bad ? "Each reminder has to be between 5 minutes and 72 hours before." : "", bad);
+  return !bad;
+}
+function hzDsRemAdd() {
+  hzDsRemRead();
+  var pick = [30, 15, 60, 120, 10, 5].filter(function(m) { return HZ_DS.remEdit.indexOf(m) === -1; })[0] || 45;
+  HZ_DS.remEdit.push(pick); hzDsRemList();
+}
 function hzDsRemSave() {
-  var d = { remOn: true, reminders: HZ_DS.remEdit.slice(), push: document.getElementById("ds-m-push").checked, text: document.getElementById("ds-m-text").checked, updatedAt: Date.now() };
+  if (!hzDsRemRead()) return;
+  var d = { remOn: true, reminders: HZ_DS.remEdit.slice().sort(function(a, b) { return b - a; }), push: document.getElementById("ds-m-push").checked, text: document.getElementById("ds-m-text").checked, updatedAt: Date.now() };
   if (!d.reminders.length) { hzDsMsg("Add at least one reminder time — one is required.", true); return; }
   if (!d.push && !d.text) { hzDsMsg("Tick Push or Text, or nothing will be sent.", true); return; }
   db.collection("appdata").doc("dispatchSchedule").set(d, { merge: true }).then(function() { HZ_DS.cfg = Object.assign(HZ_DS.cfg || {}, d); hzDsMsg("✓ Saved"); hzDsToast("✓ Reminder settings saved"); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
@@ -20193,14 +20215,15 @@ function hzDsMyRemForm() {
   var r = hzDsMyRem(); HZ_DS.remEdit = r.times.slice().sort(function(a, b) { return b - a; });
   var h = '<div class="hz-ds-note">Reminders before each of <b>your</b> dispatch shifts. Where it takes effect: your phone, before every shift you are on in the Dispatch Schedule.</div>'
     + '<div class="hz-kb-l">Remind me</div><div id="ds-m-list"></div>'
-    + '<div class="hz-ds-2" style="grid-template-columns:90px 1fr auto;align-items:end"><label class="hz-kb-l">Amount<input id="ds-m-n" type="number" min="1" max="72" value="30"></label><label class="hz-kb-l">&nbsp;<select id="ds-m-u"><option value="1">minutes before</option><option value="60">hours before</option></select></label><button class="hz-kb-btn" style="margin-bottom:2px" onclick="hzDsRemAdd()">＋ Add</button></div>'
+    + '<button type="button" class="hz-kb-btn" style="margin:4px 0 6px" onclick="hzDsRemAdd()">＋ Add another reminder</button>'
     + '<div class="hz-kb-note">Sent by ' + [r.push ? "push" : "", r.text ? "text" : ""].filter(Boolean).join(" and ") + ' — an admin chooses how reminders are sent.</div>'
     + '<div class="hz-kb-bar" style="margin:12px 0 0;flex-wrap:wrap">' + (r.own ? '<button class="hz-kb-btn" onclick="hzDsMyRemReset()">↺ Use the default</button>' : '') + '<span style="flex:1"></span><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-btn go" onclick="hzDsMyRemSave()">Save</button></div>';
   hzDsDlg("🗓️ My dispatch shift reminders", h); hzDsRemList();
 }
 function hzDsMyRemSave() {
   if (!HZ_DS.remEdit.length) { hzDsMsg("Add at least one reminder time — one is required.", true); return; }
-  hzDsSavePref({ on: true, times: HZ_DS.remEdit.slice(), push: null, text: null }).then(function() { hzDsDlgClose(); hzDsToast("✓ Your shift reminders are saved"); hzDsMyRerender(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+  if (!hzDsRemRead()) return;
+  hzDsSavePref({ on: true, times: HZ_DS.remEdit.slice().sort(function(a, b) { return b - a; }), push: null, text: null }).then(function() { hzDsDlgClose(); hzDsToast("✓ Your shift reminders are saved"); hzDsMyRerender(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
 }
 function hzDsMyRemReset() {
   var f = typeof mSetPrefs === "function" ? mSetPrefs : setPrefs;
@@ -20259,6 +20282,12 @@ function hzDsCss() {
     + P + ".hz-ds-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}"
     + P + ".hz-ds-calbtns{display:flex;flex-direction:column;gap:8px;margin:8px 0}"
     + P + ".hz-ds-calbtns .hz-kb-btn{text-align:center;text-decoration:none;display:block}"
+    + P + ".hz-ds-remrow{display:flex;align-items:center;gap:8px;margin:0 0 8px}"
+    + P + ".hz-ds-remrow .num{width:22px;height:22px;border-radius:50%;background:#d4a017;color:#000;-webkit-text-fill-color:#000;font-size:.75rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none}"
+    + P + ".hz-ds-remrow input{width:78px;padding:8px 10px;border:1px solid rgba(128,128,128,.55);border-radius:8px;background:transparent;color:inherit;-webkit-text-fill-color:currentColor;font:inherit;font-size:.95rem}"
+    + P + ".hz-ds-remrow select{flex:1;min-width:0;padding:8px 10px;border:1px solid rgba(128,128,128,.55);border-radius:8px;background:transparent;color:inherit;-webkit-text-fill-color:currentColor;font:inherit;font-size:.92rem;color-scheme:dark}"
+    + P + ".hz-ds-remrow .req{font-size:.7rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#d4a017;-webkit-text-fill-color:#d4a017;border:1px solid #d4a017;border-radius:999px;padding:3px 8px;flex:none}"
+    + P + ".hz-ds-remrow .hz-kb-sm{flex:none}"
     + P + ".hz-ds-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #d4a017;border-radius:999px;padding:4px 6px 4px 12px;margin:0 6px 6px 0;font-size:.85rem}"
     + P + ".hz-ds-chip button{background:#c62828;color:#fff;-webkit-text-fill-color:#fff;border:0;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.7rem}";
   document.head.appendChild(s);
