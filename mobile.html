@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.124"; window.M_BUILD = BUILD;
+  var BUILD = "9.125"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -2663,6 +2663,7 @@ function mNavCloseOverlay() {
   var dvp = document.getElementById("hz-dv-pop"); if (dvp && typeof hzDvClose === "function") { var h4 = HZ_DV.hist; HZ_DV.hist = false; hzDvClose(true); return h4 ? "added" : true; }   // 12.177
   var pp = document.getElementById("hz-proto-pop"); if (pp && typeof hzProtoClose === "function") { var h3 = HZ_PROTO.hist; HZ_PROTO.hist = false; hzProtoClose(true); return h3 ? "added" : true; }   // 12.175
   if (document.getElementById("hz-tools-pop") && typeof hzToolsBack === "function") return hzToolsBack();
+  if (document.getElementById("hz-ds-pop") && typeof hzDsBack === "function") return hzDsBack();   // 12.623: 🗓️ Dispatch Schedule
   if (document.getElementById("hz-kb-pop") && typeof hzKbBack === "function") return hzKbBack();   // 12.607: 📚 Knowledge Base — item → folder → up → close   // 12.316 / 7.67: 🧰 Tools
   var ap = document.getElementById("hz-av-pop"); if (ap && typeof hzAvClose === "function") { var h2 = HZ_AV.hist; HZ_AV.hist = false; hzAvClose(true); return h2 ? "added" : true; }
   if (document.querySelector(".m-disp-sheet.show")) { mCloseAllSheets(); return true; }
@@ -5646,6 +5647,7 @@ function mHandleDeepLink() {
     mDeepTicket = ""; try { sessionStorage.removeItem("hzDeepTicket"); } catch (e) {}
     if (m) history.replaceState(history.state, "", location.pathname + location.search);
     if (id) mOpenTicketDeepLink(id);
+    else if (/[#&]dsched/.test(location.hash || "")) { history.replaceState(history.state, "", location.pathname + location.search); setTimeout(function() { if (typeof hzDsOpen === "function") hzDsOpen(); }, 400); }   // 12.623: a shift reminder / request push
   } catch (e) {}
 }
 function mOpenTicketDeepLink(id) {
@@ -13531,11 +13533,11 @@ function mCloseAllSheets() {
         <span class="m-dash-go">›</span>
       </button>
       <!-- 12.229 (Sam): eSchedule moved here from the Availability pop-up -->
-      <a class="m-dash-row" id="m-esched-row" href="https://chmc.myesched.com/schedule/schedule.asp" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">
+      <button class="m-dash-row" id="m-esched-row" onclick="hzDsOpen()">   <!-- 12.623 (Sam): our own Dispatch Schedule replaces the eSchedule link -->
         <span class="m-dash-ic">🗓️</span>
-        <span class="m-dash-txt"><span class="m-dash-t">eSchedule</span><span class="m-dash-s">Dispatch schedule — opens eSchedule</span></span>
+        <span class="m-dash-txt"><span class="m-dash-t">Dispatch Schedule</span><span class="m-dash-s">On call now · open shifts · my shifts</span></span>
         <span class="m-dash-go">›</span>
-      </a>
+      </button>
       <!-- 12.140: 🗓️ eSchedule moved to the 📅 Availability tile -->
     </div>
     <!-- Active calls list -->
@@ -19672,6 +19674,510 @@ function hzKbCss() {
     + P + ".hz-kb-roles{display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 8px}"
     + P + ".hz-kb-roles label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9rem;min-height:30px}"
     + P + ".hz-kb-roles input{width:18px;height:18px;accent-color:#d4a017}";
+  document.head.appendChild(s);
+}
+</script>
+<script id="hz-dsched">
+/* ══ 12.623 / 9.125 (Sam): 🗓️ DISPATCH SCHEDULE — replaces the eSchedule link (same code in both apps) ══════════════════
+   Who: dispatchers see the schedule; a Dispatch Coordinator (users.dispatchCoordinator, Admin ▸ Users ▸ Edit) and admins manage it.
+   Firestore:
+     dispShifts/{id}   { uid ("" = open shift), unit, name, start (ms), end (ms), ruleId ("" = one-time), edited (a recurring one changed
+                         by hand — the daily roll-forward leaves it alone), cancelled, note, remindedFor [minutes] (server), createdBy, updatedAt }
+                       recurring occurrences have the id r_<ruleId>_<YYYYMMDD>
+     dispRules/{id}    { uid, unit, name, days [0-6, Sun=0], startTime "HH:MM", endTime "HH:MM" (earlier = ends next day), every 1|2 (weeks),
+                         from "YYYY-MM-DD", until "" | "YYYY-MM-DD", note, active }
+     dispRequests/{id} { shiftId, uid, unit, name, start, end, full, note, status pending|approved|denied|cancelled, decidedBy, decisionNote }
+     dispCal/{uid}     { token } — the private calendar subscription link (server: dispCalFeed)
+     appdata/dispatchSchedule { remOn, reminders [minutes], push, text }   (server: dispSchedTick every 5 min — reminders + roll-forward)
+   Times are New York time. Phone Back key: dialog → tab → close. */
+var HZ_DS = { tab: "mine", week: 0, me: null, coord: false, admin: false, shifts: [], mine: [], open: [], now: [], reqs: [], myReqs: [], dispatchers: [], cfg: {}, hist: false, rules: {} };
+var HZ_DS_TZ = "America/New_York";
+function hzDsEsc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+// ── New York time helpers ──
+function hzDsParts(ms) { var o = {}; new Intl.DateTimeFormat("en-US", { timeZone: HZ_DS_TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short" }).formatToParts(new Date(ms)).forEach(function(p) { o[p.type] = p.value; }); o.hour = String(+o.hour % 24).padStart(2, "0"); return o; }
+function hzDsOff(ms) { var o = hzDsParts(ms); return (Date.UTC(+o.year, +o.month - 1, +o.day, +o.hour, +o.minute, +o.second) - Math.floor(ms / 1000) * 1000) / 60000; }
+function hzDsMs(ymd, hm) {   // New York date + time → ms
+  var g = Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10), +String(hm).slice(0, 2), +String(hm).slice(3, 5));
+  var off = hzDsOff(g), ms = g - off * 60000, off2 = hzDsOff(ms); return off2 === off ? ms : g - off2 * 60000;
+}
+function hzDsYmd(ms) { var o = hzDsParts(ms); return o.year + "-" + o.month + "-" + o.day; }
+function hzDsHm(ms) { var o = hzDsParts(ms); return o.hour + ":" + o.minute; }
+function hzDsAddDays(ymd, n) { var d = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10)) + n * 86400000); return d.toISOString().slice(0, 10); }
+function hzDsDow(ymd) { return new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10))).getUTCDay(); }
+function hzDsDayNum(ymd) { return Math.round(Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10)) / 86400000); }
+var HZ_DS_DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+var HZ_DS_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function hzDsDayLabel(ymd) { return HZ_DS_DOW[hzDsDow(ymd)] + " " + HZ_DS_MON[+ymd.slice(5, 7) - 1] + " " + (+ymd.slice(8, 10)); }
+function hzDsRange(s) { var a = hzDsYmd(s.start), b = hzDsYmd(s.end); return hzDsHm(s.start) + "–" + hzDsHm(s.end) + (b !== a ? " (+1)" : ""); }
+function hzDsLen(s) { var m = Math.round((s.end - s.start) / 60000), h = Math.floor(m / 60), r = m % 60; return (h ? h + "h" : "") + (r ? (h ? " " : "") + r + "m" : ""); }
+function hzDsEndMs(ymd, startHm, endHm) { var s = hzDsMs(ymd, startHm), e = hzDsMs(ymd, endHm); if (e <= s) e = hzDsMs(hzDsAddDays(ymd, 1), endHm); return e; }
+// recurring rule → its shifts between two dates (inclusive); the same ids as the server's roll-forward
+function hzDsOccur(rule, fromYmd, toYmd) {
+  var out = [], a = rule.from > fromYmd ? rule.from : fromYmd, b = rule.until && rule.until < toYmd ? rule.until : toYmd;
+  if (!rule.days || !rule.days.length || a > b) return out;
+  var base = hzDsDayNum(rule.from) - hzDsDow(rule.from);   // the Sunday of the first week
+  for (var d = a, g = 0; d <= b && g < 800; d = hzDsAddDays(d, 1), g++) {
+    if (rule.days.indexOf(hzDsDow(d)) === -1) continue;
+    if ((rule.every || 1) === 2 && Math.floor((hzDsDayNum(d) - base) / 7) % 2 !== 0) continue;
+    out.push({ id: "r_" + rule.id + "_" + d.replace(/-/g, ""), ymd: d, start: hzDsMs(d, rule.startTime), end: hzDsEndMs(d, rule.startTime, rule.endTime) });
+  }
+  return out;
+}
+function hzDsToast(m, bad) { if (typeof mToast === "function") mToast(m, bad); else if (typeof showToast === "function") showToast(m, bad ? "error" : "success"); }
+function hzDsNat(a, b) { return String(a || "").localeCompare(String(b || ""), undefined, { numeric: true }); }
+
+// ── open / close (a full page, like 📚 Knowledge Base) ──
+function hzDsOpen() {
+  if (typeof hzTlCss === "function") hzTlCss();
+  if (typeof hzKbCss === "function") hzKbCss();
+  hzDsCss();
+  var o = document.getElementById("hz-ds-pop");
+  if (!o) { o = document.createElement("div"); o.id = "hz-ds-pop"; document.body.appendChild(o); }
+  var bot = 0; ["m-test-global-banner", "sys-test-global-banner"].forEach(function(id) { var bn = document.getElementById(id); if (!bn || getComputedStyle(bn).display === "none") return; var r = bn.getBoundingClientRect(); if (r.height > 0) bot = Math.max(bot, r.bottom); });
+  o.style.paddingTop = bot ? Math.ceil(bot) + "px" : "";
+  if (!HZ_DS.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "ds" }), ""); HZ_DS.hist = true; } catch (e) {} }
+  HZ_DS.week = 0;
+  o.innerHTML = '<div class="hz-tl-box hz-ds-box"><div class="hz-tl-top"><button class="hz-pop-back" onclick="hzDsBackBtn()">← Back</button><b style="flex:1">🗓️ Dispatch Schedule</b></div><div class="hz-tl-body"><div class="hz-kb-empty">Loading…</div></div></div>';
+  hzDsLoadMe().then(hzDsLoad);
+}
+function hzDsClose(fromBack) {
+  hzDsDlgClose();
+  var o = document.getElementById("hz-ds-pop"); if (o) o.remove();
+  if (HZ_DS.hist) { HZ_DS.hist = false; if (!fromBack && history.state && history.state.hzOv === "ds" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
+}
+function hzDsUp() { if (hzDsDlgClose()) return true; return false; }
+function hzDsBack() {   // phone Back key
+  if (hzDsUp()) { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "ds" }), ""); HZ_DS.hist = true; } catch (e) {} return "added"; }
+  var h = HZ_DS.hist; HZ_DS.hist = false; hzDsClose(true); return h ? "added" : true;
+}
+function hzDsBackBtn() { if (!hzDsUp()) hzDsClose(); }
+
+// ── who am I ──
+function hzDsLoadMe() {
+  var u = firebase.auth().currentUser; if (!u) return Promise.resolve();
+  return db.collection("users").doc(u.uid).get().then(function(s) {
+    var d = s.exists ? s.data() : {};
+    var roles = [d.role].concat(Array.isArray(d.roles) ? d.roles : []).map(function(r) { return String(r || "").toLowerCase(); });
+    HZ_DS.me = { uid: u.uid, unit: d.unit || "", name: ((d.firstName || "") + " " + (d.lastName || "")).trim(), phone: d.phone || "", roles: roles };
+    HZ_DS.admin = roles.indexOf("admin") !== -1;
+    HZ_DS.coord = HZ_DS.admin || d.dispatchCoordinator === true;
+  }).catch(function() { HZ_DS.me = { uid: u.uid, unit: "", name: "", roles: [] }; });
+}
+function hzDsWeekStart(off) { var t = hzDsYmd(Date.now()); return hzDsAddDays(t, -hzDsDow(t) + 7 * (off || 0)); }
+function hzDsLoad() {
+  var me = HZ_DS.me || {}, now = Date.now(), ws = hzDsWeekStart(HZ_DS.week), we = hzDsAddDays(ws, 7);
+  var C = function(n) { return db.collection(n); };
+  var docs = function(snap) { var a = []; snap.forEach(function(d) { a.push(Object.assign({ id: d.id }, d.data())); }); return a; };
+  var live = function(a) { return a.filter(function(s) { return !s.cancelled; }); };
+  var jobs = [
+    C("dispShifts").where("start", ">=", hzDsMs(ws, "00:00") - 86400000).where("start", "<", hzDsMs(we, "00:00")).get().then(function(s) { HZ_DS.shifts = live(docs(s)).filter(function(x) { return x.end > hzDsMs(ws, "00:00") && x.start < hzDsMs(we, "00:00"); }); }),
+    C("dispShifts").where("start", ">=", now - 86400000).where("start", "<=", now + 60 * 86400000).get().then(function(s) {
+      var a = live(docs(s));
+      HZ_DS.now = a.filter(function(x) { return x.uid && x.start <= now && x.end > now; });
+      HZ_DS.next = a.filter(function(x) { return x.uid && x.start > now; }).sort(function(p, q) { return p.start - q.start; })[0] || null;
+      HZ_DS.open = a.filter(function(x) { return !x.uid && x.end > now; }).sort(function(p, q) { return p.start - q.start; });
+      HZ_DS.mine = a.filter(function(x) { return x.uid === me.uid && x.end > now; }).sort(function(p, q) { return p.start - q.start; });
+      return Promise.all(HZ_DS.now.map(function(x) { return HZ_DS.phones[x.uid] ? null : db.collection("users").doc(x.uid).get().then(function(u) { if (u.exists && u.data().phone) HZ_DS.phones[x.uid] = u.data().phone; }).catch(function() {}); }));   // 📞 for whoever is on call
+    }),
+    C("dispRequests").where("uid", "==", me.uid || "-").get().then(function(s) { HZ_DS.myReqs = docs(s).sort(function(p, q) { return (q.createdAt || 0) - (p.createdAt || 0); }); }).catch(function() { HZ_DS.myReqs = []; }),
+    C("appdata").doc("dispatchSchedule").get().then(function(s) { HZ_DS.cfg = s.exists ? s.data() : {}; }).catch(function() {})
+  ];
+  if (HZ_DS.coord) {
+    jobs.push(C("dispRequests").where("status", "==", "pending").get().then(function(s) { HZ_DS.reqs = docs(s).sort(function(p, q) { return p.start - q.start; }); }).catch(function() { HZ_DS.reqs = []; }));
+    jobs.push(C("users").where("roles", "array-contains", "dispatcher").get().then(function(s) {
+      HZ_DS.dispatchers = docs(s).map(function(u) { return { uid: u.id, unit: u.unit || "", name: ((u.firstName || "") + " " + (u.lastName || "")).trim() }; }).sort(function(a, b) { return hzDsNat(a.unit, b.unit); });
+    }).catch(function() {}));
+    jobs.push(C("dispRules").get().then(function(s) { HZ_DS.rules = {}; docs(s).forEach(function(r) { HZ_DS.rules[r.id] = r; }); }).catch(function() {}));
+  }
+  return Promise.all(jobs).then(hzDsDraw).catch(function(e) {
+    var b = document.querySelector("#hz-ds-pop .hz-tl-body"); if (b) b.innerHTML = '<div class="hz-kb-empty">Couldn\'t load the schedule: ' + hzDsEsc(e.message) + (/permission/i.test(e.message) ? '<br>The database rules need publishing.' : '') + '</div>';
+  });
+}
+
+// ── drawing ──
+function hzDsWho(s) { return s.uid ? hzDsEsc((s.unit ? s.unit + " " : "") + (s.name || "")) : '<span class="hz-ds-open">OPEN</span>'; }
+function hzDsDraw() {
+  var o = document.getElementById("hz-ds-pop"); if (!o) return;
+  var top = '<div class="hz-tl-top"><button class="hz-pop-back" onclick="hzDsBackBtn()">← Back</button><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🗓️ Dispatch Schedule</b>'
+    + (HZ_DS.coord ? '<button class="hz-pop-back" onclick="hzDsShiftForm()">＋ Shift</button>' : '')
+    + (HZ_DS.admin ? '<button class="hz-pop-back" onclick="hzDsRemForm()" title="Shift reminders">⚙️</button>' : '') + '</div>';
+  var nowH = HZ_DS.now.length ? HZ_DS.now.map(function(s) {
+    return '<div class="hz-ds-oncall"><div><div class="lbl">On call now</div><div class="who">' + hzDsWho(s) + '</div><div class="sub">until ' + hzDsHm(s.end) + (hzDsYmd(s.end) !== hzDsYmd(Date.now()) ? " tomorrow" : "") + '</div></div>'
+      + (s.phone || hzDsPhone(s.uid) ? '<a class="hz-ds-call" href="tel:' + hzDsEsc(s.phone || hzDsPhone(s.uid)) + '">📞 Call</a>' : '') + '</div>';
+  }).join("") : '<div class="hz-ds-oncall none"><div><div class="lbl">On call now</div><div class="who">No dispatcher on the schedule right now</div></div></div>';
+  if (HZ_DS.next) nowH += '<div class="hz-ds-next">Next: <b>' + hzDsWho(HZ_DS.next) + '</b> · ' + hzDsDayLabel(hzDsYmd(HZ_DS.next.start)) + ' ' + hzDsRange(HZ_DS.next) + '</div>';
+  var pend = HZ_DS.coord ? HZ_DS.reqs.length : HZ_DS.myReqs.filter(function(r) { return r.status === "pending"; }).length;
+  var tabs = [["mine", "My shifts", HZ_DS.mine.length], ["open", "Open shifts", HZ_DS.open.length], ["week", "Schedule", 0], ["req", HZ_DS.coord ? "Requests" : "My requests", pend]];
+  var tabH = '<div class="hz-ds-tabs">' + tabs.map(function(t) { return '<button class="' + (HZ_DS.tab === t[0] ? 'on' : '') + '" onclick="HZ_DS.tab=\'' + t[0] + '\';hzDsDraw()">' + t[1] + (t[2] ? ' <span class="n">' + t[2] + '</span>' : '') + '</button>'; }).join("") + '</div>';
+  var body = HZ_DS.tab === "mine" ? hzDsMineHtml() : HZ_DS.tab === "open" ? hzDsOpenHtml() : HZ_DS.tab === "week" ? hzDsWeekHtml() : hzDsReqHtml();
+  var keep = o.querySelector(".hz-tl-body"), st = keep ? keep.scrollTop : 0;
+  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + tabH + body + '</div></div></div>';
+  if (st) { var nb = o.querySelector(".hz-tl-body"); if (nb) nb.scrollTop = st; }
+}
+HZ_DS.phones = {};
+function hzDsPhone(uid) { return HZ_DS.phones[uid] || ""; }
+function hzDsShiftRow(s, acts) {
+  return '<div class="hz-ds-row' + (s.uid ? '' : ' open') + '"><div class="t"><b>' + hzDsRange(s) + '</b><small>' + hzDsLen(s) + '</small></div>'
+    + '<div class="w">' + hzDsWho(s) + (s.ruleId ? ' <span class="tag" title="Recurring">🔁</span>' : '') + (s.edited ? ' <span class="tag" title="Changed from the usual">✏️</span>' : '') + (s.note ? '<small>' + hzDsEsc(s.note) + '</small>' : '') + '</div>'
+    + (acts ? '<div class="a">' + acts + '</div>' : '') + '</div>';
+}
+function hzDsByDay(list, actsFn) {
+  if (!list.length) return "";
+  var out = "", last = "";
+  list.forEach(function(s) { var d = hzDsYmd(s.start); if (d !== last) { out += '<div class="hz-ds-day">' + hzDsDayLabel(d) + (d === hzDsYmd(Date.now()) ? ' · Today' : '') + '</div>'; last = d; } out += hzDsShiftRow(s, actsFn ? actsFn(s) : ""); });
+  return out;
+}
+function hzDsMineHtml() {
+  var h = '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button></div>';
+  if (!HZ_DS.mine.length) return h + '<div class="hz-kb-empty">You have no upcoming shifts in the next 60 days.</div>';
+  return h + hzDsByDay(HZ_DS.mine, function(s) { return '<button class="hz-kb-sm" title="Add this shift to a calendar" onclick="hzDsAddOne(\'' + s.id + '\')">📅</button>'; });
+}
+function hzDsOpenHtml() {
+  if (!HZ_DS.open.length) return '<div class="hz-kb-empty">No open shifts right now.</div>';
+  var mineReq = {}; HZ_DS.myReqs.forEach(function(r) { if (r.status === "pending") mineReq[r.shiftId] = r; });
+  return '<div class="hz-ds-note">Tap 🙋 to ask for the whole shift or part of it — a dispatch coordinator approves it.</div>' + hzDsByDay(HZ_DS.open, function(s) {
+    var r = mineReq[s.id];
+    return (r ? '<span class="hz-ds-pill">Requested ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + '</span>' : '<button class="hz-kb-btn go hz-ds-req" onclick="hzDsReqForm(\'' + s.id + '\')">🙋 Request</button>')
+      + (HZ_DS.coord ? '<button class="hz-kb-sm" title="Change" onclick="hzDsEdit(\'' + s.id + '\')">✏️</button>' : '');
+  });
+}
+function hzDsWeekHtml() {
+  var ws = hzDsWeekStart(HZ_DS.week), we = hzDsAddDays(ws, 6);
+  var h = '<div class="hz-ds-weeknav"><button class="hz-kb-btn" onclick="hzDsWeek(-1)">‹ Prev</button><b>' + hzDsDayLabel(ws).slice(4) + ' – ' + hzDsDayLabel(we).slice(4) + '</b>'
+    + (HZ_DS.week ? '<button class="hz-kb-btn" onclick="hzDsWeek(0)">This week</button>' : '') + '<button class="hz-kb-btn" onclick="hzDsWeek(1)">Next ›</button></div>';
+  if (HZ_DS.coord) h += '<div class="hz-ds-note">Tap a shift to change it (only that day), make it open, or change the whole repeating series.</div>';
+  var list = HZ_DS.shifts.slice().sort(function(a, b) { return a.start - b.start; });
+  var days = ""; for (var i = 0; i < 7; i++) {
+    var d = hzDsAddDays(ws, i), on = list.filter(function(s) { return hzDsYmd(s.start) === d; });
+    days += '<div class="hz-ds-day">' + hzDsDayLabel(d) + (d === hzDsYmd(Date.now()) ? ' · Today' : '') + '</div>'
+      + (on.length ? on.map(function(s) { return HZ_DS.coord ? '<div class="hz-ds-tap" onclick="hzDsEdit(\'' + s.id + '\')">' + hzDsShiftRow(s, '<span class="hz-ds-chev">›</span>') + '</div>' : hzDsShiftRow(s, ""); }).join("") : '<div class="hz-ds-none">No shifts</div>');
+  }
+  return h + days;
+}
+function hzDsWeek(d) { HZ_DS.week = d === 0 ? 0 : HZ_DS.week + d; hzDsLoad(); }
+function hzDsReqHtml() {
+  var list = HZ_DS.coord ? HZ_DS.reqs : HZ_DS.myReqs;
+  if (!list.length) return '<div class="hz-kb-empty">' + (HZ_DS.coord ? "No requests waiting." : "You haven't asked for any shifts.") + '</div>';
+  var st = { pending: "⏳ Waiting", approved: "✅ Approved", denied: "❌ Denied", cancelled: "↩️ Cancelled" };
+  return list.map(function(r) {
+    return '<div class="hz-ds-rq"><div class="h"><b>' + hzDsEsc((r.unit || "") + " " + (r.name || "")) + '</b><span>' + (st[r.status] || r.status) + '</span></div>'
+      + '<div>' + hzDsDayLabel(hzDsYmd(r.start)) + ' · ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + (r.full ? ' (the whole shift)' : ' (part of the shift)') + '</div>'
+      + (r.note ? '<div class="nt">“' + hzDsEsc(r.note) + '”</div>' : '') + (r.decisionNote ? '<div class="nt">Coordinator: “' + hzDsEsc(r.decisionNote) + '”' + (r.decidedBy ? ' — ' + hzDsEsc(r.decidedBy) : '') + '</div>' : '')
+      + (HZ_DS.coord && r.status === "pending" ? '<div class="hz-kb-bar" style="margin:8px 0 0"><button class="hz-kb-btn go" onclick="hzDsDecideForm(\'' + r.id + '\')">Approve / deny…</button></div>' : '')
+      + (!HZ_DS.coord && r.status === "pending" ? '<div class="hz-kb-bar" style="margin:8px 0 0"><button class="hz-kb-btn" onclick="hzDsReqCancel(\'' + r.id + '\')">Cancel my request</button></div>' : '')
+      + '</div>';
+  }).join("");
+}
+
+// ── in-app dialog ──
+function hzDsDlg(title, html) {
+  hzDsDlgClose();
+  var d = document.createElement("div"); d.id = "hz-ds-dlg";
+  d.innerHTML = '<div class="hz-ds-dlgbox" role="dialog" aria-label="' + hzDsEsc(title) + '"><div class="hz-kb-fh">' + title + '</div>' + html + '<div id="hz-ds-msg" class="hz-kb-note"></div></div>';
+  d.onclick = function(e) { if (e.target === d) hzDsDlgClose(); };
+  document.body.appendChild(d);
+}
+function hzDsDlgClose() { var d = document.getElementById("hz-ds-dlg"); if (!d) return false; d.remove(); return true; }
+function hzDsMsg(t, bad) { var m = document.getElementById("hz-ds-msg"); if (m) { m.textContent = t; m.style.color = bad ? "#c62828" : ""; } }
+function hzDsV(id) { var e = document.getElementById(id); return e ? String(e.value || "").trim() : ""; }
+function hzDsHmOk(v) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(v); }
+function hzDsDispOptions(sel, withOpen) {
+  return (withOpen ? '<option value=""' + (!sel ? ' selected' : '') + '>— Open shift (no one yet) —</option>' : '<option value="">— choose a dispatcher —</option>')
+    + HZ_DS.dispatchers.map(function(u) { return '<option value="' + u.uid + '"' + (sel === u.uid ? ' selected' : '') + '>' + hzDsEsc((u.unit ? u.unit + " " : "") + u.name) + '</option>'; }).join("");
+}
+function hzDsWhoFields(uid) { var u = HZ_DS.dispatchers.filter(function(x) { return x.uid === uid; })[0]; return u ? { uid: u.uid, unit: u.unit, name: u.name } : { uid: "", unit: "", name: "" }; }
+
+// ── coordinator: new shift (one-time or recurring) ──
+function hzDsShiftForm(kind) {
+  kind = kind || "once";
+  var today = hzDsYmd(Date.now());
+  var seg = '<div class="hz-kb-seg">' + [["once", "One-time shift"], ["rec", "🔁 Recurring shifts"]].map(function(o) { return '<button type="button" class="' + (kind === o[0] ? 'on' : '') + '" onclick="hzDsShiftForm(\'' + o[0] + '\')">' + o[1] + '</button>'; }).join("") + '</div>';
+  var who = '<label class="hz-kb-l">Dispatcher<select id="ds-f-who">' + hzDsDispOptions("", true) + '</select></label>';
+  var times = '<div class="hz-ds-2"><label class="hz-kb-l">Start (24h)<input id="ds-f-st" placeholder="18:00" maxlength="5" inputmode="numeric"></label><label class="hz-kb-l">End (24h)<input id="ds-f-en" placeholder="23:00" maxlength="5" inputmode="numeric"></label></div>'
+    + '<div class="hz-kb-note">An end time earlier than the start means it ends the next day.</div>';
+  var h = seg + who;
+  if (kind === "once") h += '<label class="hz-kb-l">Date<input id="ds-f-date" type="date" value="' + today + '"></label>' + times;
+  else h += '<div class="hz-kb-l">Days</div><div class="hz-kb-roles">' + HZ_DS_DOW.map(function(d, i) { return '<label><input type="checkbox" class="ds-f-day" value="' + i + '"> ' + d + '</label>'; }).join("") + '</div>' + times
+    + '<label class="hz-kb-l">Repeats<select id="ds-f-every"><option value="1">Every week</option><option value="2">Every 2 weeks</option></select></label>'
+    + '<div class="hz-ds-2"><label class="hz-kb-l">Starting<input id="ds-f-from" type="date" value="' + today + '"></label><label class="hz-kb-l">Until (optional)<input id="ds-f-until" type="date"></label></div>'
+    + '<div class="hz-kb-note">Shifts are put on the schedule 90 days ahead and keep being added. Each day can still be changed on its own.</div>';
+  h += '<label class="hz-kb-l">Note (optional)<input id="ds-f-note" maxlength="200"></label>'
+    + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-btn go" onclick="hzDsShiftSave(\'' + kind + '\')">Add</button></div>';
+  hzDsDlg("＋ New dispatch shift", h);
+}
+function hzDsStamp() { var me = HZ_DS.me || {}; return { by: me.unit || "", at: Date.now() }; }
+function hzDsShiftSave(kind) {
+  var w = hzDsWhoFields(hzDsV("ds-f-who")), st = hzDsV("ds-f-st"), en = hzDsV("ds-f-en"), note = hzDsV("ds-f-note"), S = hzDsStamp();
+  if (!hzDsHmOk(st) || !hzDsHmOk(en)) { hzDsMsg("Type the start and end as 24-hour times, e.g. 18:00 and 23:00.", true); return; }
+  if (st === en) { hzDsMsg("The start and end can't be the same.", true); return; }
+  if (kind === "once") {
+    var d = hzDsV("ds-f-date"); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { hzDsMsg("Pick the date.", true); return; }
+    var doc = { uid: w.uid, unit: w.unit, name: w.name, start: hzDsMs(d, st), end: hzDsEndMs(d, st, en), ruleId: "", edited: false, cancelled: false, note: note, createdBy: S.by, updatedAt: S.at };
+    db.collection("dispShifts").add(doc).then(function() { hzDsDlgClose(); hzDsToast("✓ Shift added"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+    return;
+  }
+  var days = Array.prototype.map.call(document.querySelectorAll(".ds-f-day:checked"), function(x) { return +x.value; });
+  var from = hzDsV("ds-f-from"), until = hzDsV("ds-f-until");
+  if (!days.length) { hzDsMsg("Tick at least one day.", true); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) { hzDsMsg("Pick the starting date.", true); return; }
+  if (until && until < from) { hzDsMsg("'Until' is before 'Starting'.", true); return; }
+  var ref = db.collection("dispRules").doc();
+  var rule = { uid: w.uid, unit: w.unit, name: w.name, days: days, startTime: st, endTime: en, every: +hzDsV("ds-f-every") || 1, from: from, until: until, note: note, active: true, createdBy: S.by, updatedAt: S.at };
+  ref.set(rule).then(function() { rule.id = ref.id; return hzDsMaterialize(rule, {}); }).then(function(n) { hzDsDlgClose(); hzDsToast("✓ Recurring shifts added (" + n + " on the schedule)"); hzDsLoad(); })
+    .catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+}
+// write a rule's shifts for the next 90 days (keeps any day already changed by hand or cancelled)
+function hzDsMaterialize(rule, existing) {
+  var today = hzDsYmd(Date.now()), occ = hzDsOccur(rule, today, hzDsAddDays(today, 90)), S = hzDsStamp(), n = 0;
+  var batches = [], b = db.batch(), c = 0;
+  var now = Date.now();
+  occ.forEach(function(o) {
+    var ex = existing[o.id]; if (ex && (ex.edited || ex.cancelled)) return;
+    if (o.end <= now || (ex && o.start < now)) return;   // never rewrite a shift that has started or ended
+    b.set(db.collection("dispShifts").doc(o.id), { uid: rule.uid, unit: rule.unit, name: rule.name, start: o.start, end: o.end, ruleId: rule.id, edited: false, cancelled: false, note: rule.note || "", createdBy: S.by, updatedAt: S.at }, { merge: true });
+    n++; if (++c >= 400) { batches.push(b); b = db.batch(); c = 0; }
+  });
+  batches.push(b);
+  return Promise.all(batches.map(function(x) { return x.commit(); })).then(function() { return n; });
+}
+
+// ── coordinator: change one shift ──
+function hzDsFind(id) { return HZ_DS.shifts.concat(HZ_DS.open, HZ_DS.mine, HZ_DS.now).filter(function(s) { return s.id === id; })[0]; }
+function hzDsEdit(id) {
+  var s = hzDsFind(id); if (!s) return;
+  var d = hzDsYmd(s.start), rule = s.ruleId ? HZ_DS.rules[s.ruleId] : null;
+  var h = '<div class="hz-ds-note">' + hzDsDayLabel(d) + ' · now ' + hzDsRange(s) + (s.ruleId ? ' · 🔁 part of a recurring series — changes here are for this day only' : '') + '</div>'
+    + '<label class="hz-kb-l">Dispatcher<select id="ds-e-who">' + hzDsDispOptions(s.uid, true) + '</select></label>'
+    + '<label class="hz-kb-l">Date<input id="ds-e-date" type="date" value="' + d + '"></label>'
+    + '<div class="hz-ds-2"><label class="hz-kb-l">Start (24h)<input id="ds-e-st" value="' + hzDsHm(s.start) + '" maxlength="5"></label><label class="hz-kb-l">End (24h)<input id="ds-e-en" value="' + hzDsHm(s.end) + '" maxlength="5"></label></div>'
+    + '<label class="hz-kb-l">Note (optional)<input id="ds-e-note" maxlength="200" value="' + hzDsEsc(s.note || "") + '"></label>'
+    + '<div class="hz-kb-bar" style="margin:12px 0 0;flex-wrap:wrap"><button class="hz-kb-sm red" style="height:auto;padding:8px 12px" onclick="hzDsCancelShift(\'' + id + '\')">🗑 Remove this shift</button>'
+    + (rule ? '<button class="hz-kb-btn" onclick="hzDsRuleForm(\'' + rule.id + '\')">🔁 Change the whole series…</button>' : '')
+    + '<span style="flex:1"></span><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-btn go" onclick="hzDsEditSave(\'' + id + '\')">Save</button></div>';
+  hzDsDlg("✏️ Change this shift", h);
+}
+function hzDsEditSave(id) {
+  var s = hzDsFind(id); if (!s) return;
+  var w = hzDsWhoFields(hzDsV("ds-e-who")), d = hzDsV("ds-e-date"), st = hzDsV("ds-e-st"), en = hzDsV("ds-e-en"), S = hzDsStamp();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !hzDsHmOk(st) || !hzDsHmOk(en) || st === en) { hzDsMsg("Check the date and the 24-hour start / end times.", true); return; }
+  var start = hzDsMs(d, st), end = hzDsEndMs(d, st, en);
+  var upd = { uid: w.uid, unit: w.unit, name: w.name, start: start, end: end, note: hzDsV("ds-e-note"), updatedAt: S.at, updatedBy: S.by };
+  if (s.ruleId) upd.edited = true;
+  if (start !== s.start) upd.remindedFor = [];   // a new time → reminders go again
+  db.collection("dispShifts").doc(id).update(upd).then(function() { hzDsDlgClose(); hzDsToast("✓ Shift changed"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+}
+function hzDsCancelShift(id) {
+  var s = hzDsFind(id); if (!s) return;
+  if (typeof hzOk === "function" && !hzOk(arguments, this, "Remove the " + hzDsDayLabel(hzDsYmd(s.start)) + " " + hzDsRange(s) + " shift" + (s.uid ? " (" + (s.unit || s.name) + ")" : "") + "?" + (s.ruleId ? "\nOnly this day — the rest of the series stays." : ""))) return;
+  var ref = db.collection("dispShifts").doc(id);
+  (s.ruleId ? ref.update({ cancelled: true, edited: true, updatedAt: Date.now() }) : ref.delete()).then(function() { hzDsDlgClose(); hzDsToast("Shift removed"); hzDsLoad(); }).catch(function(e) { hzDsToast("Not removed: " + e.message, true); });
+}
+// ── coordinator: change / stop a whole recurring series ──
+function hzDsRuleForm(rid) {
+  var r = HZ_DS.rules[rid]; if (!r) return;
+  var h = '<div class="hz-ds-note">Changes apply to this series from today on. Days you already changed by hand stay as they are.</div>'
+    + '<label class="hz-kb-l">Dispatcher<select id="ds-r-who">' + hzDsDispOptions(r.uid, true) + '</select></label>'
+    + '<div class="hz-kb-l">Days</div><div class="hz-kb-roles">' + HZ_DS_DOW.map(function(d, i) { return '<label><input type="checkbox" class="ds-r-day" value="' + i + '"' + (r.days.indexOf(i) !== -1 ? ' checked' : '') + '> ' + d + '</label>'; }).join("") + '</div>'
+    + '<div class="hz-ds-2"><label class="hz-kb-l">Start (24h)<input id="ds-r-st" value="' + hzDsEsc(r.startTime) + '" maxlength="5"></label><label class="hz-kb-l">End (24h)<input id="ds-r-en" value="' + hzDsEsc(r.endTime) + '" maxlength="5"></label></div>'
+    + '<label class="hz-kb-l">Repeats<select id="ds-r-every"><option value="1"' + ((r.every || 1) === 1 ? ' selected' : '') + '>Every week</option><option value="2"' + (r.every === 2 ? ' selected' : '') + '>Every 2 weeks</option></select></label>'
+    + '<label class="hz-kb-l">Until (optional)<input id="ds-r-until" type="date" value="' + hzDsEsc(r.until || "") + '"></label>'
+    + '<label class="hz-kb-l">Note (optional)<input id="ds-r-note" maxlength="200" value="' + hzDsEsc(r.note || "") + '"></label>'
+    + '<div class="hz-kb-bar" style="margin:12px 0 0;flex-wrap:wrap"><button class="hz-kb-sm red" style="height:auto;padding:8px 12px" onclick="hzDsRuleStop(\'' + rid + '\')">⏹ Stop this series</button><span style="flex:1"></span>'
+    + '<button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-btn go" onclick="hzDsRuleSave(\'' + rid + '\')">Save series</button></div>';
+  hzDsDlg("🔁 Recurring series", h);
+}
+function hzDsRuleAll(rid) {   // every shift of this series
+  return db.collection("dispShifts").where("ruleId", "==", rid).get().then(function(snap) { var a = []; snap.forEach(function(d) { a.push(Object.assign({ id: d.id }, d.data())); }); return a; });
+}
+function hzDsRuleFuture(rid) { return hzDsRuleAll(rid).then(function(a) { return a.filter(function(x) { return x.start >= Date.now(); }); }); }
+function hzDsRuleSave(rid) {
+  var r = HZ_DS.rules[rid]; if (!r) return;
+  var w = hzDsWhoFields(hzDsV("ds-r-who")), st = hzDsV("ds-r-st"), en = hzDsV("ds-r-en");
+  var days = Array.prototype.map.call(document.querySelectorAll(".ds-r-day:checked"), function(x) { return +x.value; });
+  if (!days.length || !hzDsHmOk(st) || !hzDsHmOk(en) || st === en) { hzDsMsg("Tick at least one day and type 24-hour start / end times.", true); return; }
+  var nr = Object.assign({}, r, { uid: w.uid, unit: w.unit, name: w.name, days: days, startTime: st, endTime: en, every: +hzDsV("ds-r-every") || 1, until: hzDsV("ds-r-until"), note: hzDsV("ds-r-note"), updatedAt: Date.now() });
+  delete nr.id;
+  hzDsMsg("Saving…");
+  db.collection("dispRules").doc(rid).set(nr).then(function() { return hzDsRuleAll(rid); }).then(function(all) {
+    var keep = {}, b = db.batch(), now = Date.now();
+    all.forEach(function(x) { if (x.edited || x.cancelled || x.start < now) keep[x.id] = x; else b.delete(db.collection("dispShifts").doc(x.id)); });   // started / past / hand-changed days stay
+    return b.commit().then(function() { nr.id = rid; return hzDsMaterialize(nr, keep); });
+  }).then(function() { hzDsDlgClose(); hzDsToast("✓ Series changed"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+}
+function hzDsRuleStop(rid) {
+  var r = HZ_DS.rules[rid]; if (!r) return;
+  if (typeof hzOk === "function" && !hzOk(arguments, this, "Stop this recurring series" + (r.unit ? " (" + r.unit + ")" : "") + "?\nIts shifts from today on are removed. Past shifts stay.")) return;
+  db.collection("dispRules").doc(rid).update({ active: false, updatedAt: Date.now() }).then(function() { return hzDsRuleFuture(rid); }).then(function(fut) {
+    var b = db.batch(); fut.forEach(function(x) { b.delete(db.collection("dispShifts").doc(x.id)); }); return b.commit();
+  }).then(function() { hzDsDlgClose(); hzDsToast("Series stopped"); hzDsLoad(); }).catch(function(e) { hzDsToast("Not stopped: " + e.message, true); });
+}
+
+// ── dispatcher: ask for an open shift (all of it or part) ──
+function hzDsReqForm(id) {
+  var s = hzDsFind(id); if (!s) return;
+  var h = '<div class="hz-ds-note">' + hzDsDayLabel(hzDsYmd(s.start)) + ' · open ' + hzDsRange(s) + ' (' + hzDsLen(s) + ')</div>'
+    + '<div class="hz-kb-seg"><button type="button" id="ds-q-full" class="on" onclick="hzDsReqPart(false)">The whole shift</button><button type="button" id="ds-q-part" onclick="hzDsReqPart(true)">Part of it</button></div>'
+    + '<div id="ds-q-times" style="display:none"><div class="hz-ds-2"><label class="hz-kb-l">From (24h)<input id="ds-q-st" value="' + hzDsHm(s.start) + '" maxlength="5"></label><label class="hz-kb-l">To (24h)<input id="ds-q-en" value="' + hzDsHm(s.end) + '" maxlength="5"></label></div></div>'
+    + '<label class="hz-kb-l">Note to the coordinator (optional)<input id="ds-q-note" maxlength="300"></label>'
+    + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-btn go" onclick="hzDsReqSend(\'' + id + '\')">Send request</button></div>';
+  hzDsDlg("🙋 Request this shift", h);
+}
+function hzDsReqPart(p) { document.getElementById("ds-q-times").style.display = p ? "" : "none"; document.getElementById("ds-q-full").classList.toggle("on", !p); document.getElementById("ds-q-part").classList.toggle("on", p); }
+function hzDsPartMs(s, hm) {   // a time inside the shift (which may cross midnight)
+  var a = hzDsMs(hzDsYmd(s.start), hm); if (a < s.start) a = hzDsMs(hzDsAddDays(hzDsYmd(s.start), 1), hm); return a;
+}
+function hzDsReqSend(id) {
+  var s = hzDsFind(id), me = HZ_DS.me || {}; if (!s) return;
+  var part = document.getElementById("ds-q-part").classList.contains("on"), start = s.start, end = s.end;
+  if (part) {
+    var st = hzDsV("ds-q-st"), en = hzDsV("ds-q-en"); if (!hzDsHmOk(st) || !hzDsHmOk(en)) { hzDsMsg("Type 24-hour times, e.g. 19:30.", true); return; }
+    start = hzDsPartMs(s, st); end = hzDsPartMs(s, en);
+    if (end <= start || start < s.start || end > s.end) { hzDsMsg("The times have to be inside the open shift (" + hzDsRange(s) + ").", true); return; }
+  }
+  db.collection("dispRequests").add({ shiftId: id, uid: me.uid, unit: me.unit, name: me.name, start: start, end: end, full: start === s.start && end === s.end, note: hzDsV("ds-q-note"), status: "pending", createdAt: Date.now() })
+    .then(function() { hzDsDlgClose(); hzDsToast("✓ Request sent to the dispatch coordinator"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not sent: " + e.message, true); });
+}
+function hzDsReqCancel(rid) { db.collection("dispRequests").doc(rid).update({ status: "cancelled" }).then(function() { hzDsToast("Request cancelled"); hzDsLoad(); }).catch(function(e) { hzDsToast(e.message, true); }); }
+// ── coordinator: approve / deny ──
+function hzDsDecideForm(rid) {
+  var r = HZ_DS.reqs.filter(function(x) { return x.id === rid; })[0]; if (!r) return;
+  var h = '<div class="hz-ds-note"><b>' + hzDsEsc(r.unit + " " + r.name) + '</b> asks for ' + hzDsDayLabel(hzDsYmd(r.start)) + ' ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + (r.full ? ' (the whole shift)' : ' (part of the open shift — the rest stays open)') + (r.note ? '<br>“' + hzDsEsc(r.note) + '”' : '') + '</div>'
+    + '<label class="hz-kb-l">Note back to them (optional)<input id="ds-d-note" maxlength="300"></label>'
+    + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-sm red" style="height:auto;padding:8px 14px" onclick="hzDsDecide(\'' + rid + '\',false)">✕ Deny</button><button class="hz-kb-btn go" onclick="hzDsDecide(\'' + rid + '\',true)">✓ Approve</button></div>';
+  hzDsDlg("Shift request", h);
+}
+function hzDsDecide(rid, ok) {
+  var r = HZ_DS.reqs.filter(function(x) { return x.id === rid; })[0]; if (!r) return;
+  var me = HZ_DS.me || {}, note = hzDsV("ds-d-note"), by = (me.unit + " " + me.name).trim();
+  var rref = db.collection("dispRequests").doc(rid), sref = db.collection("dispShifts").doc(r.shiftId);
+  if (!ok) { rref.update({ status: "denied", decisionNote: note, decidedBy: by, decidedAt: Date.now() }).then(function() { hzDsDlgClose(); hzDsToast("Request denied"); hzDsLoad(); }).catch(function(e) { hzDsMsg(e.message, true); }); return; }
+  db.runTransaction(function(tx) {
+    return tx.get(sref).then(function(sd) {
+      if (!sd.exists) throw new Error("That shift isn't on the schedule any more.");
+      var s = sd.data(); if (s.uid) throw new Error("That shift was already given to " + (s.unit || "someone") + ".");
+      if (r.start < s.start || r.end > s.end) throw new Error("The open shift changed — it's now " + hzDsHm(s.start) + "–" + hzDsHm(s.end) + ".");
+      var base = { uid: "", unit: "", name: "", ruleId: "", edited: false, cancelled: false, note: s.note || "", splitFrom: r.shiftId, createdBy: me.unit || "", updatedAt: Date.now() };
+      if (r.start > s.start) tx.set(db.collection("dispShifts").doc(), Object.assign({}, base, { start: s.start, end: r.start }));
+      if (r.end < s.end) tx.set(db.collection("dispShifts").doc(), Object.assign({}, base, { start: r.end, end: s.end }));
+      tx.update(sref, { uid: r.uid, unit: r.unit, name: r.name, start: r.start, end: r.end, edited: s.ruleId ? true : !!s.edited, remindedFor: [], updatedAt: Date.now(), updatedBy: me.unit || "" });
+      tx.update(rref, { status: "approved", decisionNote: note, decidedBy: by, decidedAt: Date.now() });
+    });
+  }).then(function() { hzDsDlgClose(); hzDsToast("✓ Approved — the shift is " + (r.unit || "theirs")); hzDsLoad(); }).catch(function(e) { hzDsMsg(e.message, true); });
+}
+
+// ── calendar: one shift (Google link or a .ics file), or a subscription that stays up to date ──
+function hzDsIcsTime(ms) { return new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, ""); }
+function hzDsAddOne(id) {
+  var s = hzDsFind(id); if (!s) return;
+  var title = "Dispatch shift", det = "Hatzolah dispatch shift" + (s.note ? " — " + s.note : "");
+  var g = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(title) + "&dates=" + hzDsIcsTime(s.start) + "/" + hzDsIcsTime(s.end) + "&details=" + encodeURIComponent(det);
+  hzDsDlg("📅 Add this shift to a calendar", '<div class="hz-ds-note">' + hzDsDayLabel(hzDsYmd(s.start)) + ' · ' + hzDsRange(s) + '</div><div class="hz-ds-calbtns">'
+    + '<a class="hz-kb-btn" href="' + hzDsEsc(g) + '" target="_blank" rel="noopener">Google Calendar ↗</a>'
+    + '<button class="hz-kb-btn" onclick="hzDsIcsOne(\'' + id + '\')">Apple / Outlook / other (.ics)</button></div>'
+    + '<div class="hz-kb-note">Tip: “Add my shifts to my calendar” on the My shifts tab keeps every shift in your calendar and updates it when the schedule changes.</div>'
+    + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button></div>');
+}
+function hzDsIcsOne(id) {
+  var s = hzDsFind(id); if (!s) return;
+  var ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Hatzolah MC//Dispatch Schedule//EN", "BEGIN:VEVENT", "UID:" + s.id + "@hatzolah-dispatch", "DTSTAMP:" + hzDsIcsTime(Date.now()), "DTSTART:" + hzDsIcsTime(s.start), "DTEND:" + hzDsIcsTime(s.end), "SUMMARY:Dispatch shift", "DESCRIPTION:Hatzolah dispatch shift" + (s.note ? " — " + String(s.note).replace(/[\r\n,;]/g, " ") : ""), "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([ics], { type: "text/calendar" })); a.download = "dispatch-shift-" + hzDsYmd(s.start) + ".ics"; document.body.appendChild(a); a.click(); a.remove();
+}
+function hzDsSubscribe() {
+  var me = HZ_DS.me || {}; if (!me.uid) return;
+  var ref = db.collection("dispCal").doc(me.uid);
+  ref.get().then(function(s) {
+    var t = s.exists && s.data().token;
+    if (t) return t;
+    t = Array.prototype.map.call(crypto.getRandomValues(new Uint8Array(18)), function(b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+    return ref.set({ token: t, createdAt: Date.now() }).then(function() { return t; });
+  }).then(function(t) {
+    var url = "https://us-central1-" + firebase.app().options.projectId + ".cloudfunctions.net/dispCalFeed?u=" + encodeURIComponent(me.uid) + "&k=" + t;
+    var web = url.replace(/^https:/, "webcal:");
+    HZ_DS.calUrl = url;
+    hzDsDlg("📅 Add my shifts to my calendar", '<div class="hz-ds-note">Your shifts show in your own calendar and update by themselves when the schedule changes (calendar apps check every few hours).</div><div class="hz-ds-calbtns">'
+      + '<a class="hz-kb-btn" href="' + hzDsEsc(web) + '">iPhone / Apple Calendar</a>'
+      + '<a class="hz-kb-btn" href="https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(web) + '" target="_blank" rel="noopener">Google Calendar ↗</a>'
+      + '<a class="hz-kb-btn" href="https://outlook.live.com/calendar/0/addfromweb?url=' + encodeURIComponent(url) + '&name=' + encodeURIComponent("Dispatch shifts") + '" target="_blank" rel="noopener">Outlook ↗</a>'
+      + '<button class="hz-kb-btn" onclick="hzDsCopyCal()">Copy the link</button></div>'
+      + '<div class="hz-kb-note">The link is private to you — don\'t share it.</div>'
+      + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button></div>');
+  }).catch(function(e) { hzDsToast("Couldn't make your calendar link: " + e.message, true); });
+}
+function hzDsCopyCal() { try { navigator.clipboard.writeText(HZ_DS.calUrl); hzDsMsg("✓ Copied — in your calendar app choose “Add calendar from URL / Subscribe” and paste it."); } catch (e) { hzDsMsg(HZ_DS.calUrl); } }
+
+// ── admin: shift reminders (more than one, e.g. 1 hour and 30 minutes before) ──
+function hzDsRemForm() {
+  var c = HZ_DS.cfg || {}; HZ_DS.remEdit = (Array.isArray(c.reminders) ? c.reminders : []).slice().sort(function(a, b) { return b - a; });
+  var h = '<div class="hz-ds-note">Each dispatcher gets a reminder before each of their shifts — the same idea as the Night Watch reminder for responders.</div>'
+    + '<label class="hz-kb-roles" style="margin:6px 0"><label><input type="checkbox" id="ds-m-on"' + (c.remOn ? ' checked' : '') + '> Send shift reminders</label></label>'
+    + '<div class="hz-kb-l">Send them</div><div id="ds-m-list"></div>'
+    + '<div class="hz-ds-2" style="grid-template-columns:90px 1fr auto;align-items:end"><label class="hz-kb-l">Amount<input id="ds-m-n" type="number" min="1" max="72" value="30"></label><label class="hz-kb-l">&nbsp;<select id="ds-m-u"><option value="1">minutes before</option><option value="60">hours before</option></select></label><button class="hz-kb-btn" style="margin-bottom:2px" onclick="hzDsRemAdd()">＋ Add</button></div>'
+    + '<div class="hz-kb-l">How</div><div class="hz-kb-roles"><label><input type="checkbox" id="ds-m-push"' + (c.push !== false ? ' checked' : '') + '> Push</label><label><input type="checkbox" id="ds-m-text"' + (c.text ? ' checked' : '') + '> Text (SMS)</label></div>'
+    + '<div class="hz-kb-note">Where it takes effect: the dispatcher\'s phone, before each shift they are scheduled for. Changing it affects the next reminders sent (checked every 5 minutes); shifts already reminded aren\'t sent again.</div>'
+    + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-btn go" onclick="hzDsRemSave()">Save</button></div>';
+  hzDsDlg("⚙️ Dispatch shift reminders", h); hzDsRemList();
+}
+function hzDsRemTxt(m) { return m % 60 === 0 ? (m / 60) + (m === 60 ? " hour" : " hours") : m + " minutes"; }
+function hzDsRemList() { var el = document.getElementById("ds-m-list"); if (!el) return; el.innerHTML = HZ_DS.remEdit.length ? HZ_DS.remEdit.map(function(m, i) { return '<span class="hz-ds-chip">' + hzDsRemTxt(m) + ' before <button onclick="HZ_DS.remEdit.splice(' + i + ',1);hzDsRemList()" aria-label="Remove">✕</button></span>'; }).join("") : '<div class="hz-kb-note">No reminders yet — add one below.</div>'; }
+function hzDsRemAdd() { var n = +hzDsV("ds-m-n"), u = +hzDsV("ds-m-u") || 1, m = Math.round(n * u); if (!(m >= 5 && m <= 4320)) { hzDsMsg("Between 5 minutes and 72 hours.", true); return; } if (HZ_DS.remEdit.indexOf(m) === -1) HZ_DS.remEdit.push(m); HZ_DS.remEdit.sort(function(a, b) { return b - a; }); hzDsMsg(""); hzDsRemList(); }
+function hzDsRemSave() {
+  var d = { remOn: document.getElementById("ds-m-on").checked, reminders: HZ_DS.remEdit.slice(), push: document.getElementById("ds-m-push").checked, text: document.getElementById("ds-m-text").checked, updatedAt: Date.now() };
+  if (d.remOn && !d.reminders.length) { hzDsMsg("Add at least one reminder time, or untick “Send shift reminders”.", true); return; }
+  if (d.remOn && !d.push && !d.text) { hzDsMsg("Tick Push or Text, or nothing will be sent.", true); return; }
+  db.collection("appdata").doc("dispatchSchedule").set(d, { merge: true }).then(function() { HZ_DS.cfg = Object.assign(HZ_DS.cfg || {}, d); hzDsDlgClose(); hzDsToast("✓ Reminder settings saved"); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+}
+
+function hzDsCss() {
+  if (document.getElementById("hz-ds-css")) return;
+  var P = "html body:not(#hzA):not(#hzB):not(#hzC) ";
+  var s = document.createElement("style"); s.id = "hz-ds-css";
+  s.textContent = ""
+    + "#hz-ds-pop{position:fixed;inset:0;z-index:9000;background:#000;display:flex;align-items:stretch;padding:env(safe-area-inset-top,0px) 0 0 0}"
+    + P + "#hz-ds-pop .hz-tl-box.hz-ds-box{max-width:none;width:100%;height:100%;max-height:none;border-radius:0;box-shadow:none;background:#000;color:#f2f2f2;-webkit-text-fill-color:#f2f2f2;display:flex;flex-direction:column}"
+    + P + "#hz-ds-pop .hz-tl-body{flex:1;overflow:auto;padding:14px max(14px,env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom))}"
+    + P + ".hz-ds-wrap{max-width:900px;margin:0 auto}"
+    + P + ".hz-ds-oncall{display:flex;align-items:center;justify-content:space-between;gap:12px;border:2px solid #d4a017;border-radius:14px;padding:12px 14px;margin:0 0 8px;background:#0b0b0b}"
+    + P + ".hz-ds-oncall .lbl{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:#d4a017;-webkit-text-fill-color:#d4a017;font-weight:700}"
+    + P + ".hz-ds-oncall .who{font-family:Oswald,sans-serif;font-size:1.3rem;letter-spacing:.03em;margin-top:2px}"
+    + P + ".hz-ds-oncall.none .who{font-size:1rem;opacity:.8}"
+    + P + ".hz-ds-oncall .sub{font-size:.82rem;opacity:.8}"
+    + P + ".hz-ds-call{background:#34c759;color:#000;-webkit-text-fill-color:#000;border-radius:999px;padding:10px 16px;font-weight:700;text-decoration:none;white-space:nowrap}"
+    + P + ".hz-ds-next{font-size:.85rem;opacity:.85;margin:0 2px 12px}"
+    + P + ".hz-ds-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px}"
+    + P + ".hz-ds-tabs button{background:#000;color:#d4a017;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.86rem}"
+    + P + ".hz-ds-tabs button.on{background:#d4a017;color:#000;-webkit-text-fill-color:#000}"
+    + P + ".hz-ds-tabs .n{display:inline-block;min-width:18px;border-radius:9px;background:#c62828;color:#fff;-webkit-text-fill-color:#fff;font-size:.72rem;padding:0 5px;margin-left:4px}"
+    + P + ".hz-ds-day{font-family:Oswald,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:#d4a017;-webkit-text-fill-color:#d4a017;font-size:.95rem;margin:14px 2px 6px}"
+    + P + ".hz-ds-row{display:flex;align-items:center;gap:12px;border:1px solid rgba(212,160,23,.45);border-radius:10px;padding:9px 12px;margin:0 0 6px;background:#0b0b0b}"
+    + P + ".hz-ds-row.open{border-color:#c62828;border-style:dashed}"
+    + P + ".hz-ds-row .t{min-width:118px}"
+    + P + ".hz-ds-row .t b{display:block;font-size:.98rem}"
+    + P + ".hz-ds-row .t small,.hz-ds-row .w small{display:block;font-size:.74rem;opacity:.7}"
+    + P + ".hz-ds-row .w{flex:1;min-width:0;font-weight:600}"
+    + P + ".hz-ds-row .a{display:flex;gap:6px;align-items:center}"
+    + P + ".hz-ds-open{color:#ff6b6b;-webkit-text-fill-color:#ff6b6b;font-weight:800;letter-spacing:.06em}"
+    + P + ".hz-ds-tag{font-size:.8rem}"
+    + P + ".hz-ds-tap{cursor:pointer}"
+    + P + ".hz-ds-chev{color:#d4a017;-webkit-text-fill-color:#d4a017;font-size:1.3rem}"
+    + P + ".hz-ds-none{font-size:.82rem;opacity:.55;margin:0 4px 6px}"
+    + P + ".hz-ds-note{font-size:.85rem;line-height:1.5;opacity:.85;margin:0 2px 10px}"
+    + P + ".hz-ds-bar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 6px}"
+    + P + ".hz-ds-pill{font-size:.75rem;border:1px solid #d4a017;border-radius:999px;padding:3px 9px;color:#d4a017;-webkit-text-fill-color:#d4a017;white-space:nowrap}"
+    + P + ".hz-ds-req{padding:7px 12px;font-size:.82rem}"
+    + P + ".hz-ds-weeknav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}"
+    + P + ".hz-ds-weeknav b{flex:1;text-align:center;font-family:Oswald,sans-serif;letter-spacing:.04em}"
+    + P + ".hz-ds-rq{border:1px solid rgba(212,160,23,.45);border-radius:10px;padding:10px 12px;margin:0 0 8px;font-size:.9rem;line-height:1.5;background:#0b0b0b}"
+    + P + ".hz-ds-rq .h{display:flex;justify-content:space-between;gap:8px}"
+    + P + ".hz-ds-rq .nt{opacity:.8;font-size:.84rem}"
+    + "#hz-ds-dlg{position:fixed;inset:0;z-index:100004;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:14px}"
+    + P + ".hz-ds-dlgbox{background:#000;color:#f2f2f2;-webkit-text-fill-color:#f2f2f2;border:2px solid #d4a017;border-radius:14px;padding:16px 18px;width:min(520px,100%);max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.6)}"
+    + P + ".hz-ds-dlgbox .hz-kb-fh{color:#d4a017;-webkit-text-fill-color:#d4a017}"
+    + P + ".hz-ds-dlgbox .hz-kb-l input," + P + ".hz-ds-dlgbox .hz-kb-l select{color-scheme:dark}"
+    + P + ".hz-ds-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}"
+    + P + ".hz-ds-calbtns{display:flex;flex-direction:column;gap:8px;margin:8px 0}"
+    + P + ".hz-ds-calbtns .hz-kb-btn{text-align:center;text-decoration:none;display:block}"
+    + P + ".hz-ds-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #d4a017;border-radius:999px;padding:4px 6px 4px 12px;margin:0 6px 6px 0;font-size:.85rem}"
+    + P + ".hz-ds-chip button{background:#c62828;color:#fff;-webkit-text-fill-color:#fff;border:0;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.7rem}";
   document.head.appendChild(s);
 }
 </script>
