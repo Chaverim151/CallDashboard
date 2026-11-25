@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.640">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.641">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2801,7 +2801,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.640</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.641</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -21608,7 +21608,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.640";
+var DESKTOP_VERSION = "12.641";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -36677,7 +36677,7 @@ function hzDsByDay(list, actsFn) {
 function hzDsMineHtml() {
   var h = '';   // 12.640: the calendar button is above the tabs now, on every tab
   if (!HZ_DS.mine.length) return h + '<div class="hz-kb-empty">You have no upcoming shifts in the next 60 days.</div>';
-  return h + hzDsByDay(HZ_DS.mine, function(s) { return '<button class="hz-kb-sm" title="Add this shift to a calendar" onclick="hzDsAddOne(\'' + s.id + '\')">📅</button>'; });
+  return h + hzDsByDay(HZ_DS.mine, function(s) { return hzDsDropBtn(s) + '<button class="hz-kb-sm" title="Add this shift to a calendar" onclick="hzDsAddOne(\'' + s.id + '\')">📅</button>'; });
 }
 function hzDsOpenHtml() {
   if (!HZ_DS.open.length) return '<div class="hz-kb-empty">No open shifts in the next 14 days.</div>';
@@ -36703,17 +36703,38 @@ function hzDsWeekHtml() {
   return h + days;
 }
 function hzDsReqBtn(s) {   // 12.629 (Sam): open shifts can be requested from the Schedule view too
-  if (s.uid || s.end <= Date.now()) return "";
+  if (s.uid) return hzDsDropBtn(s);   // 12.641: my own shift → ask to cancel it
+  if (s.end <= Date.now()) return "";
   var r = HZ_DS.myReqs.filter(function(x) { return x.status === "pending" && x.shiftId === s.id; })[0];
   return r ? '<span class="hz-ds-pill">Requested ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + '</span>' : '<button class="hz-kb-btn go hz-ds-req" onclick="hzDsReqForm(\'' + s.id + '\')">🙋 Request</button>';
+}
+// 12.641 (Sam: "dispatchers who can't make their shift can request to cancel it — it only cancels with dispatch coordinator / admin approval"):
+// a dispRequests doc with kind "drop" (the whole shift or part of it). Approved → that time becomes an open shift; the rest stays theirs.
+function hzDsDropBtn(s) {
+  var me = HZ_DS.me || {}; if (!me.uid || s.uid !== me.uid || s.start <= Date.now()) return "";
+  var r = HZ_DS.myReqs.filter(function(x) { return x.status === "pending" && x.kind === "drop" && x.shiftId === s.id; })[0];
+  return r ? '<span class="hz-ds-pill">Cancel requested' + (r.full ? '' : ' ' + hzDsHm(r.start) + '–' + hzDsHm(r.end)) + '</span>' : '<button class="hz-kb-btn hz-ds-drop" onclick="hzDsDropForm(\'' + s.id + '\')">↩️ Ask to cancel</button>';
+}
+function hzDsReqWord() { return HZ_DS.reqKind === "drop" ? "your shift" : "the open shift"; }
+function hzDsDropForm(id) {
+  var s = hzDsFind(id); if (!s) return;
+  HZ_DS.reqKind = "drop"; HZ_DS.reqShift = s;
+  var h = '<div class="hz-ds-note">' + hzDsDayLabel(hzDsYmd(s.start)) + ' · your shift ' + hzDsRange(s) + ' (' + hzDsLen(s) + ')<br>A dispatch coordinator has to approve it. Until then you are still on the schedule.</div>'
+    + '<div class="hz-kb-seg"><button type="button" id="ds-q-full" class="on" onclick="hzDsReqPart(false)">The whole shift</button><button type="button" id="ds-q-part" onclick="hzDsReqPart(true)">Part of it</button></div>'
+    + '<div id="ds-q-times" style="display:none"><div class="hz-ds-2"><label class="hz-kb-l">From (24h)<input id="ds-q-st" value="' + hzDsHm(s.start) + '" maxlength="5" inputmode="numeric" oninput="hzDsReqCheck()"></label><label class="hz-kb-l">To (24h)<input id="ds-q-en" value="' + (hzDsRange(s).indexOf("23:59") !== -1 ? "23:59" : hzDsHm(s.end)) + '" maxlength="5" inputmode="numeric" oninput="hzDsReqCheck()"></label></div>'
+    + '<div class="hz-kb-note" id="ds-q-warn">The time you cannot make, inside your shift (' + hzDsRange(s) + ').</div></div>'
+    + '<label class="hz-kb-l">Reason / note to the coordinator (optional)<input id="ds-q-note" maxlength="300"></label>'
+    + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button><button class="hz-kb-btn go" id="ds-q-send" onclick="hzDsReqSend(\'' + id + '\')">Send request</button></div>';
+  hzDsDlg("↩️ Ask to cancel this shift", h);
 }
 function hzDsWeek(d) { HZ_DS.week = d === 0 ? 0 : HZ_DS.week + d; hzDsLoad(); }
 function hzDsReqHtml() {
   var list = HZ_DS.coord ? HZ_DS.reqs : HZ_DS.myReqs;
-  if (!list.length) return '<div class="hz-kb-empty">' + (HZ_DS.coord ? "No requests waiting." : "You haven't asked for any shifts.") + '</div>';
+  if (!list.length) return '<div class="hz-kb-empty">' + (HZ_DS.coord ? "No requests waiting." : "You have no requests.") + '</div>';
   var st = { pending: "⏳ Waiting", approved: "✅ Approved", denied: "❌ Denied", cancelled: "↩️ Cancelled" };
   return list.map(function(r) {
     return '<div class="hz-ds-rq"><div class="h"><b>' + hzDsEsc((r.unit || "") + " " + (r.name || "")) + '</b><span>' + (st[r.status] || r.status) + '</span></div>'
+      + '<div class="hz-ds-kind">' + (r.kind === "drop" ? "↩️ Asks to cancel their shift" : "🙋 Asks for an open shift") + '</div>'   // 12.641
       + '<div>' + hzDsDayLabel(hzDsYmd(r.start)) + ' · ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + (r.full ? ' (the whole shift)' : ' (part of the shift)') + '</div>'
       + (r.note ? '<div class="nt">“' + hzDsEsc(r.note) + '”</div>' : '') + (r.decisionNote ? '<div class="nt">Coordinator: “' + hzDsEsc(r.decisionNote) + '”' + (r.decidedBy ? ' — ' + hzDsEsc(r.decidedBy) : '') + '</div>' : '')
       + (HZ_DS.coord && r.status === "pending" ? '<div class="hz-kb-bar" style="margin:8px 0 0"><button class="hz-kb-btn go" onclick="hzDsDecideForm(\'' + r.id + '\')">Approve / deny…</button></div>' : '')
@@ -36876,7 +36897,7 @@ function hzDsReqForm(id) {
     + '<label class="hz-kb-l">Note to the coordinator (optional)<input id="ds-q-note" maxlength="300"></label>'
     + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-btn go" id="ds-q-send" onclick="hzDsReqSend(\'' + id + '\')">Send request</button></div>';
   hzDsDlg("🙋 Request this shift", h);
-  HZ_DS.reqShift = s;
+  HZ_DS.reqShift = s; HZ_DS.reqKind = "take";
 }
 // 12.633 (Sam: "make it a type-to-enter field that should have a warning and block the request if you go over"): any minute, checked as you type
 function hzDsHmNorm(v) {   // "0900", "900", "9:00", "09:00" → "09:00"; "" if not a time
@@ -36891,8 +36912,8 @@ function hzDsReqTimes() {   // → { start, end } in ms, or { err }
   var start = hzDsPartMs(s, a), end = b === "23:59" && midEnd ? s.end : hzDsPartMs(s, b);   // 23:59 = to the end of a shift that ends at midnight
   if (b === hzDsHm(s.start) && end <= start) end = s.end;   // To typed as the shift's own end on a 24-hour shift
   if (isNaN(start) || start < s.start) return { err: "⚠ From is before the shift starts (" + hzDsHm(s.start) + ")." };
-  if (start >= s.end) return { err: "⚠ From is outside the open shift (" + hzDsRange(s) + ")." };
-  if (end > s.end) return { err: "⚠ To goes past the end of the shift (" + (hzDsRange(s).indexOf("23:59") !== -1 ? "23:59" : hzDsHm(s.end)) + "). You can only ask for time inside the open shift." };
+  if (start >= s.end) return { err: "⚠ From is outside " + hzDsReqWord() + " (" + hzDsRange(s) + ")." };
+  if (end > s.end) return { err: "⚠ To goes past the end of the shift (" + (hzDsRange(s).indexOf("23:59") !== -1 ? "23:59" : hzDsHm(s.end)) + "). You can only pick time inside " + hzDsReqWord() + "." };
   if (end <= start) return { err: "⚠ To has to be after From." };
   return { start: start, end: end };
 }
@@ -36900,7 +36921,7 @@ function hzDsReqCheck() {
   var r = hzDsReqTimes(), w = document.getElementById("ds-q-warn"), btn = document.getElementById("ds-q-send");
   var part = document.getElementById("ds-q-part") && document.getElementById("ds-q-part").classList.contains("on");
   var bad = part && !!r.err;
-  if (w) { w.textContent = bad ? r.err : "Any time inside the open shift (" + hzDsRange(HZ_DS.reqShift) + ")."; w.classList.toggle("hz-ds-bad", bad); }   // 12.635 (Sam: "make this red")
+  if (w) { w.textContent = bad ? r.err : (HZ_DS.reqKind === "drop" ? "The time you cannot make, inside your shift (" : "Any time inside the open shift (") + hzDsRange(HZ_DS.reqShift) + ")."; w.classList.toggle("hz-ds-bad", bad); }   // 12.635 (Sam: "make this red")
   if (btn) { btn.disabled = bad; btn.style.opacity = bad ? ".45" : ""; }
   return !bad;
 }
@@ -36914,25 +36935,32 @@ function hzDsReqSend(id) {
   if (part) {
     var tr = hzDsReqTimes(); if (tr.err) { hzDsReqCheck(); return; }
     start = tr.start; end = tr.end;
-    if (end <= start || start < s.start || end > s.end) { hzDsMsg("The times have to be inside the open shift (" + hzDsRange(s) + ").", true); return; }
+    if (end <= start || start < s.start || end > s.end) { hzDsMsg("The times have to be inside " + hzDsReqWord() + " (" + hzDsRange(s) + ").", true); return; }
   }
-  db.collection("dispRequests").add({ shiftId: id, uid: me.uid, unit: me.unit, name: me.name, start: start, end: end, full: start === s.start && end === s.end, note: hzDsV("ds-q-note"), status: "pending", createdAt: Date.now() })
+  var kind = HZ_DS.reqKind === "drop" ? "drop" : "take";
+  if (kind === "drop" && s.uid !== me.uid) { hzDsMsg("That shift is not yours any more.", true); return; }
+  db.collection("dispRequests").add({ kind: kind, shiftId: id, uid: me.uid, unit: me.unit, name: me.name, start: start, end: end, full: start === s.start && end === s.end, note: hzDsV("ds-q-note"), status: "pending", createdAt: Date.now() })
     .then(function() { hzDsDlgClose(); hzDsToast("✓ Request sent to the dispatch coordinator"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not sent: " + e.message, true); });
 }
 function hzDsReqCancel(rid) { db.collection("dispRequests").doc(rid).update({ status: "cancelled" }).then(function() { hzDsToast("Request cancelled"); hzDsLoad(); }).catch(function(e) { hzDsToast(e.message, true); }); }
 // ── coordinator: approve / deny ──
 function hzDsDecideForm(rid) {
   var r = HZ_DS.reqs.filter(function(x) { return x.id === rid; })[0]; if (!r) return;
-  var h = '<div class="hz-ds-note"><b>' + hzDsEsc(r.unit + " " + r.name) + '</b> asks for ' + hzDsDayLabel(hzDsYmd(r.start)) + ' ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + (r.full ? ' (the whole shift)' : ' (part of the open shift — the rest stays open)') + (r.note ? '<br>“' + hzDsEsc(r.note) + '”' : '') + '</div>'
+  var drop = r.kind === "drop";
+  var h = drop ? '<div class="hz-ds-note"><b>' + hzDsEsc(r.unit + " " + r.name) + '</b> asks to cancel ' + hzDsDayLabel(hzDsYmd(r.start)) + ' ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + (r.full ? ' (the whole shift — it becomes an open shift)' : ' (part of the shift — that part becomes open, the rest stays theirs)') + (r.note ? '<br>“' + hzDsEsc(r.note) + '”' : '') + '</div>'
+    + '<label class="hz-kb-l">Note back to them (optional)<input id="ds-d-note" maxlength="300"></label>'
+    + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button><button class="hz-kb-sm red" style="height:auto;padding:8px 14px" onclick="hzDsDecide(\'' + rid + '\',false)">✕ Deny</button><button class="hz-kb-btn go" onclick="hzDsDecide(\'' + rid + '\',true)">✓ Approve</button></div>' :
+    '<div class="hz-ds-note"><b>' + hzDsEsc(r.unit + " " + r.name) + '</b> asks for ' + hzDsDayLabel(hzDsYmd(r.start)) + ' ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + (r.full ? ' (the whole shift)' : ' (part of the open shift — the rest stays open)') + (r.note ? '<br>“' + hzDsEsc(r.note) + '”' : '') + '</div>'
     + '<label class="hz-kb-l">Note back to them (optional)<input id="ds-d-note" maxlength="300"></label>'
     + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-sm red" style="height:auto;padding:8px 14px" onclick="hzDsDecide(\'' + rid + '\',false)">✕ Deny</button><button class="hz-kb-btn go" onclick="hzDsDecide(\'' + rid + '\',true)">✓ Approve</button></div>';
-  hzDsDlg("Shift request", h);
+  hzDsDlg(drop ? "↩️ Cancel request" : "Shift request", h);
 }
 function hzDsDecide(rid, ok) {
   var r = HZ_DS.reqs.filter(function(x) { return x.id === rid; })[0]; if (!r) return;
   var me = HZ_DS.me || {}, note = hzDsV("ds-d-note"), by = (me.unit + " " + me.name).trim();
   var rref = db.collection("dispRequests").doc(rid), sref = db.collection("dispShifts").doc(r.shiftId);
   if (!ok) { rref.update({ status: "denied", decisionNote: note, decidedBy: by, decidedAt: Date.now() }).then(function() { hzDsDlgClose(); hzDsToast("Request denied"); hzDsLoad(); }).catch(function(e) { hzDsMsg(e.message, true); }); return; }
+  if (r.kind === "drop") { hzDsDecideDrop(r, rref, sref, note, by); return; }
   db.runTransaction(function(tx) {
     return tx.get(sref).then(function(sd) {
       if (!sd.exists) throw new Error("That shift isn't on the schedule any more.");
@@ -36945,6 +36973,21 @@ function hzDsDecide(rid, ok) {
       tx.update(rref, { status: "approved", decisionNote: note, decidedBy: by, decidedAt: Date.now() });
     });
   }).then(function() { hzDsDlgClose(); hzDsToast("✓ Approved — the shift is " + (r.unit || "theirs")); hzDsLoad(); }).catch(function(e) { hzDsMsg(e.message, true); });
+}
+function hzDsDecideDrop(r, rref, sref, note, by) {   // 12.641: approved cancel → that time is an open shift, any rest stays theirs
+  var me = HZ_DS.me || {};
+  db.runTransaction(function(tx) {
+    return tx.get(sref).then(function(sd) {
+      if (!sd.exists || sd.data().cancelled) throw new Error("That shift is not on the schedule any more.");
+      var s = sd.data(); if (s.uid !== r.uid) throw new Error("That shift is no longer assigned to " + (r.unit || "them") + ".");
+      if (r.start < s.start || r.end > s.end) throw new Error("The shift changed — it is now " + hzDsHm(s.start) + "–" + hzDsHm(s.end) + ". Deny this one and ask them to send a new request.");
+      var keep = { uid: s.uid, unit: s.unit || "", name: s.name || "", ruleId: "", edited: false, cancelled: false, note: s.note || "", splitFrom: r.shiftId, remindedFor: Array.isArray(s.remindedFor) ? s.remindedFor : [], createdBy: me.unit || "", updatedAt: Date.now() };
+      if (r.start > s.start) tx.set(db.collection("dispShifts").doc(), Object.assign({}, keep, { start: s.start, end: r.start }));
+      if (r.end < s.end) tx.set(db.collection("dispShifts").doc(), Object.assign({}, keep, { start: r.end, end: s.end }));
+      tx.update(sref, { uid: "", unit: "", name: "", start: r.start, end: r.end, edited: s.ruleId ? true : !!s.edited, remindedFor: [], updatedAt: Date.now(), updatedBy: me.unit || "" });
+      tx.update(rref, { status: "approved", decisionNote: note, decidedBy: by, decidedAt: Date.now() });
+    });
+  }).then(function() { hzDsDlgClose(); hzDsToast("✓ Approved — that time is an open shift now"); hzDsLoad(); }).catch(function(e) { hzDsMsg(e.message, true); });
 }
 
 // ── calendar: one shift (Google link or a .ics file), or a subscription that stays up to date ──
@@ -37003,7 +37046,7 @@ function hzDsRemHtml() {
     + '<button type="button" class="hz-kb-btn" style="margin:4px 0 6px" onclick="hzDsRemAdd()">＋ Add another reminder</button>'
     + '<div class="hz-kb-l">How</div><div class="hz-kb-roles"><label><input type="checkbox" id="ds-m-push"' + (c.push !== false ? ' checked' : '') + '> Push</label><label><input type="checkbox" id="ds-m-text"' + (c.text ? ' checked' : '') + '> Text (SMS)</label></div>'
     + '<div class="hz-kb-note">Where it takes effect: the times — dispatchers who haven\'t picked their own in My Settings; Push / Text — every dispatcher. Changing it affects the next reminders sent (checked every 5 minutes); shifts already reminded aren\'t sent again.</div>'
-    + hzDsReqCfgHtml()
+    + hzDsReqCfgHtml() + hzDsDropCfgHtml()
     + '<div class="hz-kb-bar" style="margin:12px 0 0"><button class="hz-kb-btn go" onclick="hzDsRemSave()">✓ Save</button></div>';
   return h;
 }
@@ -37043,6 +37086,17 @@ function hzDsRemAdd() {
   var pick = [30, 15, 60, 120, 10, 5].filter(function(m) { return HZ_DS.remEdit.indexOf(m) === -1; })[0] || 45;
   HZ_DS.remEdit.push(pick); hzDsRemList();
 }
+// 12.641: the same choices for requests to cancel a shift (appdata/dispatchSchedule.drop)
+function hzDsDropCfgHtml() {
+  var q = (HZ_DS.cfg || {}).drop || {}, ck = function(id, on, label) { return '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + label + '</label>'; };
+  return '<div class="hz-kb-l" style="margin-top:18px;font-size:.8rem;opacity:1">↩️ Requests to cancel a shift</div>'
+    + '<div class="hz-ds-note">When a dispatcher who cannot make their shift asks to cancel it (or part of it), and when it is approved or denied. It only cancels once a coordinator or admin approves.</div>'
+    + '<div class="hz-kb-l">Tell about a new cancel request</div><div class="hz-kb-roles">' + ck("ds-x-coord", q.coord !== false, "Dispatch Coordinators") + ck("ds-x-admins", q.admins === true, "Admins") + '</div>'
+    + '<div class="hz-kb-note">If nobody is a Dispatch Coordinator, admins are always told.</div>'
+    + '<div class="hz-kb-l">How they are told</div><div class="hz-kb-roles">' + ck("ds-x-push", q.push !== false, "Push") + ck("ds-x-text", q.text === true, "Text (SMS or WhatsApp — each person\'s choice in My Settings)") + ck("ds-x-email", q.email === true, "Email") + '</div>'
+    + '<div class="hz-kb-l">Tell the dispatcher the answer (approved / denied) by</div><div class="hz-kb-roles">' + ck("ds-x-apush", q.ansPush !== false, "Push") + ck("ds-x-atext", q.ansText === true, "Text (SMS or WhatsApp)") + ck("ds-x-aemail", q.ansEmail === true, "Email") + '</div>'
+    + '<div class="hz-kb-note">Where it takes effect: the phones / inboxes of the people ticked above, the next time a cancel request is sent or answered. Email goes to the address on their profile.</div>';
+}
 function hzDsRemSave() {
   if (!hzDsRemRead()) return;
   var d = { remOn: true, reminders: HZ_DS.remEdit.slice().sort(function(a, b) { return b - a; }), push: document.getElementById("ds-m-push").checked, text: document.getElementById("ds-m-text").checked, updatedAt: Date.now() };
@@ -37053,6 +37107,11 @@ function hzDsRemSave() {
     d.req = { coord: g("ds-q-coord"), admins: g("ds-q-admins"), push: g("ds-q-push"), text: g("ds-q-text"), email: g("ds-q-email"), ansPush: g("ds-q-apush"), ansText: g("ds-q-atext"), ansEmail: g("ds-q-aemail") };
     if (!d.req.coord && !d.req.admins) { hzDsMsg("Tick Dispatch Coordinators or Admins — someone has to hear about new requests.", true); return; }
     if (!d.req.push && !d.req.text && !d.req.email) { hzDsMsg("Tick at least one way to tell them about new requests.", true); return; }
+  }
+  if (document.getElementById("ds-x-coord")) {
+    d.drop = { coord: g("ds-x-coord"), admins: g("ds-x-admins"), push: g("ds-x-push"), text: g("ds-x-text"), email: g("ds-x-email"), ansPush: g("ds-x-apush"), ansText: g("ds-x-atext"), ansEmail: g("ds-x-aemail") };
+    if (!d.drop.coord && !d.drop.admins) { hzDsMsg("Cancel requests: tick Dispatch Coordinators or Admins — someone has to hear about them.", true); return; }
+    if (!d.drop.push && !d.drop.text && !d.drop.email) { hzDsMsg("Cancel requests: tick at least one way to tell them.", true); return; }
   }
   db.collection("appdata").doc("dispatchSchedule").set(d, { merge: true }).then(function() { HZ_DS.cfg = Object.assign(HZ_DS.cfg || {}, d); hzDsMsg("✓ Saved"); hzDsToast("✓ Reminder settings saved"); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
 }
@@ -37141,6 +37200,9 @@ function hzDsCss() {
     + P + ".hz-ds-none{font-size:.82rem;opacity:.55;margin:0 4px 6px}"
     + P + ".hz-ds-note{font-size:.85rem;line-height:1.5;opacity:.85;margin:0 2px 10px}"
     + P + ".hz-ds-bar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 6px}"
+    + P + ".hz-ds-kind{font-weight:700;color:#d4a017;-webkit-text-fill-color:#d4a017;margin:2px 0}"
+    + P + ".hz-ds-drop{white-space:nowrap}"
+    + "@media (max-width:520px){" + P + ".hz-ds-row:has(.hz-ds-drop){flex-wrap:wrap}" + P + ".hz-ds-row:has(.hz-ds-drop) .a{flex-basis:100%;justify-content:flex-end}}"
     + P + ".hz-ds-pill{font-size:.75rem;border:1px solid #d4a017;border-radius:999px;padding:3px 9px;color:#d4a017;-webkit-text-fill-color:#d4a017;white-space:nowrap}"
     + P + ".hz-ds-req{padding:7px 12px;font-size:.82rem}"
     + P + ".hz-ds-weeknav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}"
