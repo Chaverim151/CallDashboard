@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.138"; window.M_BUILD = BUILD;
+  var BUILD = "9.141"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19782,7 +19782,7 @@ function hzDsLoadMe() {
     HZ_DS.coord = HZ_DS.admin || d.dispatchCoordinator === true;
   }).catch(function() { HZ_DS.me = { uid: u.uid, unit: "", name: "", roles: [] }; });
 }
-function hzDsWeekStart(off) { return hzDsAddDays(hzDsYmd(Date.now()), 7 * Math.max(0, off || 0)); }   // 12.633 (Sam: "get rid of the past"): 7 days from today, no past days
+function hzDsWeekStart(off) { var t = hzDsYmd(Date.now()); return hzDsAddDays(t, -hzDsDow(t) + 7 * (off || 0)); }   // 12.638 (Sam): back to a calendar week, Sunday to Saturday (12.633 had shown 7 days from today)
 function hzDsLoad() {
   var me = HZ_DS.me || {}, now = Date.now(), ws = hzDsWeekStart(HZ_DS.week), we = hzDsAddDays(ws, 7);
   var C = function(n) { return db.collection(n); };
@@ -19861,8 +19861,8 @@ function hzDsOpenHtml() {
 }
 function hzDsWeekHtml() {
   var ws = hzDsWeekStart(HZ_DS.week), we = hzDsAddDays(ws, 6);
-  var h = '<div class="hz-ds-weeknav">' + (HZ_DS.week > 0 ? '<button class="hz-kb-btn" onclick="hzDsWeek(-1)">‹ Prev</button>' : '<span style="width:82px"></span>') + '<b>' + hzDsDayLabel(ws).slice(4) + ' – ' + hzDsDayLabel(we).slice(4) + '</b>'
-    + (HZ_DS.week ? '<button class="hz-kb-btn" onclick="hzDsWeek(0)">Today</button>' : '') + '<button class="hz-kb-btn" onclick="hzDsWeek(1)">Next ›</button></div>';
+  var h = '<div class="hz-ds-weeknav">' + '<button class="hz-kb-btn" onclick="hzDsWeek(-1)">‹ Prev</button>' + '<b>' + hzDsDayLabel(ws).slice(4) + ' – ' + hzDsDayLabel(we).slice(4) + '</b>'
+    + (HZ_DS.week ? '<button class="hz-kb-btn" onclick="hzDsWeek(0)">This week</button>' : '') + '<button class="hz-kb-btn" onclick="hzDsWeek(1)">Next ›</button></div>';
   if (HZ_DS.coord) h += '<div class="hz-ds-note">Tap a shift to change it (only that day), make it open, or change the whole repeating series.</div>';
   var list = HZ_DS.shifts.slice().sort(function(a, b) { return a.start - b.start; });
   var days = ""; for (var i = 0; i < 7; i++) {
@@ -19879,7 +19879,7 @@ function hzDsReqBtn(s) {   // 12.629 (Sam): open shifts can be requested from th
   var r = HZ_DS.myReqs.filter(function(x) { return x.status === "pending" && x.shiftId === s.id; })[0];
   return r ? '<span class="hz-ds-pill">Requested ' + hzDsHm(r.start) + '–' + hzDsHm(r.end) + '</span>' : '<button class="hz-kb-btn go hz-ds-req" onclick="hzDsReqForm(\'' + s.id + '\')">🙋 Request</button>';
 }
-function hzDsWeek(d) { HZ_DS.week = d === 0 ? 0 : Math.max(0, HZ_DS.week + d); hzDsLoad(); }
+function hzDsWeek(d) { HZ_DS.week = d === 0 ? 0 : HZ_DS.week + d; hzDsLoad(); }
 function hzDsReqHtml() {
   var list = HZ_DS.coord ? HZ_DS.reqs : HZ_DS.myReqs;
   if (!list.length) return '<div class="hz-kb-empty">' + (HZ_DS.coord ? "No requests waiting." : "You haven't asked for any shifts.") + '</div>';
@@ -20330,6 +20330,15 @@ function hzDsCss() {
     + P + "#hz-ds-dlg select{color:#d4a017 !important;-webkit-text-fill-color:#d4a017 !important;font-weight:700;cursor:pointer}"
     + P + "#hz-ds-dlg select option{background:#000 !important;color:#f2f2f2 !important}"
     + P + "#hz-ds-dlg select option:checked{background:#d4a017 !important;color:#000 !important}"
+    // 12.637 (Sam: "colorize" the opened list): Chrome / Edge can now style the list itself (appearance: base-select) — black and gold; iPhone / Safari keep their own picker
+    + "@supports (appearance: base-select){"
+    + P + "#hz-ds-dlg select," + P + ".hz-ds-pane select," + P + ".hz-kb-form select{appearance:base-select !important}"
+    + P + "#hz-ds-dlg ::picker(select)," + P + ".hz-ds-pane ::picker(select)," + P + ".hz-kb-form ::picker(select){appearance:base-select;background:#0b0b0b;border:1.5px solid #d4a017;border-radius:10px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,.6)}"
+    + P + "#hz-ds-dlg select option," + P + ".hz-ds-pane select option," + P + ".hz-kb-form select option{background:transparent !important;color:#f2f2f2 !important;-webkit-text-fill-color:#f2f2f2;padding:9px 12px;border-radius:6px;font-weight:600;cursor:pointer}"
+    + P + "#hz-ds-dlg select option:hover," + P + ".hz-ds-pane select option:hover," + P + ".hz-kb-form select option:hover," + P + "#hz-ds-dlg select option:focus-visible{background:#2a2108 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017}"
+    + P + "#hz-ds-dlg select option:checked," + P + ".hz-ds-pane select option:checked," + P + ".hz-kb-form select option:checked{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}"
+    + P + "#hz-ds-dlg select::picker-icon," + P + ".hz-ds-pane select::picker-icon," + P + ".hz-kb-form select::picker-icon{color:#d4a017}"
+    + "}"
     + P + "#hz-ds-dlg input::placeholder{color:#8a7a4a !important;-webkit-text-fill-color:#8a7a4a !important}"
     + P + "#hz-ds-dlg input[type=checkbox]{accent-color:#d4a017}"
     + P + ".hz-ds-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}"
