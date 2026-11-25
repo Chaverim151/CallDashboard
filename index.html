@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.641">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.642">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2801,7 +2801,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.641</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.642</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -12574,6 +12574,17 @@ function renderTemplateSend() {
           return box(dsStageOn(r.k, ch), (ch === "sms" ? "Text" : ch === "push" ? "Push notification" : "Email") + " — " + r.l.replace(/^\S+\s/, ""), "dsSetStageChannel('" + r.k + "','" + ch + "',this.checked)");
         }).join("") + '<td class="tpl-st-na">—</td></tr>';
       });
+      // 12.642: 🗓️ Dispatch Schedule notices
+      if (typeof DSCH_STAGES !== "undefined") {
+        if (typeof HZ_DS !== "undefined" && !HZ_DS.cfgLoaded && typeof hzDsCfgLoad === "function") hzDsCfgLoad(renderTemplateSend);
+        out += '<tr class="tpl-st-grp"><td colspan="5">🗓️ Dispatch Schedule</td></tr>';
+        DSCH_STAGES.forEach(function(r) {
+          out += '<tr><td title="Goes to ' + escapeHtml(r.to) + '">' + escapeHtml(r.l) + ' <small style="opacity:.7">→ ' + escapeHtml(r.to) + '</small></td>' + ["push", "sms", "email"].map(function(ch) {
+            if (ch === "email" && r.noEmail) return '<td class="tpl-st-na">—</td>';
+            return box(dsStageOn(r.k, ch), (ch === "sms" ? "Text" : ch === "push" ? "Push notification" : "Email") + " — " + r.l.replace(/^\S+\s/, ""), "dsSetStageChannel('" + r.k + "','" + ch + "',this.checked)");
+          }).join("") + '<td class="tpl-st-na">—</td></tr>';
+        });
+      }
       return out;
     }
     // 12.122: night shift covers — Push / Text / Email
@@ -16094,6 +16105,15 @@ var AV_STAGES = [
   { k: "availShabReminder", l: "📅 Shabbos poll reminder", to: "all responders (Notification Settings ▸ 📅 Availability sets when)" },
   { k: "availSummary",  l: "📅 Morning on-call summary", to: "the list in Who Receives What" }
 ];
+// 12.642 (Sam: "the decision between medium should be moved into the regular notification table"): Dispatch Schedule notices.
+// Until a box is switched here, each follows what Notification Settings ▸ 🗓️ Dispatch Schedule had (hzDsHowDefault). Who gets them stays there.
+var DSCH_STAGES = [
+  { k: "dschRemind",  l: "⏰ Shift reminder", to: "the dispatcher on the shift (times: Notification Settings ▸ 🗓️ Dispatch Schedule)", noEmail: true },
+  { k: "dschReq",     l: "🙋 New open-shift request", to: "Dispatch Coordinators / Admins (Notification Settings ▸ 🗓️ Dispatch Schedule)" },
+  { k: "dschReqAns",  l: "✅ Open-shift request approved / denied", to: "the dispatcher who asked" },
+  { k: "dschDrop",    l: "↩️ New request to cancel a shift", to: "Dispatch Coordinators / Admins (Notification Settings ▸ 🗓️ Dispatch Schedule)" },
+  { k: "dschDropAns", l: "✅ Cancel request approved / denied", to: "the dispatcher who asked" }
+];
 var ERV_STAGES = [
   { k: "ervRequest",   l: "🚑 New usage request", to: "the vehicle usage list (Who Receives What)" },
   { k: "ervCancelled", l: "↩️ Request cancelled by the driver", to: "the vehicle usage list", from: "ervRequest" },
@@ -16108,6 +16128,7 @@ function dsStageOn(k, ch) {
   if (v && typeof v[ch] === "boolean") return v[ch];
   if (k === "tkReminder") return ch !== "email";   // 12.554: reminders — Push + Text on until switched off (same as the server)
   if ((k === "ticketNewGeneral" || k === "ticketNewRestock") && ch === "sms") return true;   // 12.554 (Sam): new requests are texted to the support group
+  if (/^dsch/.test(k)) return typeof hzDsHowDefault === "function" ? hzDsHowDefault(k, ch) : ch === "push";   // 12.642
   if (/^avail/.test(k)) return false;   // 12.86: availability notices are Off until ticked
   if (/^shiftCover/.test(k)) return false;   // 12.122: night shift cover notices too
   if (/^erv/.test(k)) {   // 12.79: ERV shift notices are Off until ticked (12.84: split keys follow their old shared switch until set)
@@ -21608,7 +21629,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.641";
+var DESKTOP_VERSION = "12.642";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -37041,12 +37062,11 @@ function hzDsRemPane() {
 }
 function hzDsRemHtml() {
   var c = HZ_DS.cfg || {}; HZ_DS.remEdit = (Array.isArray(c.reminders) ? c.reminders : []).slice().sort(function(a, b) { return b - a; });
-  var h = '<div class="hz-ds-note">Each dispatcher gets a reminder before each of their shifts — the same idea as the Night Watch reminder for responders. <b>These are the defaults:</b> each dispatcher can pick their own times (and add more) in <b>My Settings ▸ 🗓️ Dispatch shift reminders</b>; what they pick there wins. <b>How</b> they are sent (Push / Text) is set only here, for everyone. Reminders can\'t be turned off — at least one always goes out (1 hour before if nothing is set).</div>'
+  var h = '<div class="hz-ds-note">Each dispatcher gets a reminder before each of their shifts — the same idea as the Night Watch reminder for responders. <b>These are the defaults:</b> each dispatcher can pick their own times (and add more) in <b>My Settings ▸ 🗓️ Dispatch shift reminders</b>; what they pick there wins. <b>How</b> they are sent is set in How It\'s Sent (see below). Reminders can\'t be turned off — at least one always goes out (1 hour before if nothing is set).</div>'
     + '<div class="hz-kb-l">Default reminder times (at least one — every dispatcher always gets a reminder)</div><div id="ds-m-list"></div>'
     + '<button type="button" class="hz-kb-btn" style="margin:4px 0 6px" onclick="hzDsRemAdd()">＋ Add another reminder</button>'
-    + '<div class="hz-kb-l">How</div><div class="hz-kb-roles"><label><input type="checkbox" id="ds-m-push"' + (c.push !== false ? ' checked' : '') + '> Push</label><label><input type="checkbox" id="ds-m-text"' + (c.text ? ' checked' : '') + '> Text (SMS)</label></div>'
-    + '<div class="hz-kb-note">Where it takes effect: the times — dispatchers who haven\'t picked their own in My Settings; Push / Text — every dispatcher. Changing it affects the next reminders sent (checked every 5 minutes); shifts already reminded aren\'t sent again.</div>'
-    + hzDsReqCfgHtml() + hzDsDropCfgHtml()
+    + '<div class="hz-kb-note">Where it takes effect: dispatchers who haven\'t picked their own times in My Settings. Changing it affects the next reminders sent (checked every 5 minutes); shifts already reminded aren\'t sent again.</div>'
+    + hzDsReqCfgHtml() + hzDsDropCfgHtml() + '<div class="hz-kb-note"><b>How</b> each of these is sent (Push / Text / Email) is set in <b>Admin ▸ Notification Settings ▸ How It\'s Sent ▸ 🗓️ Dispatch Schedule</b> (on the computer).</div>'
     + '<div class="hz-kb-bar" style="margin:12px 0 0"><button class="hz-kb-btn go" onclick="hzDsRemSave()">✓ Save</button></div>';
   return h;
 }
@@ -37057,9 +37077,14 @@ function hzDsReqCfgHtml() {
     + '<div class="hz-ds-note">When a dispatcher asks for an open shift (or part of one), and when it is approved or denied.</div>'
     + '<div class="hz-kb-l">Tell about a new request</div><div class="hz-kb-roles">' + ck("ds-q-coord", q.coord !== false, "Dispatch Coordinators") + ck("ds-q-admins", q.admins === true, "Admins") + '</div>'
     + '<div class="hz-kb-note">If nobody is a Dispatch Coordinator, admins are always told.</div>'
-    + '<div class="hz-kb-l">How they are told</div><div class="hz-kb-roles">' + ck("ds-q-push", q.push !== false, "Push") + ck("ds-q-text", q.text === true, "Text (SMS or WhatsApp — each person\'s choice in My Settings)") + ck("ds-q-email", q.email === true, "Email") + '</div>'
-    + '<div class="hz-kb-l">Tell the dispatcher the answer (approved / denied) by</div><div class="hz-kb-roles">' + ck("ds-q-apush", q.ansPush !== false, "Push") + ck("ds-q-atext", q.ansText === true, "Text (SMS or WhatsApp)") + ck("ds-q-aemail", q.ansEmail === true, "Email") + '</div>'
-    + '<div class="hz-kb-note">Where it takes effect: the phones / inboxes of the people ticked above, the next time a request is sent or answered. Email goes to the address on their profile.</div>';
+    + '<div class="hz-kb-note">Where it takes effect: who is told the next time a request is sent. The dispatcher who asked is always told the answer.</div>';   // 12.642 (Sam): how it is sent moved to How It's Sent
+}
+function hzDsHowDefault(k, ch) {
+  var c = HZ_DS.cfg || {}, q = c.req || {}, x = c.drop || {};
+  var m = { dschRemind: { push: c.push !== false, sms: c.text === true, email: false },
+    dschReq: { push: q.push !== false, sms: q.text === true, email: q.email === true }, dschReqAns: { push: q.ansPush !== false, sms: q.ansText === true, email: q.ansEmail === true },
+    dschDrop: { push: x.push !== false, sms: x.text === true, email: x.email === true }, dschDropAns: { push: x.ansPush !== false, sms: x.ansText === true, email: x.ansEmail === true } };
+  return !!(m[k] && m[k][ch]);
 }
 function hzDsRemTxt(m) { return m % 60 === 0 ? (m / 60) + (m === 60 ? " hour" : " hours") : m + " minutes"; }
 // 12.630 (Sam): the reminders are an editable list — change how far ahead any of them is (including the required one), add more, remove extras
@@ -37093,25 +37118,20 @@ function hzDsDropCfgHtml() {
     + '<div class="hz-ds-note">When a dispatcher who cannot make their shift asks to cancel it (or part of it), and when it is approved or denied. It only cancels once a coordinator or admin approves.</div>'
     + '<div class="hz-kb-l">Tell about a new cancel request</div><div class="hz-kb-roles">' + ck("ds-x-coord", q.coord !== false, "Dispatch Coordinators") + ck("ds-x-admins", q.admins === true, "Admins") + '</div>'
     + '<div class="hz-kb-note">If nobody is a Dispatch Coordinator, admins are always told.</div>'
-    + '<div class="hz-kb-l">How they are told</div><div class="hz-kb-roles">' + ck("ds-x-push", q.push !== false, "Push") + ck("ds-x-text", q.text === true, "Text (SMS or WhatsApp — each person\'s choice in My Settings)") + ck("ds-x-email", q.email === true, "Email") + '</div>'
-    + '<div class="hz-kb-l">Tell the dispatcher the answer (approved / denied) by</div><div class="hz-kb-roles">' + ck("ds-x-apush", q.ansPush !== false, "Push") + ck("ds-x-atext", q.ansText === true, "Text (SMS or WhatsApp)") + ck("ds-x-aemail", q.ansEmail === true, "Email") + '</div>'
-    + '<div class="hz-kb-note">Where it takes effect: the phones / inboxes of the people ticked above, the next time a cancel request is sent or answered. Email goes to the address on their profile.</div>';
+    + '<div class="hz-kb-note">Where it takes effect: who is told the next time a cancel request is sent. The dispatcher who asked is always told the answer.</div>';
 }
 function hzDsRemSave() {
   if (!hzDsRemRead()) return;
-  var d = { remOn: true, reminders: HZ_DS.remEdit.slice().sort(function(a, b) { return b - a; }), push: document.getElementById("ds-m-push").checked, text: document.getElementById("ds-m-text").checked, updatedAt: Date.now() };
+  var d = { remOn: true, reminders: HZ_DS.remEdit.slice().sort(function(a, b) { return b - a; }), updatedAt: Date.now() };
   if (!d.reminders.length) { hzDsMsg("Add at least one reminder time — one is required.", true); return; }
-  if (!d.push && !d.text) { hzDsMsg("Tick Push or Text, or nothing will be sent.", true); return; }
   var g = function(id) { var e = document.getElementById(id); return !!(e && e.checked); };
   if (document.getElementById("ds-q-coord")) {
-    d.req = { coord: g("ds-q-coord"), admins: g("ds-q-admins"), push: g("ds-q-push"), text: g("ds-q-text"), email: g("ds-q-email"), ansPush: g("ds-q-apush"), ansText: g("ds-q-atext"), ansEmail: g("ds-q-aemail") };
+    d.req = { coord: g("ds-q-coord"), admins: g("ds-q-admins") };
     if (!d.req.coord && !d.req.admins) { hzDsMsg("Tick Dispatch Coordinators or Admins — someone has to hear about new requests.", true); return; }
-    if (!d.req.push && !d.req.text && !d.req.email) { hzDsMsg("Tick at least one way to tell them about new requests.", true); return; }
   }
   if (document.getElementById("ds-x-coord")) {
-    d.drop = { coord: g("ds-x-coord"), admins: g("ds-x-admins"), push: g("ds-x-push"), text: g("ds-x-text"), email: g("ds-x-email"), ansPush: g("ds-x-apush"), ansText: g("ds-x-atext"), ansEmail: g("ds-x-aemail") };
+    d.drop = { coord: g("ds-x-coord"), admins: g("ds-x-admins") };
     if (!d.drop.coord && !d.drop.admins) { hzDsMsg("Cancel requests: tick Dispatch Coordinators or Admins — someone has to hear about them.", true); return; }
-    if (!d.drop.push && !d.drop.text && !d.drop.email) { hzDsMsg("Cancel requests: tick at least one way to tell them.", true); return; }
   }
   db.collection("appdata").doc("dispatchSchedule").set(d, { merge: true }).then(function() { HZ_DS.cfg = Object.assign(HZ_DS.cfg || {}, d); hzDsMsg("✓ Saved"); hzDsToast("✓ Reminder settings saved"); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
 }
