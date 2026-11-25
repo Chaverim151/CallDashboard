@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.120"; window.M_BUILD = BUILD;
+  var BUILD = "9.121"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19272,9 +19272,29 @@ function hzKbYtPrevHtml(u) {
   if (!id) return '<div class="hz-kb-note" style="color:#c62828">Not a YouTube or Vimeo video link yet.</div>';
   return '<div class="hz-kb-prev"><img src="https://i.ytimg.com/vi/' + hzKbEsc(id) + '/hqdefault.jpg" alt=""><span>✓ YouTube video found</span></div>';
 }
+function hzKbMediaKey(n) {   // what makes two items "the same media"
+  var u = String((n && n.url) || "").trim(), yt = hzKbYouTube(u), vm = yt ? null : hzKbVimeo(u);
+  if (yt) return "yt:" + yt; if (vm) return "vm:" + vm.id;
+  if (n && n.path && n.fileName) return "f:" + String(n.fileName).toLowerCase() + "|" + (n.size || "");
+  if (u) return "u:" + u.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+  return "";
+}
+function hzKbDupsOf(key, exceptId) { return HZ_KB.all.filter(function(x) { return x.type !== "folder" && x.id !== exceptId && hzKbMediaKey(x) === key; }); }
+function hzKbWhere(n) { var a = hzKbAncestors(n.id); return a.length ? a.map(function(x) { return x.title || ""; }).join(" ▸ ") : "the top level (main screen)"; }
+function hzKbDupAsk(dups, editing) {
+  var old = document.getElementById("hz-kb-dup"); if (old) old.remove();
+  var d = document.createElement("div"); d.id = "hz-kb-dup";
+  d.innerHTML = '<div class="hz-kb-dupbox" role="dialog" aria-label="Already added"><div class="hz-kb-fh">⚠️ Already added</div>'
+    + '<div class="hz-kb-dupt">This media is already in the Knowledge Base:</div><ul>' + dups.slice(0, 5).map(function(x) { return '<li><b>“' + hzKbEsc(x.title || "(no name)") + '”</b> in <b>' + hzKbEsc(hzKbWhere(x)) + '</b></li>'; }).join("") + '</ul>'
+    + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzKbDupClose()">Cancel</button><button class="hz-kb-btn go" onclick="hzKbDupClose();HZ_KB.dupOk=true;hzKbSave()">' + (editing ? "Save anyway" : "Add anyway") + '</button></div></div>';
+  d.onclick = function(e) { if (e.target === d) hzKbDupClose(); };
+  document.body.appendChild(d);
+}
+function hzKbDupClose() { var d = document.getElementById("hz-kb-dup"); if (d) d.remove(); }
+function hzKbDupNote(key) { var ds = key ? hzKbDupsOf(key, HZ_KB.form && HZ_KB.form.id) : []; return ds.length ? '<div class="hz-kb-note" style="color:#c62828;font-weight:700">⚠️ Already added: “' + hzKbEsc(ds[0].title || "") + '” in ' + hzKbEsc(hzKbWhere(ds[0])) + (ds.length > 1 ? ' (and ' + (ds.length - 1) + ' more)' : '') + '</div>' : ''; }
 function hzKbYtPreview(u) {
   u = String(u || "").trim();
-  var p = document.getElementById("hz-kb-f-prev"); if (p) p.innerHTML = hzKbYtPrevHtml(u);
+  var p = document.getElementById("hz-kb-f-prev"); if (p) p.innerHTML = hzKbYtPrevHtml(u) + (hzKbVidLink(u) ? hzKbDupNote(hzKbMediaKey({ url: u })) : "");
   // 12.616 (Sam: "can you pull the video title from the YouTube link"): fill in the Name from YouTube / Vimeo (only if Name is empty or was filled in by us)
   if (!hzKbVidLink(u)) return;
   var key = u; HZ_KB.titleFor = key;
@@ -19305,6 +19325,7 @@ function hzKbYtSearch(page) {
       var i = start + k;
       return '<div class="hz-kb-ytc" data-i="' + i + '"><div class="im"><img src="' + hzKbEsc(it.thumb) + '" alt="" loading="lazy">' + (it.dur ? '<span class="dur">' + hzKbEsc(it.dur) + '</span>' : '') + '</div>'
         + '<div class="t">' + hzKbEsc(it.title) + '</div><div class="c">' + hzKbEsc(it.channel) + (it.date ? ' · ' + hzKbEsc(it.date.slice(0, 4)) : '') + '</div>'
+        + (function() { var ds = hzKbDupsOf("yt:" + it.id, HZ_KB.form && HZ_KB.form.id); return ds.length ? '<div class="hz-kb-have">✓ Already in ' + hzKbEsc(hzKbWhere(ds[0])) + '</div>' : ''; })()
         + '<div class="b"><a href="https://www.youtube.com/watch?v=' + hzKbEsc(it.id) + '" target="_blank" rel="noopener">Preview ↗</a><button type="button" class="hz-kb-btn go" onclick="hzKbYtUse(' + i + ')">＋ Use this</button></div></div>';
     }).join(""));
     var old = box.querySelector(".hz-kb-ytmore"); if (old) old.remove();
@@ -19397,6 +19418,13 @@ function hzKbSave() {
       data.kind = "note"; data.url = ""; data.path = ""; data.fileName = "";
     } else if (!file && !oldPath) { hzKbMsg("Choose a video, photo or PDF to upload.", true); return; }
   }
+  // 12.618 (Sam): the same video / link / file already in the Knowledge Base → ask first (Cancel / Add anyway)
+  if (!isF && !HZ_KB.dupOk) {
+    var dkey = f.src === "upload" ? (file ? "f:" + String(file.name || "").toLowerCase() + "|" + file.size : "") : hzKbMediaKey({ url: data.url });
+    var dups = dkey ? hzKbDupsOf(dkey, f.id) : [];
+    if (dups.length) { hzKbDupAsk(dups, !!f.id); return; }
+  }
+  HZ_KB.dupOk = false;
   HZ_KB.busy = true;
   var btn = document.getElementById("hz-kb-f-save"); if (btn) btn.disabled = true;
   var up = Promise.resolve(null);
@@ -19497,6 +19525,12 @@ function hzKbCss() {
     + P + ".hz-kb-after{display:block;font-size:.8rem;line-height:1.45;padding:0 2px}"
     + P + ".hz-kb-after .hz-kb-yt{text-align:left;margin:4px 0 0}"
     + P + ".hz-kb-desc{display:block;color:#ddd;-webkit-text-fill-color:#ddd;font-weight:400;text-transform:none;letter-spacing:normal}"
+    + "#hz-kb-dup{position:fixed;inset:0;z-index:100002;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px}"
+    + P + ".hz-kb-dupbox{background:#000;color:#f2f2f2;-webkit-text-fill-color:#f2f2f2;border:2px solid #d4a017;border-radius:14px;padding:16px 18px;width:min(460px,100%);box-shadow:0 10px 40px rgba(0,0,0,.5)}"
+    + P + ".hz-kb-dupbox .hz-kb-fh{color:#d4a017;-webkit-text-fill-color:#d4a017}"
+    + P + ".hz-kb-dupt{font-size:.9rem;margin:2px 0 6px}"
+    + P + ".hz-kb-dupbox ul{margin:0;padding-left:18px;font-size:.9rem;line-height:1.6}"
+    + P + ".hz-kb-have{font-size:.72rem;font-weight:700;color:#c62828;-webkit-text-fill-color:#c62828;padding:0 8px 6px}"
     + P + ".hz-kb-ytsearch{margin-top:10px;padding-top:10px;border-top:1px dashed rgba(128,128,128,.5)}"
     + P + ".hz-kb-srow{display:flex;gap:8px}"
     + P + ".hz-kb-srow input{flex:1;min-width:0;padding:9px 10px;border:1px solid rgba(128,128,128,.55);border-radius:8px;background:transparent;color:inherit;-webkit-text-fill-color:currentColor;font:inherit;font-size:.92rem}"
