@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.114"; window.M_BUILD = BUILD;
+  var BUILD = "9.115"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19045,8 +19045,8 @@ function hzKbDraw() {
   if (!HZ_KB.loaded) body = '<div class="hz-kb-empty">Loading…</div>';
   else if (HZ_KB.err) body = '<div class="hz-kb-empty">Couldn\'t load the Knowledge Base: ' + hzKbEsc(HZ_KB.err) + (/permission/i.test(HZ_KB.err) ? '<br>The database rules need publishing.' : '') + '</div>';
   else if (org) body = '<div id="hz-kb-adm-pop"></div>';
-  else if (it) body = hzKbItemHtml(it);
-  else body = hzKbCrumbsHtml() + hzKbGridHtml(cur ? cur.id : "");
+  else if (it) body = '<div class="hz-kb-item">' + hzKbItemHtml(it) + '</div>';
+  else body = '<div class="hz-kb-wrap">' + hzKbCrumbsHtml() + hzKbGridHtml(cur ? cur.id : "") + '</div>';
   var ob = o.querySelector(".hz-tl-body"), key = (org ? "o" : "") + (HZ_KB.item || "") + "|" + HZ_KB.path.join("/"), keep = ob && o.getAttribute("data-k") === key ? ob.scrollTop : 0;
   o.innerHTML = '<div class="hz-tl-box hz-kb-box" role="dialog" aria-label="Knowledge Base">' + top + '<div class="hz-tl-body">' + body + '</div></div>';
   o.setAttribute("data-k", key);
@@ -19065,8 +19065,44 @@ function hzKbGridHtml(pid) {
   return '<div class="hz-kb-grid">' + kids.map(function(n) {
     var sub = n.sub || (n.type === "folder" ? (function(c) { return c === 1 ? "1 item" : c + " items"; })(hzKbCount(n.id)) : (HZ_KB_KIND[hzKbKindOf(n)] || HZ_KB_KIND.note)[1]);
     var lim = hzKbIsMgr() && (n.roles || []).length ? '<i class="hz-kb-lock" title="Only: ' + hzKbEsc(hzKbRolesText(n)) + '">👥 ' + hzKbEsc(hzKbRolesText(n)) + '</i>' : '';
+    var th = n.type === "folder" ? "" : hzKbThumbHtml(n);   // 12.612 (Sam): videos / photos show a picture, title underneath
+    if (th) return '<button class="hz-kb-tile media" onclick="hzKbGo(\'' + n.id + '\')">' + th + '<b>' + hzKbEsc(n.title || "(no name)") + '</b>' + (n.sub ? '<small>' + hzKbEsc(n.sub) + '</small>' : '') + lim + '</button>';
     return '<button class="hz-kb-tile' + (n.type === "folder" ? ' fld' : '') + '" onclick="hzKbGo(\'' + n.id + '\')"><span class="ic">' + hzKbEsc(hzKbIcon(n)) + '</span><b>' + hzKbEsc(n.title || "(no name)") + '</b><small>' + hzKbEsc(sub) + '</small>' + lim + '</button>';
   }).join("") + '</div>';
+}
+// ── 12.612: thumbnails — YouTube picture, Vimeo picture (saved at Add, or looked up once), a frame made at upload, or the video's own first frame ──
+HZ_KB.vthumb = {};
+function hzKbThumbHtml(n) {
+  var k = hzKbKindOf(n), u = n.url || "", play = k === "video" ? '<span class="play">▶</span>' : '';
+  var yt = hzKbYouTube(u), vm = yt ? null : hzKbVimeo(u), src = n.thumb || "";
+  if (!src && yt) src = "https://i.ytimg.com/vi/" + yt + "/hqdefault.jpg";
+  if (!src && vm) { src = HZ_KB.vthumb[vm.id] || ""; if (!src) { hzKbVimeoThumb(vm, function(t) { document.querySelectorAll('img[data-vthumb="' + vm.id + '"]').forEach(function(im) { im.src = t; im.style.visibility = ""; }); }); return '<span class="hz-kb-th"><img data-vthumb="' + hzKbEsc(vm.id) + '" alt="" style="visibility:hidden">' + play + '</span>'; } }
+  if (!src && k === "image" && u) src = u;
+  if (src) return '<span class="hz-kb-th"><img src="' + hzKbEsc(src) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">' + play + '</span>';
+  if (k === "video" && u && n.path) return '<span class="hz-kb-th"><video muted playsinline preload="metadata" src="' + hzKbEsc(u) + '#t=0.5" tabindex="-1"></video>' + play + '</span>';
+  return "";
+}
+function hzKbVimeoThumb(vm, cb) {
+  if (HZ_KB.vthumb[vm.id]) { cb(HZ_KB.vthumb[vm.id]); return; }
+  if (HZ_KB.vthumb["_" + vm.id]) return; HZ_KB.vthumb["_" + vm.id] = 1;
+  fetch("https://vimeo.com/api/oembed.json?width=640&url=" + encodeURIComponent("https://vimeo.com/" + vm.id + (vm.h ? "/" + vm.h : ""))).then(function(r) { return r.json(); })
+    .then(function(j) { if (j && j.thumbnail_url) { HZ_KB.vthumb[vm.id] = j.thumbnail_url; cb(j.thumbnail_url); } }).catch(function() {});
+}
+function hzKbVimeoThumbP(u) { var vm = hzKbVimeo(u); if (!vm) return Promise.resolve(""); return new Promise(function(res) { var done = false; hzKbVimeoThumb(vm, function(t) { done = true; res(t); }); setTimeout(function() { if (!done) res(""); }, 5000); }); }
+function hzKbFrameFromFile(file) {   // a picture from about half a second into an uploaded video (skipped if this browser can't read the video)
+  return new Promise(function(res) {
+    var v = document.createElement("video"), url = URL.createObjectURL(file), fin = function(b) { try { URL.revokeObjectURL(url); } catch (e) {} res(b || null); };
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.setAttribute("playsinline", "");
+    var to = setTimeout(function() { fin(null); }, 8000);
+    v.onloadeddata = function() { try { v.currentTime = Math.min(0.5, (v.duration || 1) / 2); } catch (e) { clearTimeout(to); fin(null); } };
+    v.onseeked = function() {
+      try { var w = v.videoWidth, h = v.videoHeight, s = Math.min(1, 640 / Math.max(w, h)), c = document.createElement("canvas"); c.width = Math.round(w * s); c.height = Math.round(h * s);
+        c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); c.toBlob(function(b) { clearTimeout(to); fin(b); }, "image/jpeg", 0.8);
+      } catch (e) { clearTimeout(to); fin(null); }
+    };
+    v.onerror = function() { clearTimeout(to); fin(null); };
+    v.src = url;
+  });
 }
 function hzKbItemHtml(n) {
   var k = hzKbKindOf(n), u = n.url || "", h = "";
@@ -19078,6 +19114,7 @@ function hzKbItemHtml(n) {
   else if (k === "video" && u) h += '<video class="hz-kb-media" controls playsinline preload="metadata" src="' + hzKbEsc(u) + '#t=0.1" onerror="hzKbVidErr(this)"></video>';
   else if (k === "image" && u) h += '<a href="' + hzKbEsc(u) + '" target="_blank" rel="noopener"><img class="hz-kb-media" src="' + hzKbEsc(u) + '" alt="' + hzKbEsc(n.title || "") + '"></a>';
   else if (dr) h += '<div class="hz-kb-frame"><iframe src="https://drive.google.com/file/d/' + hzKbEsc(dr) + '/preview" allow="autoplay; fullscreen" allowfullscreen></iframe></div>';
+  h += '<div class="hz-kb-ititle">' + hzKbEsc(n.title || "") + '</div>';   // 12.612: title under the video
   if (n.text) h += '<div class="hz-kb-text">' + hzKbEsc(n.text).replace(/\n/g, "<br>") + '</div>';
   if (u && (k === "pdf" || k === "file" || k === "link" || dr)) h += '<a class="hz-kb-open" href="' + hzKbEsc(u) + '" target="_blank" rel="noopener">' + (k === "pdf" ? "📄 Open the PDF" : k === "file" ? "📎 Open " + hzKbEsc(n.fileName || "the file") : dr ? "↗ Open in Google Drive" : "🔗 Open the link") + '</a>';
   if (!h) h = '<div class="hz-kb-empty">Nothing added here yet.</div>';
@@ -19261,13 +19298,25 @@ function hzKbSave() {
       var task = st.ref(path).put(file, { contentType: file.type || "application/octet-stream", customMetadata: { uploaderUid: me.uid } });
       task.on("state_changed", function(s) { if (s.totalBytes) hzKbMsg("Uploading… " + Math.round(100 * s.bytesTransferred / s.totalBytes) + "%"); }, rej,
         function() { task.snapshot.ref.getDownloadURL().then(function(u) { res({ url: u, path: path, kind: kind, fileName: file.name || safe, size: file.size }); }, rej); });
+    }).then(function(r) {
+      if (kind !== "video") { r.thumb = ""; r.thumbPath = ""; return r; }
+      return hzKbFrameFromFile(file).then(function(blob) {
+        if (!blob) { r.thumb = ""; r.thumbPath = ""; return r; }
+        var tp = "kb/" + ref.id + "/" + Date.now() + "_thumb.jpg";
+        return st.ref(tp).put(blob, { contentType: "image/jpeg", customMetadata: { uploaderUid: me.uid } }).then(function(s) { return s.ref.getDownloadURL(); })
+          .then(function(tu) { r.thumb = tu; r.thumbPath = tp; return r; }, function() { r.thumb = ""; r.thumbPath = ""; return r; });
+      });
     });
-  }
+  } else if (!isF && f.src === "youtube" && hzKbVimeo(data.url)) {
+    up = hzKbVimeoThumbP(data.url).then(function(t) { data.thumb = t || ""; data.thumbPath = ""; return null; });
+  } else if (!isF && (f.src === "youtube" || f.src === "link" || f.src === "note")) { data.thumb = ""; data.thumbPath = ""; }
+  var oldThumbPath = n && n.thumbPath ? n.thumbPath : "";
   up.then(function(r) {
-    if (r) { data.url = r.url; data.path = r.path; data.kind = r.kind; data.fileName = r.fileName; data.size = r.size; }
+    if (r) { data.url = r.url; data.path = r.path; data.kind = r.kind; data.fileName = r.fileName; data.size = r.size; data.thumb = r.thumb || ""; data.thumbPath = r.thumbPath || ""; }
     return ref.set(data, { merge: true }).then(function() { return r; });
   }).then(function(r) {
     if (oldPath && (data.path !== undefined && data.path !== oldPath)) { try { firebase.storage().ref(oldPath).delete().catch(function() {}); } catch (e) {} }   // the replaced / dropped file
+    if (oldThumbPath && data.thumbPath !== undefined && data.thumbPath !== oldThumbPath) { try { firebase.storage().ref(oldThumbPath).delete().catch(function() {}); } catch (e) {} }
     HZ_KB.busy = false; HZ_KB.form = null;
     hzKbToast(f.id ? "✓ Saved" : "✓ Added");
     hzKbLoad(function() { hzKbAdminRender(); });
@@ -19292,7 +19341,7 @@ function hzKbDelete(id) {
   if (typeof hzOk === "function" && !hzOk(arguments, this, "Delete “" + (n.title || "") + "”" + (inside.length ? " and everything inside it (" + inside.length + ")" : "") + "?\nThis can't be undone.")) return;
   var ids = [id].concat(inside), paths = [];
   var batch = db.batch();
-  ids.forEach(function(x) { var d = hzKbById(x); if (d && d.path) paths.push(d.path); batch.delete(db.collection("kb").doc(x)); });
+  ids.forEach(function(x) { var d = hzKbById(x); if (d && d.path) paths.push(d.path); if (d && d.thumbPath) paths.push(d.thumbPath); batch.delete(db.collection("kb").doc(x)); });
   batch.commit().then(function() {
     try { var st = firebase.storage(); paths.forEach(function(p) { st.ref(p).delete().catch(function() {}); }); } catch (e) {}
     if (HZ_KB.form && ids.indexOf(HZ_KB.form.id) !== -1) HZ_KB.form = null;
@@ -19312,6 +19361,11 @@ function hzKbCss() {
     + P + ".hz-kb-tile .ic{font-size:2.1rem;line-height:1}"
     + P + ".hz-kb-tile b{font-family:Oswald,sans-serif;font-size:.98rem;letter-spacing:.04em;text-transform:uppercase;line-height:1.15;word-break:break-word}"
     + P + ".hz-kb-tile small{font-size:.74rem;opacity:.85}"
+    + P + ".hz-kb-tile.media{justify-content:flex-start;padding:8px 8px 12px;gap:8px}"
+    + P + ".hz-kb-tile.media b{font-size:.92rem}"
+    + P + ".hz-kb-th{position:relative;display:block;width:100%;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#1a1a1a}"
+    + P + ".hz-kb-th img," + P + ".hz-kb-th video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;display:block}"
+    + P + ".hz-kb-th .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:42px;height:42px;border-radius:50%;background:rgba(0,0,0,.65);border:2px solid #d4a017;color:#d4a017;-webkit-text-fill-color:#d4a017;display:flex;align-items:center;justify-content:center;font-size:1rem;padding-left:3px;box-sizing:border-box}"
     + P + ".hz-kb-lock{font-style:normal;font-size:.66rem;opacity:.9;border:1px solid #d4a017;border-radius:10px;padding:1px 6px;margin-top:2px}"
     + P + ".hz-kb-crumbs{font-size:.82rem;margin:0 0 10px;color:#444;-webkit-text-fill-color:#444;line-height:1.5}"
     + P + ".hz-kb-crumbs a{color:#8a680f;-webkit-text-fill-color:#8a680f;font-weight:700;cursor:pointer;text-decoration:underline}"
@@ -19346,6 +19400,27 @@ function hzKbCss() {
     + P + ".hz-kb-l input,"  + P + ".hz-kb-l select," + P + ".hz-kb-l textarea{display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:9px 10px;border:1px solid rgba(128,128,128,.55);border-radius:8px;background:transparent;color:inherit;-webkit-text-fill-color:currentColor;font:inherit;font-size:.92rem;text-transform:none;letter-spacing:normal}"
     + P + ".hz-kb-l select option{color:#111;background:#fff}"
     + P + "#hz-kb-form{scroll-margin-top:190px}"
+    // 12.612 (Sam): the tile opens a full page — a gallery grid: folders look like the home tiles, videos are a picture with the title underneath
+    + "#hz-kb-pop{padding:env(safe-area-inset-top,0px) 0 0 0;align-items:stretch;justify-content:stretch;background:#000}"
+    + P + "#hz-kb-pop .hz-tl-box.hz-kb-box{max-width:none;width:100%;height:100%;max-height:none;border-radius:0;box-shadow:none;background:#000;color:#f2f2f2;-webkit-text-fill-color:#f2f2f2}"
+    + P + "#hz-kb-pop .hz-tl-top{padding:12px max(14px,env(safe-area-inset-right)) 12px max(14px,env(safe-area-inset-left))}"
+    + P + "#hz-kb-pop .hz-tl-body{flex:1;padding:16px max(14px,env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom))}"
+    + P + "#hz-kb-pop .hz-kb-wrap{max-width:1280px;margin:0 auto}"
+    + P + "#hz-kb-pop .hz-kb-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}"
+    + "@media (min-width:700px){" + P + "#hz-kb-pop .hz-kb-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}}"
+    + P + "#hz-kb-pop .hz-kb-tile.fld," + P + "#hz-kb-pop .hz-kb-tile:not(.media){min-height:150px;border-radius:18px;gap:8px;padding:18px 10px}"
+    + P + "#hz-kb-pop .hz-kb-tile:not(.media) .ic{font-size:2.6rem}"
+    + P + "#hz-kb-pop .hz-kb-tile:not(.media) b{font-size:1.05rem;letter-spacing:.06em}"
+    + P + "#hz-kb-pop .hz-kb-tile.media{background:transparent;border:none;border-radius:0;padding:0;min-height:0;gap:8px;align-items:stretch;text-align:left}"
+    + P + "#hz-kb-pop .hz-kb-tile.media .hz-kb-th{border-radius:12px;border:2px solid #d4a017;background:#111}"
+    + P + "#hz-kb-pop .hz-kb-tile.media b{font-size:.98rem;letter-spacing:.03em;padding:0 2px;line-height:1.25}"
+    + P + "#hz-kb-pop .hz-kb-tile.media small," + P + "#hz-kb-pop .hz-kb-tile.media .hz-kb-lock{align-self:flex-start;margin-left:2px}"
+    + P + "#hz-kb-pop .hz-kb-crumbs{color:#bbb;-webkit-text-fill-color:#bbb;margin-bottom:14px}"
+    + P + "#hz-kb-pop .hz-kb-crumbs a{color:#d4a017;-webkit-text-fill-color:#d4a017}"
+    + P + "#hz-kb-pop .hz-kb-yt{color:#d4a017;-webkit-text-fill-color:#d4a017}"
+    + P + "#hz-kb-pop .hz-kb-empty{color:#bbb;-webkit-text-fill-color:#bbb}"
+    + P + "#hz-kb-pop .hz-kb-item{max-width:960px;margin:0 auto}"
+    + P + "#hz-kb-pop .hz-kb-ititle{font-family:Oswald,sans-serif;font-size:1.25rem;letter-spacing:.04em;text-transform:uppercase;color:#d4a017;-webkit-text-fill-color:#d4a017;margin:0 0 10px}"
     + P + ".hz-kb-yt{display:block;text-align:right;font-size:.78rem;margin:-6px 0 12px;color:#8a680f;-webkit-text-fill-color:#8a680f}"
     + P + ".hz-kb-prev{display:flex;align-items:center;gap:10px;margin:4px 0 8px;font-size:.85rem}"
     + P + ".hz-kb-prev img{width:160px;max-height:100px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.5)}"
