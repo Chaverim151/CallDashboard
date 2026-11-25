@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.141"; window.M_BUILD = BUILD;
+  var BUILD = "9.142"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19826,11 +19826,12 @@ function hzDsDraw() {
   }).join("") : '<div class="hz-ds-oncall none"><div><div class="lbl">On call now</div><div class="who">No dispatcher on the schedule right now</div></div></div>';
   if (HZ_DS.next) nowH += '<div class="hz-ds-next">Next: <b>' + hzDsWho(HZ_DS.next) + '</b> · ' + hzDsDayLabel(hzDsYmd(HZ_DS.next.start)) + ' ' + hzDsRange(HZ_DS.next) + '</div>';
   var pend = HZ_DS.coord ? HZ_DS.reqs.length : HZ_DS.myReqs.filter(function(r) { return r.status === "pending"; }).length;
-  var tabs = [["mine", "My shifts", HZ_DS.mine.length], ["open", "Open shifts", HZ_DS.open.length], ["week", "Schedule", 0], ["req", HZ_DS.coord ? "Requests" : "My requests", pend]];
+  var tabs = [["mine", "My shifts", 0],   // 12.640 (Sam): no count on My shifts
+    ["open", "Open shifts", HZ_DS.open.length], ["week", "Schedule", 0], ["req", HZ_DS.coord ? "Requests" : "My requests", pend]];
   var tabH = '<div class="hz-ds-tabs">' + tabs.map(function(t) { return '<button class="' + (HZ_DS.tab === t[0] ? 'on' : '') + '" onclick="HZ_DS.tab=\'' + t[0] + '\';hzDsDraw()">' + t[1] + (t[2] ? ' <span class="n">' + t[2] + '</span>' : '') + '</button>'; }).join("") + '</div>';
   var body = HZ_DS.tab === "mine" ? hzDsMineHtml() : HZ_DS.tab === "open" ? hzDsOpenHtml() : HZ_DS.tab === "week" ? hzDsWeekHtml() : hzDsReqHtml();
   var keep = o.querySelector(".hz-tl-body"), st = keep ? keep.scrollTop : 0;
-  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + tabH + body + '</div></div></div>';
+  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button></div>' + tabH + body + '</div></div></div>';
   if (st) { var nb = o.querySelector(".hz-tl-body"); if (nb) nb.scrollTop = st; }
 }
 HZ_DS.phones = {};
@@ -19847,7 +19848,7 @@ function hzDsByDay(list, actsFn) {
   return out;
 }
 function hzDsMineHtml() {
-  var h = '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button></div>';
+  var h = '';   // 12.640: the calendar button is above the tabs now, on every tab
   if (!HZ_DS.mine.length) return h + '<div class="hz-kb-empty">You have no upcoming shifts in the next 60 days.</div>';
   return h + hzDsByDay(HZ_DS.mine, function(s) { return '<button class="hz-kb-sm" title="Add this shift to a calendar" onclick="hzDsAddOne(\'' + s.id + '\')">📅</button>'; });
 }
@@ -20128,7 +20129,7 @@ function hzDsAddOne(id) {
   hzDsDlg("📅 Add this shift to a calendar", '<div class="hz-ds-note">' + hzDsDayLabel(hzDsYmd(s.start)) + ' · ' + hzDsRange(s) + '</div><div class="hz-ds-calbtns">'
     + '<a class="hz-kb-btn" href="' + hzDsEsc(g) + '" target="_blank" rel="noopener">Google Calendar ↗</a>'
     + '<button class="hz-kb-btn" onclick="hzDsIcsOne(\'' + id + '\')">Apple / Outlook / other (.ics)</button></div>'
-    + '<div class="hz-kb-note">Tip: “Add my shifts to my calendar” on the My shifts tab keeps every shift in your calendar and updates it when the schedule changes.</div>'
+    + '<div class="hz-kb-note">Tip: “Add my shifts to my calendar” at the top of the schedule keeps every shift in your calendar and updates it when the schedule changes.</div>'
     + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button></div>');
 }
 function hzDsIcsOne(id) {
