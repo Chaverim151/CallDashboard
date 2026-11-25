@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.135"; window.M_BUILD = BUILD;
+  var BUILD = "9.138"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -18522,7 +18522,7 @@ var HZ_SUBPANELS = {
   protocols: { fn: "setDsTab", list: [["natures", "🗒️ Call Natures & ALS"], ["zones", "🗺️ Coverage Areas"], ["hospitals", "🏥 Transport Hospitals"], ["outside", "📞 Outside-Coverage Contacts"], ["regional", "☎️ Regional Hatzolah Branches"], ["important", "📞 Important Numbers"], ["locations", "📍 Location Requests"]] },
   codes: { fn: "setCodesTab", list: [["buildings", "🏢 Buildings"], ["private", "🏠 Private Homes", "admin"], ["shuls", "🕍 Shuls"], ["hospital", "🏥 Hospital"], ["storage", "🗄️ Storage"]] },
   fleet: { fn: "setFleetTab", list: [["status", "🔧 Service Status"], ["vehicles", "🚑 Vehicles & Equipment"], ["restock", "📦 Restock List"]] },
-  notifsettings: { fn: "setNsTab", list: [["send", "📣 How It's Sent"], ["callalerts", "⏰ Call Alerts"], ["tkrem", "🎫 Ticket Reminders"], ["who", "👥 Who Receives What"], ["templates", "✉️ Message Templates"], ["avail", "📅 Availability"], ["log", "📜 Notification Log"], ["test", "🧪 Send a Test"], ["zello", "📻 Zello Tone"], ["nextrig", "🚑 Next Rig"], ["dshift", "🗓️ Dispatch Shift Reminders"]] }
+  notifsettings: { fn: "setNsTab", list: [["send", "📣 How It's Sent"], ["callalerts", "⏰ Call Alerts"], ["tkrem", "🎫 Ticket Reminders"], ["who", "👥 Who Receives What"], ["templates", "✉️ Message Templates"], ["avail", "📅 Availability"], ["log", "📜 Notification Log"], ["test", "🧪 Send a Test"], ["zello", "📻 Zello Tone"], ["nextrig", "🚑 Next Rig"], ["dshift", "🗓️ Dispatch Schedule (reminders & requests)"]] }
 };
 function hzSubOk(tab, sub) {
   if (typeof hzIsAdminNow === "function" && hzIsAdminNow()) return true;
@@ -19709,9 +19709,9 @@ function hzDsDayNum(ymd) { return Math.round(Date.UTC(+ymd.slice(0, 4), +ymd.sli
 var HZ_DS_DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var HZ_DS_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function hzDsDayLabel(ymd) { return HZ_DS_DOW[hzDsDow(ymd)] + " " + HZ_DS_MON[+ymd.slice(5, 7) - 1] + " " + (+ymd.slice(8, 10)); }
-function hzDsRange(s) {   // 12.628: a shift that ends at midnight shows "24:00" (same day), not "00:00 (+1)"
+function hzDsRange(s) {   // 12.628 / 12.635 (Sam: "23:59, there is no 24:00"): a shift that ends at midnight shows "23:59"
   var a = hzDsYmd(s.start), b = hzDsYmd(s.end), e = hzDsHm(s.end);
-  if (b !== a && e === "00:00" && b === hzDsAddDays(a, 1)) return hzDsHm(s.start) + "–24:00";
+  if (b !== a && e === "00:00" && b === hzDsAddDays(a, 1)) return hzDsHm(s.start) + "–23:59";
   return hzDsHm(s.start) + "–" + e + (b !== a ? " (ends " + HZ_DS_DOW[hzDsDow(b)] + ")" : "");
 }
 // 12.628 (Sam: overnight shifts looked like they were on the wrong day): a live line under the times says exactly when it starts and ends
@@ -19721,14 +19721,15 @@ function hzDsHint(px) {
   st = st.trim(); en = en.trim();
   if (!hzDsHmOk(st) || !hzDsHmOk(en) || st === en) { el.textContent = "Type the start and end in 24-hour time. If the end is earlier than the start, the shift goes past midnight and ends the next morning."; el.style.color = ""; return; }
   var dEl = document.getElementById("ds-" + px + "-date"), d = dEl && /^\d{4}-\d{2}-\d{2}$/.test(dEl.value) ? dEl.value : "";
-  var over = en <= st && en !== "00:00", mid = en === "00:00";
-  var len = (function() { var a = +st.slice(0, 2) * 60 + +st.slice(3), b = +en.slice(0, 2) * 60 + +en.slice(3); var m = b > a ? b - a : b + 1440 - a; return (Math.floor(m / 60) ? Math.floor(m / 60) + "h" : "") + (m % 60 ? " " + (m % 60) + "m" : ""); })();
-  if (d) el.innerHTML = "Starts <b>" + hzDsDayLabel(d) + " " + st + "</b> · ends <b>" + (over ? hzDsDayLabel(hzDsAddDays(d, 1)) + " " + en : mid ? hzDsDayLabel(d) + " at midnight" : hzDsDayLabel(d) + " " + en) + "</b> (" + len.trim() + ")" + (over ? " — overnight; it is listed under " + hzDsDayLabel(d) + ", the day it starts" : "");
-  else el.innerHTML = "Each shift starts at <b>" + st + "</b> on the ticked day and ends " + (over ? "<b>the next morning at " + en + "</b>" : mid ? "<b>at midnight</b>" : "at <b>" + en + "</b>") + " (" + len.trim() + ")" + (over ? " — tick the day the shift <u>starts</u> (e.g. Saturday for a Saturday-night shift)" : "");
+  var over = en <= st && en !== "00:00", mid = en === "00:00" || en === "23:59";
+  var len = (function() { var a = +st.slice(0, 2) * 60 + +st.slice(3), b = en === "23:59" ? 1440 : +en.slice(0, 2) * 60 + +en.slice(3); var m = b > a ? b - a : b + 1440 - a; return (Math.floor(m / 60) ? Math.floor(m / 60) + "h" : "") + (m % 60 ? " " + (m % 60) + "m" : ""); })();
+  if (d) el.innerHTML = "Starts <b>" + hzDsDayLabel(d) + " " + st + "</b> · ends <b>" + (over ? hzDsDayLabel(hzDsAddDays(d, 1)) + " " + en : mid ? hzDsDayLabel(d) + " 23:59" : hzDsDayLabel(d) + " " + en) + "</b> (" + len.trim() + ")" + (over ? " — overnight; it is listed under " + hzDsDayLabel(d) + ", the day it starts" : "");
+  else el.innerHTML = "Each shift starts at <b>" + st + "</b> on the ticked day and ends " + (over ? "<b>the next morning at " + en + "</b>" : mid ? "<b>at 23:59</b>" : "at <b>" + en + "</b>") + " (" + len.trim() + ")" + (over ? " — tick the day the shift <u>starts</u> (e.g. Saturday for a Saturday-night shift)" : "");
   el.style.color = over ? "#d4a017" : "";
 }
 function hzDsLen(s) { var m = Math.round((s.end - s.start) / 60000), h = Math.floor(m / 60), r = m % 60; return (h ? h + "h" : "") + (r ? (h ? " " : "") + r + "m" : ""); }
-function hzDsEndMs(ymd, startHm, endHm) { var s = hzDsMs(ymd, startHm), e = hzDsMs(ymd, endHm); if (e <= s) e = hzDsMs(hzDsAddDays(ymd, 1), endHm); return e; }
+function hzDsEndMs(ymd, startHm, endHm) { if (endHm === "23:59") endHm = "00:00";   // 12.635: 23:59 means up to midnight
+  var s = hzDsMs(ymd, startHm), e = hzDsMs(ymd, endHm); if (e <= s) e = hzDsMs(hzDsAddDays(ymd, 1), endHm); return e; }
 // recurring rule → its shifts between two dates (inclusive); the same ids as the server's roll-forward
 function hzDsOccur(rule, fromYmd, toYmd) {
   var out = [], a = rule.from > fromYmd ? rule.from : fromYmd, b = rule.until && rule.until < toYmd ? rule.until : toYmd;
@@ -19793,7 +19794,7 @@ function hzDsLoad() {
       var a = live(docs(s));
       HZ_DS.now = a.filter(function(x) { return x.uid && x.start <= now && x.end > now; });
       HZ_DS.next = a.filter(function(x) { return x.uid && x.start > now; }).sort(function(p, q) { return p.start - q.start; })[0] || null;
-      HZ_DS.open = a.filter(function(x) { return !x.uid && x.end > now; }).sort(function(p, q) { return p.start - q.start; });
+      HZ_DS.open = a.filter(function(x) { return !x.uid && x.end > now && x.start < now + 14 * 86400000; })   // 12.634 (Sam): open shifts in the next 14 days.sort(function(p, q) { return p.start - q.start; });
       HZ_DS.mine = a.filter(function(x) { return x.uid === me.uid && x.end > now; }).sort(function(p, q) { return p.start - q.start; });
       return Promise.all(HZ_DS.now.map(function(x) { return HZ_DS.phones[x.uid] ? null : db.collection("users").doc(x.uid).get().then(function(u) { if (u.exists && u.data().phone) HZ_DS.phones[x.uid] = u.data().phone; }).catch(function() {}); }));   // 📞 for whoever is on call
     }),
@@ -19818,7 +19819,7 @@ function hzDsDraw() {
   var o = document.getElementById("hz-ds-pop"); if (!o) return;
   var top = '<div class="hz-tl-top"><button class="hz-pop-back" onclick="hzDsBackBtn()">← Back</button><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🗓️ Dispatch Schedule</b>'
     + (HZ_DS.coord ? '<button class="hz-pop-back" onclick="hzDsShiftForm()">＋ Shift</button>' : '')
-    + '</div>';   // 12.624 (Sam): reminder settings live in Admin ▸ Notification Settings ▸ 🗓️ Dispatch Shift Reminders only
+    + '</div>';   // 12.624 (Sam): reminder settings live in Admin ▸ Notification Settings ▸ 🗓️ Dispatch Schedule only
   var nowH = HZ_DS.now.length ? HZ_DS.now.map(function(s) {
     return '<div class="hz-ds-oncall"><div><div class="lbl">On call now</div><div class="who">' + hzDsWho(s) + '</div><div class="sub">until ' + hzDsHm(s.end) + (hzDsYmd(s.end) !== hzDsYmd(Date.now()) ? " tomorrow" : "") + '</div></div>'
       + (s.phone || hzDsPhone(s.uid) ? '<a class="hz-ds-call" href="tel:' + hzDsEsc(s.phone || hzDsPhone(s.uid)) + '">📞 Call</a>' : '') + '</div>';
@@ -19851,9 +19852,9 @@ function hzDsMineHtml() {
   return h + hzDsByDay(HZ_DS.mine, function(s) { return '<button class="hz-kb-sm" title="Add this shift to a calendar" onclick="hzDsAddOne(\'' + s.id + '\')">📅</button>'; });
 }
 function hzDsOpenHtml() {
-  if (!HZ_DS.open.length) return '<div class="hz-kb-empty">No open shifts right now.</div>';
+  if (!HZ_DS.open.length) return '<div class="hz-kb-empty">No open shifts in the next 14 days.</div>';
   var mineReq = {}; HZ_DS.myReqs.forEach(function(r) { if (r.status === "pending") mineReq[r.shiftId] = r; });
-  return '<div class="hz-ds-note">Tap 🙋 to ask for the whole shift or part of it — a dispatch coordinator approves it.</div>' + hzDsByDay(HZ_DS.open, function(s) {
+  return '<div class="hz-ds-note">Open shifts in the next 14 days. Tap 🙋 to ask for the whole shift or part of it — a dispatch coordinator approves it.</div>' + hzDsByDay(HZ_DS.open, function(s) {
     return hzDsReqBtn(s)
       + (HZ_DS.coord ? '<button class="hz-kb-sm" title="Change" onclick="hzDsEdit(\'' + s.id + '\')">✏️</button>' : '');
   });
@@ -19902,7 +19903,7 @@ function hzDsDlg(title, html) {
   document.body.appendChild(d);
 }
 function hzDsDlgClose() { var d = document.getElementById("hz-ds-dlg"); if (!d) return false; d.remove(); return true; }
-function hzDsMsg(t, bad) { var m = document.getElementById("hz-ds-msg"); if (m) { m.textContent = t; m.style.color = bad ? "#c62828" : ""; } }
+function hzDsMsg(t, bad) { var m = document.getElementById("hz-ds-msg"); if (m) { m.textContent = t; m.classList.toggle("hz-ds-bad", !!(bad && t)); } }
 function hzDsV(id) { var e = document.getElementById(id); return e ? String(e.value || "").trim() : ""; }
 function hzDsHmOk(v) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(v); }
 function hzDsDispOptions(sel, withOpen) {
@@ -19974,7 +19975,7 @@ function hzDsEdit(id) {
   var h = '<div class="hz-ds-note">' + hzDsDayLabel(d) + ' · now ' + hzDsRange(s) + (s.ruleId ? ' · 🔁 part of a recurring series — changes here are for this day only' : '') + '</div>'
     + '<label class="hz-kb-l">Dispatcher<select id="ds-e-who">' + hzDsDispOptions(s.uid, true) + '</select></label>'
     + '<label class="hz-kb-l">Date the shift starts<input id="ds-e-date" type="date" value="' + d + '" onchange="hzDsHint(\'e\')"></label>'
-    + '<div class="hz-ds-2"><label class="hz-kb-l">Start (24h)<input id="ds-e-st" value="' + hzDsHm(s.start) + '" maxlength="5" oninput="hzDsHint(\'e\')"></label><label class="hz-kb-l">End (24h)<input id="ds-e-en" value="' + hzDsHm(s.end) + '" maxlength="5" oninput="hzDsHint(\'e\')"></label></div><div class="hz-kb-note" id="ds-hint-e"></div>'
+    + '<div class="hz-ds-2"><label class="hz-kb-l">Start (24h)<input id="ds-e-st" value="' + hzDsHm(s.start) + '" maxlength="5" oninput="hzDsHint(\'e\')"></label><label class="hz-kb-l">End (24h)<input id="ds-e-en" value="' + (hzDsRange(s).indexOf("23:59") !== -1 ? "23:59" : hzDsHm(s.end)) + '" maxlength="5" oninput="hzDsHint(\'e\')"></label></div><div class="hz-kb-note" id="ds-hint-e"></div>'
     + '<label class="hz-kb-l">Note (optional)<input id="ds-e-note" maxlength="200" value="' + hzDsEsc(s.note || "") + '"></label>'
     + '<div class="hz-kb-bar" style="margin:12px 0 0;flex-wrap:wrap"><button class="hz-kb-sm red" style="height:auto;padding:8px 12px" onclick="hzDsCancelShift(\'' + id + '\')">🗑 Remove this shift</button>'
     + (rule ? '<button class="hz-kb-btn" onclick="hzDsRuleForm(\'' + rule.id + '\')">🔁 Change the whole series…</button>' : '')
@@ -20042,7 +20043,7 @@ function hzDsReqForm(id) {
   var s = hzDsFind(id); if (!s) return;
   var h = '<div class="hz-ds-note">' + hzDsDayLabel(hzDsYmd(s.start)) + ' · open ' + hzDsRange(s) + ' (' + hzDsLen(s) + ')</div>'
     + '<div class="hz-kb-seg"><button type="button" id="ds-q-full" class="on" onclick="hzDsReqPart(false)">The whole shift</button><button type="button" id="ds-q-part" onclick="hzDsReqPart(true)">Part of it</button></div>'
-    + '<div id="ds-q-times" style="display:none"><div class="hz-ds-2"><label class="hz-kb-l">From (24h)<input id="ds-q-st" value="' + hzDsHm(s.start) + '" maxlength="5" inputmode="numeric" oninput="hzDsReqCheck()"></label><label class="hz-kb-l">To (24h)<input id="ds-q-en" value="' + (hzDsRange(s).indexOf("24:00") !== -1 ? "24:00" : hzDsHm(s.end)) + '" maxlength="5" inputmode="numeric" oninput="hzDsReqCheck()"></label></div>'
+    + '<div id="ds-q-times" style="display:none"><div class="hz-ds-2"><label class="hz-kb-l">From (24h)<input id="ds-q-st" value="' + hzDsHm(s.start) + '" maxlength="5" inputmode="numeric" oninput="hzDsReqCheck()"></label><label class="hz-kb-l">To (24h)<input id="ds-q-en" value="' + (hzDsRange(s).indexOf("23:59") !== -1 ? "23:59" : hzDsHm(s.end)) + '" maxlength="5" inputmode="numeric" oninput="hzDsReqCheck()"></label></div>'
     + '<div class="hz-kb-note" id="ds-q-warn">Any time inside the open shift (' + hzDsRange(s) + ').</div></div>'
     + '<label class="hz-kb-l">Note to the coordinator (optional)<input id="ds-q-note" maxlength="300"></label>'
     + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Cancel</button><button class="hz-kb-btn go" id="ds-q-send" onclick="hzDsReqSend(\'' + id + '\')">Send request</button></div>';
@@ -20052,17 +20053,18 @@ function hzDsReqForm(id) {
 // 12.633 (Sam: "make it a type-to-enter field that should have a warning and block the request if you go over"): any minute, checked as you type
 function hzDsHmNorm(v) {   // "0900", "900", "9:00", "09:00" → "09:00"; "" if not a time
   v = String(v || "").trim().replace(/[.h]/, ":"); var m = v.match(/^(\d{1,2}):?(\d{2})$/); if (!m) return "";
-  var h = +m[1], mi = +m[2]; if (h === 24 && mi === 0) return "24:00"; if (h > 23 || mi > 59) return ""; return String(h).padStart(2, "0") + ":" + m[2];
+  var h = +m[1], mi = +m[2]; if (h === 24 && mi === 0) return "23:59"; if (h > 23 || mi > 59) return ""; return String(h).padStart(2, "0") + ":" + m[2];
 }
 function hzDsReqTimes() {   // → { start, end } in ms, or { err }
   var s = HZ_DS.reqShift; if (!s) return { err: "" };
   var a = hzDsHmNorm(hzDsV("ds-q-st")), b = hzDsHmNorm(hzDsV("ds-q-en"));
   if (!a || !b) return { err: "Type the times as 24-hour, e.g. 06:30 or 0630." };
-  var start = a === "24:00" ? NaN : hzDsPartMs(s, a), end = b === "24:00" ? hzDsMs(hzDsAddDays(hzDsYmd(s.start), 1), "00:00") : hzDsPartMs(s, b);
+  var midEnd = hzDsHm(s.end) === "00:00" && hzDsYmd(s.end) === hzDsAddDays(hzDsYmd(s.start), 1);
+  var start = hzDsPartMs(s, a), end = b === "23:59" && midEnd ? s.end : hzDsPartMs(s, b);   // 23:59 = to the end of a shift that ends at midnight
   if (b === hzDsHm(s.start) && end <= start) end = s.end;   // To typed as the shift's own end on a 24-hour shift
   if (isNaN(start) || start < s.start) return { err: "⚠ From is before the shift starts (" + hzDsHm(s.start) + ")." };
   if (start >= s.end) return { err: "⚠ From is outside the open shift (" + hzDsRange(s) + ")." };
-  if (end > s.end) return { err: "⚠ To goes past the end of the shift (" + (hzDsRange(s).indexOf("24:00") !== -1 ? "24:00" : hzDsHm(s.end)) + "). You can only ask for time inside the open shift." };
+  if (end > s.end) return { err: "⚠ To goes past the end of the shift (" + (hzDsRange(s).indexOf("23:59") !== -1 ? "23:59" : hzDsHm(s.end)) + "). You can only ask for time inside the open shift." };
   if (end <= start) return { err: "⚠ To has to be after From." };
   return { start: start, end: end };
 }
@@ -20070,7 +20072,7 @@ function hzDsReqCheck() {
   var r = hzDsReqTimes(), w = document.getElementById("ds-q-warn"), btn = document.getElementById("ds-q-send");
   var part = document.getElementById("ds-q-part") && document.getElementById("ds-q-part").classList.contains("on");
   var bad = part && !!r.err;
-  if (w) { w.textContent = bad ? r.err : "Any time inside the open shift (" + hzDsRange(HZ_DS.reqShift) + ")."; w.style.color = bad ? "#ff6b6b" : ""; w.style.fontWeight = bad ? "700" : ""; }
+  if (w) { w.textContent = bad ? r.err : "Any time inside the open shift (" + hzDsRange(HZ_DS.reqShift) + ")."; w.classList.toggle("hz-ds-bad", bad); }   // 12.635 (Sam: "make this red")
   if (btn) { btn.disabled = bad; btn.style.opacity = bad ? ".45" : ""; }
   return !bad;
 }
@@ -20158,7 +20160,7 @@ function hzDsSubscribe() {
 function hzDsCopyCal() { try { navigator.clipboard.writeText(HZ_DS.calUrl); hzDsMsg("✓ Copied — in your calendar app choose “Add calendar from URL / Subscribe” and paste it."); } catch (e) { hzDsMsg(HZ_DS.calUrl); } }
 
 // ── admin: shift reminders (more than one, e.g. 1 hour and 30 minutes before) ──
-// 12.624: shown in Admin ▸ Notification Settings ▸ 🗓️ Dispatch Shift Reminders (desktop) — not on the schedule page
+// 12.624: shown in Admin ▸ Notification Settings ▸ 🗓️ Dispatch Schedule (desktop) — not on the schedule page
 function hzDsRemPane() {
   var el = document.getElementById("adm-notif-dshift-body"); if (!el) return;
   if (typeof hzKbCss === "function") hzKbCss(); hzDsCss();
@@ -20173,8 +20175,20 @@ function hzDsRemHtml() {
     + '<button type="button" class="hz-kb-btn" style="margin:4px 0 6px" onclick="hzDsRemAdd()">＋ Add another reminder</button>'
     + '<div class="hz-kb-l">How</div><div class="hz-kb-roles"><label><input type="checkbox" id="ds-m-push"' + (c.push !== false ? ' checked' : '') + '> Push</label><label><input type="checkbox" id="ds-m-text"' + (c.text ? ' checked' : '') + '> Text (SMS)</label></div>'
     + '<div class="hz-kb-note">Where it takes effect: the times — dispatchers who haven\'t picked their own in My Settings; Push / Text — every dispatcher. Changing it affects the next reminders sent (checked every 5 minutes); shifts already reminded aren\'t sent again.</div>'
+    + hzDsReqCfgHtml()
     + '<div class="hz-kb-bar" style="margin:12px 0 0"><button class="hz-kb-btn go" onclick="hzDsRemSave()">✓ Save</button></div>';
   return h;
+}
+// 12.636 (Sam: "create an option in notification settings to get email and SMS / WhatsApp as well"): who hears about open-shift requests, and how
+function hzDsReqCfgHtml() {
+  var q = (HZ_DS.cfg || {}).req || {}, ck = function(id, on, label) { return '<label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '> ' + label + '</label>'; };
+  return '<div class="hz-kb-l" style="margin-top:18px;font-size:.8rem;opacity:1">🙋 Open-shift requests</div>'
+    + '<div class="hz-ds-note">When a dispatcher asks for an open shift (or part of one), and when it is approved or denied.</div>'
+    + '<div class="hz-kb-l">Tell about a new request</div><div class="hz-kb-roles">' + ck("ds-q-coord", q.coord !== false, "Dispatch Coordinators") + ck("ds-q-admins", q.admins === true, "Admins") + '</div>'
+    + '<div class="hz-kb-note">If nobody is a Dispatch Coordinator, admins are always told.</div>'
+    + '<div class="hz-kb-l">How they are told</div><div class="hz-kb-roles">' + ck("ds-q-push", q.push !== false, "Push") + ck("ds-q-text", q.text === true, "Text (SMS or WhatsApp — each person\'s choice in My Settings)") + ck("ds-q-email", q.email === true, "Email") + '</div>'
+    + '<div class="hz-kb-l">Tell the dispatcher the answer (approved / denied) by</div><div class="hz-kb-roles">' + ck("ds-q-apush", q.ansPush !== false, "Push") + ck("ds-q-atext", q.ansText === true, "Text (SMS or WhatsApp)") + ck("ds-q-aemail", q.ansEmail === true, "Email") + '</div>'
+    + '<div class="hz-kb-note">Where it takes effect: the phones / inboxes of the people ticked above, the next time a request is sent or answered. Email goes to the address on their profile.</div>';
 }
 function hzDsRemTxt(m) { return m % 60 === 0 ? (m / 60) + (m === 60 ? " hour" : " hours") : m + " minutes"; }
 // 12.630 (Sam): the reminders are an editable list — change how far ahead any of them is (including the required one), add more, remove extras
@@ -20206,11 +20220,17 @@ function hzDsRemSave() {
   var d = { remOn: true, reminders: HZ_DS.remEdit.slice().sort(function(a, b) { return b - a; }), push: document.getElementById("ds-m-push").checked, text: document.getElementById("ds-m-text").checked, updatedAt: Date.now() };
   if (!d.reminders.length) { hzDsMsg("Add at least one reminder time — one is required.", true); return; }
   if (!d.push && !d.text) { hzDsMsg("Tick Push or Text, or nothing will be sent.", true); return; }
+  var g = function(id) { var e = document.getElementById(id); return !!(e && e.checked); };
+  if (document.getElementById("ds-q-coord")) {
+    d.req = { coord: g("ds-q-coord"), admins: g("ds-q-admins"), push: g("ds-q-push"), text: g("ds-q-text"), email: g("ds-q-email"), ansPush: g("ds-q-apush"), ansText: g("ds-q-atext"), ansEmail: g("ds-q-aemail") };
+    if (!d.req.coord && !d.req.admins) { hzDsMsg("Tick Dispatch Coordinators or Admins — someone has to hear about new requests.", true); return; }
+    if (!d.req.push && !d.req.text && !d.req.email) { hzDsMsg("Tick at least one way to tell them about new requests.", true); return; }
+  }
   db.collection("appdata").doc("dispatchSchedule").set(d, { merge: true }).then(function() { HZ_DS.cfg = Object.assign(HZ_DS.cfg || {}, d); hzDsMsg("✓ Saved"); hzDsToast("✓ Reminder settings saved"); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
 }
 
 // ── 12.625 (the board: dispatchers set their own shift reminders, in My Settings) ──
-// users/<uid>.prefs.dispRem = { on, times [minutes], push, text }; anything not set uses Admin ▸ Notification Settings ▸ 🗓️ Dispatch Shift Reminders (the defaults)
+// users/<uid>.prefs.dispRem = { on, times [minutes], push, text }; anything not set uses Admin ▸ Notification Settings ▸ 🗓️ Dispatch Schedule (the defaults)
 HZ_DS.cfgLoaded = false;
 function hzDsPrefs() { return (typeof mPrefs !== "undefined" && mPrefs) || (typeof hzPrefs !== "undefined" && hzPrefs) || {}; }
 function hzDsCfgLoad(rerender) {
@@ -20315,6 +20335,7 @@ function hzDsCss() {
     + P + ".hz-ds-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}"
     + P + ".hz-ds-calbtns{display:flex;flex-direction:column;gap:8px;margin:8px 0}"
     + P + ".hz-ds-calbtns .hz-kb-btn{text-align:center;text-decoration:none;display:block}"
+    + P + ".hz-ds-bad{background:#c62828 !important;color:#fff !important;-webkit-text-fill-color:#fff !important;border-radius:8px;padding:8px 10px !important;font-weight:700;opacity:1 !important}"
     + P + ".hz-ds-remrow{display:flex;align-items:center;gap:8px;margin:0 0 8px}"
     + P + ".hz-ds-remrow .num{width:22px;height:22px;border-radius:50%;background:#d4a017;color:#000;-webkit-text-fill-color:#000;font-size:.75rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none}"
     + P + ".hz-ds-remrow input{width:78px;padding:8px 10px;border:1px solid rgba(128,128,128,.55);border-radius:8px;background:transparent;color:inherit;-webkit-text-fill-color:currentColor;font:inherit;font-size:.95rem}"
