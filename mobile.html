@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.144"; window.M_BUILD = BUILD;
+  var BUILD = "9.146"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19861,13 +19861,15 @@ function hzDsOpenHtml() {
   });
 }
 function hzDsWeekHtml() {
-  var ws = hzDsWeekStart(HZ_DS.week), we = hzDsAddDays(ws, 6);
-  var h = '<div class="hz-ds-weeknav">' + '<button class="hz-kb-btn" onclick="hzDsWeek(-1)">‹ Prev</button>' + '<b>' + hzDsDayLabel(ws).slice(4) + ' – ' + hzDsDayLabel(we).slice(4) + '</b>'
+  var ws = hzDsWeekStart(HZ_DS.week), we = hzDsAddDays(ws, 6), today = hzDsYmd(Date.now()), now = Date.now();
+  var first = ws < today ? today : ws;   // 12.644 (Sam: "make the past drop off"): days before today and finished shifts are not shown
+  var h = '<div class="hz-ds-weeknav">' + (HZ_DS.week > 0 ? '<button class="hz-kb-btn" onclick="hzDsWeek(-1)">‹ Prev</button>' : '<span style="width:82px"></span>') + '<b>' + hzDsDayLabel(first).slice(4) + ' – ' + hzDsDayLabel(we).slice(4) + '</b>'
     + (HZ_DS.week ? '<button class="hz-kb-btn" onclick="hzDsWeek(0)">This week</button>' : '') + '<button class="hz-kb-btn" onclick="hzDsWeek(1)">Next ›</button></div>';
   if (HZ_DS.coord) h += '<div class="hz-ds-note">Tap a shift to change it (only that day), make it open, or change the whole repeating series.</div>';
-  var list = HZ_DS.shifts.slice().sort(function(a, b) { return a.start - b.start; });
+  var list = HZ_DS.shifts.filter(function(s) { return s.end > now; }).sort(function(a, b) { return a.start - b.start; });
   var days = ""; for (var i = 0; i < 7; i++) {
-    var d = hzDsAddDays(ws, i), on = list.filter(function(s) { return hzDsYmd(s.start) === d; });
+    var d = hzDsAddDays(ws, i); if (d < today) continue;
+    var on = list.filter(function(s) { return hzDsYmd(s.start) === d; });
     var cont = list.filter(function(s) { return hzDsYmd(s.start) < d && s.end > hzDsMs(d, "00:00"); });   // 12.628: still going after midnight
     days += '<div class="hz-ds-day">' + hzDsDayLabel(d) + (d === hzDsYmd(Date.now()) ? ' · Today' : '') + '</div>'
       + cont.map(function(s) { return '<div class="hz-ds-cont"' + (HZ_DS.coord ? ' onclick="hzDsEdit(\'' + s.id + '\')"' : '') + '>↪ 00:00–' + hzDsHm(s.end) + ' · ' + hzDsWho(s) + ' <small>(continues from ' + HZ_DS_DOW[hzDsDow(hzDsYmd(s.start))] + ' ' + hzDsHm(s.start) + ')</small></div>'; }).join("")
@@ -19886,7 +19888,7 @@ function hzDsReqBtn(s) {   // 12.629 (Sam): open shifts can be requested from th
 function hzDsDropBtn(s) {
   var me = HZ_DS.me || {}; if (!me.uid || s.uid !== me.uid || s.start <= Date.now()) return "";
   var r = HZ_DS.myReqs.filter(function(x) { return x.status === "pending" && x.kind === "drop" && x.shiftId === s.id; })[0];
-  return r ? '<span class="hz-ds-pill">Cancel requested' + (r.full ? '' : ' ' + hzDsHm(r.start) + '–' + hzDsHm(r.end)) + '</span>' : '<button class="hz-kb-btn hz-ds-drop" onclick="hzDsDropForm(\'' + s.id + '\')">↩️ Ask to cancel</button>';
+  return r ? '<span class="hz-ds-pill">Cancel requested' + (r.full ? '' : ' ' + hzDsHm(r.start) + '–' + hzDsHm(r.end)) + '</span>' : '<button class="hz-kb-btn hz-ds-drop" onclick="hzDsDropForm(\'' + s.id + '\')">↩️ Request shift change</button>';
 }
 function hzDsReqWord() { return HZ_DS.reqKind === "drop" ? "your shift" : "the open shift"; }
 function hzDsDropForm(id) {
@@ -19898,9 +19900,9 @@ function hzDsDropForm(id) {
     + '<div class="hz-kb-note" id="ds-q-warn">The time you cannot make, inside your shift (' + hzDsRange(s) + ').</div></div>'
     + '<label class="hz-kb-l">Reason / note to the coordinator (optional)<input id="ds-q-note" maxlength="300"></label>'
     + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button><button class="hz-kb-btn go" id="ds-q-send" onclick="hzDsReqSend(\'' + id + '\')">Send request</button></div>';
-  hzDsDlg("↩️ Ask to cancel this shift", h);
+  hzDsDlg("↩️ Request shift change", h);
 }
-function hzDsWeek(d) { HZ_DS.week = d === 0 ? 0 : HZ_DS.week + d; hzDsLoad(); }
+function hzDsWeek(d) { HZ_DS.week = d === 0 ? 0 : Math.max(0, HZ_DS.week + d); hzDsLoad(); }   // 12.644: no going back before this week
 function hzDsReqHtml() {
   var list = HZ_DS.coord ? HZ_DS.reqs : HZ_DS.myReqs;
   if (!list.length) return '<div class="hz-kb-empty">' + (HZ_DS.coord ? "No requests waiting." : "You have no requests.") + '</div>';
