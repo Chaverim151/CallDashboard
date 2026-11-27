@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.658">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.659">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2801,7 +2801,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.658</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.659</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -21853,7 +21853,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.658";
+var DESKTOP_VERSION = "12.659";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -37031,16 +37031,32 @@ function hzDsWeekHtml() {
     + (HZ_DS.week ? '<button class="hz-kb-btn" onclick="hzDsWeek(0)">This week</button>' : '') + '<button class="hz-kb-btn" onclick="hzDsWeek(1)">Next ›</button></div>';
   if (HZ_DS.coord) h += '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsBlendAll()">🔗 Blend back-to-back shifts</button></div>';
   if (HZ_DS.coord) h += '<div class="hz-ds-note">Tap a shift to change it (only that day), make it open, or change the whole repeating series.</div>';
-  var list = HZ_DS.shifts.filter(function(s) { return s.end > now; }).sort(function(a, b) { return a.start - b.start; });
+  var list = hzDsRuns(HZ_DS.shifts.filter(function(s) { return s.end > now; }));   // 12.659: back-to-back pieces show as one shift
   var days = ""; for (var i = 0; i < 7; i++) {
     var d = hzDsAddDays(ws, i); if (d < today) continue;
     var on = list.filter(function(s) { return hzDsYmd(s.start) === d; });
     var cont = list.filter(function(s) { return hzDsYmd(s.start) < d && s.end > hzDsMs(d, "00:00"); });   // 12.628: still going after midnight
     days += '<div class="hz-ds-day">' + hzDsDayLabel(d) + (d === hzDsYmd(Date.now()) ? ' · Today' : '') + '</div>'
-      + cont.map(function(s) { return '<div class="hz-ds-cont"' + (HZ_DS.coord ? ' onclick="hzDsEdit(\'' + s.id + '\')"' : '') + '>↪ 00:00–' + hzDsHm(s.end) + ' · ' + hzDsWho(s) + ' <small>(continues from ' + HZ_DS_DOW[hzDsDow(hzDsYmd(s.start))] + ' ' + hzDsHm(s.start) + ')</small></div>'; }).join("")
-      + (on.length ? on.map(function(s) { return HZ_DS.coord ? '<div class="hz-ds-tap" onclick="hzDsEdit(\'' + s.id + '\')">' + hzDsShiftRow(s, '<span class="hz-ds-chev">›</span>') + '</div>' : hzDsShiftRow(s, hzDsReqBtn(s)); }).join("") : (cont.length ? '' : '<div class="hz-ds-none">No shifts</div>'));
+      + cont.map(function(s) { return '<div class="hz-ds-cont"' + (HZ_DS.coord ? ' onclick="' + (s.ids && s.ids.length > 1 ? 'hzDsRunTap(\'' + s.id + '\')' : 'hzDsEdit(\'' + s.id + '\')') + '"' : '') + '>↪ 00:00–' + hzDsHm(s.end) + ' · ' + hzDsWho(s) + ' <small>(continues from ' + HZ_DS_DOW[hzDsDow(hzDsYmd(s.start))] + ' ' + hzDsHm(s.start) + ')</small></div>'; }).join("")
+      + (on.length ? on.map(function(s) { return HZ_DS.coord ? '<div class="hz-ds-tap" onclick="' + (s.ids && s.ids.length > 1 ? 'hzDsRunTap(\'' + s.id + '\')' : 'hzDsEdit(\'' + s.id + '\')') + '">' + hzDsShiftRow(s, '<span class="hz-ds-chev">›</span>') + '</div>' : hzDsShiftRow(s, s.ids && s.ids.length > 1 ? '' : hzDsReqBtn(s)); }).join("") : (cont.length ? '' : '<div class="hz-ds-none">No shifts</div>'));
   }
   return h + days;
+}
+// 12.659 (Sam: "show it as one shift — blend it together as one shift" in the schedule): the same person's shifts that run straight
+// into each other are shown as ONE shift (first start → last end, under 24 h); a coordinator tapping it joins the pieces for real first
+function hzDsRuns(list) {
+  var a = list.slice().sort(function(x, y) { return x.start - y.start; }), out = [], open = {};
+  a.forEach(function(x) {
+    var k = String(x.uid), r = open[k];
+    if (r && x.start <= r.end && Math.max(r.end, x.end) - r.start < 24 * 3600000) { r.end = Math.max(r.end, x.end); r.ids.push(x.id); r.edited = r.edited || x.edited; if (!r.note && x.note) r.note = x.note; return; }
+    r = Object.assign({}, x, { ids: [x.id] }); open[k] = r; out.push(r);
+  });
+  return out;
+}
+function hzDsRunTap(id) {
+  var s = hzDsFind(id); if (!s) return;
+  hzDsToast("Joining the pieces into one shift…");
+  hzDsBlendFor(s.uid).then(function() { return hzDsLoad(); }).then(function() { setTimeout(function() { var x = HZ_DS.shifts.filter(function(y) { return y.uid === s.uid && y.start <= s.start && y.end > s.start && !y.cancelled; })[0]; if (x) hzDsEdit(x.id); }, 400); });
 }
 function hzDsReqBtn(s) {   // 12.629 (Sam): open shifts can be requested from the Schedule view too
   if (s.uid) return hzDsDropBtn(s);   // 12.641: my own shift → ask to cancel it

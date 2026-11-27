@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.156"; window.M_BUILD = BUILD;
+  var BUILD = "9.157"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19959,16 +19959,32 @@ function hzDsWeekHtml() {
     + (HZ_DS.week ? '<button class="hz-kb-btn" onclick="hzDsWeek(0)">This week</button>' : '') + '<button class="hz-kb-btn" onclick="hzDsWeek(1)">Next ›</button></div>';
   if (HZ_DS.coord) h += '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsBlendAll()">🔗 Blend back-to-back shifts</button></div>';
   if (HZ_DS.coord) h += '<div class="hz-ds-note">Tap a shift to change it (only that day), make it open, or change the whole repeating series.</div>';
-  var list = HZ_DS.shifts.filter(function(s) { return s.end > now; }).sort(function(a, b) { return a.start - b.start; });
+  var list = hzDsRuns(HZ_DS.shifts.filter(function(s) { return s.end > now; }));   // 12.659: back-to-back pieces show as one shift
   var days = ""; for (var i = 0; i < 7; i++) {
     var d = hzDsAddDays(ws, i); if (d < today) continue;
     var on = list.filter(function(s) { return hzDsYmd(s.start) === d; });
     var cont = list.filter(function(s) { return hzDsYmd(s.start) < d && s.end > hzDsMs(d, "00:00"); });   // 12.628: still going after midnight
     days += '<div class="hz-ds-day">' + hzDsDayLabel(d) + (d === hzDsYmd(Date.now()) ? ' · Today' : '') + '</div>'
-      + cont.map(function(s) { return '<div class="hz-ds-cont"' + (HZ_DS.coord ? ' onclick="hzDsEdit(\'' + s.id + '\')"' : '') + '>↪ 00:00–' + hzDsHm(s.end) + ' · ' + hzDsWho(s) + ' <small>(continues from ' + HZ_DS_DOW[hzDsDow(hzDsYmd(s.start))] + ' ' + hzDsHm(s.start) + ')</small></div>'; }).join("")
-      + (on.length ? on.map(function(s) { return HZ_DS.coord ? '<div class="hz-ds-tap" onclick="hzDsEdit(\'' + s.id + '\')">' + hzDsShiftRow(s, '<span class="hz-ds-chev">›</span>') + '</div>' : hzDsShiftRow(s, hzDsReqBtn(s)); }).join("") : (cont.length ? '' : '<div class="hz-ds-none">No shifts</div>'));
+      + cont.map(function(s) { return '<div class="hz-ds-cont"' + (HZ_DS.coord ? ' onclick="' + (s.ids && s.ids.length > 1 ? 'hzDsRunTap(\'' + s.id + '\')' : 'hzDsEdit(\'' + s.id + '\')') + '"' : '') + '>↪ 00:00–' + hzDsHm(s.end) + ' · ' + hzDsWho(s) + ' <small>(continues from ' + HZ_DS_DOW[hzDsDow(hzDsYmd(s.start))] + ' ' + hzDsHm(s.start) + ')</small></div>'; }).join("")
+      + (on.length ? on.map(function(s) { return HZ_DS.coord ? '<div class="hz-ds-tap" onclick="' + (s.ids && s.ids.length > 1 ? 'hzDsRunTap(\'' + s.id + '\')' : 'hzDsEdit(\'' + s.id + '\')') + '">' + hzDsShiftRow(s, '<span class="hz-ds-chev">›</span>') + '</div>' : hzDsShiftRow(s, s.ids && s.ids.length > 1 ? '' : hzDsReqBtn(s)); }).join("") : (cont.length ? '' : '<div class="hz-ds-none">No shifts</div>'));
   }
   return h + days;
+}
+// 12.659 (Sam: "show it as one shift — blend it together as one shift" in the schedule): the same person's shifts that run straight
+// into each other are shown as ONE shift (first start → last end, under 24 h); a coordinator tapping it joins the pieces for real first
+function hzDsRuns(list) {
+  var a = list.slice().sort(function(x, y) { return x.start - y.start; }), out = [], open = {};
+  a.forEach(function(x) {
+    var k = String(x.uid), r = open[k];
+    if (r && x.start <= r.end && Math.max(r.end, x.end) - r.start < 24 * 3600000) { r.end = Math.max(r.end, x.end); r.ids.push(x.id); r.edited = r.edited || x.edited; if (!r.note && x.note) r.note = x.note; return; }
+    r = Object.assign({}, x, { ids: [x.id] }); open[k] = r; out.push(r);
+  });
+  return out;
+}
+function hzDsRunTap(id) {
+  var s = hzDsFind(id); if (!s) return;
+  hzDsToast("Joining the pieces into one shift…");
+  hzDsBlendFor(s.uid).then(function() { return hzDsLoad(); }).then(function() { setTimeout(function() { var x = HZ_DS.shifts.filter(function(y) { return y.uid === s.uid && y.start <= s.start && y.end > s.start && !y.cancelled; })[0]; if (x) hzDsEdit(x.id); }, 400); });
 }
 function hzDsReqBtn(s) {   // 12.629 (Sam): open shifts can be requested from the Schedule view too
   if (s.uid) return hzDsDropBtn(s);   // 12.641: my own shift → ask to cancel it
