@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.153"; window.M_BUILD = BUILD;
+  var BUILD = "9.154"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19853,7 +19853,13 @@ function hzDsLoad() {
     C("dispShifts").where("start", ">=", now - 86400000).where("start", "<=", now + 60 * 86400000).get().then(function(s) {
       var a = live(docs(s));
       HZ_DS.now = a.filter(function(x) { return x.uid && x.start <= now && x.end > now; });
-      HZ_DS.next = a.filter(function(x) { return x.uid && x.start > now; }).sort(function(p, q) { return p.start - q.start; })[0] || null;
+      // 12.656 (Sam: "this is inaccurate — Robyn goes until 08:00"): back-to-back shifts of the same dispatcher count as one —
+      // "until" is where the run ends, and "Next" is whoever comes after the run (not the rest of the same person's run)
+      var runEnd = function(x) { var e = x.end, n = 0, nx; while (n++ < 30 && (nx = a.filter(function(y) { return y.uid === x.uid && y.start === e; })[0])) e = nx.end; return e; };
+      HZ_DS.now = HZ_DS.now.map(function(x) { return Object.assign({}, x, { runEnd: runEnd(x) }); });
+      var after = HZ_DS.now.reduce(function(m, x) { return Math.max(m, x.runEnd); }, now);
+      HZ_DS.next = a.filter(function(x) { return x.uid && x.start > now && x.start >= after && !HZ_DS.now.some(function(c) { return c.uid === x.uid && x.start < c.runEnd; }); }).sort(function(p, q) { return p.start - q.start; })[0] || null;
+      if (HZ_DS.next) HZ_DS.next = Object.assign({}, HZ_DS.next, { runEnd: runEnd(HZ_DS.next) });
       HZ_DS.open = a.filter(function(x) { return !x.uid && x.end > now && x.start < now + 14 * 86400000; })   // 12.634 (Sam): open shifts in the next 14 days.sort(function(p, q) { return p.start - q.start; });
       HZ_DS.mine = a.filter(function(x) { return x.uid === me.uid && x.end > now; }).sort(function(p, q) { return p.start - q.start; });
       return Promise.all(HZ_DS.now.map(function(x) { return HZ_DS.phones[x.uid] ? null : db.collection("users").doc(x.uid).get().then(function(u) { if (u.exists && u.data().phone) HZ_DS.phones[x.uid] = u.data().phone; }).catch(function() {}); }));   // 📞 for whoever is on call
@@ -19881,10 +19887,10 @@ function hzDsDraw() {
     + (HZ_DS.coord ? '<button class="hz-pop-back" onclick="hzDsShiftForm()">＋ Shift</button>' : '')
     + '</div>';   // 12.624 (Sam): reminder settings live in Admin ▸ Notification Settings ▸ 🗓️ Dispatch Schedule only
   var nowH = HZ_DS.now.length ? HZ_DS.now.map(function(s) {
-    return '<div class="hz-ds-oncall"><div><div class="lbl">On call now</div><div class="who">' + hzDsWho(s) + '</div><div class="sub">until ' + hzDsHm(s.end) + (hzDsYmd(s.end) !== hzDsYmd(Date.now()) ? " tomorrow" : "") + '</div></div>'
+    return '<div class="hz-ds-oncall"><div><div class="lbl">On call now</div><div class="who">' + hzDsWho(s) + '</div><div class="sub">until ' + hzDsUntil(s.runEnd || s.end) + '</div></div>'
       + (s.phone || hzDsPhone(s.uid) ? '<a class="hz-ds-call" href="tel:' + hzDsEsc(s.phone || hzDsPhone(s.uid)) + '">📞 Call</a>' : '') + '</div>';
   }).join("") : '<div class="hz-ds-oncall none"><div><div class="lbl">On call now</div><div class="who">No dispatcher on the schedule right now</div></div></div>';
-  if (HZ_DS.next) nowH += '<div class="hz-ds-next">Next: <b>' + hzDsWho(HZ_DS.next) + '</b> · ' + hzDsDayLabel(hzDsYmd(HZ_DS.next.start)) + ' ' + hzDsRange(HZ_DS.next) + '</div>';
+  if (HZ_DS.next) nowH += '<div class="hz-ds-next">Next: <b>' + hzDsWho(HZ_DS.next) + '</b> · ' + hzDsDayLabel(hzDsYmd(HZ_DS.next.start)) + ' ' + hzDsHm(HZ_DS.next.start) + '–' + hzDsUntil(HZ_DS.next.runEnd || HZ_DS.next.end, HZ_DS.next.start) + '</div>';
   var pend = HZ_DS.coord ? HZ_DS.reqs.length : HZ_DS.myReqs.filter(function(r) { return r.status === "pending"; }).length;
   var tabs = [["mine", "My shifts", 0],   // 12.640 (Sam): no count on My shifts
     ["open", "Open shifts", HZ_DS.open.length], ["week", "Schedule", 0], ["req", HZ_DS.coord ? "Requests" : "My requests", pend]];
@@ -20284,6 +20290,14 @@ function hzDsSyncedBtn() {
   };
   if (HZ_DS.calInfo && Date.now() - HZ_DS.calInfo.at < 60000) { show(HZ_DS.calInfo.c); return; }
   db.collection("dispCal").doc(me.uid).get().then(function(s) { var c = s.exists ? (s.data() || {}) : null; HZ_DS.calInfo = { c: c, at: Date.now() }; show(c); }).catch(function() {});
+}
+// "08:00 tomorrow" / "Sat 08:00" / "23:59" — an end time said relative to a day (default today)
+function hzDsUntil(e, fromMs) {
+  var base = hzDsYmd(fromMs || Date.now()), d = hzDsYmd(e - 1), t = hzDsHm(e) === "00:00" ? "23:59" : hzDsHm(e);
+  if (hzDsHm(e) === "00:00" && d === base) return "23:59";
+  if (hzDsYmd(e) === base) return t;
+  if (hzDsYmd(e) === hzDsAddDays(base, 1)) return hzDsHm(e) + (fromMs ? " (next day)" : " tomorrow");
+  return hzDsDayLabel(hzDsYmd(e)).slice(0, 3) + " " + hzDsHm(e);
 }
 function hzDsAgo(ms) { var m = Math.round((Date.now() - ms) / 60000); return m < 2 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " day" + (Math.round(m / 1440) === 1 ? "" : "s") + " ago"; }
 function hzDsCalSeen(info) {
