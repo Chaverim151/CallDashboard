@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.151"; window.M_BUILD = BUILD;
+  var BUILD = "9.152"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19891,7 +19891,7 @@ function hzDsDraw() {
   var tabH = '<div class="hz-ds-tabs">' + tabs.map(function(t) { return '<button class="' + (HZ_DS.tab === t[0] ? 'on' : '') + '" onclick="HZ_DS.tab=\'' + t[0] + '\';hzDsDraw()">' + t[1] + (t[2] ? ' <span class="n">' + t[2] + '</span>' : '') + '</button>'; }).join("") + '</div>';
   var body = HZ_DS.tab === "mine" ? hzDsMineHtml() : HZ_DS.tab === "open" ? hzDsOpenHtml() : HZ_DS.tab === "week" ? hzDsWeekHtml() : hzDsReqHtml();
   var keep = o.querySelector(".hz-tl-body"), st = keep ? keep.scrollTop : 0;
-  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button></div>' + tabH + body + '</div></div></div>';
+  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button>' + (HZ_DS.coord ? '<button class="hz-kb-btn" onclick="hzDsCalStatus()">📡 Calendar sync — all dispatchers</button>' : '') + '</div>' + tabH + body + '</div></div></div>';
   if (st) { var nb = o.querySelector(".hz-tl-body"); if (nb) nb.scrollTop = st; }
 }
 HZ_DS.phones = {};
@@ -20245,8 +20245,10 @@ function hzDsIcsOne(id) {
 function hzDsSubscribe() {
   var me = HZ_DS.me || {}; if (!me.uid) return;
   var ref = db.collection("dispCal").doc(me.uid);
+  var info = {};
   ref.get().then(function(s) {
-    var t = s.exists && s.data().token;
+    info = s.exists ? (s.data() || {}) : {};
+    var t = info.token;
     if (t) return t;
     t = Array.prototype.map.call(crypto.getRandomValues(new Uint8Array(18)), function(b) { return ("0" + b.toString(16)).slice(-2); }).join("");
     return ref.set({ token: t, createdAt: Date.now() }).then(function() { return t; });
@@ -20254,14 +20256,48 @@ function hzDsSubscribe() {
     var url = "https://us-central1-" + firebase.app().options.projectId + ".cloudfunctions.net/dispCalFeed?u=" + encodeURIComponent(me.uid) + "&k=" + t;
     var web = url.replace(/^https:/, "webcal:");
     HZ_DS.calUrl = url;
-    hzDsDlg("📅 Add my shifts to my calendar", '<div class="hz-ds-note">Your shifts show in your own calendar and update by themselves when the schedule changes (calendar apps check every few hours).</div><div class="hz-ds-calbtns">'
+    // 12.653 (Sam: "debug schedule sync" — a dispatcher didn't think it was syncing): the dialog checks the link works, says when her
+    // calendar app last fetched it (the server notes every fetch), and explains how often each calendar app checks
+    hzDsDlg("📅 Add my shifts to my calendar", '<div id="hz-ds-calchk" class="hz-ds-note">Checking your calendar link…</div>'
+      + '<div class="hz-ds-note">Your shifts show in your own calendar and update by themselves when the schedule changes — but <b>the calendar app decides how often it checks</b>: Google Calendar every 12–24 hours (it can\'t be sped up), iPhone usually every hour or as set in Settings ▸ Calendar ▸ Accounts ▸ Fetch New Data, Outlook every few hours. The 📅 button on a single shift adds a one-time copy that does <b>not</b> update.</div><div class="hz-ds-calbtns">'
       + '<a class="hz-kb-btn" href="' + hzDsEsc(web) + '">iPhone / Apple Calendar</a>'
       + '<a class="hz-kb-btn" href="https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(web) + '" target="_blank" rel="noopener">Google Calendar ↗</a>'
       + '<a class="hz-kb-btn" href="https://outlook.live.com/calendar/0/addfromweb?url=' + encodeURIComponent(url) + '&name=' + encodeURIComponent("Dispatch shifts") + '" target="_blank" rel="noopener">Outlook ↗</a>'
       + '<button class="hz-kb-btn" onclick="hzDsCopyCal()">Copy the link</button></div>'
       + '<div class="hz-kb-note">The link is private to you — don\'t share it.</div>'
       + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button></div>');
+    hzDsCalCheck(url, info);
   }).catch(function(e) { hzDsToast("Couldn't make your calendar link: " + e.message, true); });
+}
+function hzDsAgo(ms) { var m = Math.round((Date.now() - ms) / 60000); return m < 2 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " day" + (Math.round(m / 1440) === 1 ? "" : "s") + " ago"; }
+function hzDsCalSeen(info) {
+  return info && info.lastFetch ? "Your calendar app (" + hzDsEsc(info.lastApp || "a calendar app") + ") last checked " + hzDsAgo(info.lastFetch) + "."
+    : "No calendar app has checked your link yet — tap one of the buttons below to subscribe (or it was made before this check existed).";
+}
+function hzDsCalCheck(url, info) {
+  var box = function() { return document.getElementById("hz-ds-calchk"); };
+  fetch(url + "&check=1", { cache: "no-store" }).then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); }).then(function(j) {
+    var b = box(); if (!b) return;
+    if (j.lastFetch) info = j;
+    b.innerHTML = '✅ Your link works — it has <b>' + j.upcoming + '</b> upcoming shift' + (j.upcoming === 1 ? '' : 's') + (j.next ? ' (next: ' + hzDsEsc(hzDsDayLabel(hzDsYmd(j.next)) + ' ' + hzDsHm(j.next)) + ')' : '') + '.<br>' + hzDsCalSeen(info);
+  }).catch(function() {
+    var b = box(); if (!b) return;
+    b.className = "hz-ds-note hz-ds-bad";
+    b.innerHTML = '⚠ Couldn\'t check the calendar link from here (the server may not be updated yet).<br>' + hzDsCalSeen(info);
+  });
+}
+// 12.653: coordinators — which dispatchers have a calendar connected and when it last checked
+function hzDsCalStatus() {
+  if (!HZ_DS.coord) return;
+  hzDsDlg("📡 Calendar sync — all dispatchers", '<div class="hz-ds-note">Who added their shifts to a calendar app and when that app last fetched them. Google Calendar checks only every 12–24 hours.</div><div id="hz-ds-calall" class="hz-ds-note">Loading…</div><div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button></div>');
+  var list = (HZ_DS.dispatchers || []).filter(function(d) { return d.uid && d.uid !== "lakewood"; });
+  Promise.all(list.map(function(d) { return db.collection("dispCal").doc(d.uid).get().then(function(s) { return { d: d, c: s.exists ? (s.data() || {}) : null }; }).catch(function() { return { d: d, c: null, err: true }; }); })).then(function(rows) {
+    var el = document.getElementById("hz-ds-calall"); if (!el) return;
+    el.innerHTML = rows.length ? rows.map(function(x) {
+      var st = x.err ? "⚠ can't read (rules not published yet?)" : !x.c || !x.c.token ? "— not set up" : x.c.lastFetch ? "✅ " + hzDsEsc(x.c.lastApp || "calendar app") + " · checked " + hzDsAgo(x.c.lastFetch) : "⏳ link made, no calendar app has checked it";
+      return '<div class="hz-ds-calrow"><b>' + hzDsEsc(x.d.unit + " " + x.d.name) + '</b><span>' + st + '</span></div>';
+    }).join("") : "No dispatchers.";
+  });
 }
 function hzDsCopyCal() { try { navigator.clipboard.writeText(HZ_DS.calUrl); hzDsMsg("✓ Copied — in your calendar app choose “Add calendar from URL / Subscribe” and paste it."); } catch (e) { hzDsMsg(HZ_DS.calUrl); } }
 
@@ -20436,6 +20472,7 @@ function hzDsCss() {
     + P + ".hz-ds-bar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 6px}"
     + P + ".hz-ds-kind{font-weight:700;color:#d4a017;-webkit-text-fill-color:#d4a017;margin:2px 0}"
     + P + ".hz-ds-drop{white-space:nowrap}"
+    + P + ".hz-ds-calrow{display:flex;gap:10px;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(212,160,23,.2)}" + P + ".hz-ds-calrow span{text-align:right;opacity:.9}"
     + "@media (max-width:520px){" + P + ".hz-ds-row:has(.hz-ds-drop){flex-wrap:wrap}" + P + ".hz-ds-row:has(.hz-ds-drop) .a{flex-basis:100%;justify-content:flex-end}}"
     + P + ".hz-ds-pill{font-size:.75rem;border:1px solid #d4a017;border-radius:999px;padding:3px 9px;color:#d4a017;-webkit-text-fill-color:#d4a017;white-space:nowrap}"
     + P + ".hz-ds-req{padding:7px 12px;font-size:.82rem}"
