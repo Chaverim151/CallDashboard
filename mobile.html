@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.149"; window.M_BUILD = BUILD;
+  var BUILD = "9.150"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -20456,11 +20456,17 @@ function hzDsCss() {
 // dates From–To; download as PDF or Excel. Calls from the call logs (test calls never count); dispatcher hours from the
 // 🗓️ Dispatch Schedule (shifts already worked, cut to the dates; Lakewood / open / removed shifts don't count).
 // The PDF / Excel builders (jsPDF + AutoTable, SheetJS) load from cdnjs the first time they're needed.
-var HZ_MREP = { who: "all", picked: {}, users: null, from: "", to: "", detail: true, pickRole: "all", q: "", busy: false };
+var HZ_MREP = { type: "full", who: "all", picked: {}, users: null, from: "", to: "", detail: true, pickRole: "all", q: "", busy: false };
 var HZ_MREP_LIBS = {
   pdf: ["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"],
   xlsx: ["https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"]
 };
+// 12.649 (Sam: "break it up by report type as well")
+var HZ_MREP_TYPES = [["full", "Full member report", "Everything: calls responded, calls dispatched, response times and hours dispatched."],
+  ["hours", "Hours dispatched", "Time each dispatcher was on the Dispatch Schedule, with each shift."],
+  ["disp", "Calls dispatched", "Calls each dispatcher handled, cancelled, and time to assign the first unit."],
+  ["resp", "Calls responded", "Calls each responder went on, transports, and response time (assigned to on scene)."]];
+function hzMrepType(k) { return HZ_MREP_TYPES.filter(function(t) { return t[0] === k; })[0] || HZ_MREP_TYPES[0]; }
 function hzMrepEsc(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function hzMrepYmd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function hzMrepKey(u) { return String(u || "").toUpperCase().replace(/\s+/g, ""); }
@@ -20508,12 +20514,14 @@ function hzMrepMount() {
   if (!HZ_MREP.from) { var t = new Date(); HZ_MREP.from = t.getFullYear() + "-01-01"; HZ_MREP.to = hzMrepYmd(t); }
   var opt = function(v, l) { return '<option value="' + v + '"' + (HZ_MREP.who === v ? ' selected' : '') + '>' + l + '</option>'; };
   host.innerHTML = '<div class="hz-rep-sec hz-mrep">'
-    + '<div class="hz-rep-note">Pick who and which dates, then download. Each member gets their calls (responded and dispatched), response times, and hours dispatched from the Dispatch Schedule. Test calls never count.</div>'
+    + '<div class="hz-rep-note">Pick the report, who and which dates, then download. Test calls never count.</div>'
+    + '<label class="hz-mrep-l">Report<select id="hz-mrep-type" onchange="HZ_MREP.type=this.value;hzMrepMount()">' + HZ_MREP_TYPES.map(function(t) { return '<option value="' + t[0] + '"' + (HZ_MREP.type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>'; }).join("") + '</select></label>'
+    + '<div class="hz-rep-note" style="margin:4px 0 0">' + hzMrepEsc(hzMrepType(HZ_MREP.type)[2]) + '</div>'
     + '<label class="hz-mrep-l">Who<select id="hz-mrep-who" onchange="HZ_MREP.who=this.value;hzMrepMount()">' + opt("all", "All members") + opt("disp", "All dispatchers") + opt("resp", "All responders") + opt("pick", "Pick members…") + '</select></label>'
     + (HZ_MREP.who === "pick" ? '<div id="hz-mrep-pick">Loading members…</div>' : '')
     + '<div class="hz-mrep-2"><label class="hz-mrep-l">From<input type="date" id="hz-mrep-from" value="' + HZ_MREP.from + '" onchange="HZ_MREP.from=this.value"></label>'
     + '<label class="hz-mrep-l">To<input type="date" id="hz-mrep-to" value="' + HZ_MREP.to + '" onchange="HZ_MREP.to=this.value"></label></div>'
-    + '<label class="hz-mrep-ck"><input type="checkbox" id="hz-mrep-detail"' + (HZ_MREP.detail ? ' checked' : '') + ' onchange="HZ_MREP.detail=this.checked"> Include each call and shift (not just the totals)</label>'
+    + '<label class="hz-mrep-ck"><input type="checkbox" id="hz-mrep-detail"' + (HZ_MREP.detail ? ' checked' : '') + ' onchange="HZ_MREP.detail=this.checked"> Include each ' + (HZ_MREP.type === "hours" ? 'shift' : HZ_MREP.type === "full" ? 'call and shift' : 'call') + ' (not just the totals)</label>'
     + '<div class="hz-mrep-btns"><button type="button" class="hz-rep-dl" onclick="hzMrepGo(\'pdf\')">⬇ PDF</button><button type="button" class="hz-rep-dl" onclick="hzMrepGo(\'xlsx\')">⬇ Excel</button></div>'
     + '<div id="hz-mrep-msg" class="hz-rep-note" style="margin:8px 0 0"></div></div>';
   if (HZ_MREP.who === "pick") hzMrepLoadUsers().then(hzMrepPickDraw).catch(function(e) { var p = document.getElementById("hz-mrep-pick"); if (p) p.textContent = "Couldn't load the members: " + e.message; });
@@ -20554,8 +20562,8 @@ function hzMrepData(from, to) {
   });
   return Promise.all([hzMrepLoadUsers(), calls, shifts]);
 }
-function hzMrepBuild(users, calls, shifts, who, picked) {
-  var people = users.filter(function(u) { return who === "all" ? true : who === "disp" ? u.disp : who === "resp" ? u.resp : !!picked[u.uid]; });
+function hzMrepBuild(users, calls, shifts, who, picked, type) {
+  var people = users.filter(function(u) { return who === "all" ? (type === "hours" || type === "disp" ? u.disp : type === "resp" ? u.resp : true) : who === "disp" ? u.disp : who === "resp" ? u.resp : !!picked[u.uid]; });
   var by = {}; people.forEach(function(u) { by[hzMrepKey(u.unit)] = { u: u, resp: [], respCalls: [], dispCalls: [], assign: [], shifts: [], ms: 0 }; });
   calls.forEach(function(r) {
     r.units.forEach(function(un) { var m = by[hzMrepKey(un)]; if (!m) return; m.respCalls.push(r); if (r.unitResp[un] != null) m.resp.push(r.unitResp[un]); });
@@ -20572,20 +20580,23 @@ function hzMrepBuild(users, calls, shifts, who, picked) {
   });
 }
 // columns follow who was picked: dispatchers-only → dispatcher columns, responders-only → responder columns, otherwise both
-function hzMrepCols(who) {
+function hzMrepCols(who, type) {
   var base = [["Unit", function(m) { return m.unit; }], ["Name", function(m) { return m.name; }]];
   var role = [["Role", function(m) { return [m.disp ? "Dispatcher" : "", m.resp ? "Responder" : ""].filter(Boolean).join(", ") || "-"; }]];
   var R = [["Calls responded", function(m) { return m.respN; }, 1], ["Completed", function(m) { return m.respDone; }, 1], ["Transports", function(m) { return m.transports; }, 1], ["Avg response (assigned to on scene)", function(m) { return m.avgResp; }, "dur"]];
   var D = [["Hours dispatched", function(m) { return m.hours; }, "hrs"], ["Shifts", function(m) { return m.shiftN; }, 1], ["Calls dispatched", function(m) { return m.dispN; }, 1], ["Cancelled", function(m) { return m.dispCanc; }, 1], ["Avg time to assign", function(m) { return m.avgAssign; }, "dur"], ["Median time to assign", function(m) { return m.medAssign; }, "dur"]];
+  if (type === "hours") return base.concat([D[0], D[1]]);
+  if (type === "disp") return base.concat(D.slice(2));
+  if (type === "resp") return base.concat(R);
   return who === "disp" ? base.concat(D) : who === "resp" ? base.concat(R) : base.concat(role, R, D);
 }
 function hzMrepTxt(v, kind) { if (kind === "dur") return v == null ? "-" : hzRepDur(v).replace(/–|—/g, "-"); if (kind === "hrs") return typeof hzRepHrs === "function" ? hzRepHrs(v) : (Math.round(v * 10) / 10) + "h"; return v == null ? "" : String(v); }
 function hzMrepWhen(ms) { var d = new Date(ms); return hzMrepYmd(d) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
 function hzMrepHm(ms) { var d = new Date(ms); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
-function hzMrepCallRows(m) {
+function hzMrepCallRows(m, type) {
   var out = [];
-  m.respCalls.forEach(function(r) { out.push({ t: r.created.getTime(), role: "Responded", r: r, resp: r.unitResp[m.unit] != null ? r.unitResp[m.unit] : (function() { var k = Object.keys(r.unitResp).filter(function(x) { return hzMrepKey(x) === hzMrepKey(m.unit); })[0]; return k ? r.unitResp[k] : null; })(), assign: null }); });
-  m.dispCalls.forEach(function(r) { out.push({ t: r.created.getTime(), role: "Dispatched", r: r, resp: null, assign: r.toAssign }); });
+  if (type !== "disp") m.respCalls.forEach(function(r) { out.push({ t: r.created.getTime(), role: "Responded", r: r, resp: r.unitResp[m.unit] != null ? r.unitResp[m.unit] : (function() { var k = Object.keys(r.unitResp).filter(function(x) { return hzMrepKey(x) === hzMrepKey(m.unit); })[0]; return k ? r.unitResp[k] : null; })(), assign: null }); });
+  if (type !== "resp") m.dispCalls.forEach(function(r) { out.push({ t: r.created.getTime(), role: "Dispatched", r: r, resp: null, assign: r.toAssign }); });
   return out.sort(function(a, b) { return a.t - b.t; }).map(function(x) { var l = x.r.l;
     return { when: hzMrepWhen(x.t), role: x.role, no: typeof hzCallNo === "function" ? hzCallNo(l) : (l.id || ""), nature: l.callNature || "", zone: l.zone || "", outcome: x.r.cancelled ? "Cancelled" : (x.r.disp === "rma" ? "RMA" : x.r.disp ? (x.r.disp.charAt(0).toUpperCase() + x.r.disp.slice(1)).replace(/_/g, " ") : "Completed"), resp: x.resp, assign: x.assign };
   });
@@ -20601,16 +20612,16 @@ function hzMrepGo(kind) {
   if (HZ_MREP.who === "pick" && !Object.keys(HZ_MREP.picked).length) { hzMrepMsg("Pick at least one member.", true); return; }
   HZ_MREP.busy = true; hzMrepMsg("Making the " + (kind === "pdf" ? "PDF" : "Excel file") + "…");
   Promise.all([hzMrepData(from, to), hzMrepLoadJs(HZ_MREP_LIBS[kind])]).then(function(res) {
-    var d = res[0], rows = hzMrepBuild(d[0], d[1], d[2], HZ_MREP.who, HZ_MREP.picked);
+    var d = res[0], type = HZ_MREP.type, rows = hzMrepBuild(d[0], d[1], d[2], HZ_MREP.who, HZ_MREP.picked, type);
     if (!rows.length) throw new Error("Nobody to report on.");
-    var meta = { from: from, to: to, who: hzMrepWhoLabel(HZ_MREP.who, rows.length), whoKey: HZ_MREP.who, detail: HZ_MREP.detail, made: hzMrepWhen(Date.now()) };
+    var meta = { from: from, to: to, who: hzMrepWhoLabel(HZ_MREP.who === "all" && type !== "full" ? (type === "resp" ? "resp" : "disp") : HZ_MREP.who, rows.length), whoKey: HZ_MREP.who, type: type, typeLabel: hzMrepType(type)[1], detail: HZ_MREP.detail, made: hzMrepWhen(Date.now()) };
     var blob = kind === "pdf" ? hzMrepPdf(rows, meta) : hzMrepXlsx(rows, meta);
-    var name = "Member_Report_" + meta.who.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "") + "_" + from + "_to_" + to + (kind === "pdf" ? ".pdf" : ".xlsx");
+    var name = meta.typeLabel.replace(/[^A-Za-z0-9]+/g, "_") + "_" + meta.who.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "") + "_" + from + "_to_" + to + (kind === "pdf" ? ".pdf" : ".xlsx");
     if (typeof hzSaveFile === "function") hzSaveFile(blob, name);
     else { var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
     HZ_MREP.lastBlob = blob; HZ_MREP.lastName = name;
     hzMrepMsg("✓ " + name);
-    try { db.collection("callLogAudit").add({ action: "member_report_" + kind, who: HZ_MREP.who, members: rows.length, from: from, to: to, timestamp: new Date().toISOString() }); } catch (e) {}
+    try { db.collection("callLogAudit").add({ action: "member_report_" + kind, type: HZ_MREP.type, who: HZ_MREP.who, members: rows.length, from: from, to: to, timestamp: new Date().toISOString() }); } catch (e) {}
   }).catch(function(e) { hzMrepMsg(e.message || String(e), true); }).then(function() { HZ_MREP.busy = false; });
 }
 function hzMrepOrg() { try { return (typeof HZ_ORG_NAME === "string" && HZ_ORG_NAME) || "Hatzolah MC"; } catch (e) { return "Hatzolah MC"; } }
@@ -20620,22 +20631,25 @@ function hzMrepPdf(rows, meta) {
   var head = { fillColor: [212, 160, 23], textColor: [0, 0, 0], fontStyle: "bold" }, W = doc.internal.pageSize.getWidth();
   var title = function(t, y) { doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(0); doc.text(plain(t), 40, y); };
   doc.setFillColor(0, 0, 0); doc.rect(0, 0, W, 62, "F");
-  doc.setTextColor(212, 160, 23); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text(plain(hzMrepOrg() + " - Member report"), 40, 30);
+  doc.setTextColor(212, 160, 23); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text(plain(hzMrepOrg() + " - " + meta.typeLabel), 40, 30);
   doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.text(plain(meta.who + "  |  " + meta.from + " to " + meta.to + "  |  made " + meta.made), 40, 48);
-  var cols = hzMrepCols(meta.whoKey);
+  var cols = hzMrepCols(meta.whoKey, meta.type);
   doc.autoTable({ startY: 80, head: [cols.map(function(c) { return plain(c[0]); })], body: rows.map(function(m) { return cols.map(function(c) { return plain(hzMrepTxt(c[1](m), c[2])); }); }),
     headStyles: head, styles: { fontSize: 8, cellPadding: 3 }, alternateRowStyles: { fillColor: [250, 245, 230] }, margin: { left: 40, right: 40 } });
   if (meta.detail) rows.forEach(function(m) {
-    var calls = hzMrepCallRows(m); if (!calls.length && !m.shifts.length) return;
+    var calls = meta.type === "hours" ? [] : hzMrepCallRows(m, meta.type), sh = meta.type === "full" || meta.type === "hours" ? m.shifts : [];
+    if (!calls.length && !sh.length) return;
     doc.addPage(); title(m.unit + (m.name ? " - " + m.name : ""), 44);
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
-    doc.text(plain(meta.from + " to " + meta.to + "   Calls responded " + m.respN + " | avg response " + hzMrepTxt(m.avgResp, "dur") + "   Calls dispatched " + m.dispN + " | hours dispatched " + hzMrepTxt(m.hours, "hrs") + " (" + m.shiftN + " shift" + (m.shiftN === 1 ? "" : "s") + ")"), 40, 60);
+    var hrsT = "hours dispatched " + hzMrepTxt(m.hours, "hrs") + " (" + m.shiftN + " shift" + (m.shiftN === 1 ? "" : "s") + ")", respT = "calls responded " + m.respN + " | avg response " + hzMrepTxt(m.avgResp, "dur"), dispT = "calls dispatched " + m.dispN + " | avg to assign " + hzMrepTxt(m.avgAssign, "dur");
+    doc.text(plain(meta.from + " to " + meta.to + "   " + (meta.type === "hours" ? hrsT : meta.type === "disp" ? dispT : meta.type === "resp" ? respT : respT + "   " + dispT + "   " + hrsT)), 40, 60);
     var y = 72;
-    if (calls.length) { doc.autoTable({ startY: y, head: [["Date / time", "Role", "Call #", "Nature", "Zone", "Outcome", "Response", "Time to assign"]],
-      body: calls.map(function(c) { return [c.when, c.role, c.no, c.nature, c.zone, c.outcome, hzMrepTxt(c.resp, "dur"), hzMrepTxt(c.assign, "dur")].map(plain); }),
+    if (calls.length) { var cH = meta.type === "resp" ? ["Date / time", "Call #", "Nature", "Zone", "Outcome", "Response"] : meta.type === "disp" ? ["Date / time", "Call #", "Nature", "Zone", "Outcome", "Time to assign"] : ["Date / time", "Role", "Call #", "Nature", "Zone", "Outcome", "Response", "Time to assign"];
+      doc.autoTable({ startY: y, head: [cH],
+      body: calls.map(function(c) { var r = meta.type === "resp" ? [c.when, c.no, c.nature, c.zone, c.outcome, hzMrepTxt(c.resp, "dur")] : meta.type === "disp" ? [c.when, c.no, c.nature, c.zone, c.outcome, hzMrepTxt(c.assign, "dur")] : [c.when, c.role, c.no, c.nature, c.zone, c.outcome, hzMrepTxt(c.resp, "dur"), hzMrepTxt(c.assign, "dur")]; return r.map(plain); }),
       headStyles: head, styles: { fontSize: 8, cellPadding: 3 }, margin: { left: 40, right: 40 } }); y = doc.lastAutoTable.finalY + 18; }
-    if (m.shifts.length) { doc.autoTable({ startY: y, head: [["Dispatch shift", "From", "To", "Hours counted"]],
-      body: m.shifts.map(function(s) { return [hzMrepYmd(new Date(s.fullStart)), hzMrepHm(s.fullStart), hzMrepHm(s.fullEnd) === "00:00" ? "23:59" : hzMrepHm(s.fullEnd), hzMrepTxt((s.end - s.start) / 3600000, "hrs")].map(plain); }),
+    if (sh.length) { doc.autoTable({ startY: y, head: [["Dispatch shift", "From", "To", "Hours counted"]],
+      body: sh.map(function(s) { return [hzMrepYmd(new Date(s.fullStart)), hzMrepHm(s.fullStart), hzMrepHm(s.fullEnd) === "00:00" ? "23:59" : hzMrepHm(s.fullEnd), hzMrepTxt((s.end - s.start) / 3600000, "hrs")].map(plain); }),
       headStyles: head, styles: { fontSize: 8, cellPadding: 3 }, margin: { left: 40, right: 40 } }); }
   });
   var pages = doc.internal.getNumberOfPages();
@@ -20643,10 +20657,10 @@ function hzMrepPdf(rows, meta) {
   return doc.output("blob");
 }
 function hzMrepXlsx(rows, meta) {
-  var X = window.XLSX, wb = X.utils.book_new(), cols = hzMrepCols(meta.whoKey);
+  var X = window.XLSX, wb = X.utils.book_new(), cols = hzMrepCols(meta.whoKey, meta.type);
   var num = function(v, kind) { if (v == null) return ""; if (kind === "dur") return Math.round(v / 6) / 10; if (kind === "hrs") return Math.round(v * 100) / 100; return v; };
   var hdr = cols.map(function(c) { return c[2] === "dur" ? c[0] + " (min)" : c[2] === "hrs" ? c[0] + " (hours)" : c[0]; });
-  var sum = [[hzMrepOrg() + " — Member report"], [meta.who + " · " + meta.from + " to " + meta.to + " · made " + meta.made], [], hdr]
+  var sum = [[hzMrepOrg() + " — " + meta.typeLabel], [meta.who + " · " + meta.from + " to " + meta.to + " · made " + meta.made], [], hdr]
     .concat(rows.map(function(m) { return cols.map(function(c) { return num(c[1](m), c[2]); }); }));
   var ws = X.utils.aoa_to_sheet(sum); ws["!cols"] = hdr.map(function(h, i) { return { wch: i === 1 ? 24 : Math.max(10, Math.min(28, h.length + 2)) }; });
   X.utils.book_append_sheet(wb, ws, "Summary");
@@ -20654,11 +20668,13 @@ function hzMrepXlsx(rows, meta) {
     var cr = [["Unit", "Name", "Date / time", "Role", "Call #", "Nature", "Zone", "Outcome", "Response (min)", "Time to assign (min)"]];
     var sr = [["Unit", "Name", "Date", "From", "To", "Hours counted"]];
     rows.forEach(function(m) {
-      hzMrepCallRows(m).forEach(function(c) { cr.push([m.unit, m.name, c.when, c.role, c.no, c.nature, c.zone, c.outcome, num(c.resp, "dur"), num(c.assign, "dur")]); });
-      m.shifts.forEach(function(s) { sr.push([m.unit, m.name, hzMrepYmd(new Date(s.fullStart)), hzMrepHm(s.fullStart), hzMrepHm(s.fullEnd) === "00:00" ? "23:59" : hzMrepHm(s.fullEnd), num((s.end - s.start) / 3600000, "hrs")]); });
+      if (meta.type !== "hours") hzMrepCallRows(m, meta.type).forEach(function(c) { cr.push([m.unit, m.name, c.when, c.role, c.no, c.nature, c.zone, c.outcome, num(c.resp, "dur"), num(c.assign, "dur")]); });
+      if (meta.type === "full" || meta.type === "hours") m.shifts.forEach(function(s) { sr.push([m.unit, m.name, hzMrepYmd(new Date(s.fullStart)), hzMrepHm(s.fullStart), hzMrepHm(s.fullEnd) === "00:00" ? "23:59" : hzMrepHm(s.fullEnd), num((s.end - s.start) / 3600000, "hrs")]); });
     });
-    var w2 = X.utils.aoa_to_sheet(cr); w2["!cols"] = [8, 20, 16, 11, 10, 22, 10, 14, 13, 16].map(function(w) { return { wch: w }; }); X.utils.book_append_sheet(wb, w2, "Calls");
-    var w3 = X.utils.aoa_to_sheet(sr); w3["!cols"] = [8, 20, 12, 8, 8, 13].map(function(w) { return { wch: w }; }); X.utils.book_append_sheet(wb, w3, "Dispatch shifts");
+    if (meta.type === "resp") cr = cr.map(function(r) { return r.slice(0, 3).concat(r.slice(4, 9)); });   // no Role / Time to assign columns
+    if (meta.type === "disp") cr = cr.map(function(r) { return r.slice(0, 3).concat(r.slice(4, 8), r.slice(9)); });   // no Role / Response columns
+    if (meta.type !== "hours") { var w2 = X.utils.aoa_to_sheet(cr); w2["!cols"] = cr[0].map(function(h, i) { return { wch: i === 1 ? 20 : Math.max(9, h.length + 2) }; }); X.utils.book_append_sheet(wb, w2, meta.type === "disp" ? "Calls dispatched" : meta.type === "resp" ? "Calls responded" : "Calls"); }
+    if (meta.type === "full" || meta.type === "hours") { var w3 = X.utils.aoa_to_sheet(sr); w3["!cols"] = [8, 20, 12, 8, 8, 13].map(function(w) { return { wch: w }; }); X.utils.book_append_sheet(wb, w3, "Dispatch shifts"); }
   }
   var out = X.write(wb, { bookType: "xlsx", type: "array" });
   return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
