@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.148"; window.M_BUILD = BUILD;
+  var BUILD = "9.149"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -2663,6 +2663,7 @@ function mNavCloseOverlay() {
   var dvp = document.getElementById("hz-dv-pop"); if (dvp && typeof hzDvClose === "function") { var h4 = HZ_DV.hist; HZ_DV.hist = false; hzDvClose(true); return h4 ? "added" : true; }   // 12.177
   var pp = document.getElementById("hz-proto-pop"); if (pp && typeof hzProtoClose === "function") { var h3 = HZ_PROTO.hist; HZ_PROTO.hist = false; hzProtoClose(true); return h3 ? "added" : true; }   // 12.175
   if (document.getElementById("hz-tools-pop") && typeof hzToolsBack === "function") return hzToolsBack();
+  if (document.getElementById("hz-mrep-pop") && typeof hzMrepBack === "function") return hzMrepBack();   // 12.648: 👤 Member reports page
   if (document.getElementById("hz-ds-pop") && typeof hzDsBack === "function") return hzDsBack();   // 12.623: 🗓️ Dispatch Schedule
   if (document.getElementById("hz-kb-pop") && typeof hzKbBack === "function") return hzKbBack();   // 12.607: 📚 Knowledge Base — item → folder → up → close   // 12.316 / 7.67: 🧰 Tools
   var ap = document.getElementById("hz-av-pop"); if (ap && typeof hzAvClose === "function") { var h2 = HZ_AV.hist; HZ_AV.hist = false; hzAvClose(true); return h2 ? "added" : true; }
@@ -17998,6 +17999,7 @@ function hzRepOpen() {
   var y0 = new Date().getFullYear(), years = []; for (var y = y0; y >= 2025; y--) years.push(y);
   host.innerHTML = '<div class="hz-rep-top"><select id="hz-rep-year" onchange="HZ_REP.year=+this.value;hzRepLoad()">' + years.map(function(y) { return '<option value="' + y + '"' + (y === HZ_REP.year ? " selected" : "") + '>' + y + '</option>'; }).join("") + '</select>' +
     '<button type="button" class="hz-rep-dl" onclick="hzRepCsv()">⬇ Download CSV</button></div>' +
+    '<button type="button" class="hz-rep-dl hz-rep-mrep" onclick="hzMrepOpen()">👤 Generate member reports</button>' +   // 12.648: opens its own page (PDF / Excel)
     '<div id="hz-rep-body"></div>';
   hzRepLoad();
 }
@@ -18020,6 +18022,7 @@ function hzRepLoad() {
   st.textContent = P + "{max-width:960px;margin:0 auto;padding-bottom:30px}" +
     P + " .hz-rep-top{display:flex;gap:10px;margin:4px 0 8px}" +
     P + " #hz-rep-year{flex:1;min-width:0;height:46px;border-radius:10px;padding:0 12px;font-size:1rem;font-weight:700;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important}" +
+    P + " .hz-rep-mrep{display:block;width:100%;flex:none;margin:0 0 12px}" +
     P + " .hz-rep-dl{flex:1;height:46px;border-radius:10px;font-size:.95rem;font-weight:800;cursor:pointer;background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000;border:2px solid #000 !important}" +
     P + " .hz-rep-tests{display:flex;align-items:center;gap:8px;font-size:.82rem;margin:2px 2px 12px;color:inherit;opacity:.85}" +
     P + " .hz-rep-sec{background:#000 !important;border:2px solid #d4a017 !important;border-radius:14px;padding:14px;margin-bottom:14px}" +
@@ -20447,6 +20450,241 @@ function hzDsCss() {
     + P + ".hz-ds-chip button{background:#c62828;color:#fff;-webkit-text-fill-color:#fff;border:0;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.7rem}";
   document.head.appendChild(s);
 }
+</script>
+<script id="hz-mrep-js">
+// ══ 12.648 (Sam): 👤 MEMBER REPORTS — Reports page. Who: all members / all dispatchers / all responders / picked members;
+// dates From–To; download as PDF or Excel. Calls from the call logs (test calls never count); dispatcher hours from the
+// 🗓️ Dispatch Schedule (shifts already worked, cut to the dates; Lakewood / open / removed shifts don't count).
+// The PDF / Excel builders (jsPDF + AutoTable, SheetJS) load from cdnjs the first time they're needed.
+var HZ_MREP = { who: "all", picked: {}, users: null, from: "", to: "", detail: true, pickRole: "all", q: "", busy: false };
+var HZ_MREP_LIBS = {
+  pdf: ["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"],
+  xlsx: ["https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"]
+};
+function hzMrepEsc(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+function hzMrepYmd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function hzMrepKey(u) { return String(u || "").toUpperCase().replace(/\s+/g, ""); }
+function hzMrepRoles(u) {
+  var r = (Array.isArray(u.roles) ? u.roles : []).concat([u.role || ""]).map(function(x) { return String(x || "").toLowerCase().trim(); });
+  var titles = (typeof hzTitleList === "function" ? hzTitleList() : []).map(function(x) { return String(x).toLowerCase(); });
+  return { disp: r.indexOf("dispatcher") !== -1, resp: r.indexOf("responder") !== -1 || r.some(function(x) { return titles.indexOf(x) !== -1; }) };
+}
+function hzMrepName(u) { return ((u.firstName || "") + " " + (u.lastName || "")).trim() || u.name || u.displayName || ""; }
+function hzMrepLoadJs(urls) {
+  return urls.reduce(function(p, u) {
+    return p.then(function() {
+      if (document.querySelector('script[data-hz-lib="' + u + '"]')) return;
+      return new Promise(function(ok, bad) { var s = document.createElement("script"); s.src = u; s.setAttribute("data-hz-lib", u); s.onload = ok; s.onerror = function() { s.remove(); bad(new Error("Couldn't load the file maker — check the internet connection and try again.")); }; document.head.appendChild(s); });
+    });
+  }, Promise.resolve());
+}
+function hzMrepLoadUsers() {
+  if (HZ_MREP.users) return Promise.resolve(HZ_MREP.users);
+  return db.collection("users").get().then(function(snap) {
+    var a = []; snap.forEach(function(d) { var u = d.data() || {}; if (!u.unit) return; var r = hzMrepRoles(u); a.push({ uid: d.id, unit: u.unit, name: hzMrepName(u), disp: r.disp, resp: r.resp }); });
+    a.sort(function(x, y) { return typeof hzUnitCmp === "function" ? hzUnitCmp(x.unit, y.unit) : String(x.unit).localeCompare(String(y.unit), undefined, { numeric: true }); });
+    HZ_MREP.users = a; return a;
+  });
+}
+
+// ── 12.648 (Sam: "make generate reports a button that leads to a page"): its own full page, opened from Reports ──
+function hzMrepOpen() {
+  if (typeof hzTlCss === "function") hzTlCss();
+  var o = document.getElementById("hz-mrep-pop");
+  if (!o) { o = document.createElement("div"); o.id = "hz-mrep-pop"; document.body.appendChild(o); }
+  var bot = 0; ["m-test-global-banner", "sys-test-global-banner"].forEach(function(id) { var bn = document.getElementById(id); if (!bn || getComputedStyle(bn).display === "none") return; var r = bn.getBoundingClientRect(); if (r.height > 0) bot = Math.max(bot, r.bottom); });
+  o.style.paddingTop = bot ? Math.ceil(bot) + "px" : "";
+  if (!HZ_MREP.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "mrep" }), ""); HZ_MREP.hist = true; } catch (e) {} }
+  o.innerHTML = '<div class="hz-tl-box hz-mrep-box"><div class="hz-tl-top"><button class="hz-pop-back" onclick="hzMrepClose()">← Back</button><b style="flex:1">👤 Member reports</b></div><div class="hz-tl-body"><div id="hz-mrep"></div></div></div>';
+  hzMrepMount();
+}
+function hzMrepClose(fromBack) {
+  var o = document.getElementById("hz-mrep-pop"); if (o) o.remove();
+  if (HZ_MREP.hist) { HZ_MREP.hist = false; if (!fromBack && history.state && history.state.hzOv === "mrep" && typeof mNav !== "undefined") { mNav.skipPop++; history.back(); } }
+}
+function hzMrepBack() { var h = HZ_MREP.hist; HZ_MREP.hist = false; hzMrepClose(true); return h ? "added" : true; }   // phone Back key
+function hzMrepMount() {
+  var host = document.getElementById("hz-mrep"); if (!host) return;
+  if (!HZ_MREP.from) { var t = new Date(); HZ_MREP.from = t.getFullYear() + "-01-01"; HZ_MREP.to = hzMrepYmd(t); }
+  var opt = function(v, l) { return '<option value="' + v + '"' + (HZ_MREP.who === v ? ' selected' : '') + '>' + l + '</option>'; };
+  host.innerHTML = '<div class="hz-rep-sec hz-mrep">'
+    + '<div class="hz-rep-note">Pick who and which dates, then download. Each member gets their calls (responded and dispatched), response times, and hours dispatched from the Dispatch Schedule. Test calls never count.</div>'
+    + '<label class="hz-mrep-l">Who<select id="hz-mrep-who" onchange="HZ_MREP.who=this.value;hzMrepMount()">' + opt("all", "All members") + opt("disp", "All dispatchers") + opt("resp", "All responders") + opt("pick", "Pick members…") + '</select></label>'
+    + (HZ_MREP.who === "pick" ? '<div id="hz-mrep-pick">Loading members…</div>' : '')
+    + '<div class="hz-mrep-2"><label class="hz-mrep-l">From<input type="date" id="hz-mrep-from" value="' + HZ_MREP.from + '" onchange="HZ_MREP.from=this.value"></label>'
+    + '<label class="hz-mrep-l">To<input type="date" id="hz-mrep-to" value="' + HZ_MREP.to + '" onchange="HZ_MREP.to=this.value"></label></div>'
+    + '<label class="hz-mrep-ck"><input type="checkbox" id="hz-mrep-detail"' + (HZ_MREP.detail ? ' checked' : '') + ' onchange="HZ_MREP.detail=this.checked"> Include each call and shift (not just the totals)</label>'
+    + '<div class="hz-mrep-btns"><button type="button" class="hz-rep-dl" onclick="hzMrepGo(\'pdf\')">⬇ PDF</button><button type="button" class="hz-rep-dl" onclick="hzMrepGo(\'xlsx\')">⬇ Excel</button></div>'
+    + '<div id="hz-mrep-msg" class="hz-rep-note" style="margin:8px 0 0"></div></div>';
+  if (HZ_MREP.who === "pick") hzMrepLoadUsers().then(hzMrepPickDraw).catch(function(e) { var p = document.getElementById("hz-mrep-pick"); if (p) p.textContent = "Couldn't load the members: " + e.message; });
+}
+function hzMrepPickDraw() {
+  var p = document.getElementById("hz-mrep-pick"); if (!p || !HZ_MREP.users) return;
+  var q = HZ_MREP.q.toLowerCase(), role = HZ_MREP.pickRole;
+  var list = HZ_MREP.users.filter(function(u) { return (role === "all" || (role === "disp" ? u.disp : u.resp)) && (!q || (u.unit + " " + u.name).toLowerCase().indexOf(q) !== -1); });
+  var n = Object.keys(HZ_MREP.picked).length, seg = function(v, l) { return '<button type="button" class="' + (role === v ? 'on' : '') + '" onclick="HZ_MREP.pickRole=\'' + v + '\';hzMrepPickDraw()">' + l + '</button>'; };
+  p.innerHTML = '<div class="hz-mrep-seg">' + seg("all", "Everyone") + seg("disp", "Dispatchers") + seg("resp", "Responders") + '</div>'
+    + '<input id="hz-mrep-q" class="hz-mrep-q" placeholder="Search unit or name" value="' + hzMrepEsc(HZ_MREP.q) + '" oninput="HZ_MREP.q=this.value;hzMrepPickDraw();var e=document.getElementById(\'hz-mrep-q\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}">'
+    + '<div class="hz-mrep-bar"><b>' + n + ' picked</b><button type="button" onclick="hzMrepPickAll(true)">Pick all shown</button><button type="button" onclick="hzMrepPickAll(false)">Clear</button></div>'
+    + '<div class="hz-mrep-list">' + (list.length ? list.map(function(u) {
+      return '<label><input type="checkbox"' + (HZ_MREP.picked[u.uid] ? ' checked' : '') + ' onchange="hzMrepPick(\'' + u.uid + '\',this.checked)"> <b>' + hzMrepEsc(u.unit) + '</b> ' + hzMrepEsc(u.name) + ' <small>' + [u.disp ? "Dispatcher" : "", u.resp ? "Responder" : ""].filter(Boolean).join(" · ") + '</small></label>';
+    }).join("") : '<div class="hz-rep-note">Nobody matches.</div>') + '</div>';
+}
+function hzMrepPick(uid, on) { if (on) HZ_MREP.picked[uid] = 1; else delete HZ_MREP.picked[uid]; var b = document.querySelector("#hz-mrep-pick .hz-mrep-bar b"); if (b) b.textContent = Object.keys(HZ_MREP.picked).length + " picked"; }
+function hzMrepPickAll(on) {
+  if (!on) HZ_MREP.picked = {};
+  else document.querySelectorAll("#hz-mrep-pick .hz-mrep-list input").forEach(function(c) { var m = /hzMrepPick\('([^']+)'/.exec(c.getAttribute("onchange") || ""); if (m) HZ_MREP.picked[m[1]] = 1; });
+  hzMrepPickDraw();
+}
+function hzMrepMsg(t, bad) { var m = document.getElementById("hz-mrep-msg"); if (m) { m.textContent = t || ""; m.style.color = bad ? "#ff6b6b" : ""; } }
+
+// ── gather + work out ──
+function hzMrepDayMs(ymd, end) {
+  if (typeof hzDsMs === "function") return end ? hzDsMs(typeof hzDsAddDays === "function" ? hzDsAddDays(ymd, 1) : ymd, "00:00") : hzDsMs(ymd, "00:00");
+  var d = new Date(ymd + "T00:00:00"); if (end) d.setDate(d.getDate() + 1); return d.getTime();
+}
+function hzMrepData(from, to) {
+  var f0 = hzMrepDayMs(from), t0 = hzMrepDayMs(to, true), now = Date.now();
+  var calls = hzFetchCallLogs(from, to).then(function(logs) { return (logs || []).filter(function(l) { return !l.testMode; }).map(hzRepCall).filter(Boolean); });
+  var shifts = db.collection("dispShifts").where("start", ">=", f0 - 86400000).where("start", "<", t0).get().then(function(snap) {
+    var a = []; snap.forEach(function(d) { var s = d.data() || {};
+      if (s.cancelled || !s.uid || s.uid === "lakewood" || !s.unit) return;
+      var x = Math.max(s.start, f0), y = Math.min(s.end, t0, now); if (y > x) a.push({ unit: s.unit, name: s.name || "", start: x, end: y, fullStart: s.start, fullEnd: s.end });
+    }); return a.sort(function(p, q) { return p.start - q.start; });
+  });
+  return Promise.all([hzMrepLoadUsers(), calls, shifts]);
+}
+function hzMrepBuild(users, calls, shifts, who, picked) {
+  var people = users.filter(function(u) { return who === "all" ? true : who === "disp" ? u.disp : who === "resp" ? u.resp : !!picked[u.uid]; });
+  var by = {}; people.forEach(function(u) { by[hzMrepKey(u.unit)] = { u: u, resp: [], respCalls: [], dispCalls: [], assign: [], shifts: [], ms: 0 }; });
+  calls.forEach(function(r) {
+    r.units.forEach(function(un) { var m = by[hzMrepKey(un)]; if (!m) return; m.respCalls.push(r); if (r.unitResp[un] != null) m.resp.push(r.unitResp[un]); });
+    var d = by[hzMrepKey(r.dispatcher)]; if (d) { d.dispCalls.push(r); if (r.toAssign != null) d.assign.push(r.toAssign); }
+  });
+  shifts.forEach(function(s) { var m = by[hzMrepKey(s.unit)]; if (!m) return; m.shifts.push(s); m.ms += s.end - s.start; });
+  return people.map(function(u) { var m = by[hzMrepKey(u.unit)];
+    return { unit: u.unit, name: u.name, disp: u.disp, resp: u.resp,
+      respN: m.respCalls.length, respDone: m.respCalls.filter(function(r) { return !r.cancelled; }).length, transports: m.respCalls.filter(function(r) { return !r.cancelled && r.disp === "transport"; }).length,
+      avgResp: hzRepAvg(m.resp), nResp: m.resp.length,
+      dispN: m.dispCalls.length, dispDone: m.dispCalls.filter(function(r) { return !r.cancelled; }).length, dispCanc: m.dispCalls.filter(function(r) { return r.cancelled; }).length,
+      avgAssign: hzRepAvg(m.assign), medAssign: hzRepMed(m.assign), hours: m.ms / 3600000, shiftN: m.shifts.length,
+      respCalls: m.respCalls, dispCalls: m.dispCalls, shifts: m.shifts };
+  });
+}
+// columns follow who was picked: dispatchers-only → dispatcher columns, responders-only → responder columns, otherwise both
+function hzMrepCols(who) {
+  var base = [["Unit", function(m) { return m.unit; }], ["Name", function(m) { return m.name; }]];
+  var role = [["Role", function(m) { return [m.disp ? "Dispatcher" : "", m.resp ? "Responder" : ""].filter(Boolean).join(", ") || "-"; }]];
+  var R = [["Calls responded", function(m) { return m.respN; }, 1], ["Completed", function(m) { return m.respDone; }, 1], ["Transports", function(m) { return m.transports; }, 1], ["Avg response (assigned to on scene)", function(m) { return m.avgResp; }, "dur"]];
+  var D = [["Hours dispatched", function(m) { return m.hours; }, "hrs"], ["Shifts", function(m) { return m.shiftN; }, 1], ["Calls dispatched", function(m) { return m.dispN; }, 1], ["Cancelled", function(m) { return m.dispCanc; }, 1], ["Avg time to assign", function(m) { return m.avgAssign; }, "dur"], ["Median time to assign", function(m) { return m.medAssign; }, "dur"]];
+  return who === "disp" ? base.concat(D) : who === "resp" ? base.concat(R) : base.concat(role, R, D);
+}
+function hzMrepTxt(v, kind) { if (kind === "dur") return v == null ? "-" : hzRepDur(v).replace(/–|—/g, "-"); if (kind === "hrs") return typeof hzRepHrs === "function" ? hzRepHrs(v) : (Math.round(v * 10) / 10) + "h"; return v == null ? "" : String(v); }
+function hzMrepWhen(ms) { var d = new Date(ms); return hzMrepYmd(d) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+function hzMrepHm(ms) { var d = new Date(ms); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+function hzMrepCallRows(m) {
+  var out = [];
+  m.respCalls.forEach(function(r) { out.push({ t: r.created.getTime(), role: "Responded", r: r, resp: r.unitResp[m.unit] != null ? r.unitResp[m.unit] : (function() { var k = Object.keys(r.unitResp).filter(function(x) { return hzMrepKey(x) === hzMrepKey(m.unit); })[0]; return k ? r.unitResp[k] : null; })(), assign: null }); });
+  m.dispCalls.forEach(function(r) { out.push({ t: r.created.getTime(), role: "Dispatched", r: r, resp: null, assign: r.toAssign }); });
+  return out.sort(function(a, b) { return a.t - b.t; }).map(function(x) { var l = x.r.l;
+    return { when: hzMrepWhen(x.t), role: x.role, no: typeof hzCallNo === "function" ? hzCallNo(l) : (l.id || ""), nature: l.callNature || "", zone: l.zone || "", outcome: x.r.cancelled ? "Cancelled" : (x.r.disp === "rma" ? "RMA" : x.r.disp ? (x.r.disp.charAt(0).toUpperCase() + x.r.disp.slice(1)).replace(/_/g, " ") : "Completed"), resp: x.resp, assign: x.assign };
+  });
+}
+function hzMrepWhoLabel(who, n) { return who === "all" ? "All members" : who === "disp" ? "All dispatchers" : who === "resp" ? "All responders" : n + " picked member" + (n === 1 ? "" : "s"); }
+
+// ── download ──
+function hzMrepGo(kind) {
+  if (HZ_MREP.busy) return;
+  var from = HZ_MREP.from, to = HZ_MREP.to;
+  if (!/^\d{4}-\d\d-\d\d$/.test(from) || !/^\d{4}-\d\d-\d\d$/.test(to)) { hzMrepMsg("Pick a From and a To date.", true); return; }
+  if (from > to) { var sw = from; from = to; to = sw; }
+  if (HZ_MREP.who === "pick" && !Object.keys(HZ_MREP.picked).length) { hzMrepMsg("Pick at least one member.", true); return; }
+  HZ_MREP.busy = true; hzMrepMsg("Making the " + (kind === "pdf" ? "PDF" : "Excel file") + "…");
+  Promise.all([hzMrepData(from, to), hzMrepLoadJs(HZ_MREP_LIBS[kind])]).then(function(res) {
+    var d = res[0], rows = hzMrepBuild(d[0], d[1], d[2], HZ_MREP.who, HZ_MREP.picked);
+    if (!rows.length) throw new Error("Nobody to report on.");
+    var meta = { from: from, to: to, who: hzMrepWhoLabel(HZ_MREP.who, rows.length), whoKey: HZ_MREP.who, detail: HZ_MREP.detail, made: hzMrepWhen(Date.now()) };
+    var blob = kind === "pdf" ? hzMrepPdf(rows, meta) : hzMrepXlsx(rows, meta);
+    var name = "Member_Report_" + meta.who.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "") + "_" + from + "_to_" + to + (kind === "pdf" ? ".pdf" : ".xlsx");
+    if (typeof hzSaveFile === "function") hzSaveFile(blob, name);
+    else { var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+    HZ_MREP.lastBlob = blob; HZ_MREP.lastName = name;
+    hzMrepMsg("✓ " + name);
+    try { db.collection("callLogAudit").add({ action: "member_report_" + kind, who: HZ_MREP.who, members: rows.length, from: from, to: to, timestamp: new Date().toISOString() }); } catch (e) {}
+  }).catch(function(e) { hzMrepMsg(e.message || String(e), true); }).then(function() { HZ_MREP.busy = false; });
+}
+function hzMrepOrg() { try { return (typeof HZ_ORG_NAME === "string" && HZ_ORG_NAME) || "Hatzolah MC"; } catch (e) { return "Hatzolah MC"; } }
+function hzMrepPdf(rows, meta) {
+  var J = window.jspdf.jsPDF, doc = new J({ orientation: "landscape", unit: "pt", format: "letter" });
+  var plain = function(s) { return String(s == null ? "" : s).replace(/[–—]/g, "-").replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/[^\x20-\x7E -ÿ]/g, ""); };
+  var head = { fillColor: [212, 160, 23], textColor: [0, 0, 0], fontStyle: "bold" }, W = doc.internal.pageSize.getWidth();
+  var title = function(t, y) { doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(0); doc.text(plain(t), 40, y); };
+  doc.setFillColor(0, 0, 0); doc.rect(0, 0, W, 62, "F");
+  doc.setTextColor(212, 160, 23); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text(plain(hzMrepOrg() + " - Member report"), 40, 30);
+  doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.text(plain(meta.who + "  |  " + meta.from + " to " + meta.to + "  |  made " + meta.made), 40, 48);
+  var cols = hzMrepCols(meta.whoKey);
+  doc.autoTable({ startY: 80, head: [cols.map(function(c) { return plain(c[0]); })], body: rows.map(function(m) { return cols.map(function(c) { return plain(hzMrepTxt(c[1](m), c[2])); }); }),
+    headStyles: head, styles: { fontSize: 8, cellPadding: 3 }, alternateRowStyles: { fillColor: [250, 245, 230] }, margin: { left: 40, right: 40 } });
+  if (meta.detail) rows.forEach(function(m) {
+    var calls = hzMrepCallRows(m); if (!calls.length && !m.shifts.length) return;
+    doc.addPage(); title(m.unit + (m.name ? " - " + m.name : ""), 44);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(60);
+    doc.text(plain(meta.from + " to " + meta.to + "   Calls responded " + m.respN + " | avg response " + hzMrepTxt(m.avgResp, "dur") + "   Calls dispatched " + m.dispN + " | hours dispatched " + hzMrepTxt(m.hours, "hrs") + " (" + m.shiftN + " shift" + (m.shiftN === 1 ? "" : "s") + ")"), 40, 60);
+    var y = 72;
+    if (calls.length) { doc.autoTable({ startY: y, head: [["Date / time", "Role", "Call #", "Nature", "Zone", "Outcome", "Response", "Time to assign"]],
+      body: calls.map(function(c) { return [c.when, c.role, c.no, c.nature, c.zone, c.outcome, hzMrepTxt(c.resp, "dur"), hzMrepTxt(c.assign, "dur")].map(plain); }),
+      headStyles: head, styles: { fontSize: 8, cellPadding: 3 }, margin: { left: 40, right: 40 } }); y = doc.lastAutoTable.finalY + 18; }
+    if (m.shifts.length) { doc.autoTable({ startY: y, head: [["Dispatch shift", "From", "To", "Hours counted"]],
+      body: m.shifts.map(function(s) { return [hzMrepYmd(new Date(s.fullStart)), hzMrepHm(s.fullStart), hzMrepHm(s.fullEnd) === "00:00" ? "23:59" : hzMrepHm(s.fullEnd), hzMrepTxt((s.end - s.start) / 3600000, "hrs")].map(plain); }),
+      headStyles: head, styles: { fontSize: 8, cellPadding: 3 }, margin: { left: 40, right: 40 } }); }
+  });
+  var pages = doc.internal.getNumberOfPages();
+  for (var i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120); doc.text("Page " + i + " of " + pages, W - 40, doc.internal.pageSize.getHeight() - 16, { align: "right" }); }
+  return doc.output("blob");
+}
+function hzMrepXlsx(rows, meta) {
+  var X = window.XLSX, wb = X.utils.book_new(), cols = hzMrepCols(meta.whoKey);
+  var num = function(v, kind) { if (v == null) return ""; if (kind === "dur") return Math.round(v / 6) / 10; if (kind === "hrs") return Math.round(v * 100) / 100; return v; };
+  var hdr = cols.map(function(c) { return c[2] === "dur" ? c[0] + " (min)" : c[2] === "hrs" ? c[0] + " (hours)" : c[0]; });
+  var sum = [[hzMrepOrg() + " — Member report"], [meta.who + " · " + meta.from + " to " + meta.to + " · made " + meta.made], [], hdr]
+    .concat(rows.map(function(m) { return cols.map(function(c) { return num(c[1](m), c[2]); }); }));
+  var ws = X.utils.aoa_to_sheet(sum); ws["!cols"] = hdr.map(function(h, i) { return { wch: i === 1 ? 24 : Math.max(10, Math.min(28, h.length + 2)) }; });
+  X.utils.book_append_sheet(wb, ws, "Summary");
+  if (meta.detail) {
+    var cr = [["Unit", "Name", "Date / time", "Role", "Call #", "Nature", "Zone", "Outcome", "Response (min)", "Time to assign (min)"]];
+    var sr = [["Unit", "Name", "Date", "From", "To", "Hours counted"]];
+    rows.forEach(function(m) {
+      hzMrepCallRows(m).forEach(function(c) { cr.push([m.unit, m.name, c.when, c.role, c.no, c.nature, c.zone, c.outcome, num(c.resp, "dur"), num(c.assign, "dur")]); });
+      m.shifts.forEach(function(s) { sr.push([m.unit, m.name, hzMrepYmd(new Date(s.fullStart)), hzMrepHm(s.fullStart), hzMrepHm(s.fullEnd) === "00:00" ? "23:59" : hzMrepHm(s.fullEnd), num((s.end - s.start) / 3600000, "hrs")]); });
+    });
+    var w2 = X.utils.aoa_to_sheet(cr); w2["!cols"] = [8, 20, 16, 11, 10, 22, 10, 14, 13, 16].map(function(w) { return { wch: w }; }); X.utils.book_append_sheet(wb, w2, "Calls");
+    var w3 = X.utils.aoa_to_sheet(sr); w3["!cols"] = [8, 20, 12, 8, 8, 13].map(function(w) { return { wch: w }; }); X.utils.book_append_sheet(wb, w3, "Dispatch shifts");
+  }
+  var out = X.write(wb, { bookType: "xlsx", type: "array" });
+  return new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+(function() {
+  var Q = "html body:not(#hzA):not(#hzB):not(#hzC) #hz-mrep-pop", P = Q + " .hz-mrep", st = document.createElement("style");
+  st.textContent = "#hz-mrep-pop{position:fixed;inset:0;z-index:9000;background:#000;display:flex;align-items:stretch;padding:env(safe-area-inset-top,0px) 0 0 0}" +
+    Q + " .hz-tl-box.hz-mrep-box{max-width:none;width:100%;height:100%;max-height:none;border-radius:0;box-shadow:none;background:#000;color:#f2f2f2;-webkit-text-fill-color:#f2f2f2;display:flex;flex-direction:column}" +
+    Q + " .hz-tl-body{flex:1;overflow:auto;padding:14px max(14px,env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom))}" +
+    Q + " .hz-rep-sec{max-width:720px;margin:0 auto;background:#000 !important;border:2px solid #d4a017 !important;border-radius:14px;padding:14px}" +
+    Q + " .hz-rep-note{font-size:.82rem;line-height:1.4;color:#e6cf8a !important;-webkit-text-fill-color:#e6cf8a;margin-bottom:6px}" +
+    Q + " .hz-rep-dl{flex:1;height:48px;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000;border:2px solid #000 !important}" +
+    P + " .hz-mrep-l{display:block;font-size:.78rem;font-weight:700;color:#e6cf8a !important;margin:8px 0 0}" +
+    P + " .hz-mrep-l select," + P + " .hz-mrep-l input," + P + " .hz-mrep-q{display:block;width:100%;box-sizing:border-box;height:44px;margin-top:4px;border-radius:10px;padding:0 12px;font-size:1rem;font-weight:700;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;color-scheme:dark}" +
+    P + " .hz-mrep-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}" + P + " .hz-mrep-2 input{min-width:0;max-width:100%;padding:0 8px}" +
+    P + " .hz-mrep-ck{display:flex;align-items:center;gap:8px;font-size:.85rem;margin:12px 0 4px;color:#e6cf8a !important}" +
+    P + " .hz-mrep-btns{display:flex;gap:10px;margin-top:10px}" +
+    P + " .hz-mrep-seg{display:flex;gap:6px;margin:10px 0 6px}" + P + " .hz-mrep-seg button{flex:1;height:36px;border-radius:9px;font-weight:700;cursor:pointer;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important}" +
+    P + " .hz-mrep-seg button.on{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}" +
+    P + " .hz-mrep-bar{display:flex;align-items:center;gap:8px;margin:8px 0 6px;color:#d4a017 !important}" + P + " .hz-mrep-bar b{flex:1}" +
+    P + " .hz-mrep-bar button{height:32px;border-radius:8px;padding:0 10px;font-weight:700;cursor:pointer;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:1px solid #d4a017 !important}" +
+    P + " .hz-mrep-list{max-height:260px;overflow:auto;border:1px solid rgba(212,160,23,.5);border-radius:10px;padding:4px 8px}" +
+    P + " .hz-mrep-list label{display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid rgba(212,160,23,.15);color:#fff !important;-webkit-text-fill-color:#fff;font-size:.9rem}" +
+    P + " .hz-mrep-list label b{color:#d4a017 !important;-webkit-text-fill-color:#d4a017;white-space:nowrap}" + P + " .hz-mrep-list small{margin-left:auto;opacity:.7;font-size:.72rem}";
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
