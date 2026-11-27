@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.154"; window.M_BUILD = BUILD;
+  var BUILD = "9.156"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -17873,9 +17873,11 @@ function hzRepCall(l) {
 // 12.647 (Sam: "add hours dispatched to the report for dispatchers"): time each dispatcher was on the Dispatch Schedule this year —
 // shifts already worked (a running shift counts up to now), cut to the year; Lakewood, open and removed shifts don't count. Matched to the calls by unit.
 function hzRepKey(u) { return String(u || "").toUpperCase().replace(/\s+/g, ""); }
-function hzRepShiftHours(y) {
+function hzRepShiftHours(fromYmd, toYmd) {   // 12.657: a date range (a plain year still works)
   var ms = function(ymd) { return typeof hzDsMs === "function" ? hzDsMs(ymd, "00:00") : new Date(ymd + "T00:00:00").getTime(); };
-  var from = ms(y + "-01-01"), to = ms((y + 1) + "-01-01"), now = Date.now();
+  if (!toYmd) { toYmd = fromYmd + "-12-31"; fromYmd = fromYmd + "-01-01"; }
+  var nextDay = function(ymd) { var d = new Date(ymd + "T12:00:00"); d.setDate(d.getDate() + 1); return hzRepYmdOf(d); };
+  var from = ms(fromYmd), to = ms(nextDay(toYmd)), now = Date.now();
   return db.collection("dispShifts").where("start", ">=", from - 86400000).where("start", "<", to).get().then(function(snap) {
     var out = {};
     snap.forEach(function(d) { var s = d.data() || {};
@@ -17888,12 +17890,14 @@ function hzRepShiftHours(y) {
   }).catch(function() { return null; });
 }
 function hzRepHrs(h) { if (h == null) return "—"; var m = Math.round(h * 60); return Math.floor(m / 60) + "h" + (m % 60 ? " " + String(m % 60).padStart(2, "0") + "m" : ""); }
-function hzRepCompute(logs, openCount, year, hours) {
+function hzRepCompute(logs, openCount, year, hours, toYmd) {   // 12.657: year = From date (YYYY-MM-DD) when toYmd is given
   var rows = logs.map(hzRepCall).filter(Boolean);
-  var R = { year: year, n: rows.length + (openCount || 0), done: 0, cancelled: 0, transports: 0, rma: 0, oa: 0, als: 0, open: openCount || 0, months: [0,0,0,0,0,0,0,0,0,0,0,0], rows: rows };
+  var fromYmd = toYmd ? String(year) : year + "-01-01", endYmd = toYmd || year + "-12-31";
+  var mKeys = []; for (var my = +fromYmd.slice(0, 4), mm = +fromYmd.slice(5, 7); (my * 100 + mm) <= (+endYmd.slice(0, 4) * 100 + +endYmd.slice(5, 7)) && mKeys.length < 36; mm++) { if (mm > 12) { mm = 1; my++; } mKeys.push(my + "-" + String(mm).padStart(2, "0")); }
+  var R = { year: year, from: fromYmd, to: endYmd, n: rows.length + (openCount || 0), done: 0, cancelled: 0, transports: 0, rma: 0, oa: 0, als: 0, open: openCount || 0, mKeys: mKeys, months: mKeys.map(function() { return 0; }), rows: rows };
   var toScene = [], rigResp = [], alsResp = [], unitAll = [], perUnit = {}, perD = {};
   rows.forEach(function(r) {
-    R.months[r.created.getMonth()]++;
+    var mi = mKeys.indexOf(r.created.getFullYear() + "-" + String(r.created.getMonth() + 1).padStart(2, "0")); if (mi !== -1) R.months[mi]++;
     if (r.cancelled) R.cancelled++; else R.done++;
     if (!r.cancelled && r.disp === "transport") R.transports++;
     if (!r.cancelled && r.disp === "rma") R.rma++;
@@ -17911,10 +17915,11 @@ function hzRepCompute(logs, openCount, year, hours) {
     if (r.toScene != null) d.scene.push(r.toScene);
     if (r.length != null) d.length.push(r.length);
   });
-  var nowY = new Date().getFullYear(), monthsSoFar = year < nowY ? 12 : year > nowY ? 0 : new Date().getMonth() + 1;
-  var firstM = R.months.findIndex(function(v) { return v > 0; });   // don't average over months before calls were in the system
-  if (firstM > 0 && monthsSoFar) monthsSoFar = Math.max(1, monthsSoFar - firstM);
-  R.perMonth = monthsSoFar ? rows.length / monthsSoFar : null;
+  // average per month over the days of the range that have passed (from the first call in the system, if later)
+  var t0 = new Date(fromYmd + "T00:00:00").getTime(), t1 = Math.min(Date.now(), new Date(endYmd + "T23:59:59").getTime());
+  var firstCall = rows.reduce(function(m, r) { return Math.min(m, r.created.getTime()); }, Infinity); if (isFinite(firstCall) && firstCall > t0 && !toYmd) t0 = new Date(firstCall).setDate(1);
+  var monthsSoFar = t1 > t0 ? (t1 - t0) / (30.44 * 86400000) : 0;
+  R.perMonth = monthsSoFar >= 0.5 ? rows.length / monthsSoFar : (monthsSoFar > 0 ? rows.length : null);
   R.toScene = { avg: hzRepAvg(toScene), n: toScene.length };
   R.rigResp = { avg: hzRepAvg(rigResp), n: rigResp.length };
   R.alsResp = { avg: hzRepAvg(alsResp), n: alsResp.length };
@@ -17944,11 +17949,11 @@ function hzRepCompute(logs, openCount, year, hours) {
 function hzRepHtml(R) {
   var box = function(label, big, sub, cls) { return '<div class="hz-rep-box' + (cls ? " " + cls : "") + '"><div class="hz-rep-l">' + label + '</div><div class="hz-rep-big">' + big + '</div>' + (sub ? '<div class="hz-rep-sub">' + sub + '</div>' : '') + '</div>'; };
   var over = function(n, what) { return n ? "over " + n + " " + what + (n === 1 ? "" : "s") : "no data yet"; };
-  var mx = Math.max.apply(null, R.months.concat([1])), mn = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+  var mx = Math.max.apply(null, R.months.concat([1])), mn = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], multiY = R.mKeys && R.mKeys.length && R.mKeys[0].slice(0, 4) !== R.mKeys[R.mKeys.length - 1].slice(0, 4);
   var h = '<div class="hz-rep-sec"><div class="hz-rep-grid">' +
     box("Calls", R.n, "finished + open") + box("Completed", R.done, "") + box("Cancelled", R.cancelled, "") + box("Still open", R.open, "right now") +
     box("Transports", R.transports, "") + box("RMA", R.rma, "") + box("Transported by another agency", R.oa, "") + box("ALS activated", R.als, "") + box("Average per month", R.perMonth == null ? "—" : R.perMonth.toFixed(1), "") +
-    '</div><div class="hz-rep-months">' + R.months.map(function(v, i) { return '<div class="hz-rep-m"><div class="hz-rep-mv">' + (v || "") + '</div><div class="hz-rep-mb" style="height:' + Math.round(v / mx * 60) + 'px"></div><div class="hz-rep-ml">' + mn[i] + '</div></div>'; }).join("") + '</div></div>';
+    '</div><div class="hz-rep-months">' + R.months.map(function(v, i) { return '<div class="hz-rep-m"><div class="hz-rep-mv">' + (v || "") + '</div><div class="hz-rep-mb" style="height:' + Math.round(v / mx * 60) + 'px"></div><div class="hz-rep-ml">' + (R.mKeys ? mn[+R.mKeys[i].slice(5, 7) - 1].charAt(0) + (multiY ? '<br>' + R.mKeys[i].slice(2, 4) : '') : mn[i].charAt(0)) + '</div></div>'; }).join("") + '</div></div>';
   h += '<div class="hz-rep-sec"><div class="hz-rep-h">Response times</div><div class="hz-rep-note">Worked out from each call\'s timeline. A unit\'s response time runs from when it was assigned to when it was marked on scene; a rig\'s from when the rig was assigned to "On Scene with Rig"; ALS from "ALS Activated" to "ALS On Scene".</div><div class="hz-rep-grid">' +
     box("Call received → first unit on scene", hzRepDur(R.toScene.avg), "average, " + over(R.toScene.n, "call")) +
     box("Rig assigned → rig on scene", hzRepDur(R.rigResp.avg), "average, " + over(R.rigResp.n, "call")) +
@@ -17993,33 +17998,53 @@ function hzRepCsv() {
   else { var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
   try { db.collection("callLogAudit").add({ action: "reports_csv", year: HZ_REP.year, timestamp: new Date().toISOString() }); } catch (e) {}
 }
+function hzRepYmdOf(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function hzRepRangeInit() { if (!HZ_REP.from) { var t = new Date(); HZ_REP.from = t.getFullYear() + "-01-01"; HZ_REP.to = hzRepYmdOf(t); HZ_REP.quick = "year"; } }
+function hzRepQuick(k) {
+  var t = new Date(), f;
+  if (k === "month") f = new Date(t.getFullYear(), t.getMonth(), 1);
+  else if (k === "30") f = new Date(t.getTime() - 29 * 86400000);
+  else if (k === "lastyear") { HZ_REP.from = (t.getFullYear() - 1) + "-01-01"; HZ_REP.to = (t.getFullYear() - 1) + "-12-31"; }
+  else f = new Date(t.getFullYear(), 0, 1);
+  if (f) { HZ_REP.from = hzRepYmdOf(f); HZ_REP.to = hzRepYmdOf(t); }
+  HZ_REP.quick = k; hzRepOpen();
+}
+function hzRepLabel() { return HZ_REP.from + " to " + HZ_REP.to; }
 function hzRepOpen() {
   var host = document.getElementById("hz-rep"); if (!host) return;
   if (typeof hzLogsGate === "function" && !hzLogsGate(host, hzRepOpen)) return;   // 8.86 (Sam): keep the code check for Reports (same as Call Logs)
-  var y0 = new Date().getFullYear(), years = []; for (var y = y0; y >= 2025; y--) years.push(y);
-  host.innerHTML = '<div class="hz-rep-top"><select id="hz-rep-year" onchange="HZ_REP.year=+this.value;hzRepLoad()">' + years.map(function(y) { return '<option value="' + y + '"' + (y === HZ_REP.year ? " selected" : "") + '>' + y + '</option>'; }).join("") + '</select>' +
-    '<button type="button" class="hz-rep-dl" onclick="hzRepCsv()">⬇ Download CSV</button></div>' +
-    '<button type="button" class="hz-rep-dl hz-rep-mrep" onclick="hzMrepOpen()">👤 Generate member reports</button>' +   // 12.648: opens its own page (PDF / Excel)
+  // 12.657 (Sam: "why do we have download CSV and generate reports — also allow me to sort live data by date"): the live figures
+  // follow a From–To range (quick: this month / last 30 days / this year / last year); downloads all live on 📄 Generate reports
+  // (the old CSV list is the "Every call" report there, as PDF or Excel)
+  hzRepRangeInit();
+  var q = function(k, l) { return '<button type="button" class="hz-rep-q' + (HZ_REP.quick === k ? ' on' : '') + '" onclick="hzRepQuick(\'' + k + '\')">' + l + '</button>'; };
+  host.innerHTML = '<div class="hz-rep-top hz-rep-range"><label>From<input type="date" id="hz-rep-from" value="' + HZ_REP.from + '" onchange="HZ_REP.from=this.value;HZ_REP.quick=\'\';hzRepLoad()"></label>' +
+    '<label>To<input type="date" id="hz-rep-to" value="' + HZ_REP.to + '" onchange="HZ_REP.to=this.value;HZ_REP.quick=\'\';hzRepLoad()"></label></div>' +
+    '<div class="hz-rep-qs">' + q("month", "This month") + q("30", "Last 30 days") + q("year", "This year") + q("lastyear", "Last year") + '</div>' +
+    '<button type="button" class="hz-rep-dl hz-rep-mrep" onclick="hzMrepOpen()">📄 Generate reports (PDF / Excel)</button>' +
     '<div id="hz-rep-body"></div>';
   hzRepLoad();
 }
 function hzRepLoad() {
   var body = document.getElementById("hz-rep-body"); if (!body) return;
-  body.innerHTML = '<div class="hz-rep-note" style="text-align:center;padding:24px 0">Loading ' + HZ_REP.year + '…</div>';
-  var y = HZ_REP.year, from = y + "-01-01", to = y + "-12-31", tests = HZ_REP.tests;
+  hzRepRangeInit(); if (HZ_REP.from > HZ_REP.to) { var sw = HZ_REP.from; HZ_REP.from = HZ_REP.to; HZ_REP.to = sw; }
+  body.innerHTML = '<div class="hz-rep-note" style="text-align:center;padding:24px 0">Loading ' + hzRepLabel() + '…</div>';
+  var from = HZ_REP.from, to = HZ_REP.to, y = from + "|" + to, tests = HZ_REP.tests;
   var openP = db.collection("activeCalls").where("status", "==", "active").get().then(function(snap) {   // finished calls also sit in activeCalls
-    var n = 0; snap.forEach(function(d) { var c = d.data() || {}; if ((tests || !c.testMode) && String(c.createdAt || "").slice(0, 4) === String(y)) n++; }); return n;
+    var n = 0; snap.forEach(function(d) { var c = d.data() || {}; var cd = String(c.createdAt || ""); if ((tests || !c.testMode) && cd && hzRepYmdOf(new Date(cd)) >= from && hzRepYmdOf(new Date(cd)) <= to) n++; }); return n;
   }).catch(function() { return 0; });
-  Promise.all([hzFetchCallLogs(from, to), openP, hzRepShiftHours(y)]).then(function(res) {
-    if (HZ_REP.year !== y || HZ_REP.tests !== tests) return;   // changed meanwhile
+  Promise.all([hzFetchCallLogs(from, to), openP, hzRepShiftHours(from, to)]).then(function(res) {
+    if (HZ_REP.from + "|" + HZ_REP.to !== y || HZ_REP.tests !== tests) return;   // changed meanwhile
     var logs = (res[0] || []).filter(function(l) { return tests || !l.testMode; });
-    HZ_REP.last = hzRepCompute(logs, res[1], y, res[2]);
+    HZ_REP.last = hzRepCompute(logs, res[1], from, res[2], to);
     body.innerHTML = hzRepHtml(HZ_REP.last);
   }).catch(function(e) { body.innerHTML = '<div class="hz-rep-note" style="color:#c62828">Couldn\'t load the calls: ' + hzRepEsc(e.message) + '</div>'; });
 }
 (function() {
   var P = "html body:not(#hzA):not(#hzB):not(#hzC) #hz-rep", st = document.createElement("style");
   st.textContent = P + "{max-width:960px;margin:0 auto;padding-bottom:30px}" +
+    P + " .hz-rep-range label{flex:1;min-width:0;font-size:.75rem;font-weight:700;color:#e6cf8a !important}" + P + " .hz-rep-range input{display:block;width:100%;box-sizing:border-box;height:44px;margin-top:3px;border-radius:10px;padding:0 10px;font-size:1rem;font-weight:700;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;color-scheme:dark}" +
+    P + " .hz-rep-qs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}" + P + " .hz-rep-q{flex:1;min-width:0;height:36px;border-radius:9px;font-weight:700;font-size:.82rem;cursor:pointer;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important}" + P + " .hz-rep-q.on{background:#d4a017 !important;color:#000 !important;-webkit-text-fill-color:#000}" +
     P + " .hz-rep-top{display:flex;gap:10px;margin:4px 0 8px}" +
     P + " #hz-rep-year{flex:1;min-width:0;height:46px;border-radius:10px;padding:0 12px;font-size:1rem;font-weight:700;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important}" +
     P + " .hz-rep-mrep{display:block;width:100%;flex:none;margin:0 0 12px}" +
@@ -19897,7 +19922,7 @@ function hzDsDraw() {
   var tabH = '<div class="hz-ds-tabs">' + tabs.map(function(t) { return '<button class="' + (HZ_DS.tab === t[0] ? 'on' : '') + '" onclick="HZ_DS.tab=\'' + t[0] + '\';hzDsDraw()">' + t[1] + (t[2] ? ' <span class="n">' + t[2] + '</span>' : '') + '</button>'; }).join("") + '</div>';
   var body = HZ_DS.tab === "mine" ? hzDsMineHtml() : HZ_DS.tab === "open" ? hzDsOpenHtml() : HZ_DS.tab === "week" ? hzDsWeekHtml() : hzDsReqHtml();
   var keep = o.querySelector(".hz-tl-body"), st = keep ? keep.scrollTop : 0;
-  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button><button class="hz-kb-btn hz-ds-synced" id="hz-ds-synced" onclick="hzDsSubscribe()" style="display:none"></button>' + (HZ_DS.coord ? '<button class="hz-kb-btn" onclick="hzDsCalStatus()">📡 Calendar sync — all dispatchers</button>' : '') + '</div>' + tabH + body + '</div></div></div>';
+  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" id="hz-ds-synced" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button>' + (HZ_DS.coord ? '<button class="hz-kb-btn" onclick="hzDsCalStatus()">📡 Calendar sync — all dispatchers</button>' : '') + '</div>' + tabH + body + '</div></div></div>';
   if (st) { var nb = o.querySelector(".hz-tl-body"); if (nb) nb.scrollTop = st; }
   hzDsSyncedBtn();   // 12.654
 }
@@ -19932,6 +19957,7 @@ function hzDsWeekHtml() {
   var first = ws < today ? today : ws;   // 12.644 (Sam: "make the past drop off"): days before today and finished shifts are not shown
   var h = '<div class="hz-ds-weeknav">' + (HZ_DS.week > 0 ? '<button class="hz-kb-btn" onclick="hzDsWeek(-1)">‹ Prev</button>' : '<span style="width:82px"></span>') + '<b>' + hzDsDayLabel(first).slice(4) + ' – ' + hzDsDayLabel(we).slice(4) + '</b>'
     + (HZ_DS.week ? '<button class="hz-kb-btn" onclick="hzDsWeek(0)">This week</button>' : '') + '<button class="hz-kb-btn" onclick="hzDsWeek(1)">Next ›</button></div>';
+  if (HZ_DS.coord) h += '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsBlendAll()">🔗 Blend back-to-back shifts</button></div>';
   if (HZ_DS.coord) h += '<div class="hz-ds-note">Tap a shift to change it (only that day), make it open, or change the whole repeating series.</div>';
   var list = HZ_DS.shifts.filter(function(s) { return s.end > now; }).sort(function(a, b) { return a.start - b.start; });
   var days = ""; for (var i = 0; i < 7; i++) {
@@ -20010,7 +20036,7 @@ function hzDsShiftForm(kind) {
   var today = hzDsYmd(Date.now());
   var seg = '<div class="hz-kb-seg">' + [["once", "One-time shift"], ["rec", "🔁 Recurring shifts"]].map(function(o) { return '<button type="button" class="' + (kind === o[0] ? 'on' : '') + '" onclick="hzDsShiftForm(\'' + o[0] + '\')">' + o[1] + '</button>'; }).join("") + '</div>';
   var who = '<label class="hz-kb-l">Dispatcher<select id="ds-f-who">' + hzDsDispOptions("", true) + '</select></label>';
-  var times = '<div class="hz-ds-2"><label class="hz-kb-l">Start (24h)<input id="ds-f-st" placeholder="18:00" maxlength="5" inputmode="numeric" oninput="hzDsHint(\'f\')"></label><label class="hz-kb-l">End (24h)<input id="ds-f-en" placeholder="23:00" maxlength="5" inputmode="numeric" oninput="hzDsHint(\'f\')"></label></div>'
+  var times = '<div class="hz-ds-2"><label class="hz-kb-l">Start (24h)<input id="ds-f-st" placeholder="18:00" maxlength="5" inputmode="numeric" oninput="hzDsHint(\'f\')"></label><label class="hz-kb-l">End (24h · earlier than the start = next day)<input id="ds-f-en" placeholder="08:00" maxlength="5" inputmode="numeric" oninput="hzDsHint(\'f\')"></label></div>'
     + '<div class="hz-kb-note" id="ds-hint-f"></div>';
   var h = seg + who;
   if (kind === "once") h += '<label class="hz-kb-l">Date the shift starts<input id="ds-f-date" type="date" value="' + today + '" onchange="hzDsHint(\'f\')"></label>' + times;
@@ -20030,7 +20056,7 @@ function hzDsShiftSave(kind) {
   if (kind === "once") {
     var d = hzDsV("ds-f-date"); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { hzDsMsg("Pick the date.", true); return; }
     var doc = { uid: w.uid, unit: w.unit, name: w.name, start: hzDsMs(d, st), end: hzDsEndMs(d, st, en), ruleId: "", edited: false, cancelled: false, note: note, createdBy: S.by, updatedAt: S.at };
-    db.collection("dispShifts").add(doc).then(function() { hzDsDlgClose(); hzDsToast("✓ Shift added"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+    hzDsBlendSave(null, doc).then(function(msg) { hzDsDlgClose(); hzDsToast(msg || "✓ Shift added"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
     return;
   }
   var days = Array.prototype.map.call(document.querySelectorAll(".ds-f-day:checked"), function(x) { return +x.value; });
@@ -20040,8 +20066,10 @@ function hzDsShiftSave(kind) {
   if (until && until < from) { hzDsMsg("'Until' is before 'Starting'.", true); return; }
   var ref = db.collection("dispRules").doc();
   var rule = { uid: w.uid, unit: w.unit, name: w.name, days: days, startTime: st, endTime: en, every: +hzDsV("ds-f-every") || 1, from: from, until: until, note: note, active: true, createdBy: S.by, updatedAt: S.at };
-  ref.set(rule).then(function() { rule.id = ref.id; return hzDsMaterialize(rule, {}); }).then(function(n) { hzDsDlgClose(); hzDsToast("✓ Recurring shifts added (" + n + " on the schedule)"); hzDsLoad(); })
-    .catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+  var bad = hzDsRuleClash(rule, ""); if (bad) { hzDsMsg(bad, true); return; }
+  ref.set(rule).then(function() { rule.id = ref.id; return hzDsMaterialize(rule, {}); }).then(function(n) { return hzDsBlendFor(w.uid).then(function(r) { return [n, r]; }); }).then(function(x) {
+    hzDsDlgClose(); hzDsToast(x[1].rules ? "✓ Blended with the existing series into one longer shift" : "✓ Recurring shifts added (" + x[0] + " on the schedule)"); hzDsLoad();
+  }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
 }
 // write a rule's shifts for the next 90 days (keeps any day already changed by hand or cancelled)
 function hzDsMaterialize(rule, existing) {
@@ -20056,6 +20084,104 @@ function hzDsMaterialize(rule, existing) {
   });
   batches.push(b);
   return Promise.all(batches.map(function(x) { return x.commit(); })).then(function() { return n; });
+}
+
+// ═══ 12.658 (Sam: "23:59 is technically for the day — the shift rolls into the next day at 08:00 — reflect the two days while
+// referencing the single entire shift. It should also never let you pick multiple increments for shifts that are back to back
+// without blending them."): one overnight shift is ONE shift (22:00 → 08:00 next day, shown on both days). When the same person's
+// shifts touch (or overlap), saving joins them into one — one-time shifts, a changed day, and whole repeating series alike.
+// Never past 24 hours. A series that lines up with another one on only SOME days is refused with a message. ═══
+var HZ_DS_MAXRUN = 24 * 3600000;
+function hzDsGone(x) { var ref = db.collection("dispShifts").doc(x.id); return x.ruleId ? ref.update({ cancelled: true, edited: true, blended: true, updatedAt: Date.now() }) : ref.delete(); }
+function hzDsByUid(uid) { return db.collection("dispShifts").where("uid", "==", uid).get().then(function(sn) { var a = []; sn.forEach(function(d) { var x = Object.assign({ id: d.id }, d.data()); if (!x.cancelled) a.push(x); }); return a; }); }
+function hzDsWhen(a, b) { return hzDsDayLabel(hzDsYmd(a)) + " " + hzDsRange({ start: a, end: b }); }
+// save one shift (new: base = null, fields = the whole doc; changed: base = the shift, fields = the update) — blending with touching shifts
+function hzDsBlendSave(base, f) {
+  var uid = f.uid != null ? f.uid : base.uid, start = f.start, end = f.end;
+  return hzDsByUid(uid).then(function(all) {
+    var others = all.filter(function(x) { return !base || x.id !== base.id; }), ns = start, ne = end, eat = [], grew = true;
+    while (grew) { grew = false; others.forEach(function(x) {   // touching or overlapping → one run (keep under 24 h)
+      if (eat.indexOf(x) !== -1 || x.end < ns || x.start > ne) return;
+      var s2 = Math.min(ns, x.start), e2 = Math.max(ne, x.end); if (e2 - s2 >= HZ_DS_MAXRUN) return;
+      ns = s2; ne = e2; eat.push(x); grew = true; }); }
+    if (!eat.length) return base ? db.collection("dispShifts").doc(base.id).update(f).then(function() { return ""; }) : db.collection("dispShifts").add(f).then(function() { return ""; });
+    var keep = base || eat.sort(function(a, b) { return a.start - b.start; })[0], gone = eat.filter(function(x) { return x !== keep; });
+    var upd = Object.assign({}, f, { start: ns, end: ne, updatedAt: Date.now() }); delete upd.ruleId; delete upd.createdBy;
+    if (keep.ruleId) upd.edited = true; if (ns !== keep.start) upd.remindedFor = [];
+    if (!upd.note) upd.note = keep.note || (eat.filter(function(x) { return x.note; })[0] || {}).note || "";
+    return Promise.all([db.collection("dispShifts").doc(keep.id).update(upd)].concat(gone.map(hzDsGone))).then(function() { return "🔗 Blended into one shift: " + hzDsWhen(ns, ne); });
+  });
+}
+// repeating series: where one ends and when its days fall
+function hzDsMinOf(hm) { return +String(hm).slice(0, 2) * 60 + +String(hm).slice(3, 5); }
+function hzDsRuleEnd(r) { var e = r.endTime === "23:59" ? "00:00" : r.endTime; return { hm: e, off: (e === "00:00" || e <= r.startTime) ? 1 : 0 }; }
+function hzDsRuleDur(r) { var e = hzDsRuleEnd(r); return hzDsMinOf(e.hm) + e.off * 1440 - hzDsMinOf(r.startTime); }
+function hzDsRuleFollows(a, b) {   // b starts right when a ends → "full" (on every day) | "partial" (some days) | ""
+  if (a.active === false || b.active === false || a.uid !== b.uid || (a.every || 1) !== (b.every || 1)) return "";
+  var e = hzDsRuleEnd(a); if (b.startTime !== e.hm) return "";
+  var want = a.days.map(function(d) { return (d + e.off) % 7; }).sort().join(","), have = b.days.slice().sort().join(",");
+  if (want === have) return "full";
+  return a.days.some(function(d) { return b.days.indexOf((d + e.off) % 7) !== -1; }) ? "partial" : "";
+}
+function hzDsRuleJoin(a, b) {   // a then b as one series (null when it would be 24 h or more)
+  if (hzDsRuleDur(a) + hzDsRuleDur(b) >= 1440) return null;
+  var j = Object.assign({}, a, { endTime: b.endTime, note: a.note || b.note || "", updatedAt: Date.now() });
+  if (a.until !== b.until) j.until = a.until && b.until ? (a.until > b.until ? a.until : b.until) : "";
+  return j;
+}
+function hzDsRuleClash(r, rid) {   // a message when the series would only partly line up with another of the same person's
+  var msg = "";
+  Object.keys(HZ_DS.rules || {}).forEach(function(k) {
+    var o = HZ_DS.rules[k]; if (msg || k === rid || o.active === false) return;
+    var t = (o.unit || o.name || "This dispatcher") + "'s series " + o.days.map(function(d) { return HZ_DS_DOW[d]; }).join(", ") + " " + o.startTime + "–" + o.endTime;
+    var f1 = hzDsRuleFollows(o, r), f2 = hzDsRuleFollows(r, o);
+    if (f1 === "partial" || f2 === "partial") msg = "This runs straight into " + t + " on some days but not others, so they can't become one shift. Make the days match, or make one overnight series instead (e.g. 22:00 → 08:00).";
+    else if ((f1 === "full" && !hzDsRuleJoin(o, r)) || (f2 === "full" && !hzDsRuleJoin(r, o))) msg = "Together with " + t + " this would be 24 hours or more — make it shorter or change the other series.";
+  });
+  return msg;
+}
+// join every back-to-back pair of this person's series, then their touching shifts. Resolves { rules, shifts } = how many joins
+function hzDsBlendFor(uid) {
+  var res = { rules: 0, shifts: 0 };
+  var rulesOf = function() { return db.collection("dispRules").where("uid", "==", uid).get().then(function(sn) { var a = []; sn.forEach(function(d) { var x = Object.assign({ id: d.id }, d.data()); if (x.active !== false) a.push(x); }); return a; }); };
+  var step = function(n) {
+    if (n > 12) return Promise.resolve();
+    return rulesOf().then(function(rs) {
+      var pair = null; rs.forEach(function(a) { rs.forEach(function(b) { if (!pair && a !== b && hzDsRuleFollows(a, b) === "full" && hzDsRuleJoin(a, b)) pair = [a, b]; }); });
+      if (!pair) return;
+      var a = pair[0], b = pair[1], j = hzDsRuleJoin(a, b); delete j.id; res.rules++;
+      return db.collection("dispRules").doc(a.id).set(j)
+        .then(function() { return db.collection("dispRules").doc(b.id).update({ active: false, blendedInto: a.id, updatedAt: Date.now() }); })
+        .then(function() { return Promise.all([hzDsRuleAll(a.id), hzDsRuleAll(b.id)]); })
+        .then(function(x) {
+          var now = Date.now(), keep = {}, bt = db.batch();
+          x[0].forEach(function(d) { if (d.edited || d.cancelled || d.start < now) keep[d.id] = d; else bt.delete(db.collection("dispShifts").doc(d.id)); });
+          x[1].forEach(function(d) { if (d.start >= now && !d.edited) bt.delete(db.collection("dispShifts").doc(d.id)); });   // the joined series' own future days (changed days stay and get joined below)
+          return bt.commit().then(function() { j.id = a.id; HZ_DS.rules[a.id] = j; if (HZ_DS.rules[b.id]) HZ_DS.rules[b.id].active = false; return hzDsMaterialize(j, keep); });
+        }).then(function() { return step(n + 1); });
+    });
+  };
+  return step(0).then(function() { return hzDsByUid(uid); }).then(function(all) {   // touching / overlapping shifts from now on → one shift
+    var now = Date.now(), list = all.filter(function(x) { return x.end > now; }).sort(function(a, b) { return a.start - b.start; }), jobs = [], cur = null, curEat = [];
+    var flush = function() { if (cur && curEat.length) { var upd = { start: cur.ns, end: cur.ne, updatedAt: now }; if (cur.x.ruleId) upd.edited = true; jobs.push(db.collection("dispShifts").doc(cur.x.id).update(upd)); curEat.forEach(function(g) { jobs.push(hzDsGone(g)); }); res.shifts += curEat.length; } };
+    list.forEach(function(x) {
+      if (cur && x.start <= cur.ne && Math.max(cur.ne, x.end) - cur.ns < HZ_DS_MAXRUN) { cur.ne = Math.max(cur.ne, x.end); curEat.push(x); return; }
+      flush(); cur = { x: x, ns: x.start, ne: x.end }; curEat = [];
+    });
+    flush();
+    return Promise.all(jobs).then(function() { return res; });
+  });
+}
+function hzDsBlendAll() {
+  if (!HZ_DS.coord) return;
+  if (typeof hzOk === "function" && !hzOk(arguments, this, "Join every dispatcher's back-to-back shifts into single shifts?\nRepeating series that run straight into each other on the same days become one series (e.g. 22:00–23:59 + 00:00–08:00 → 22:00 → 08:00). Nothing is joined past 24 hours.")) return;
+  var uids = {}; Object.keys(HZ_DS.rules || {}).forEach(function(k) { var r = HZ_DS.rules[k]; if (r.active !== false && r.uid != null) uids[r.uid] = 1; });
+  HZ_DS.shifts.concat(HZ_DS.mine || []).forEach(function(x) { if (x.uid != null) uids[x.uid] = 1; });
+  hzDsToast("Blending…");
+  var tot = { rules: 0, shifts: 0 };
+  Object.keys(uids).reduce(function(p, u) { return p.then(function() { return hzDsBlendFor(u).then(function(r) { tot.rules += r.rules; tot.shifts += r.shifts; }); }); }, Promise.resolve())
+    .then(function() { hzDsToast(tot.rules || tot.shifts ? "🔗 Blended " + (tot.rules ? tot.rules + " series" : "") + (tot.rules && tot.shifts ? " and " : "") + (tot.shifts ? tot.shifts + " shift" + (tot.shifts === 1 ? "" : "s") : "") : "Nothing to blend — no back-to-back shifts"); hzDsLoad(); })
+    .catch(function(e) { hzDsToast("Not finished: " + e.message, true); hzDsLoad(); });
 }
 
 // ── coordinator: change one shift ──
@@ -20081,7 +20207,7 @@ function hzDsEditSave(id) {
   var upd = { uid: w.uid, unit: w.unit, name: w.name, start: start, end: end, note: hzDsV("ds-e-note"), updatedAt: S.at, updatedBy: S.by };
   if (s.ruleId) upd.edited = true;
   if (start !== s.start) upd.remindedFor = [];   // a new time → reminders go again
-  db.collection("dispShifts").doc(id).update(upd).then(function() { hzDsDlgClose(); hzDsToast("✓ Shift changed"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+  hzDsBlendSave(s, upd).then(function(msg) { hzDsDlgClose(); hzDsToast(msg || "✓ Shift changed"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
 }
 function hzDsCancelShift(id) {
   var s = hzDsFind(id); if (!s) return;
@@ -20114,12 +20240,13 @@ function hzDsRuleSave(rid) {
   if (!days.length || !hzDsHmOk(st) || !hzDsHmOk(en) || st === en) { hzDsMsg("Tick at least one day and type 24-hour start / end times.", true); return; }
   var nr = Object.assign({}, r, { uid: w.uid, unit: w.unit, name: w.name, days: days, startTime: st, endTime: en, every: +hzDsV("ds-r-every") || 1, until: hzDsV("ds-r-until"), note: hzDsV("ds-r-note"), updatedAt: Date.now() });
   delete nr.id;
+  var bad = hzDsRuleClash(nr, rid); if (bad) { hzDsMsg(bad, true); return; }
   hzDsMsg("Saving…");
   db.collection("dispRules").doc(rid).set(nr).then(function() { return hzDsRuleAll(rid); }).then(function(all) {
     var keep = {}, b = db.batch(), now = Date.now();
     all.forEach(function(x) { if (x.edited || x.cancelled || x.start < now) keep[x.id] = x; else b.delete(db.collection("dispShifts").doc(x.id)); });   // started / past / hand-changed days stay
     return b.commit().then(function() { nr.id = rid; return hzDsMaterialize(nr, keep); });
-  }).then(function() { hzDsDlgClose(); hzDsToast("✓ Series changed"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
+  }).then(function() { return hzDsBlendFor(w.uid); }).then(function(r) { hzDsDlgClose(); hzDsToast(r.rules ? "✓ Series changed and blended with the one next to it" : "✓ Series changed"); hzDsLoad(); }).catch(function(e) { hzDsMsg("Not saved: " + e.message, true); });
 }
 function hzDsRuleStop(rid) {
   var r = HZ_DS.rules[rid]; if (!r) return;
@@ -20283,10 +20410,10 @@ function hzDsSyncedBtn() {
   var me = HZ_DS.me || {}, b = document.getElementById("hz-ds-synced"); if (!b || !me.uid) return;
   var show = function(c) {
     var el = document.getElementById("hz-ds-synced"); if (!el) return;
-    if (!c || !c.token) { el.style.display = "none"; return; }
-    el.textContent = c.lastFetch ? "🔄 Last synced " + hzDsAgo(c.lastFetch) + (c.lastApp ? " · " + c.lastApp : "") : "🔄 Calendar not synced yet";
+    // 12.657 (Sam: "combine last synced with the sync button"): one button — before a link exists it says "Add my shifts…"
+    if (!c || !c.token) { el.textContent = "📅 Add my shifts to my calendar"; el.title = ""; return; }
+    el.textContent = c.lastFetch ? "📅 My calendar · synced " + hzDsAgo(c.lastFetch) + (c.lastApp ? " · " + c.lastApp : "") : "📅 My calendar · not synced yet";
     el.title = c.lastFetch ? "When your calendar app last picked up your shifts — " + new Date(c.lastFetch).toLocaleString([], { hourCycle: "h23", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Your link is made, but no calendar app has picked it up yet — tap to finish adding it";
-    el.style.display = "";
   };
   if (HZ_DS.calInfo && Date.now() - HZ_DS.calInfo.at < 60000) { show(HZ_DS.calInfo.c); return; }
   db.collection("dispCal").doc(me.uid).get().then(function(s) { var c = s.exists ? (s.data() || {}) : null; HZ_DS.calInfo = { c: c, at: Date.now() }; show(c); }).catch(function() {});
@@ -20561,7 +20688,8 @@ var HZ_MREP_LIBS = {
 var HZ_MREP_TYPES = [["full", "Full member report", "Everything: calls responded, calls dispatched, response times and hours dispatched."],
   ["hours", "Hours dispatched", "Time each dispatcher was on the Dispatch Schedule, with each shift."],
   ["disp", "Calls dispatched", "Calls each dispatcher handled, cancelled, and time to assign the first unit."],
-  ["resp", "Calls responded", "Calls each responder went on, transports, and response time (assigned to on scene)."]];
+  ["resp", "Calls responded", "Calls each responder went on, transports, and response time (assigned to on scene)."],
+  ["calls", "Every call", "One line per call: date, address, nature, zone, dispatcher, outcome, units, ALS and the response times (what Download CSV used to give)."]];   // 12.657
 function hzMrepType(k) { return HZ_MREP_TYPES.filter(function(t) { return t[0] === k; })[0] || HZ_MREP_TYPES[0]; }
 function hzMrepEsc(t) { return String(t == null ? "" : t).replace(/[&<>"]/g, function(c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function hzMrepYmd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
@@ -20597,7 +20725,7 @@ function hzMrepOpen() {
   var bot = 0; ["m-test-global-banner", "sys-test-global-banner"].forEach(function(id) { var bn = document.getElementById(id); if (!bn || getComputedStyle(bn).display === "none") return; var r = bn.getBoundingClientRect(); if (r.height > 0) bot = Math.max(bot, r.bottom); });
   o.style.paddingTop = bot ? Math.ceil(bot) + "px" : "";
   if (!HZ_MREP.hist && typeof mNav !== "undefined" && typeof mNavState === "function") { try { history.pushState(Object.assign({}, mNavState(), { hzOv: "mrep" }), ""); HZ_MREP.hist = true; } catch (e) {} }
-  o.innerHTML = '<div class="hz-tl-box hz-mrep-box"><div class="hz-tl-top"><button class="hz-pop-back" onclick="hzMrepClose()">← Back</button><b style="flex:1">👤 Member reports</b></div><div class="hz-tl-body"><div id="hz-mrep"></div></div></div>';
+  o.innerHTML = '<div class="hz-tl-box hz-mrep-box"><div class="hz-tl-top"><button class="hz-pop-back" onclick="hzMrepClose()">← Back</button><b style="flex:1">📄 Generate reports</b></div><div class="hz-tl-body"><div id="hz-mrep"></div></div></div>';
   hzMrepMount();
 }
 function hzMrepClose(fromBack) {
@@ -20607,17 +20735,19 @@ function hzMrepClose(fromBack) {
 function hzMrepBack() { var h = HZ_MREP.hist; HZ_MREP.hist = false; hzMrepClose(true); return h ? "added" : true; }   // phone Back key
 function hzMrepMount() {
   var host = document.getElementById("hz-mrep"); if (!host) return;
+  if (typeof HZ_REP !== "undefined" && HZ_REP.from && HZ_MREP.syncedFrom !== HZ_REP.from + HZ_REP.to) { HZ_MREP.from = HZ_REP.from; HZ_MREP.to = HZ_REP.to; HZ_MREP.syncedFrom = HZ_REP.from + HZ_REP.to; }   // 12.657: start from the live page's dates
   if (!HZ_MREP.from) { var t = new Date(); HZ_MREP.from = t.getFullYear() + "-01-01"; HZ_MREP.to = hzMrepYmd(t); }
+  var allCalls = HZ_MREP.type === "calls";
   var opt = function(v, l) { return '<option value="' + v + '"' + (HZ_MREP.who === v ? ' selected' : '') + '>' + l + '</option>'; };
   host.innerHTML = '<div class="hz-rep-sec hz-mrep">'
     + '<div class="hz-rep-note">Pick the report, who and which dates, then download. Test calls never count.</div>'
     + '<label class="hz-mrep-l">Report<select id="hz-mrep-type" onchange="HZ_MREP.type=this.value;hzMrepMount()">' + HZ_MREP_TYPES.map(function(t) { return '<option value="' + t[0] + '"' + (HZ_MREP.type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>'; }).join("") + '</select></label>'
     + '<div class="hz-rep-note" style="margin:4px 0 0">' + hzMrepEsc(hzMrepType(HZ_MREP.type)[2]) + '</div>'
-    + '<label class="hz-mrep-l">Who<select id="hz-mrep-who" onchange="HZ_MREP.who=this.value;hzMrepMount()">' + opt("all", "All members") + opt("disp", "All dispatchers") + opt("resp", "All responders") + opt("pick", "Pick members…") + '</select></label>'
-    + (HZ_MREP.who === "pick" ? '<div id="hz-mrep-pick">Loading members…</div>' : '')
+    + (allCalls ? '' : '<label class="hz-mrep-l">Who<select id="hz-mrep-who" onchange="HZ_MREP.who=this.value;hzMrepMount()">' + opt("all", "All members") + opt("disp", "All dispatchers") + opt("resp", "All responders") + opt("pick", "Pick members…") + '</select></label>'
+    + (HZ_MREP.who === "pick" ? '<div id="hz-mrep-pick">Loading members…</div>' : ''))
     + '<div class="hz-mrep-2"><label class="hz-mrep-l">From<input type="date" id="hz-mrep-from" value="' + HZ_MREP.from + '" onchange="HZ_MREP.from=this.value"></label>'
     + '<label class="hz-mrep-l">To<input type="date" id="hz-mrep-to" value="' + HZ_MREP.to + '" onchange="HZ_MREP.to=this.value"></label></div>'
-    + '<label class="hz-mrep-ck"><input type="checkbox" id="hz-mrep-detail"' + (HZ_MREP.detail ? ' checked' : '') + ' onchange="HZ_MREP.detail=this.checked"> Include each ' + (HZ_MREP.type === "hours" ? 'shift' : HZ_MREP.type === "full" ? 'call and shift' : 'call') + ' (not just the totals)</label>'
+    + (allCalls ? '' : '<label class="hz-mrep-ck"><input type="checkbox" id="hz-mrep-detail"' + (HZ_MREP.detail ? ' checked' : '') + ' onchange="HZ_MREP.detail=this.checked"> Include each ' + (HZ_MREP.type === "hours" ? 'shift' : HZ_MREP.type === "full" ? 'call and shift' : 'call') + ' (not just the totals)</label>')
     + '<div class="hz-mrep-btns"><button type="button" class="hz-rep-dl" onclick="hzMrepGo(\'pdf\')">⬇ PDF</button><button type="button" class="hz-rep-dl" onclick="hzMrepGo(\'xlsx\')">⬇ Excel</button></div>'
     + '<div id="hz-mrep-msg" class="hz-rep-note" style="margin:8px 0 0"></div></div>';
   if (HZ_MREP.who === "pick") hzMrepLoadUsers().then(hzMrepPickDraw).catch(function(e) { var p = document.getElementById("hz-mrep-pick"); if (p) p.textContent = "Couldn't load the members: " + e.message; });
@@ -20705,6 +20835,7 @@ function hzMrepGo(kind) {
   var from = HZ_MREP.from, to = HZ_MREP.to;
   if (!/^\d{4}-\d\d-\d\d$/.test(from) || !/^\d{4}-\d\d-\d\d$/.test(to)) { hzMrepMsg("Pick a From and a To date.", true); return; }
   if (from > to) { var sw = from; from = to; to = sw; }
+  if (HZ_MREP.type === "calls") return hzMrepCallsGo(kind, from, to);   // 12.657
   if (HZ_MREP.who === "pick" && !Object.keys(HZ_MREP.picked).length) { hzMrepMsg("Pick at least one member.", true); return; }
   HZ_MREP.busy = true; hzMrepMsg("Making the " + (kind === "pdf" ? "PDF" : "Excel file") + "…");
   Promise.all([hzMrepData(from, to), hzMrepLoadJs(HZ_MREP_LIBS[kind])]).then(function(res) {
@@ -20718,6 +20849,38 @@ function hzMrepGo(kind) {
     HZ_MREP.lastBlob = blob; HZ_MREP.lastName = name;
     hzMrepMsg("✓ " + name);
     try { db.collection("callLogAudit").add({ action: "member_report_" + kind, type: HZ_MREP.type, who: HZ_MREP.who, members: rows.length, from: from, to: to, timestamp: new Date().toISOString() }); } catch (e) {}
+  }).catch(function(e) { hzMrepMsg(e.message || String(e), true); }).then(function() { HZ_MREP.busy = false; });
+}
+// 12.657: "Every call" — one line per call (the old ⬇ Download CSV), as Excel or PDF
+function hzMrepCallsGo(kind, from, to) {
+  HZ_MREP.busy = true; hzMrepMsg("Making the " + (kind === "pdf" ? "PDF" : "Excel file") + "…");
+  Promise.all([hzFetchCallLogs(from, to), hzMrepLoadJs(HZ_MREP_LIBS[kind])]).then(function(res) {
+    var rows = (res[0] || []).filter(function(l) { return !l.testMode; }).map(hzRepCall).filter(Boolean).sort(function(a, b) { return a.created - b.created; });
+    if (!rows.length) throw new Error("No calls between " + from + " and " + to + ".");
+    var head = ["Call #", "Date", "Time", "Address", "Nature", "Zone", "Dispatcher", "Outcome", "Units", "ALS", "To first assign", "To first on scene", "Rig assigned to on scene", "ALS to ALS on scene", "Call length"];
+    var line = function(r, asNum) {
+      var l = r.l, d = r.created, t = function(x) { return asNum ? (x == null ? "" : Math.round(x / 6) / 10) : (x == null ? "-" : hzRepDur(x).replace(/[–—]/g, "-")); };
+      return [typeof hzCallNo === "function" ? hzCallNo(l) : (l.id || ""), hzMrepYmd(d), String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"), l.address || "", l.callNature || "", l.zone || "", r.dispatcher,
+        r.cancelled ? "Cancelled" : (r.disp === "rma" ? "RMA" : r.disp ? (r.disp.charAt(0).toUpperCase() + r.disp.slice(1)).replace(/_/g, " ") : "Completed"), r.units.join(" "), r.als ? "Yes" : "", t(r.toAssign), t(r.toScene), t(r.rigResp), t(r.alsResp), t(r.length)];
+    };
+    var meta = { made: hzMrepWhen(Date.now()) }, blob, name = "Every_call_" + from + "_to_" + to + (kind === "pdf" ? ".pdf" : ".xlsx");
+    if (kind === "pdf") {
+      var J = window.jspdf.jsPDF, doc = new J({ orientation: "landscape", unit: "pt", format: "letter" }), W = doc.internal.pageSize.getWidth();
+      var plain = function(x) { return String(x == null ? "" : x).replace(/[–—]/g, "-").replace(/[^\x20-\x7E\u00A0-\u00FF]/g, ""); };
+      doc.setFillColor(0, 0, 0); doc.rect(0, 0, W, 62, "F"); doc.setTextColor(212, 160, 23); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text(plain(hzMrepOrg() + " - Every call"), 40, 30);
+      doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.text(plain(rows.length + " calls  |  " + from + " to " + to + "  |  made " + meta.made), 40, 48);
+      doc.autoTable({ startY: 76, head: [head.map(plain)], body: rows.map(function(r) { return line(r, false).map(plain); }), headStyles: { fillColor: [212, 160, 23], textColor: [0, 0, 0], fontStyle: "bold" }, styles: { fontSize: 6.5, cellPadding: 2 }, alternateRowStyles: { fillColor: [250, 245, 230] }, margin: { left: 24, right: 24 } });
+      var pages = doc.internal.getNumberOfPages(); for (var i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120); doc.text("Page " + i + " of " + pages, W - 24, doc.internal.pageSize.getHeight() - 14, { align: "right" }); }
+      blob = doc.output("blob");
+    } else {
+      var X = window.XLSX, wb = X.utils.book_new();
+      var aoa = [[hzMrepOrg() + " — Every call"], [rows.length + " calls · " + from + " to " + to + " · made " + meta.made], [], head.map(function(h, i) { return i >= 10 ? h + " (min)" : h; })].concat(rows.map(function(r) { return line(r, true); }));
+      var ws = X.utils.aoa_to_sheet(aoa); ws["!cols"] = [14, 11, 7, 30, 20, 10, 10, 14, 18, 5, 12, 12, 14, 14, 11].map(function(w) { return { wch: w }; });
+      X.utils.book_append_sheet(wb, ws, "Calls"); blob = new Blob([X.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    }
+    if (typeof hzSaveFile === "function") hzSaveFile(blob, name); else { var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+    HZ_MREP.lastBlob = blob; HZ_MREP.lastName = name; hzMrepMsg("✓ " + name);
+    try { db.collection("callLogAudit").add({ action: "calls_report_" + kind, from: from, to: to, calls: rows.length, timestamp: new Date().toISOString() }); } catch (e) {}
   }).catch(function(e) { hzMrepMsg(e.message || String(e), true); }).then(function() { HZ_MREP.busy = false; });
 }
 function hzMrepOrg() { try { return (typeof HZ_ORG_NAME === "string" && HZ_ORG_NAME) || "Hatzolah MC"; } catch (e) { return "Hatzolah MC"; } }
