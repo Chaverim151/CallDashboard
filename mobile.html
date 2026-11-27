@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.158"; window.M_BUILD = BUILD;
+  var BUILD = "9.159"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -4077,7 +4077,9 @@ function mLoadShuls() {
 function mLoadShifts() {
   var el = document.getElementById("m-shifts-content");
   el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Loading...</div>';
-  db.collection("appdata").doc("shifts").get().then(function(snap) {
+  // 9.159 (Sam's screenshot: "Error: Failed to get document because the client is offline"): with no signal, show the last saved
+  // schedule from this phone if there is one, say so plainly, and load again by itself as soon as the phone is back online
+  var hzNwShow = function(snap, fromCache) {
     if (snap.exists) hzNightApply(snap.data());   // 12.128: night hours setting
     var shifts = (snap.exists && snap.data().shifts) || [];
     if (!shifts.length) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">No shifts on file.</div>'; return; }
@@ -4098,7 +4100,21 @@ function mLoadShifts() {
           : '<div style="font-size:0.72rem;color:var(--gray);margin-top:6px">No units assigned</div>') +
       '</div>';
     }).join("");
-  }).catch(function(e) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; });
+    if (fromCache) el.innerHTML = '<div class="hz-nw-off" style="font-size:0.82rem;font-weight:700;padding:8px 2px">📶 No connection — showing the last saved schedule. It updates by itself when you are back online.</div>' + el.innerHTML;
+  };
+  var hzNwOffline = function() {
+    var again = function() { window.removeEventListener("online", again); clearInterval(window.__hzNwRetry); var pg = document.getElementById("m-pg-shifts"); if (pg && pg.classList.contains("active")) mLoadShifts(); };
+    if (window.__hzNwAgain) window.removeEventListener("online", window.__hzNwAgain); window.__hzNwAgain = again; window.addEventListener("online", again);
+    clearInterval(window.__hzNwRetry); window.__hzNwRetry = setInterval(function() { if (navigator.onLine !== false) again(); }, 15000);
+  };
+  db.collection("appdata").doc("shifts").get().then(function(snap) { hzNwShow(snap, false); }).catch(function(e) {
+    var off = /offline|unavailable|network/i.test(String((e && e.code) || "") + " " + String((e && e.message) || ""));
+    if (!off) { el.innerHTML = '<div style="color:var(--gray);font-size:0.82rem;padding:8px">Error: ' + e.message + '</div>'; return; }
+    hzNwOffline();
+    db.collection("appdata").doc("shifts").get({ source: "cache" }).then(function(snap) { hzNwShow(snap, true); }).catch(function() {
+      el.innerHTML = '<div class="hz-nw-off" style="font-size:0.82rem;font-weight:700;padding:8px 2px">📶 No connection right now. The Night Watch schedule will load by itself as soon as your phone is back online.</div>';
+    });
+  });
 }
 
 
@@ -18290,6 +18306,11 @@ function mAskUnitResponse(callId, crewIdx, role, unitId) {
     CC + " .m-pill b, " + CC + " .m-pill strong{color:#fff !important;-webkit-text-fill-color:#fff}" +
     CC + " .m-card-actions{border-top-color:rgba(212,160,23,.3) !important}" +
     CC + " .m-action-btn{min-height:46px !important;background:#000 !important;color:#d4a017 !important;-webkit-text-fill-color:#d4a017;border:2px solid #d4a017 !important;border-radius:10px !important;box-shadow:none !important;text-decoration:none !important;display:flex !important;align-items:center;justify-content:center;font-size:.85rem !important}";
+  // 9.159 / 12.663 (Sam: "visibility issues" — the call card's notes were dark grey on black): notes white, time · unit light gold, label gold
+  st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) .m-call-card .m-notes-section{border-top:1px solid rgba(212,160,23,.35) !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .m-call-card .m-notes-label{color:#d4a017 !important;-webkit-text-fill-color:#d4a017;font-weight:700}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .m-call-card .m-note-item{color:#fff !important;-webkit-text-fill-color:#fff;font-size:.8rem !important}" +
+    "html body:not(#hzA):not(#hzB):not(#hzC) .m-call-card .m-note-meta{color:#e6cf8a !important;-webkit-text-fill-color:#e6cf8a;font-size:.7rem !important}";
   // 9.05 / 12.469 (Sam): "Jump to…" bold with a solid black border
   st.textContent += "html body:not(#hzA):not(#hzB):not(#hzC) button[onclick='mOpenDispDrawer()']{font-weight:800 !important;color:#000 !important;-webkit-text-fill-color:#000;border:2px solid #000 !important;background:#fff !important}";
   // 9.07 / 12.471 (Sam): "Select to expand / collapse" text in place of the arrow
