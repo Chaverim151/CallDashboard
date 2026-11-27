@@ -12,7 +12,7 @@
   var W = function(l, o) { return new D(l, fix(o, false)); }; W.prototype = D.prototype; W.supportedLocalesOf = D.supportedLocalesOf; Intl.DateTimeFormat = W;
 })();
 </script>
-<meta name="hz-version" content="12.653">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
+<meta name="hz-version" content="12.654">  <!-- keep equal to DESKTOP_VERSION: the update banner compares this with the server -->
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -2801,7 +2801,7 @@ html[data-theme="basic"] .hz-tka-sel{color:#8a680f !important}</style>
       <button class="back-btn" onclick="goHome()" style="padding:6px 10px;font-size:0.68rem">← Back</button>
       <div style="display:flex;flex-direction:column;min-width:0;line-height:1.1">
         <div class="page-title" style="font-size:0.8rem;letter-spacing:0.12em;color:var(--gold);text-shadow:0 0 16px rgba(var(--gold-rgb),0.4);white-space:nowrap"><svg class="hz-hs" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><rect x="17.5" y="13" width="4" height="6.5" rx="1.6" fill="currentColor" stroke="none"/><path d="M4.5 19.5c0 2.2 2.6 2.8 6 2.8"/><rect x="10" y="20.6" width="4.4" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg> DISPATCH</div>
-        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.653</span></div>
+        <div style="font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(var(--gold-rgb),0.5);white-space:nowrap">MC OPS <span style="opacity:0.5">· v12.654</span></div>
       </div>
     </div>
     <!-- CENTER: Clock + Call Times on one line -->
@@ -21853,7 +21853,7 @@ function renderDDSidebarContent(call, ambulances, keepSection, unitCallMap) {
 
 <script>
 /* ═══ Dispatch console ported from mobile.html — identical logic, wide layout ═══ */
-var DESKTOP_VERSION = "12.653";
+var DESKTOP_VERSION = "12.654";
 // ── IT tickets: device details, gathered automatically and editable ──
 var M_IT_DEVELOPER_UNIT = "MC-16";
 function mDetectDevice() {
@@ -36963,8 +36963,9 @@ function hzDsDraw() {
   var tabH = '<div class="hz-ds-tabs">' + tabs.map(function(t) { return '<button class="' + (HZ_DS.tab === t[0] ? 'on' : '') + '" onclick="HZ_DS.tab=\'' + t[0] + '\';hzDsDraw()">' + t[1] + (t[2] ? ' <span class="n">' + t[2] + '</span>' : '') + '</button>'; }).join("") + '</div>';
   var body = HZ_DS.tab === "mine" ? hzDsMineHtml() : HZ_DS.tab === "open" ? hzDsOpenHtml() : HZ_DS.tab === "week" ? hzDsWeekHtml() : hzDsReqHtml();
   var keep = o.querySelector(".hz-tl-body"), st = keep ? keep.scrollTop : 0;
-  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button>' + (HZ_DS.coord ? '<button class="hz-kb-btn" onclick="hzDsCalStatus()">📡 Calendar sync — all dispatchers</button>' : '') + '</div>' + tabH + body + '</div></div></div>';
+  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button><button class="hz-kb-btn hz-ds-synced" id="hz-ds-synced" onclick="hzDsSubscribe()" style="display:none"></button>' + (HZ_DS.coord ? '<button class="hz-kb-btn" onclick="hzDsCalStatus()">📡 Calendar sync — all dispatchers</button>' : '') + '</div>' + tabH + body + '</div></div></div>';
   if (st) { var nb = o.querySelector(".hz-tl-body"); if (nb) nb.scrollTop = st; }
+  hzDsSyncedBtn();   // 12.654
 }
 HZ_DS.phones = {};
 function hzDsPhone(uid) { return HZ_DS.phones[uid] || ""; }
@@ -37338,8 +37339,23 @@ function hzDsSubscribe() {
       + '<button class="hz-kb-btn" onclick="hzDsCopyCal()">Copy the link</button></div>'
       + '<div class="hz-kb-note">The link is private to you — don\'t share it.</div>'
       + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button></div>');
+    HZ_DS.calInfo = { c: Object.assign({}, info, { token: t }), at: Date.now() }; hzDsSyncedBtn();
     hzDsCalCheck(url, info);
   }).catch(function(e) { hzDsToast("Couldn't make your calendar link: " + e.message, true); });
+}
+// 12.654 (Sam: "instead of a push notification, a last synced button that shows when it was last synced"): on the schedule page,
+// once the member has a calendar link — "🔄 Last synced 3 h ago · Google Calendar" (or "not synced yet"); tapping it opens the calendar window
+function hzDsSyncedBtn() {
+  var me = HZ_DS.me || {}, b = document.getElementById("hz-ds-synced"); if (!b || !me.uid) return;
+  var show = function(c) {
+    var el = document.getElementById("hz-ds-synced"); if (!el) return;
+    if (!c || !c.token) { el.style.display = "none"; return; }
+    el.textContent = c.lastFetch ? "🔄 Last synced " + hzDsAgo(c.lastFetch) + (c.lastApp ? " · " + c.lastApp : "") : "🔄 Calendar not synced yet";
+    el.title = c.lastFetch ? "When your calendar app last picked up your shifts — " + new Date(c.lastFetch).toLocaleString([], { hourCycle: "h23", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Your link is made, but no calendar app has picked it up yet — tap to finish adding it";
+    el.style.display = "";
+  };
+  if (HZ_DS.calInfo && Date.now() - HZ_DS.calInfo.at < 60000) { show(HZ_DS.calInfo.c); return; }
+  db.collection("dispCal").doc(me.uid).get().then(function(s) { var c = s.exists ? (s.data() || {}) : null; HZ_DS.calInfo = { c: c, at: Date.now() }; show(c); }).catch(function() {});
 }
 function hzDsAgo(ms) { var m = Math.round((Date.now() - ms) / 60000); return m < 2 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " day" + (Math.round(m / 1440) === 1 ? "" : "s") + " ago"; }
 function hzDsCalSeen(info) {

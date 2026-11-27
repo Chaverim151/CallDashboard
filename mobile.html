@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.152"; window.M_BUILD = BUILD;
+  var BUILD = "9.153"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -19891,8 +19891,9 @@ function hzDsDraw() {
   var tabH = '<div class="hz-ds-tabs">' + tabs.map(function(t) { return '<button class="' + (HZ_DS.tab === t[0] ? 'on' : '') + '" onclick="HZ_DS.tab=\'' + t[0] + '\';hzDsDraw()">' + t[1] + (t[2] ? ' <span class="n">' + t[2] + '</span>' : '') + '</button>'; }).join("") + '</div>';
   var body = HZ_DS.tab === "mine" ? hzDsMineHtml() : HZ_DS.tab === "open" ? hzDsOpenHtml() : HZ_DS.tab === "week" ? hzDsWeekHtml() : hzDsReqHtml();
   var keep = o.querySelector(".hz-tl-body"), st = keep ? keep.scrollTop : 0;
-  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button>' + (HZ_DS.coord ? '<button class="hz-kb-btn" onclick="hzDsCalStatus()">📡 Calendar sync — all dispatchers</button>' : '') + '</div>' + tabH + body + '</div></div></div>';
+  o.innerHTML = '<div class="hz-tl-box hz-ds-box">' + top + '<div class="hz-tl-body"><div class="hz-ds-wrap">' + nowH + '<div class="hz-ds-bar"><button class="hz-kb-btn" onclick="hzDsSubscribe()">📅 Add my shifts to my calendar</button><button class="hz-kb-btn hz-ds-synced" id="hz-ds-synced" onclick="hzDsSubscribe()" style="display:none"></button>' + (HZ_DS.coord ? '<button class="hz-kb-btn" onclick="hzDsCalStatus()">📡 Calendar sync — all dispatchers</button>' : '') + '</div>' + tabH + body + '</div></div></div>';
   if (st) { var nb = o.querySelector(".hz-tl-body"); if (nb) nb.scrollTop = st; }
+  hzDsSyncedBtn();   // 12.654
 }
 HZ_DS.phones = {};
 function hzDsPhone(uid) { return HZ_DS.phones[uid] || ""; }
@@ -20266,8 +20267,23 @@ function hzDsSubscribe() {
       + '<button class="hz-kb-btn" onclick="hzDsCopyCal()">Copy the link</button></div>'
       + '<div class="hz-kb-note">The link is private to you — don\'t share it.</div>'
       + '<div class="hz-kb-bar" style="justify-content:flex-end;margin:12px 0 0"><button class="hz-kb-btn" onclick="hzDsDlgClose()">Close</button></div>');
+    HZ_DS.calInfo = { c: Object.assign({}, info, { token: t }), at: Date.now() }; hzDsSyncedBtn();
     hzDsCalCheck(url, info);
   }).catch(function(e) { hzDsToast("Couldn't make your calendar link: " + e.message, true); });
+}
+// 12.654 (Sam: "instead of a push notification, a last synced button that shows when it was last synced"): on the schedule page,
+// once the member has a calendar link — "🔄 Last synced 3 h ago · Google Calendar" (or "not synced yet"); tapping it opens the calendar window
+function hzDsSyncedBtn() {
+  var me = HZ_DS.me || {}, b = document.getElementById("hz-ds-synced"); if (!b || !me.uid) return;
+  var show = function(c) {
+    var el = document.getElementById("hz-ds-synced"); if (!el) return;
+    if (!c || !c.token) { el.style.display = "none"; return; }
+    el.textContent = c.lastFetch ? "🔄 Last synced " + hzDsAgo(c.lastFetch) + (c.lastApp ? " · " + c.lastApp : "") : "🔄 Calendar not synced yet";
+    el.title = c.lastFetch ? "When your calendar app last picked up your shifts — " + new Date(c.lastFetch).toLocaleString([], { hourCycle: "h23", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Your link is made, but no calendar app has picked it up yet — tap to finish adding it";
+    el.style.display = "";
+  };
+  if (HZ_DS.calInfo && Date.now() - HZ_DS.calInfo.at < 60000) { show(HZ_DS.calInfo.c); return; }
+  db.collection("dispCal").doc(me.uid).get().then(function(s) { var c = s.exists ? (s.data() || {}) : null; HZ_DS.calInfo = { c: c, at: Date.now() }; show(c); }).catch(function() {});
 }
 function hzDsAgo(ms) { var m = Math.round((Date.now() - ms) / 60000); return m < 2 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " day" + (Math.round(m / 1440) === 1 ? "" : "s") + " ago"; }
 function hzDsCalSeen(info) {
