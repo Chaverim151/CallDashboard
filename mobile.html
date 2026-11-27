@@ -34,7 +34,7 @@ function hzNotifPerm(){try{return(typeof Notification!=="undefined"&&Notificatio
 // what the current build is (a tiny no-cache range request for the first few KB of this file),
 // and if the server is newer, reloads to a never-before-seen URL so no cache layer can serve the old copy.
 (function () {
-  var BUILD = "9.147"; window.M_BUILD = BUILD;
+  var BUILD = "9.148"; window.M_BUILD = BUILD;
   window.hzImpGet = function() { try { var v = JSON.parse(sessionStorage.getItem("hzImp") || "null"); return v && v.byUid ? v : null; } catch (e) { return null; } };   // 9.86 / 12.560: acting as a member — this tab
   window.hzImpCheck = function() {   // the flag, or (new tab / before the flag is set) the sign-in itself says so
     if (window.hzImpGet()) return Promise.resolve(true);
@@ -17869,7 +17869,25 @@ function hzRepCall(l) {
     length: (l.status !== "cancelled" && done) ? sec(c0, done) : null, unitResp: unitResp, assignedUnits: Object.keys(assigned)
   };
 }
-function hzRepCompute(logs, openCount, year) {
+// 12.647 (Sam: "add hours dispatched to the report for dispatchers"): time each dispatcher was on the Dispatch Schedule this year —
+// shifts already worked (a running shift counts up to now), cut to the year; Lakewood, open and removed shifts don't count. Matched to the calls by unit.
+function hzRepKey(u) { return String(u || "").toUpperCase().replace(/\s+/g, ""); }
+function hzRepShiftHours(y) {
+  var ms = function(ymd) { return typeof hzDsMs === "function" ? hzDsMs(ymd, "00:00") : new Date(ymd + "T00:00:00").getTime(); };
+  var from = ms(y + "-01-01"), to = ms((y + 1) + "-01-01"), now = Date.now();
+  return db.collection("dispShifts").where("start", ">=", from - 86400000).where("start", "<", to).get().then(function(snap) {
+    var out = {};
+    snap.forEach(function(d) { var s = d.data() || {};
+      if (s.cancelled || !s.uid || s.uid === "lakewood" || !s.unit) return;
+      var a = Math.max(s.start, from), b = Math.min(s.end, to, now); if (!(b > a)) return;
+      var k = hzRepKey(s.unit), o = out[k] = out[k] || { unit: s.unit, name: s.name || "", ms: 0, shifts: 0 };
+      o.ms += b - a; o.shifts++;
+    });
+    return out;
+  }).catch(function() { return null; });
+}
+function hzRepHrs(h) { if (h == null) return "—"; var m = Math.round(h * 60); return Math.floor(m / 60) + "h" + (m % 60 ? " " + String(m % 60).padStart(2, "0") + "m" : ""); }
+function hzRepCompute(logs, openCount, year, hours) {
   var rows = logs.map(hzRepCall).filter(Boolean);
   var R = { year: year, n: rows.length + (openCount || 0), done: 0, cancelled: 0, transports: 0, rma: 0, oa: 0, als: 0, open: openCount || 0, months: [0,0,0,0,0,0,0,0,0,0,0,0], rows: rows };
   var toScene = [], rigResp = [], alsResp = [], unitAll = [], perUnit = {}, perD = {};
@@ -17910,6 +17928,14 @@ function hzRepCompute(logs, openCount, year) {
   R.dispatchers = Object.keys(perD).map(function(k) { var d = perD[k]; allAssign = allAssign.concat(d.assign);
     return { unit: d.unit, name: d.name, calls: d.calls, done: d.done, cancelled: d.cancelled, avgAssign: hzRepAvg(d.assign), medAssign: hzRepMed(d.assign), avgScene: hzRepAvg(d.scene), medScene: hzRepMed(d.scene), avgLen: hzRepAvg(d.length), b: d.b };
   }).sort(function(a, b) { return b.calls - a.calls; });
+  R.hoursOk = !!hours; R.totalHours = 0;
+  if (hours) {   // 12.647
+    var seen = {};
+    R.dispatchers.forEach(function(d) { var h = hours[hzRepKey(d.unit)]; d.hours = h ? h.ms / 3600000 : 0; d.shifts = h ? h.shifts : 0; seen[hzRepKey(d.unit)] = 1; });
+    Object.keys(hours).forEach(function(k) { if (seen[k]) return; var h = hours[k];
+      R.dispatchers.push({ unit: h.unit, name: h.name, calls: 0, done: 0, cancelled: 0, avgAssign: null, medAssign: null, avgScene: null, medScene: null, avgLen: null, b: [0, 0, 0, 0, 0], hours: h.ms / 3600000, shifts: h.shifts }); });
+    Object.keys(hours).forEach(function(k) { R.totalHours += hours[k].ms / 3600000; });
+  }
   R.medAssign = hzRepMed(allAssign); R.avgAssign = hzRepAvg(allAssign); R.nAssign = allAssign.length;
   R.noDispatcher = (perD["—"] || {}).calls || 0;
   return R;
@@ -17930,13 +17956,15 @@ function hzRepHtml(R) {
     box("Quickest unit (average)", R.fastest ? hzRepEsc(R.fastest.unit) : "—", R.fastest ? hzRepDur(R.fastest.avg) + " assigned → on scene, " + over(R.fastest.n, "call") : "", "hz-rep-good") +
     box("Slowest unit (average)", R.slowest ? hzRepEsc(R.slowest.unit) : "—", R.slowest ? hzRepDur(R.slowest.avg) + " assigned → on scene, " + over(R.slowest.n, "call") : "", "hz-rep-bad") +
     '</div></div>';
-  h += '<div class="hz-rep-sec"><div class="hz-rep-h">Dispatcher statistics</div><div class="hz-rep-note">Calls are credited to the dispatcher on the call (or who posted it). Time to assign runs from when the call was posted to the first unit assigned; time to on scene to the first unit marked on scene. Hours on dispatcher duty aren\'t recorded, so they aren\'t shown.</div><div class="hz-rep-grid">' +
+  h += '<div class="hz-rep-sec"><div class="hz-rep-h">Dispatcher statistics</div><div class="hz-rep-note">Calls are credited to the dispatcher on the call (or who posted it). Time to assign runs from when the call was posted to the first unit assigned; time to on scene to the first unit marked on scene. Hours dispatched come from the 🗓️ Dispatch Schedule: shifts already worked this year (a shift going on now counts up to now). Lakewood and open shifts don\'t count.</div><div class="hz-rep-grid">' +
     box("Dispatchers with calls", R.dispatchers.filter(function(d) { return d.unit !== "—"; }).length, "") +
     box("Median time to assign", hzRepDur(R.medAssign), "average " + hzRepDur(R.avgAssign) + ", " + over(R.nAssign, "call")) +
-    box("Calls with no dispatcher recorded", R.noDispatcher, "") + '</div>' +
+    box("Calls with no dispatcher recorded", R.noDispatcher, "") +
+    box("Hours dispatched", R.hoursOk ? hzRepHrs(R.totalHours) : "—", R.hoursOk ? "all dispatchers, from the schedule" : "couldn\'t read the schedule") + '</div>' +
     R.dispatchers.map(function(d) {
       var row = function(k, v) { return '<div class="hz-rep-kv"><span>' + k + '</span><b>' + v + '</b></div>'; };
       return '<div class="hz-rep-card"><div class="hz-rep-ch">Dispatcher: ' + hzRepEsc(d.unit) + (d.name ? ' — ' + hzRepEsc(d.name) : '') + '</div>' +
+        (R.hoursOk ? row("Hours dispatched", hzRepHrs(d.hours) + (d.shifts ? ' <small style="opacity:.75">(' + d.shifts + ' shift' + (d.shifts === 1 ? '' : 's') + ')</small>' : '')) : '') +
         row("Calls", d.calls) + row("Completed", d.done) + row("Cancelled", d.cancelled) +
         row("Avg to assign", hzRepDur(d.avgAssign)) + row("Median to assign", hzRepDur(d.medAssign)) +
         row("Avg to on scene", hzRepDur(d.avgScene)) + row("Median to on scene", hzRepDur(d.medScene)) + row("Avg call length", hzRepDur(d.avgLen)) +
@@ -17980,10 +18008,10 @@ function hzRepLoad() {
   var openP = db.collection("activeCalls").where("status", "==", "active").get().then(function(snap) {   // finished calls also sit in activeCalls
     var n = 0; snap.forEach(function(d) { var c = d.data() || {}; if ((tests || !c.testMode) && String(c.createdAt || "").slice(0, 4) === String(y)) n++; }); return n;
   }).catch(function() { return 0; });
-  Promise.all([hzFetchCallLogs(from, to), openP]).then(function(res) {
+  Promise.all([hzFetchCallLogs(from, to), openP, hzRepShiftHours(y)]).then(function(res) {
     if (HZ_REP.year !== y || HZ_REP.tests !== tests) return;   // changed meanwhile
     var logs = (res[0] || []).filter(function(l) { return tests || !l.testMode; });
-    HZ_REP.last = hzRepCompute(logs, res[1], y);
+    HZ_REP.last = hzRepCompute(logs, res[1], y, res[2]);
     body.innerHTML = hzRepHtml(HZ_REP.last);
   }).catch(function(e) { body.innerHTML = '<div class="hz-rep-note" style="color:#c62828">Couldn\'t load the calls: ' + hzRepEsc(e.message) + '</div>'; });
 }
